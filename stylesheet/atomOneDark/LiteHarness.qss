@@ -1,0 +1,8 @@
+LiteHarness {
+    background-color: rgb(33, 37, 43);
+}
+
+LiteHarness #titleBar {
+    color: white;
+    background-color: rgb(33, 37, 43);
+}
