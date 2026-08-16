@@ -36,10 +36,32 @@ include_directories(
 
 set(inc "")
 set(src 
-    "src/App.cpp")
+    "src/App.cpp"
+    "src/LiteHarness.cpp"
+    "src/LiteHarness.h"
+    )
+
+set (qss 
+        "./stylesheet/light/LiteHarness.qss"
+        "./stylesheet/dark/LiteHarness.qss"
+        "./stylesheet/atomOneDark/LiteHarness.qss"
+)
+source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
+
+set(res
+        "./res/LiteHarness.ico"
+)
+source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${res})
 
 set(TGT lite-harness)
-add_executable(${TGT} ${src} ${inc})
+add_executable(${TGT} ${src} ${inc} "${CMAKE_CURRENT_SOURCE_DIR}/LiteHarness.rc")
+
+### qss
+qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss})
+
+### icon
+qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
+
 target_link_libraries(${TGT} PRIVATE 
     FluentUI::Controls
     FluentUI::Utils
