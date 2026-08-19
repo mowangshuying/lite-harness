@@ -9,6 +9,13 @@
 FRAMELESSHELPER_USE_NAMESPACE
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
+    __initUI();
+    __initNavView();
+    __connect();
+}
+
+void LiteHarness::__initUI()
+{
     setWindowTitle("lite-harness");
     setWindowIcon(QIcon(":/res/LiteHarness.ico"));
 
@@ -16,15 +23,36 @@ LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
     m_titleBar->chromePalette()->setTitleBarInactiveBackgroundColor(Qt::transparent);
     m_titleBar->chromePalette()->setTitleBarActiveForegroundColor(Qt::black);
     m_titleBar->chromePalette()->setTitleBarInactiveForegroundColor(Qt::black);
-    m_titleBar->setFixedHeight(36);
+    m_titleBar->setFixedHeight(32);
 
     auto hLayout = (QHBoxLayout *)m_titleBar->layout();
     auto vLayout = (QVBoxLayout *)hLayout->itemAt(1)->layout();
     auto hButtonLayout = (QHBoxLayout *)vLayout->itemAt(0)->layout();
     auto themeButton = new FluThemeButton;
     hButtonLayout->insertWidget(0, themeButton);
-    FramelessWidgetsHelper::get(this)->setHitTestVisible(themeButton);
 
+    m_navView = new FluVNavigationView;
+    // m_navView->setViewWidth(200);
+    m_sLayout = new FluStackedLayout;
+    m_contentLayout->addWidget(m_navView);
+    m_contentLayout->addLayout(m_sLayout);
+
+    // __initNavView();
+
+    FramelessWidgetsHelper::get(this)->setHitTestVisible(themeButton);
+}
+
+void LiteHarness::__initNavView()
+{
+    m_navView->setViewWidth(200);
+    m_navView->hideSearchItem();
+    m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
+    m_navView->insertIconTextItem(FluAwesomeType::Settings, "Settings", "SettingsPage");
+}
+
+void LiteHarness::__connect()
+{
+    onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
 }
 
