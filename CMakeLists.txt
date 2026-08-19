@@ -37,14 +37,29 @@ include_directories(
 set(inc "")
 set(src 
     "src/App.cpp"
+    "src/BasePage.cpp"
+    "src/BasePage.h"
     "src/LiteHarness.cpp"
     "src/LiteHarness.h"
+    "src/SettingsPage.cpp"
+    "src/SettingsPage.h"
+    "src/NewChatPage.cpp"
+    "src/NewChatPage.h"
     )
 
-set (qss 
+set (qss
+        "./stylesheet/light/BasePage.qss"
+        "./stylesheet/dark/BasePage.qss"
+        "./stylesheet/atomOneDark/BasePage.qss"
         "./stylesheet/light/LiteHarness.qss"
         "./stylesheet/dark/LiteHarness.qss"
         "./stylesheet/atomOneDark/LiteHarness.qss"
+        "./stylesheet/light/SettingsPage.qss"
+        "./stylesheet/dark/SettingsPage.qss"
+        "./stylesheet/atomOneDark/SettingsPage.qss"
+        "./stylesheet/light/NewChatPage.qss"
+        "./stylesheet/dark/NewChatPage.qss"
+        "./stylesheet/atomOneDark/NewChatPage.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 

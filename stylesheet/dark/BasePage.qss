@@ -1,0 +1,5 @@
+BasePage {
+    background-color: rgb(40, 40, 40);
+    border-top-left-radius: 8px;
+    border: 1px solid rgb(56, 56, 56);
+}
