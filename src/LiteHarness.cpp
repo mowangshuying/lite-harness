@@ -5,6 +5,9 @@
 #include <FramelessHelper/Widgets/standardtitlebar.h>
 #include <FluThemeButton.h>
 #include <QIcon>
+#include "NewChatPage.h"
+#include "SettingsPage.h"
+
 
 FRAMELESSHELPER_USE_NAMESPACE
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
@@ -46,12 +49,25 @@ void LiteHarness::__initNavView()
 {
     m_navView->setViewWidth(200);
     m_navView->hideSearchItem();
+    
     m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
+    
+    auto newChatPage = new NewChatPage;
+    m_sLayout->addWidget("NewChatPage", newChatPage);
+
     m_navView->insertIconTextItem(FluAwesomeType::Settings, "Settings", "SettingsPage");
+    auto settingsPage = new SettingsPage;
+    m_sLayout->addWidget("SettingsPage", settingsPage);
 }
 
 void LiteHarness::__connect()
 {
+    /// navView;
+    connect(m_navView, &FluVNavigationView::keyChanged, this, [=](QString key) {
+        m_sLayout->setCurrentWidget(key);
+    });
+
+    /// theme;
     onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
 }
