@@ -49,6 +49,10 @@ set(src
     "src/SettingsPage.h"
     "src/NewChatPage.cpp"
     "src/NewChatPage.h"
+    "src/ChatSessionPage.cpp"
+    "src/ChatSessionPage.h"
+    "src/MessageBubbleWidget.cpp"
+    "src/MessageBubbleWidget.h"
     )
 
 set (qss
@@ -70,6 +74,9 @@ set (qss
         "./stylesheet/light/NewChatPage.qss"
         "./stylesheet/dark/NewChatPage.qss"
         "./stylesheet/atomOneDark/NewChatPage.qss"
+        "./stylesheet/light/ChatSessionPage.qss"
+        "./stylesheet/dark/ChatSessionPage.qss"
+        "./stylesheet/atomOneDark/ChatSessionPage.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 
