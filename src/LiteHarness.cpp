@@ -7,6 +7,7 @@
 #include <QIcon>
 #include "NewChatPage.h"
 #include "SettingsPage.h"
+#include <FluVNavigationSettingsItem.h>
 
 
 FRAMELESSHELPER_USE_NAMESPACE
@@ -55,7 +56,11 @@ void LiteHarness::__initNavView()
     auto newChatPage = new NewChatPage;
     m_sLayout->addWidget("NewChatPage", newChatPage);
 
-    m_navView->insertIconTextItem(FluAwesomeType::Settings, "Settings", "SettingsPage");
+
+    auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
+    settingsItem->setKey("SettingsPage");
+    m_navView->addItemToBottomLayout(settingsItem);
+
     auto settingsPage = new SettingsPage;
     m_sLayout->addWidget("SettingsPage", settingsPage);
 }

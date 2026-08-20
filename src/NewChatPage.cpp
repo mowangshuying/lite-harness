@@ -2,16 +2,29 @@
 #include <FluUtils.h>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <FluTextEdit.h>
+#include "ChatMsgEdit.h"
+#include <QPixmap>
 
 NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 {
-    auto welcomeLabel = new QLabel("New Chat", this);
-    welcomeLabel->setObjectName("welcomeLabel");
-    welcomeLabel->setAlignment(Qt::AlignCenter);
+    auto vMainLayout = new QVBoxLayout(this);
+    setLayout(vMainLayout);
+    vMainLayout->setAlignment(Qt::AlignCenter);
+    vMainLayout->setContentsMargins(35, 35, 35, 35);
+    vMainLayout->setSpacing(15);
 
-    auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(24, 24, 24, 24);
-    mainLayout->addWidget(welcomeLabel, 1);
+    auto label = new QLabel(this);
+    label->setFixedSize(30, 30);
+
+    QPixmap pixmap(":/res/LiteHarness.ico");
+    pixmap = pixmap.scaled(30, 30);
+    label->setPixmap(pixmap);
+    vMainLayout->addWidget(label,0, Qt::AlignHCenter);
+
+    auto chatMsgEdit = new ChatMsgEdit(this);
+    vMainLayout->addWidget(chatMsgEdit);
+
 
     onThemeChanged();
 }
