@@ -8,6 +8,7 @@
 #include "NewChatPage.h"
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
+#include <FluVNavigationIconTextItem.h>
 
 
 FRAMELESSHELPER_USE_NAMESPACE
@@ -42,7 +43,6 @@ void LiteHarness::__initUI()
     m_contentLayout->addLayout(m_sLayout);
 
     // __initNavView();
-
     FramelessWidgetsHelper::get(this)->setHitTestVisible(themeButton);
 }
 
@@ -51,10 +51,11 @@ void LiteHarness::__initNavView()
     m_navView->setViewWidth(200);
     m_navView->hideSearchItem();
     
-    m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
-    
+    auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
     auto newChatPage = new NewChatPage;
     m_sLayout->addWidget("NewChatPage", newChatPage);
+
+    m_navView->insertIconTextItem(FluAwesomeType::History, "History Sessions", "HistorySessionsPage");
 
 
     auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
@@ -63,6 +64,10 @@ void LiteHarness::__initNavView()
 
     auto settingsPage = new SettingsPage;
     m_sLayout->addWidget("SettingsPage", settingsPage);
+
+    /// clicked
+    // emit m_navView->keyChanged("NewChatPage");
+    newChatItem->itemClicked();
 }
 
 void LiteHarness::__connect()
