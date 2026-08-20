@@ -1,0 +1,20 @@
+ChatSessionPage {
+    background-color: rgb(40, 44, 52);
+    border-top-left-radius: 8px;
+    border: 1px solid rgb(56, 60, 68);
+}
+
+MessageBubbleWidget {
+    background-color: transparent;
+}
+
+#msgBrowser[role="User"] {
+    background-color: rgb(82, 139, 255);
+    border-radius: 10px;
+    color: rgb(255, 255, 255);
+}
+
+#msgBrowser[role="Assistant"] {
+    background: transparent;
+    color: rgb(171, 178, 191);
+}

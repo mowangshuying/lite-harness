@@ -6,6 +6,7 @@
 #include <FluThemeButton.h>
 #include <QIcon>
 #include "NewChatPage.h"
+#include "ChatSessionPage.h"
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
@@ -55,7 +56,9 @@ void LiteHarness::__initNavView()
     auto newChatPage = new NewChatPage;
     m_sLayout->addWidget("NewChatPage", newChatPage);
 
-    m_navView->insertIconTextItem(FluAwesomeType::History, "History Sessions", "HistorySessionsPage");
+    auto chatSessionItem = m_navView->insertIconTextItem(FluAwesomeType::Safe, "Chat Session", "ChatSessionPage");
+    auto chatSessionPage = new ChatSessionPage;
+    m_sLayout->addWidget("ChatSessionPage", chatSessionPage);
 
 
     auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
