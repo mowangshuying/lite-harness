@@ -7,4 +7,5 @@ ChatMsgEdit {
 #textEdit {
     background-color: rgb(249, 249, 249);
     border: 1px solid transparent;
+    color: rgb(26, 26, 26);
 };
