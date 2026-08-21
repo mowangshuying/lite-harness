@@ -79,6 +79,8 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
         }
     });
 
+    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &ChatMsgEdit::onThemeChanged);
+
     onThemeChanged();
 }
 
