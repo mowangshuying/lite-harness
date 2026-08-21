@@ -17,9 +17,11 @@ public:
 
     void setContent(const QString &markdown);
     QString content() const { return m_content->toMarkdown(); }
+    void refreshSize();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void updateSize();
@@ -27,4 +29,5 @@ private:
 private:
     Role m_role = Assistant;
     QTextBrowser *m_content = nullptr;
+    bool m_updatingSize = false;
 };
