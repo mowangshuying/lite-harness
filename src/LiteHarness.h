@@ -3,6 +3,10 @@
 #include <FLuFrameLessWidget.h>
 #include <FluStackedLayout.h>
 #include <FluVNavigationView.h>
+#include <QHash>
+
+class NewChatPage;
+class ChatSessionPage;
 
 class LiteHarness : public FluFrameLessWidget
 {
@@ -17,7 +21,13 @@ public:
 
 /// slots;
     void onThemeChanged();
+private:
+    void __createSession(const QString &text);
+
 protected:
     FluStackedLayout *m_sLayout;
     FluVNavigationView *m_navView;
+    NewChatPage *m_newChatPage = nullptr;
+    int m_sessionCount = 0;
+    QHash<QString, ChatSessionPage *> m_sessions;
 };

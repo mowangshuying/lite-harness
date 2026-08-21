@@ -24,7 +24,9 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     auto chatMsgEdit = new ChatMsgEdit(this);
     vMainLayout->addWidget(chatMsgEdit);
+    m_chatMsgEdit = chatMsgEdit;
 
+    connect(m_chatMsgEdit, &ChatMsgEdit::sendMessage, this, &NewChatPage::newChatRequested);
 
     onThemeChanged();
 }

@@ -7,6 +7,7 @@
 #include <QIcon>
 #include "NewChatPage.h"
 #include "ChatSessionPage.h"
+#include "MessageBubbleWidget.h"
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
@@ -53,13 +54,10 @@ void LiteHarness::__initNavView()
     m_navView->hideSearchItem();
     
     auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
-    auto newChatPage = new NewChatPage;
-    m_sLayout->addWidget("NewChatPage", newChatPage);
+    m_newChatPage = new NewChatPage;
+    m_sLayout->addWidget("NewChatPage", m_newChatPage);
 
-    auto chatSessionItem = m_navView->insertIconTextItem(FluAwesomeType::Safe, "Chat Session", "ChatSessionPage");
-    auto chatSessionPage = new ChatSessionPage;
-    m_sLayout->addWidget("ChatSessionPage", chatSessionPage);
-
+    auto sessionsItem = m_navView->insertIconTextItem(FluAwesomeType::List, "Sessions", "SessionsGroup");
 
     auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
     settingsItem->setKey("SettingsPage");
@@ -80,9 +78,41 @@ void LiteHarness::__connect()
         m_sLayout->setCurrentWidget(key);
     });
 
+    /// new chat;
+    connect(m_newChatPage, &NewChatPage::newChatRequested, this, &LiteHarness::__createSession);
+
     /// theme;
     onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
+}
+
+void LiteHarness::__createSession(const QString &text)
+{
+    const int sessionId = ++m_sessionCount;
+    const QString key = QString("Session_%1").arg(sessionId);
+
+    auto title = text.simplified();
+    if (title.length() > 12)
+        title = title.left(12) + "...";
+    if (title.isEmpty())
+        title = tr("新会话");
+
+    auto sessionPage = new ChatSessionPage;
+    sessionPage->addMessage(MessageBubbleWidget::Role::User, text);
+    m_sessions.insert(key, sessionPage);
+    m_sLayout->addWidget(key, sessionPage);
+
+    auto sessionsItem = (FluVNavigationIconTextItem *)m_navView->getItemByKey("SessionsGroup");
+    auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
+    if (childItem == nullptr)
+        return;
+
+    if (sessionsItem->getItems().size() == 1)
+        sessionsItem->onItemClicked();
+    else
+        sessionsItem->adjustItemHeight(sessionsItem);
+
+    childItem->onItemClicked();
 }
 
 void LiteHarness::onThemeChanged()
