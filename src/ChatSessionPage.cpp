@@ -17,7 +17,7 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
 
     m_scrollView = new FluVScrollView(this);
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
-    m_scrollView->getMainLayout()->setContentsMargins(5, 5, 5, 5);
+    m_scrollView->getMainLayout()->setContentsMargins(15, 15, 15, 15);
     m_scrollView->getMainLayout()->setSpacing(15);
     vMainLayout->addWidget(m_scrollView, 1);
 
