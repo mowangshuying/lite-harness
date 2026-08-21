@@ -12,6 +12,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_BINARY_DIR}/bin")
 
+# 自定义 Find 模块路径
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core)
 find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml)
@@ -28,10 +31,15 @@ endif()
 
 # add_subdirectory(src)
 add_subdirectory(3rdparty/FluentUI)
+add_subdirectory(3rdparty/sqlite)
+add_subdirectory(3rdparty/sqlite_orm)
+add_subdirectory(3rdparty/TongYiOpenAi)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/controls
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/sqlite_orm/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/TongYiOpenAi/include
 )
 
 set(inc "")
