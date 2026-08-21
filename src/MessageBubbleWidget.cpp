@@ -46,6 +46,17 @@ MessageBubbleWidget::MessageBubbleWidget(Role role, QWidget *parent) : FluWidget
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
+    // Prevent cursor navigation from exposing a hidden horizontal range.
+    m_content->setLineWrapMode(QTextEdit::WidgetWidth);
+
+    if (QScrollBar *hbar = m_content->horizontalScrollBar())
+    {
+        connect(hbar, &QScrollBar::valueChanged, this, [hbar](int value) {
+            if (value != 0)
+                hbar->setValue(0);
+        });
+    }
+
     auto hLayout = new QHBoxLayout(this);
     hLayout->setContentsMargins(0, 0, 0, 0);
     hLayout->setSpacing(0);
