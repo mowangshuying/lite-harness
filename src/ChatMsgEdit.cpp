@@ -3,6 +3,7 @@
 #include <QTextEdit>
 #include <FluLabel.h>
 #include "SendMsgButton.h"
+#include <FluScrollDelegate.h>
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
@@ -13,9 +14,10 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     vMainLayout->setSpacing(0);
     setLayout(vMainLayout);
 
-    auto textEdit = new QTextEdit(this);
-    textEdit->setObjectName("textEdit");
-    vMainLayout->addWidget(textEdit);
+    m_textEdit = new QTextEdit(this);
+    auto delegate = new FluScrollDelegate(m_textEdit);
+    m_textEdit->setObjectName("textEdit");
+    vMainLayout->addWidget(m_textEdit);
 
     auto toolSetsLayout = new QHBoxLayout();
     vMainLayout->addLayout(toolSetsLayout);
@@ -28,8 +30,16 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     modelLabel->setLabelStyle(FluLabelStyle::BodyTextBlockStyle);
     toolSetsLayout->addWidget(modelLabel);
 
-    auto sendMsgButton = new SendMsgButton(this);
-    toolSetsLayout->addWidget(sendMsgButton);
+    m_sendMsgButton = new SendMsgButton(this);
+    toolSetsLayout->addWidget(m_sendMsgButton);
+
+    connect(m_sendMsgButton, &QPushButton::clicked, this, [this]() {
+        QString text = m_textEdit->toPlainText().trimmed();
+        if (!text.isEmpty()) {
+            emit sendMessage(text);
+            m_textEdit->clear();
+        }
+    });
 
     onThemeChanged();
 }

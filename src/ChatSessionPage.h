@@ -18,6 +18,9 @@ public:
 
     void onThemeChanged() override;
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     FluVScrollView *m_scrollView = nullptr;
     ChatMsgEdit *m_inputEdit = nullptr;
