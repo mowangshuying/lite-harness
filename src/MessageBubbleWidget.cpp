@@ -1,6 +1,7 @@
 #include "MessageBubbleWidget.h"
 #include <QFrame>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QMargins>
@@ -99,9 +100,13 @@ void MessageBubbleWidget::setRole(Role role)
     updateSize();
 }
 
-void MessageBubbleWidget::setContent(const QString &markdown)
+void MessageBubbleWidget::setContent(const QString &content)
 {
-    m_content->setMarkdown(markdown);
+    if (m_role == User)
+        m_content->setPlainText(content);
+    else
+        m_content->setMarkdown(content);
+
     // Defer measurement so the document finishes its internal layout pass
     // before we measure idealWidth / document size.
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
@@ -158,7 +163,10 @@ void MessageBubbleWidget::updateSize()
         qreal margin = doc->documentMargin();
 
         QFontMetrics fm(m_content->font());
-        qreal allTextWidth = fm.horizontalAdvance(doc->toPlainText());
+        qreal allTextWidth = 0;
+        const QStringList lines = doc->toPlainText().split('\n');
+        for (const QString &line : lines)
+            allTextWidth = qMax(allTextWidth, qreal(fm.horizontalAdvance(line)));
         qreal allBubbleWidth = allTextWidth + 2.0 * margin;
         if (allBubbleWidth > availW)
         {
