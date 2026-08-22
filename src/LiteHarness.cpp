@@ -100,7 +100,7 @@ void LiteHarness::__createSession(const QString &text)
         title = tr("新会话");
 
     auto sessionPage = new ChatSessionPage;
-    sessionPage->addMessage(MessageBubbleWidget::Role::User, text);
+    sessionPage->startConversation(text);
     m_sessions.insert(key, sessionPage);
     m_sLayout->addWidget(key, sessionPage);
 

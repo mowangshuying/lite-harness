@@ -14,6 +14,7 @@ public:
     explicit ChatSessionPage(QWidget *parent = nullptr);
 
     void addMessage(MessageBubbleWidget::Role role, const QString &content);
+    void startConversation(const QString &text);
     void scrollToBottom();
     void clearMessages();
 

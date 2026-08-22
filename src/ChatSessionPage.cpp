@@ -55,6 +55,12 @@ void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &
     scrollToBottom();
 }
 
+void ChatSessionPage::startConversation(const QString &text)
+{
+    addMessage(MessageBubbleWidget::Role::User, text);
+    m_agentLoop->run(text);
+}
+
 void ChatSessionPage::scrollToBottom()
 {
     auto scrollBar = m_scrollView->verticalScrollBar();
