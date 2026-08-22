@@ -19,17 +19,32 @@
 // has no parent yet or the parent has no width.
 static int availableContentWidth(const QWidget *bubble)
 {
-    const QWidget *pw = bubble->parentWidget();
-    if (!pw)
+    const QWidget* pw = bubble->parentWidget();
+    const QWidget *ppw = bubble->parentWidget()->parentWidget();
+    if (!pw || !ppw)
         return 0;
-    int w = pw->width();
+    
+    int w = ppw->width();
     if (w <= 0)
         return 0;
-    if (const QLayout *pl = pw->layout())
+
+
+    //if (const QLayout *pl = pw->layout())
+    //{
+    //    const QMargins m = pl->contentsMargins();
+    //    w -= (m.left() + m.right());
+    //}
+
+    if (ppw->layout())
     {
-        const QMargins m = pl->contentsMargins();
-        w -= (m.left() + m.right());
+        w -= ppw->layout()->contentsMargins().left() + ppw->layout()->contentsMargins().right();
     }
+
+    if (pw->layout())
+    {
+        w -= pw->layout()->contentsMargins().left() + pw->layout()->contentsMargins().right();
+    }
+
     return w;
 }
 

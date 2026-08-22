@@ -81,6 +81,7 @@ void ChatSessionPage::clearMessages()
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
 {
     BasePage::resizeEvent(event);
+    //m_scrollView->resize(event->size().width() - 100, m_scrollView->height());
 
     auto mainLayout = m_scrollView->getMainLayout();
     for (int i = 0; i < mainLayout->count(); ++i)

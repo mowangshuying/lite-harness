@@ -97,24 +97,27 @@ void ChatMsgEdit::onThemeChanged()
 
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_textEdit && event->type() == QEvent::KeyPress)
+    if (watched == m_textEdit)
     {
-        auto keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
+        if (event->type() == QEvent::KeyPress)
         {
-            if (keyEvent->modifiers() & Qt::ShiftModifier)
+            auto keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
             {
-                // Shift+Enter: 插入换行，让默认处理继续
-                return false;
+                if (keyEvent->modifiers() & Qt::ShiftModifier)
+                {
+                    // Shift+Enter: 插入换行，让默认处理继续
+                    return false;
+                }
+                // Enter: 触发发送
+                QString text = m_textEdit->toPlainText().trimmed();
+                if (!text.isEmpty())
+                {
+                    emit sendMessage(text);
+                    m_textEdit->clear();
+                }
+                return true; // 拦截事件，不插入换行
             }
-            // Enter: 触发发送
-            QString text = m_textEdit->toPlainText().trimmed();
-            if (!text.isEmpty())
-            {
-                emit sendMessage(text);
-                m_textEdit->clear();
-            }
-            return true; // 拦截事件，不插入换行
         }
     }
     return FluWidget::eventFilter(watched, event);
