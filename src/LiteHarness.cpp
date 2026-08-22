@@ -11,11 +11,13 @@
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
+#include <TongYiOpenAi/TongYiOpenAi.hpp>
 
 
 FRAMELESSHELPER_USE_NAMESPACE
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
+    TongYiOpenAi::__initByEnv();
     __initUI();
     __initNavView();
     __connect();
