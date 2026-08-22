@@ -14,6 +14,9 @@ public:
 
     void onThemeChanged() override;
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 signals:
     void sendMessage(const QString &text);
 
