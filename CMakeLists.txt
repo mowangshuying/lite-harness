@@ -40,6 +40,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/sqlite_orm/include
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/TongYiOpenAi/include
+    # ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/TongYiOpenAi/3rdparty/libhv/include
 )
 
 set(inc "")
@@ -105,4 +106,5 @@ qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
 target_link_libraries(${TGT} PRIVATE 
     FluentUI::Controls
     FluentUI::Utils
+    hv_static
 )
