@@ -5,6 +5,7 @@
 
 class FluVScrollView;
 class ChatMsgEdit;
+class AgentLoop;
 
 class ChatSessionPage : public BasePage
 {
@@ -24,4 +25,5 @@ protected:
 private:
     FluVScrollView *m_scrollView = nullptr;
     ChatMsgEdit *m_inputEdit = nullptr;
+    AgentLoop *m_agentLoop = nullptr;
 };
