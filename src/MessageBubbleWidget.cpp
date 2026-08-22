@@ -171,6 +171,7 @@ void MessageBubbleWidget::updateSize()
             QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
             return;
         }
+
         qreal margin = doc->documentMargin();
 
         QFontMetrics fm(m_content->font());
@@ -188,23 +189,23 @@ void MessageBubbleWidget::updateSize()
         }
         else
         {
+            // Text fits within available width — use QFontMetrics measurement
+            // directly. doc->idealWidth() can return 0 before the document
+            // layout has fully settled, so we avoid relying on it here.
             QSignalBlocker blocker(doc);
-            doc->setTextWidth(-1);
-            doc->adjustSize();
-            qreal naturalTextWidth = doc->idealWidth();
-            qreal naturalBubbleWidth = naturalTextWidth + 2.0 * margin;
-
-            naturalBubbleWidth = qMin(qCeil(allBubbleWidth), qCeil(naturalBubbleWidth));
-            doc->setTextWidth(naturalBubbleWidth);
+            qreal finalW = qCeil(allBubbleWidth);
+            doc->setTextWidth(finalW);
             QSizeF docSize = doc->size();
-            m_content->setFixedSize(naturalBubbleWidth, qCeil(docSize.height()));
-
+            m_content->setFixedSize(finalW, qCeil(docSize.height()));
         }
     }
     else
     {
-        int vpWidth = m_content->viewport()->width();
-        if (vpWidth <= 0)
+        // int vpWidth = m_content->viewport()->width();
+
+        int availW = availableContentWidth(this);
+        // availW *= 0.75;
+        if (availW <= 0)
         {
             // Viewport not yet realized — retry on next event loop tick
             m_updatingSize = false;
@@ -213,11 +214,12 @@ void MessageBubbleWidget::updateSize()
         }
         {
             QSignalBlocker blocker(doc);
-            doc->setTextWidth(vpWidth);
-            doc->adjustSize();
+            doc->setTextWidth(availW);
+            // doc->adjustSize();
         }
+        // QSizeF docSize = doc->size();
         QSizeF docSize = doc->size();
-        m_content->setFixedHeight(qMax(25, qCeil(docSize.height())));
+        m_content->setFixedSize(availW, qCeil(docSize.height()));
     }
 
     m_updatingSize = false;
