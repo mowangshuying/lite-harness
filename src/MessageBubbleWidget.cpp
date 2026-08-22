@@ -11,6 +11,9 @@
 #include <QTextDocument>
 #include <QTimer>
 #include <QtMath>
+#include <functional>
+#include <FluAction.h>
+#include <FluPMenu.h>
 // #include <FluScrollDelegate.h>
 
 // Actual row width available to a bubble: parent widget (the scroll area's
@@ -60,6 +63,28 @@ MessageBubbleWidget::MessageBubbleWidget(Role role, QWidget *parent) : FluWidget
     m_content->setOpenExternalLinks(true);
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_content->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    connect(m_content, &QTextBrowser::customContextMenuRequested, this, [this](const QPoint &pos) {
+        auto menu = new FluPMenu(this);
+
+        auto addAction = [menu](FluAwesomeType icon, const QString &text, const QKeySequence &shortcut,
+                                bool enabled, const std::function<void()> &handler) {
+            auto action = new FluAction(icon, text, menu);
+            action->setShortcut(shortcut);
+            action->setEnabled(enabled);
+            menu->addAction(action);
+            QObject::connect(action, &QAction::triggered, menu, handler);
+        };
+
+        addAction(FluAwesomeType::Copy, tr("Copy"), QKeySequence::Copy,
+                  m_content->textCursor().hasSelection(), [this]() { m_content->copy(); });
+        addAction(FluAwesomeType::SelectAll, tr("Select All"), QKeySequence::SelectAll,
+                  !m_content->toPlainText().isEmpty(), [this]() { m_content->selectAll(); });
+
+        menu->exec(m_content->mapToGlobal(pos));
+        menu->deleteLater();
+    });
 
     // Prevent cursor navigation from exposing a hidden horizontal range.
     m_content->setLineWrapMode(QTextEdit::WidgetWidth);
