@@ -17,7 +17,7 @@
 FRAMELESSHELPER_USE_NAMESPACE
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
-    QOpenAi::__initByEnv();
+    QOpenAi::initByEnv();
     __initUI();
     __initNavView();
     __connect();

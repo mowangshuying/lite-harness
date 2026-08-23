@@ -97,7 +97,7 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
     request[QStringLiteral("enable_thinking")] = true;
     // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
 
-    QOpenAi::ChatStream *s = QOpenAi::completion().createStream(request, this);
+    QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
     m_currentStream = s;
 
     // 增量转发（this 上下文：AgentLoop 销毁自动断连，s 为 this 子对象自动释放）
