@@ -101,8 +101,8 @@ void ThinkingBlock::setExpanded(bool expanded)
         return;
     m_expanded = expanded;
 
-    // 先保证高度已测量，动画才有正确的目标高度
-    if (m_fullContentHeight <= 0)
+    // 展开时以当前实布局宽度强制重测，避免创建阶段宽度未稳定导致的错误高度
+    if (expanded)
         measureContent();
 
     if (m_anim == nullptr)
@@ -192,7 +192,11 @@ void ThinkingBlock::measureContent()
     QTextDocument *doc = m_content->document();
     QSignalBlocker blocker(doc);
     doc->setTextWidth(w);
-    m_fullContentHeight = qCeil(doc->size().height());
+
+    // QSS #thinkingContent 上下 padding 各 4px（三主题一致）会占用视口高度，
+    // 若不做补偿，展开时底部内容会被裁掉
+    const int verticalChrome = 8;
+    m_fullContentHeight = qCeil(doc->size().height()) + verticalChrome;
 
     applyProgress();
 }
