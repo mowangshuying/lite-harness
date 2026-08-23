@@ -1,34 +1,36 @@
 #include "AgentLoop.h"
 
+#include "QOpenAi.h"
+
 #include <QJsonDocument>
 #include <QProcess>
 #include <QDir>
+#include <QTimer>
 #include <QDebug>
-
-#include <TongYiOpenAi/TongYiOpenAi.hpp>
 
 namespace {
 
-using Json = nlohmann::json;
+// 工具调用轮次上限（防止模型反复请求工具形成死循环）
+constexpr int kMaxToolIterations = 30;
 
-// QJsonObject -> nlohmann::json（通过紧凑 JSON 字符串互转）
-Json toNlohmann(const QJsonObject &obj)
+// 危险命令黑名单
+const QStringList &dangerousCommands()
 {
-    const QByteArray bytes = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-    return Json::parse(bytes.toStdString());
-}
-
-// nlohmann::json -> QJsonObject
-QJsonObject fromNlohmann(const Json &json)
-{
-    return QJsonDocument::fromJson(QByteArray::fromStdString(json.dump())).object();
+    static const QStringList list = {
+        QStringLiteral("rm -rf /"),
+        QStringLiteral("sudo"),
+        QStringLiteral("shutdown"),
+        QStringLiteral("reboot"),
+        QStringLiteral("> /dev/"),
+    };
+    return list;
 }
 
 } // namespace
 
 AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
 {
-    // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen-max
+    // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen3.8-max
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())
         m_model = QStringLiteral("qwen3.8-max");
@@ -43,175 +45,231 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
 
 AgentLoop::~AgentLoop()
 {
-    if (m_thread && m_thread->isRunning())
+    // 与 stop() 相同但静默（不发信号）
+    for (QProcess *p : m_activeProcesses)
     {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        if (!m_thread->wait(8000))
-        {
-            qWarning() << "AgentLoop: worker thread did not stop in time.";
-            m_thread->terminate();
-            m_thread->wait();
-        }
+        if (p)
+            p->kill();
+    }
+    m_activeProcesses.clear();
+
+    if (m_currentStream)
+    {
+        m_currentStream->disconnect(this);
+        m_currentStream->deleteLater();
+        m_currentStream = nullptr;
     }
     m_messages.clear();
 }
 
 void AgentLoop::run(const QString &userMessage)
 {
-    // 已有一个循环周期在运行则拒绝新消息（快速路径，不加锁）
-    if (m_running.loadAcquire())
+    // 已有一个循环周期在运行则拒绝新消息
+    if (m_running)
     {
         emit error(tr("Agent 仍在运行中，请等待完成后再发送。"));
         return;
     }
 
-    QMutexLocker locker(&m_mutex); // 仅保护消息历史的快速追加
-    m_running.storeRelease(true);
+    m_running = true;
+    m_toolIterations = 0;
 
     // 追加用户消息到会话历史
     QJsonObject userMessageObj;
     userMessageObj[QStringLiteral("role")] = QStringLiteral("user");
     userMessageObj[QStringLiteral("content")] = userMessage;
     m_messages.append(userMessageObj);
-    locker.unlock();
 
-    // 每个循环周期启动一个工作线程，结束后自动回收
-    auto *thread = QThread::create([this] { processLoop(); });
-    thread->setObjectName(QStringLiteral("AgentLoopThread"));
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    connect(thread, &QThread::finished, this, [this] { m_running.storeRelease(false); });
-    m_thread = thread;
-    thread->start();
+    // 快照历史并发起流式请求（事件驱动，不创建工作线程）
+    QJsonArray messagesJson;
+    for (const auto &msg : m_messages)
+        messagesJson.append(msg);
+    startChatRequest(messagesJson);
 }
 
-void AgentLoop::processLoop()
+void AgentLoop::startChatRequest(const QJsonArray &messages)
 {
-    // 防止模型反复请求工具形成死循环
-    constexpr int kMaxToolIterations = 30;
-    int toolIterations = 0;
+    QJsonObject request;
+    request[QStringLiteral("model")] = m_model;
+    request[QStringLiteral("messages")] = messages;
+    request[QStringLiteral("tools")] = createToolsDefinition();
+    // 默认开启思考
+    request[QStringLiteral("enable_thinking")] = true;
+    // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
 
-    while (true)
-    {
-        if (QThread::currentThread()->isInterruptionRequested())
-            break;
+    QOpenAi::ChatStream *s = QOpenAi::completion().createStream(request, this);
+    m_currentStream = s;
 
-        // 快照当前消息历史（快速，不加锁等待期间不阻塞 UI）
-        QJsonArray messagesJson;
+    // 增量转发（this 上下文：AgentLoop 销毁自动断连，s 为 this 子对象自动释放）
+    connect(s, &QOpenAi::ChatStream::thinkingDelta, this, &AgentLoop::thinkingDelta);
+    connect(s, &QOpenAi::ChatStream::textDelta, this, &AgentLoop::textDelta);
+
+    connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
+        m_currentStream = nullptr;
+        s->deleteLater();
+
+        // 无工具调用 -> 最终回复，循环结束
+        const QJsonArray toolCalls = fullMsg.value(QStringLiteral("tool_calls")).toArray();
+        if (toolCalls.isEmpty())
         {
-            QMutexLocker locker(&m_mutex);
-            for (const auto &msg : m_messages)
-                messagesJson.append(msg);
+            m_messages.append(fullMsg);
+            m_running = false;
+            emit finished(fullMsg.value(QStringLiteral("content")).toString());
+            return;
         }
 
-        QJsonObject request;
-        request[QStringLiteral("model")] = m_model;
-        request[QStringLiteral("messages")] = messagesJson;
-        request[QStringLiteral("tools")] = createToolsDefinition();
-
-        // 1. 调用 API（同步阻塞，必须在工作线程，期间不持有锁）
-        const Json response = TongYiOpenAi::completion().create(toNlohmann(request));
-
-        // 2. 容错：HTTP 错误时返回空 Json
-        if (response.is_null() || !response.contains("choices") || response["choices"].empty())
+        // 有工具调用 -> 防死循环计数
+        if (++m_toolIterations > kMaxToolIterations)
         {
-            emit error(tr("API 调用失败：未返回有效响应。请检查网络与 TongYiOpenAi 环境变量配置。"));
-            break;
-        }
-
-        const QJsonObject respObj = fromNlohmann(response);
-        const QJsonArray choices = respObj.value(QStringLiteral("choices")).toArray();
-        if (choices.isEmpty())
-        {
-            emit error(tr("API 调用失败：choices 为空。"));
-            break;
-        }
-        const QJsonObject message = choices.first().toObject().value(QStringLiteral("message")).toObject();
-
-        // 3. 无 tool_calls -> 最终回复，循环结束
-        if (!message.contains(QStringLiteral("tool_calls")))
-        {
-            {
-                QMutexLocker locker(&m_mutex);
-                m_messages.append(message);
-            }
-            const QString replyText = message.value(QStringLiteral("content")).toString();
-            emit finished(replyText);
-            break;
-        }
-
-        // 4. 有 tool_calls -> 追加 assistant 消息，逐个执行工具
-        if (++toolIterations > kMaxToolIterations)
-        {
+            m_running = false;
             emit error(tr("工具调用次数超过上限（%1 次），终止循环。").arg(kMaxToolIterations));
-            break;
+            return;
         }
 
-        {
-            QMutexLocker locker(&m_mutex);
-            m_messages.append(message);
-        }
+        continueWithToolResults(fullMsg);
+    });
 
-        const QJsonArray toolCalls = message.value(QStringLiteral("tool_calls")).toArray();
-        for (const auto &toolCallValue : toolCalls)
-        {
-            const QJsonObject toolCall = toolCallValue.toObject();
-            const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
-
-            // 解析 arguments JSON 中的 command 字段
-            const QJsonObject args =
-                QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
-            const QString command = args.value(QStringLiteral("command")).toString();
-
-            const QString output = executeBash(command);
-            emit toolOutputReady(command, output);
-
-            // 构建 tool 结果消息回填上下文
-            QJsonObject toolResult;
-            toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-            toolResult[QStringLiteral("tool_call_id")] = toolCall.value(QStringLiteral("id")).toString();
-            toolResult[QStringLiteral("content")] = output;
-            {
-                QMutexLocker locker(&m_mutex);
-                m_messages.append(toolResult);
-            }
-        }
-    }
+    connect(s, &QOpenAi::ChatStream::error, this, [this, s](const QString &msg) {
+        m_currentStream = nullptr;
+        s->deleteLater();
+        m_running = false;
+        emit error(msg);
+    });
 }
 
-QString AgentLoop::executeBash(const QString &command)
+void AgentLoop::continueWithToolResults(const QJsonObject &assistantMessage)
 {
-    // 安全检查：危险命令黑名单
-    static const QStringList kDangerous = {
-        QStringLiteral("rm -rf /"),
-        QStringLiteral("sudo"),
-        QStringLiteral("shutdown"),
-        QStringLiteral("reboot"),
-        QStringLiteral("> /dev/"),
-    };
-    for (const auto &danger : kDangerous)
+    // 追加带 tool_calls 的完整 assistant 消息
+    m_messages.append(assistantMessage);
+    m_pendingToolCalls = assistantMessage.value(QStringLiteral("tool_calls")).toArray();
+    m_toolResultsReady = QJsonArray();
+
+    runNextTool();
+}
+
+void AgentLoop::runNextTool()
+{
+    if (!m_running)
+        return;
+
+    if (m_pendingToolCalls.isEmpty())
+    {
+        // 全部工具执行完成：回填结果到历史并再次请求
+        for (const auto &value : m_toolResultsReady)
+            m_messages.append(value.toObject());
+        m_toolResultsReady = QJsonArray();
+
+        QJsonArray messagesJson;
+        for (const auto &msg : m_messages)
+            messagesJson.append(msg);
+        startChatRequest(messagesJson);
+        return;
+    }
+
+    const QJsonObject toolCall = m_pendingToolCalls.takeAt(0).toObject();
+    executeBashAsync(toolCall);
+}
+
+void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &command, const QString &output)
+{
+    // 已被 stop()/析构中断则终止工具链
+    if (!m_running)
+        return;
+
+    emit toolOutputReady(command, output);
+
+    // 构建 tool 结果消息回填上下文
+    QJsonObject toolResult;
+    toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+    toolResult[QStringLiteral("tool_call_id")] = toolCall.value(QStringLiteral("id")).toString();
+    toolResult[QStringLiteral("content")] = output;
+    m_toolResultsReady.append(toolResult);
+
+    runNextTool();
+}
+
+void AgentLoop::executeBashAsync(const QJsonObject &toolCall)
+{
+    // 解析参数（id / function.arguments 中的 command）
+    const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
+    const QJsonObject args =
+        QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+    const QString command = args.value(QStringLiteral("command")).toString();
+
+    // 安全检查：危险命令黑名单（同步短路，不启动进程）
+    for (const auto &danger : dangerousCommands())
     {
         if (command.contains(danger, Qt::CaseInsensitive))
-            return QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
+        {
+            onToolFinished(toolCall, command,
+                           QStringLiteral("Error: Dangerous command blocked: %1").arg(command));
+            return;
+        }
     }
 
-    // 使用 QProcess 执行（120 秒超时）
-    QProcess process;
-    process.setProcessChannelMode(QProcess::MergedChannels);
-    process.setWorkingDirectory(QDir::currentPath());
-    process.start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
-    if (!process.waitForStarted(5000))
-        return QStringLiteral("Error: Failed to start process: %1").arg(process.errorString());
-    if (!process.waitForFinished(120000))
+    // 异步执行（QProcess 为 this 子对象，析构自动清理）
+    auto *process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->setWorkingDirectory(QDir::currentPath());
+    m_activeProcesses.append(process);
+
+    // 120 秒超时：kill 后 finished 信号触发，靠标志区分“超时被杀” vs “正常结束”
+    auto *timedOut = new bool(false);
+    QTimer::singleShot(120000, process, [process, timedOut]() {
+        *timedOut = true;
+        process->kill();
+    });
+
+    connect(process, &QProcess::finished, this,
+            [this, process, toolCall, command, timedOut](int, QProcess::ExitStatus) {
+        m_activeProcesses.removeAll(process);
+
+        QString output;
+        if (*timedOut)
+        {
+            output = QStringLiteral("Error: Timeout (120s)");
+        }
+        else
+        {
+            output = QString::fromLocal8Bit(process->readAllStandardOutput());
+            if (output.length() > 50000)
+                output = output.left(50000); // 截断
+            if (output.isEmpty())
+                output = QStringLiteral("(no output)");
+        }
+        delete timedOut;
+        process->deleteLater();
+
+        onToolFinished(toolCall, command, output);
+    });
+
+    process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
+}
+
+void AgentLoop::stop()
+{
+    if (!m_running)
+        return;
+
+    // 中断正在执行的 QProcess（其 finished 后 onToolFinished 因 m_running=false 不再继续）
+    for (QProcess *p : m_activeProcesses)
     {
-        process.kill();
-        return QStringLiteral("Error: Timeout (120s)");
+        if (p)
+            p->kill();
+    }
+    m_activeProcesses.clear();
+
+    // 主动取消当前流（cancel 内部设 done=true，后续信号不再处理）
+    if (m_currentStream)
+    {
+        static_cast<QOpenAi::ChatStream*>(m_currentStream.data())->cancel();
+        m_currentStream->disconnect(this);
+        m_currentStream->deleteLater();
+        m_currentStream = nullptr;
     }
 
-    QString output = QString::fromLocal8Bit(process.readAllStandardOutput());
-    if (output.length() > 50000)
-        output = output.left(50000); // 截断
-    return output.isEmpty() ? QStringLiteral("(no output)") : output;
+    m_running = false;
+    emit error(tr("已停止。"));
 }
 
 QJsonArray AgentLoop::createToolsDefinition()

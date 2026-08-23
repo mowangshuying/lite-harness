@@ -27,18 +27,46 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
     // vMainLayout->addWidget(m_inputEdit, 0, Qt::AlignHCenter);
     hLayout->addWidget(m_inputEdit, 1);
 
-    // Agent Loop：真实模型回复 + 工具调用循环
+    // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
     m_agentLoop = new AgentLoop(this);
     connect(m_agentLoop, &AgentLoop::finished, this, [this](const QString &reply) {
-        addMessage(MessageBubbleWidget::Role::Assistant, reply);
+        // 流式气泡已存在：收尾渲染后复用该气泡，不另起新气泡
+        if (m_currentBubble)
+        {
+            m_currentBubble->finishStreaming();
+            m_currentBubble = nullptr;
+        }
+        else
+        {
+            addMessage(MessageBubbleWidget::Role::Assistant, reply);
+        }
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
+        if (m_currentBubble)
+        {
+            m_currentBubble->finishStreaming();
+            m_currentBubble = nullptr;
+        }
         addMessage(MessageBubbleWidget::Role::Assistant, QString("*Error:* %1").arg(err));
+    });
+    connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
+        if (m_currentBubble)
+        {
+            m_currentBubble->appendThinkingText(delta);
+            scrollToBottom();
+        }
+    });
+    connect(m_agentLoop, &AgentLoop::textDelta, this, [this](const QString &delta) {
+        if (m_currentBubble)
+        {
+            m_currentBubble->appendText(delta);
+            scrollToBottom();
+        }
     });
 
     connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
         addMessage(MessageBubbleWidget::Role::User, text);
-        m_agentLoop->run(text); // 启动代理循环
+        startAssistantStream(text); // 创建流式气泡并启动代理循环
     });
 
     vMainLayout->addLayout(hLayout);
@@ -55,10 +83,26 @@ void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &
     scrollToBottom();
 }
 
+void ChatSessionPage::startAssistantStream(const QString &userText)
+{
+    // 兜底：上一轮未收到 finished 时收尾清场
+    if (m_currentBubble)
+    {
+        m_currentBubble->finishStreaming();
+        m_currentBubble = nullptr;
+    }
+
+    m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
+    m_currentBubble->startStreaming();
+    m_scrollView->getMainLayout()->addWidget(m_currentBubble);
+    scrollToBottom();
+    m_agentLoop->run(userText);
+}
+
 void ChatSessionPage::startConversation(const QString &text)
 {
     addMessage(MessageBubbleWidget::Role::User, text);
-    m_agentLoop->run(text);
+    startAssistantStream(text);
 }
 
 void ChatSessionPage::scrollToBottom()
@@ -69,6 +113,7 @@ void ChatSessionPage::scrollToBottom()
 
 void ChatSessionPage::clearMessages()
 {
+    m_currentBubble = nullptr;
     auto mainLayout = m_scrollView->getMainLayout();
     while (auto item = mainLayout->takeAt(0))
     {

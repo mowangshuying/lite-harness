@@ -4,6 +4,3 @@
 [submodule "3rdparty/sqlite_orm"]
 	path = 3rdparty/sqlite_orm
 	url = https://github.com/fnc12/sqlite_orm.git
-[submodule "3rdparty/TongYiOpenAi"]
-	path = 3rdparty/TongYiOpenAi
-	url = https://github.com/mowangshuying/TongYiOpenAi.git

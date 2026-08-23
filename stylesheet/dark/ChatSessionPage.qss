@@ -18,3 +18,11 @@ MessageBubbleWidget {
     background: transparent;
     color: rgb(200, 200, 200);
 }
+
+#msgBrowser[role="Assistant"] blockquote {
+    color: rgb(128, 128, 128);
+    font-style: italic;
+    border-left: 3px solid rgba(128, 128, 128, 80);
+    margin-left: 4px;
+    padding-left: 8px;
+}

@@ -16,8 +16,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_BINARY_DIR}/bin")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core)
-find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml)
+find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml Network)
 
 if (MSVC_IDE)
 	message(STATUS "Qt6Widgets_LIBRARIES: ${Qt6Widgets_LIBRARIES}")
@@ -33,14 +33,11 @@ endif()
 add_subdirectory(3rdparty/FluentUI)
 add_subdirectory(3rdparty/sqlite)
 add_subdirectory(3rdparty/sqlite_orm)
-add_subdirectory(3rdparty/TongYiOpenAi)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/controls
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/sqlite_orm/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/TongYiOpenAi/include
-    # ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/TongYiOpenAi/3rdparty/libhv/include
 )
 
 set(inc "")
@@ -64,6 +61,8 @@ set(src
     "src/ChatSessionPage.h"
     "src/MessageBubbleWidget.cpp"
     "src/MessageBubbleWidget.h"
+    "src/QOpenAi.cpp"
+    "src/QOpenAi.h"
     )
 
 set (qss
@@ -108,5 +107,5 @@ qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
 target_link_libraries(${TGT} PRIVATE 
     FluentUI::Controls
     FluentUI::Utils
-    hv_static
+    Qt6::Network
 )

@@ -1,4 +1,5 @@
 #include "MessageBubbleWidget.h"
+#include <QColor>
 #include <QFrame>
 #include <QEvent>
 #include <QFontMetrics>
@@ -8,6 +9,8 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <QTextCharFormat>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
 #include <QtMath>
@@ -125,6 +128,12 @@ MessageBubbleWidget::MessageBubbleWidget(Role role, QWidget *parent) : FluWidget
         QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
     });
 
+    // 流式期间测量节流：增量追加时最多每 50ms 触发一次 updateSize，保证滚动跟随
+    m_streamResizeTimer = new QTimer(this);
+    m_streamResizeTimer->setInterval(50);
+    m_streamResizeTimer->setSingleShot(true);
+    connect(m_streamResizeTimer, &QTimer::timeout, this, &MessageBubbleWidget::updateSize);
+
     setRole(role);
 }
 
@@ -168,6 +177,88 @@ void MessageBubbleWidget::refreshSize()
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }
 
+void MessageBubbleWidget::startStreaming(const QString &placeholder)
+{
+    m_streaming = true;
+    m_thinkingBuffer.clear();
+    m_textBuffer.clear();
+    m_content->setPlainText(placeholder);
+    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+}
+
+void MessageBubbleWidget::appendThinkingText(const QString &delta)
+{
+    if (!m_streaming || delta.isEmpty())
+        return;
+
+    m_thinkingBuffer += delta;
+
+    // 灰色斜体追加，纯文本路径速度更快
+    QTextCursor cur = m_content->textCursor();
+    cur.movePosition(QTextCursor::End);
+    QTextCharFormat fmt;
+    fmt.setForeground(QColor(128, 128, 128));
+    fmt.setFontItalic(true);
+    cur.insertText(delta, fmt);
+
+    scheduleStreamResize();
+}
+
+void MessageBubbleWidget::appendText(const QString &delta)
+{
+    if (!m_streaming || delta.isEmpty())
+        return;
+
+    m_textBuffer += delta;
+
+    // 默认格式追加，继承主题文本色
+    QTextCursor cur = m_content->textCursor();
+    cur.movePosition(QTextCursor::End);
+    cur.insertText(delta);
+
+    scheduleStreamResize();
+}
+
+void MessageBubbleWidget::finishStreaming()
+{
+    m_streaming = false;
+    if (m_streamResizeTimer)
+        m_streamResizeTimer->stop();
+
+    const QString thinking = m_thinkingBuffer.trimmed();
+    if (thinking.isEmpty())
+    {
+        // 无思考：直接渲染正文 markdown
+        m_content->setMarkdown(m_textBuffer);
+    }
+    else
+    {
+        // 先渲染正文 markdown，再把思考区以灰色斜体插到最前。
+        // QSS 无法样式化 QTextDocument 内部的 blockquote（那不是 widget），
+        // QTextMarkdownImporter 也不应用 document defaultStyleSheet，
+        // 因此直接以 HTML 片段插入保证三套主题下灰色斜体效果。
+        m_content->setMarkdown(m_textBuffer);
+
+        QString escaped = thinking.toHtmlEscaped();
+        escaped.replace('\n', QStringLiteral("<br>"));
+        const QString thinkingHtml = QStringLiteral(
+            "<div style='color:#808080;font-style:italic;'>%1</div><hr>").arg(escaped);
+
+        QTextCursor cur(m_content->document());
+        cur.movePosition(QTextCursor::Start);
+        cur.insertHtml(thinkingHtml);
+    }
+
+    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+}
+
+void MessageBubbleWidget::scheduleStreamResize()
+{
+    // 节流：timer 未激活才启动，timeout 时执行 updateSize
+    if (m_streamResizeTimer && !m_streamResizeTimer->isActive())
+        m_streamResizeTimer->start();
+}
+
 bool MessageBubbleWidget::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == parentWidget() && event->type() == QEvent::Resize)
@@ -190,6 +281,14 @@ void MessageBubbleWidget::updateSize()
     if (m_updatingSize)
         return;
     m_updatingSize = true;
+
+    // 流式期间每段增量都会触发 contentsChanged → updateSize，
+    // 节流定时器已挂起时直接跳过，由 timer timeout 统一测量
+    if (m_streaming && m_streamResizeTimer && m_streamResizeTimer->isActive())
+    {
+        m_updatingSize = false;
+        return;
+    }
 
     QTextDocument *doc = m_content->document();
     if (!doc)

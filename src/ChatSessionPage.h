@@ -24,7 +24,11 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    void startAssistantStream(const QString &userText);
+
+private:
     FluVScrollView *m_scrollView = nullptr;
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
+    MessageBubbleWidget *m_currentBubble = nullptr;   // 当前流式气泡
 };
