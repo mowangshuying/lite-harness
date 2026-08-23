@@ -209,6 +209,7 @@ void ChatStream::cancel()
 void ChatStream::startRequest(const QJsonObject &input, Mode mode)
 {
     d->input = input;
+    d->input[QStringLiteral("stream")] = true; // 流式请求必须参数
     d->mode = mode;
     d->retriesLeft = client().maxRetries;
     sendRequest();
