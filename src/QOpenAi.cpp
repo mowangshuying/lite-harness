@@ -269,6 +269,8 @@ void ChatStream::readIncoming()
 
 void ChatStream::processFrame(const QByteArray &frame)
 {
+    if (d->done)
+        return; // 已收尾，忽略残留帧（如 [DONE] 后额外数据）
     if (client().verbose)
         qDebug() << "QOpenAi [sse]" << frame;
 
@@ -458,6 +460,7 @@ void ChatStream::finishStream()
     }
 
     // 正常收尾：组装完整 assistant 消息
+    d->done = true; // 防重入：后续 [DONE] 或残留帧再触发收尾时被守卫拦下
     QJsonObject assistantMsg;
     assistantMsg[QStringLiteral("role")] = QStringLiteral("assistant");
     assistantMsg[QStringLiteral("content")] = d->content;
