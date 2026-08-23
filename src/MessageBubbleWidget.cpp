@@ -242,7 +242,7 @@ void MessageBubbleWidget::finishStreaming()
         QString escaped = thinking.toHtmlEscaped();
         escaped.replace('\n', QStringLiteral("<br>"));
         const QString thinkingHtml = QStringLiteral(
-            "<div style='color:#808080;font-style:italic;'>%1</div><hr>").arg(escaped);
+            "<div style='color:#808080;font-style:italic;'>%1</div>").arg(escaped);
 
         QTextCursor cur(m_content->document());
         cur.movePosition(QTextCursor::Start);
