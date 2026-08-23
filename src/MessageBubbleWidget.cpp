@@ -1,4 +1,5 @@
 #include "MessageBubbleWidget.h"
+#include "ThinkingBlock.h"
 #include <QColor>
 #include <QFrame>
 #include <QEvent>
@@ -13,6 +14,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <QtMath>
 #include <functional>
 #include <FluAction.h>
@@ -182,6 +184,7 @@ void MessageBubbleWidget::startStreaming(const QString &placeholder)
     m_streaming = true;
     m_thinkingBuffer.clear();
     m_textBuffer.clear();
+    m_thinkingStarted = false;
     m_content->setPlainText(placeholder);
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }
@@ -190,6 +193,13 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
 {
     if (!m_streaming || delta.isEmpty())
         return;
+
+    // 首个 thinkingDelta 到来时启动思考计时
+    if (!m_thinkingStarted)
+    {
+        m_thinkingTimer.start();
+        m_thinkingStarted = true;
+    }
 
     m_thinkingBuffer += delta;
 
@@ -230,24 +240,36 @@ void MessageBubbleWidget::finishStreaming()
     {
         // 无思考：直接渲染正文 markdown
         m_content->setMarkdown(m_textBuffer);
+        QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+        return;
     }
-    else
+
+    // 思考耗时（秒）：从首个 thinkingDelta 到 messageFinished
+    const int thinkingMs = m_thinkingStarted ? int(m_thinkingTimer.elapsed()) : 0;
+    const int thinkingSeconds = qMax(0, thinkingMs / 1000);
+
+    // 重建为纵向布局：上部 ThinkingBlock（可折叠思考区），下部正文 markdown
+    QLayout *oldLayout = layout();
+    if (oldLayout)
     {
-        // 先渲染正文 markdown，再把思考区以灰色斜体插到最前。
-        // QSS 无法样式化 QTextDocument 内部的 blockquote（那不是 widget），
-        // QTextMarkdownImporter 也不应用 document defaultStyleSheet，
-        // 因此直接以 HTML 片段插入保证三套主题下灰色斜体效果。
-        m_content->setMarkdown(m_textBuffer);
-
-        QString escaped = thinking.toHtmlEscaped();
-        escaped.replace('\n', QStringLiteral("<br>"));
-        const QString thinkingHtml = QStringLiteral(
-            "<div style='color:#808080;font-style:italic;'>%1</div>").arg(escaped);
-
-        QTextCursor cur(m_content->document());
-        cur.movePosition(QTextCursor::Start);
-        cur.insertHtml(thinkingHtml);
+        oldLayout->removeWidget(m_content);
+        delete oldLayout;
     }
+
+    auto *thinkingBlock = new ThinkingBlock(this);
+    thinkingBlock->setThinkingContent(thinking);
+    thinkingBlock->setThinkingDuration(thinkingSeconds);
+    thinkingBlock->setExpanded(false);
+
+    auto *vLayout = new QVBoxLayout(this);
+    vLayout->setContentsMargins(0, 0, 0, 0);
+    vLayout->setSpacing(8);
+    vLayout->addWidget(thinkingBlock);
+    vLayout->addWidget(m_content);
+    setLayout(vLayout);
+
+    // 正文仅渲染 markdown（思考区已移入 ThinkingBlock）
+    m_content->setMarkdown(m_textBuffer);
 
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }

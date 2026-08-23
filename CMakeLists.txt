@@ -61,6 +61,8 @@ set(src
     "src/ChatSessionPage.h"
     "src/MessageBubbleWidget.cpp"
     "src/MessageBubbleWidget.h"
+    "src/ThinkingBlock.cpp"
+    "src/ThinkingBlock.h"
     "src/QOpenAi.cpp"
     "src/QOpenAi.h"
     )
@@ -87,6 +89,9 @@ set (qss
         "./stylesheet/light/ChatSessionPage.qss"
         "./stylesheet/dark/ChatSessionPage.qss"
         "./stylesheet/atomOneDark/ChatSessionPage.qss"
+        "./stylesheet/light/ThinkingBlock.qss"
+        "./stylesheet/dark/ThinkingBlock.qss"
+        "./stylesheet/atomOneDark/ThinkingBlock.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 

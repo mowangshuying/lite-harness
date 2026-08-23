@@ -1,6 +1,7 @@
 #pragma once
 
 #include <FluWidget.h>
+#include <QElapsedTimer>
 #include <QTextBrowser>
 
 class QTimer;
@@ -42,5 +43,7 @@ private:
     bool m_streaming = false;
     QString m_thinkingBuffer;   // 累积思考原文
     QString m_textBuffer;       // 累积正文原文
+    QElapsedTimer m_thinkingTimer;  // 思考耗时计时（首个 thinkingDelta 起）
+    bool m_thinkingStarted = false; // 是否已开始计时
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };
