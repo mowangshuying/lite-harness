@@ -67,7 +67,7 @@ QString endpointFor(OpenAiClient &c, QOpenAi::ChatStream::Mode mode)
 QJsonObject blockingRequest(OpenAiClient &c, const QString &endpoint, const QJsonObject &input)
 {
     if (c.url.isEmpty() || c.token.isEmpty())
-        return errorJson(QObject::tr("未配置 QOpenAiUrl/QOpenAiToken 环境变量。"));
+        return errorJson(QObject::tr("未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。"));
 
     int retriesLeft = c.maxRetries;
 
@@ -221,7 +221,7 @@ void ChatStream::sendRequest()
     {
         // 不在此处同步 emit（调用方此刻尚未连接信号），延迟一拍让 connect 先完成
         QTimer::singleShot(0, this, [this] {
-            emit error(tr("未配置 QOpenAiUrl/QOpenAiToken 环境变量。"));
+            emit error(tr("未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。"));
         });
         return;
     }
@@ -610,10 +610,10 @@ bool verbose()
 void initByEnv()
 {
     OpenAiClient &c = client();
-    setUrl(QString::fromUtf8(qgetenv("QOpenAiUrl")));
+    setUrl(QString::fromUtf8(qgetenv("QOpenAiBaseUrl")));
     c.token = QString::fromUtf8(qgetenv("QOpenAiToken"));
     if (c.url.isEmpty() || c.token.isEmpty())
-        qWarning() << "QOpenAi: 环境变量 QOpenAiUrl / QOpenAiToken 未配置或为空。";
+        qWarning() << "QOpenAi: 环境变量 QOpenAiBaseUrl / QOpenAiToken 未配置或为空。";
 }
 
 } // namespace QOpenAi

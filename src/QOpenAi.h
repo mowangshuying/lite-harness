@@ -101,7 +101,7 @@ int timeout();
 void setVerbose(bool enabled);
 bool verbose();
 
-// 初始化：从环境变量 QOpenAiUrl / QOpenAiToken 读取配置
+// 初始化：从环境变量 QOpenAiBaseUrl / QOpenAiToken 读取配置
 void initByEnv();
 
 } // namespace QOpenAi
