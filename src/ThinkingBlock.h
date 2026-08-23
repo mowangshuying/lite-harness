@@ -47,6 +47,7 @@ private:
     void scheduleMeasure();
     void measureContent();
     void applyProgress();
+    void startExpandAnimation();
 
 private:
     QVBoxLayout *m_layout = nullptr;
@@ -54,11 +55,14 @@ private:
     QLabel *m_iconLabel = nullptr;
     QLabel *m_titleLabel = nullptr;
     QLabel *m_arrowLabel = nullptr;
-    QTextBrowser *m_content = nullptr;
+    QWidget *m_clipper = nullptr;       // 裁剪容器：动画驱动其高度，超出部分被裁剪
+    QTextBrowser *m_content = nullptr;  // 内容区：高度始终为自然高度，文档布局稳定
 
     int m_durationSeconds = 0;      // 思考耗时（秒）
     int m_fullContentHeight = 0;    // 展开时内容区完整高度（由文档测量得到）
+    int m_lastMeasuredWidth = 0;    // 上次测量所用的宽度（宽度未变则跳过重测）
     bool m_expanded = false;
+    bool m_animating = false;       // 动画进行中：禁止 resizeEvent 重新测量
     int m_expandProgress = 0;       // 0=完全折叠 100=完全展开
     QPropertyAnimation *m_anim = nullptr;
 };

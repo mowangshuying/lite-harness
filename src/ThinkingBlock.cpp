@@ -46,22 +46,30 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
     headerLayout->addWidget(m_titleLabel, 1);
     headerLayout->addWidget(m_arrowLabel);
 
-    // ---- 思考内容区：纯文本，折叠时高度为 0 不参与文档布局 ----
-    m_content = new QTextBrowser(this);
+    // ---- 裁剪容器：动画驱动其高度，超出部分被裁剪 ----
+    m_clipper = new QWidget(this);
+    m_clipper->setFixedHeight(0);
+    m_clipper->setVisible(false);
+
+    // ---- 思考内容区：纯文本，高度始终为自然高度，文档布局稳定 ----
+    m_content = new QTextBrowser(m_clipper);
     m_content->setObjectName("thinkingContent");
     m_content->setFrameShape(QFrame::NoFrame);
     m_content->setOpenExternalLinks(true);
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_content->setLineWrapMode(QTextEdit::WidgetWidth);
-    m_content->setFixedHeight(0);
-    m_content->setVisible(false);
+
+    auto *clipperLayout = new QVBoxLayout(m_clipper);
+    clipperLayout->setContentsMargins(0, 0, 0, 0);
+    clipperLayout->setSpacing(0);
+    clipperLayout->addWidget(m_content);
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);
     m_layout->setSpacing(6);
     m_layout->addWidget(m_header);
-    m_layout->addWidget(m_content);
+    m_layout->addWidget(m_clipper);
     setLayout(m_layout);
 
     m_header->installEventFilter(this);
@@ -101,20 +109,24 @@ void ThinkingBlock::setExpanded(bool expanded)
         return;
     m_expanded = expanded;
 
-    // 展开时以当前实布局宽度强制重测，避免创建阶段宽度未稳定导致的错误高度
-    if (expanded)
-        measureContent();
+    // 展开期禁止 resizeEvent 触发重测，避免动画终点随测量结果跳变
+    m_animating = true;
 
     if (m_anim == nullptr)
     {
         m_anim = new QPropertyAnimation(this, "expandProgress", this);
         m_anim->setDuration(200);
         m_anim->setEasingCurve(QEasingCurve::OutCubic);
+        connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
+            m_animating = false;
+        });
     }
     m_anim->stop();
     m_anim->setStartValue(m_expandProgress);
     m_anim->setEndValue(m_expanded ? 100 : 0);
-    m_anim->start();
+
+    // 延迟到下一帧再测量并启动动画：此刻布局已稳定，宽度确定，测量高度准确
+    QTimer::singleShot(0, this, &ThinkingBlock::startExpandAnimation);
 
     updateThemeIcons();   // 刷新箭头方向
     emit expandedChanged(m_expanded);
@@ -146,6 +158,9 @@ bool ThinkingBlock::eventFilter(QObject *watched, QEvent *event)
 void ThinkingBlock::resizeEvent(QResizeEvent *event)
 {
     FluWidget::resizeEvent(event);
+    // 动画进行中不重测，避免"测量→动画→重排→再测量"循环
+    if (m_animating)
+        return;
     // 仅宽度变化才需要重测（高度变化来自自身动画/布局，重测会引发递归）
     if (event->size().width() == event->oldSize().width())
         return;
@@ -176,12 +191,16 @@ QString ThinkingBlock::durationText() const
 
 void ThinkingBlock::scheduleMeasure()
 {
+    // 动画期间不安排测量：singleShot(0) 会延迟到动画结束后执行，
+    // 此时 m_animating 已复位，测量结果会覆盖动画终点高度导致回弹
+    if (m_animating)
+        return;
     QTimer::singleShot(0, this, &ThinkingBlock::measureContent);
 }
 
 void ThinkingBlock::measureContent()
 {
-    // 宽度未确定时延后重试（与气泡 availableContentWidth 的兜底一致）
+    // 宽度未确定时延后重试
     const int w = width();
     if (w <= 0)
     {
@@ -189,21 +208,35 @@ void ThinkingBlock::measureContent()
         return;
     }
 
+    // 宽度未变化且已测量过：高度结果不变，跳过重复测量
+    if (w == m_lastMeasuredWidth && m_fullContentHeight > 0)
+        return;
+
     QTextDocument *doc = m_content->document();
     QSignalBlocker blocker(doc);
     doc->setTextWidth(w);
 
-    // QSS #thinkingContent 上下 padding 各 4px（三主题一致）会占用视口高度，
-    // 若不做补偿，展开时底部内容会被裁掉
+    // 内容区高度始终为自然高度，文档布局稳定
+    // QSS #thinkingContent 上下 padding 各 4px（三主题一致）
     const int verticalChrome = 8;
     m_fullContentHeight = qCeil(doc->size().height()) + verticalChrome;
+    m_lastMeasuredWidth = w;
 
     applyProgress();
 }
 
+void ThinkingBlock::startExpandAnimation()
+{
+    // 此时布局已稳定，先按最终宽度测量，再无缝启动动画
+    measureContent();
+    if (m_anim && m_anim->state() == QPropertyAnimation::Stopped)
+        m_anim->start();
+}
+
 void ThinkingBlock::applyProgress()
 {
-    const int contentH = qRound(m_fullContentHeight * m_expandProgress / 100.0);
-    m_content->setFixedHeight(contentH);
-    m_content->setVisible(contentH > 0);
+    // 动画驱动裁剪容器高度，内容本身高度始终为自然高度（文档布局稳定）
+    const int clipperH = qRound(m_fullContentHeight * m_expandProgress / 100.0);
+    m_clipper->setFixedHeight(clipperH);
+    m_clipper->setVisible(clipperH > 0);
 }
