@@ -109,11 +109,13 @@ void LiteHarness::__createSession(const QString &text)
     if (childItem == nullptr)
         return;
 
-    if (sessionsItem->getItems().size() == 1)
-        sessionsItem->onItemClicked();
-    else
-        sessionsItem->adjustItemHeight(sessionsItem);
-
+    if (m_navView->isLong())
+    {
+        if (sessionsItem->getItems().size() == 1)
+            sessionsItem->onItemClicked();
+        else
+            sessionsItem->adjustItemHeight(sessionsItem);
+    }
     childItem->onItemClicked();
 }
 
