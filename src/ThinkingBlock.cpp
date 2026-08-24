@@ -7,8 +7,10 @@
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTextDocument>
+#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QtMath>
@@ -63,7 +65,7 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
     auto *clipperLayout = new QVBoxLayout(m_clipper);
     clipperLayout->setContentsMargins(0, 0, 0, 0);
     clipperLayout->setSpacing(0);
-    clipperLayout->addWidget(m_content);
+    clipperLayout->addWidget(m_content, 0, Qt::AlignTop);
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);
@@ -212,17 +214,42 @@ void ThinkingBlock::measureContent()
     if (w == m_lastMeasuredWidth && m_fullContentHeight > 0)
         return;
 
+    // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）
+    static constexpr int kMaxExpandedHeight = 400;
+
     QTextDocument *doc = m_content->document();
     QSignalBlocker blocker(doc);
-    doc->setTextWidth(w);
 
-    // 内容区高度始终为自然高度，文档布局稳定
-    // QSS #thinkingContent 上下 padding 各 4px（三主题一致）
-    const int verticalChrome = 8;
-    m_fullContentHeight = qCeil(doc->size().height()) + verticalChrome;
+    // 内容区尺寸固定（min(自然高度, 上限)，滚动条宽度已计入），动画期间不变化；
+    // kVerticalChrome = QSS #thinkingContent 上下 padding 各 4px（三主题一致）
+    static constexpr int kVerticalChrome = 8;
+    doc->setTextWidth(w);
+    const int naturalHeight = qCeil(doc->size().height()) + kVerticalChrome;
+
+    int contentHeight = qMin(naturalHeight, kMaxExpandedHeight);
+    if (naturalHeight > kMaxExpandedHeight)
+    {
+        // 超出上限：滚动条会占用水平宽度，按扣除后的宽度重新测量，
+        // 避免文档比 viewport 宽导致右侧内容被裁剪
+        const int scrollbarWidth = scrollbarExtentWidth();
+        if (scrollbarWidth > 0)
+            doc->setTextWidth(qMax(1, w - scrollbarWidth));
+    }
+
+    m_fullContentHeight = contentHeight;
     m_lastMeasuredWidth = w;
+    // 固定内容区尺寸：动画仅驱动裁剪容器高度，内容不被 resize
+    m_content->setFixedSize(w, contentHeight);
 
     applyProgress();
+}
+
+int ThinkingBlock::scrollbarExtentWidth() const
+{
+    const QScrollBar *bar = m_content->verticalScrollBar();
+    if (bar->isVisible())
+        return bar->width();
+    return m_content->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, m_content);
 }
 
 void ThinkingBlock::startExpandAnimation()

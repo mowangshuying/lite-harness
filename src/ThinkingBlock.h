@@ -46,6 +46,7 @@ private:
     QString durationText() const;
     void scheduleMeasure();
     void measureContent();
+    int scrollbarExtentWidth() const;
     void applyProgress();
     void startExpandAnimation();
 
