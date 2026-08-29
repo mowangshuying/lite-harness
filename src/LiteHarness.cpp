@@ -52,7 +52,7 @@ void LiteHarness::__initUI()
 
 void LiteHarness::__initNavView()
 {
-    m_navView->setViewWidth(200);
+    m_navView->setViewWidth(256);
     m_navView->hideSearchItem();
     
     auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
