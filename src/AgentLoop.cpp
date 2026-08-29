@@ -33,7 +33,7 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
     // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen3.8-max
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())
-        m_model = QStringLiteral("qwen3.8-max");
+        m_model = QStringLiteral("qwen3.8-flash");
 
     // 初始 system prompt
     QJsonObject systemMessage;
