@@ -57,8 +57,7 @@ private:
     QTextBrowser *m_content = nullptr;  // 内容区：尺寸固定为 min(自然高度, 上限)，动画期间仅靠 move 从头部背后滑出
 
     int m_durationSeconds = 0;      // 思考耗时（秒）
-    int m_fullContentHeight = 0;    // 展开时内容区完整高度（由文档测量得到）
-    int m_lastMeasuredWidth = 0;    // 上次测量所用的宽度（宽度未变则跳过重测）
+    int m_fullContentHeight = 0;    // 展开时内容区完整高度（由文档测量得到，随内容流式增长实时更新）
     bool m_expanded = false;
     bool m_animating = false;       // 动画进行中：禁止 resizeEvent 重新测量
     int m_contentHeight = 0;        // 当前内容可见高度（0=完全折叠），动画驱动属性

@@ -226,10 +226,6 @@ void ThinkingBlock::measureContent()
         return;
     }
 
-    // 宽度未变化且已测量过：高度结果不变，跳过重复测量
-    if (w == m_lastMeasuredWidth && m_fullContentHeight > 0)
-        return;
-
     // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）
     static constexpr int kMaxExpandedHeight = 400;
 
@@ -253,7 +249,6 @@ void ThinkingBlock::measureContent()
     }
 
     m_fullContentHeight = contentHeight;
-    m_lastMeasuredWidth = w;
     // 固定内容区尺寸：动画期间内容不被 resize，仅移动（底部藏于头部背后）
     m_content->setFixedSize(w, contentHeight);
 
