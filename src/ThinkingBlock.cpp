@@ -76,9 +76,10 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
         FluStyleSheetUtils::setQssByFileName("ThinkingBlock.qss", this, theme);
     });
 
-    // 默认折叠
+    // 默认折叠：内容直接隐藏，避免末行文字透过头部半透明 border 渗出
     m_expanded = false;
     m_contentHeight = 0;
+    m_content->hide();
 }
 
 void ThinkingBlock::setThinkingContent(const QString &thinkingText)
@@ -130,6 +131,10 @@ void ThinkingBlock::setContentHeight(int h)
         return;
     const int dy = h - m_contentHeight;
     m_contentHeight = h;
+
+    // 完全收起时隐藏内容：头部 border 为半透明 rgba，
+    // 内容末行底边恰与头部底缘重合，透过去会漏出一线文字
+    m_content->setVisible(m_expanded || h > 0);
 
     // 自身：布局管理的控件，靠 minimumHeight 驱动布局，同时同步 resize 立即生效
     resize(width(), m_header->height() + h);
