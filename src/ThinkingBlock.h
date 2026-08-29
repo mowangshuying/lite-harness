@@ -5,19 +5,19 @@
 
 class QLabel;
 class QPropertyAnimation;
-class QVBoxLayout;
 class QEvent;
 class QResizeEvent;
 
 // 思考过程折叠块（Ollama 风格）：
 //   标题栏（图标 + "思考了 N 秒" + 折叠箭头）+ 可展开/折叠的思考内容区。
-// 流式结束后由 MessageBubbleWidget 创建，默认折叠为高度约 32px 的标题栏；
-// 点击标题栏通过 QPropertyAnimation 驱动 expandProgress（0↔100），
-// 内容区高度 = 完整内容高度 × progress / 100，动画自管理不涉及外部滚动。
+// 动画机制与 FluExpander 同源（用户实测无抖动）：QPropertyAnimation 驱动
+// "contentHeight"（像素高度）属性，setContentHeight 内同步向上遍历父链
+// 逐帧 resize（直到 window 或滚动区 viewport 为止）；头部以 stackUnder 叠放
+// 在内容之上，内容从头部背后滑出/收回（纯手动几何，无外层布局）。
 class ThinkingBlock : public FluWidget
 {
     Q_OBJECT
-    Q_PROPERTY(int expandProgress READ expandProgress WRITE setExpandProgress)
+    Q_PROPERTY(int contentHeight READ contentHeight WRITE setContentHeight)
 
 public:
     explicit ThinkingBlock(QWidget *parent = nullptr);
@@ -28,8 +28,8 @@ public:
     void setExpanded(bool expanded);
     bool isExpanded() const { return m_expanded; }
 
-    int expandProgress() const { return m_expandProgress; }
-    void setExpandProgress(int progress);
+    int contentHeight() const { return m_contentHeight; }
+    void setContentHeight(int h);
 
 signals:
     void expandedChanged(bool expanded);
@@ -47,23 +47,20 @@ private:
     void scheduleMeasure();
     void measureContent();
     int scrollbarExtentWidth() const;
-    void applyProgress();
     void startExpandAnimation();
 
 private:
-    QVBoxLayout *m_layout = nullptr;
     QWidget *m_header = nullptr;
     QLabel *m_iconLabel = nullptr;
     QLabel *m_titleLabel = nullptr;
     QLabel *m_arrowLabel = nullptr;
-    QWidget *m_clipper = nullptr;       // 裁剪容器：动画驱动其高度，超出部分被裁剪
-    QTextBrowser *m_content = nullptr;  // 内容区：高度始终为自然高度，文档布局稳定
+    QTextBrowser *m_content = nullptr;  // 内容区：尺寸固定为 min(自然高度, 上限)，动画期间仅靠 move 从头部背后滑出
 
     int m_durationSeconds = 0;      // 思考耗时（秒）
     int m_fullContentHeight = 0;    // 展开时内容区完整高度（由文档测量得到）
     int m_lastMeasuredWidth = 0;    // 上次测量所用的宽度（宽度未变则跳过重测）
     bool m_expanded = false;
     bool m_animating = false;       // 动画进行中：禁止 resizeEvent 重新测量
-    int m_expandProgress = 0;       // 0=完全折叠 100=完全展开
+    int m_contentHeight = 0;        // 当前内容可见高度（0=完全折叠），动画驱动属性
     QPropertyAnimation *m_anim = nullptr;
 };

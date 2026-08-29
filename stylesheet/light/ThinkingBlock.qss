@@ -3,14 +3,17 @@ ThinkingBlock {
     background-color: transparent;
 }
 
+/* 实色底色：动画为 FluExpander 式头部遮挡滑出，需不透明底色遮住滑入头部背后的内容。
+   rgb(243,243,243) = 原 rgba(0,0,0,6) 叠加 ChatSessionPage 底色 rgb(249,249,249) 的合成实色 */
 #thinkingHeader {
-    background-color: rgba(0, 0, 0, 6);
+    background-color: rgb(243, 243, 243);
     border: 1px solid rgba(0, 0, 0, 12);
     border-radius: 6px;
 }
 
+/* hover 实色 = 原 rgba(0,0,0,13) 叠加页底色的合成值 */
 #thinkingHeader:hover {
-    background-color: rgba(0, 0, 0, 13);
+    background-color: rgb(236, 236, 236);
 }
 
 #thinkingTitle {

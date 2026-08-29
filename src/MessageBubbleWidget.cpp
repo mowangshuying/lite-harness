@@ -292,10 +292,10 @@ bool MessageBubbleWidget::eventFilter(QObject *watched, QEvent *event)
 void MessageBubbleWidget::resizeEvent(QResizeEvent *event)
 {
     FluWidget::resizeEvent(event);
-    if (m_content && m_content->document())
-    {
+    // 宽度未变（ThinkingBlock 动画期父链同步 resize 仅改高度）跳过正文重测，
+    // 避免每帧 markdown 文档重排引入布局噪声
+    if (m_content && m_content->document() && event->size().width() != event->oldSize().width())
         updateSize();
-    }
 }
 
 void MessageBubbleWidget::updateSize()

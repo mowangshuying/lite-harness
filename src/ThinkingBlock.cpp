@@ -7,12 +7,12 @@
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTextDocument>
 #include <QStyle>
 #include <QTimer>
-#include <QVBoxLayout>
 #include <QtMath>
 
 #include <FluUtils.h>
@@ -48,31 +48,19 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
     headerLayout->addWidget(m_titleLabel, 1);
     headerLayout->addWidget(m_arrowLabel);
 
-    // ---- 裁剪容器：动画驱动其高度，超出部分被裁剪 ----
-    m_clipper = new QWidget(this);
-    m_clipper->setFixedHeight(0);
-    m_clipper->setVisible(false);
-
-    // ---- 思考内容区：纯文本，高度始终为自然高度，文档布局稳定 ----
-    m_content = new QTextBrowser(m_clipper);
+    // ---- 思考内容区：纯文本，尺寸固定为 min(自然高度, 上限)，动画期间仅平移 ----
+    // 与 FluExpander 同源：无外层布局、纯手动几何；内容 stackUnder 到头部之下，
+    // 展开时从头部背后滑出，收起时藏回头部下方（头部不透明底色负责遮挡）。
+    m_content = new QTextBrowser(this);
     m_content->setObjectName("thinkingContent");
     m_content->setFrameShape(QFrame::NoFrame);
     m_content->setOpenExternalLinks(true);
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_content->setLineWrapMode(QTextEdit::WidgetWidth);
+    m_content->stackUnder(m_header);   // 对齐 FluExpander.cpp:22：头部绘制在内容之上
 
-    auto *clipperLayout = new QVBoxLayout(m_clipper);
-    clipperLayout->setContentsMargins(0, 0, 0, 0);
-    clipperLayout->setSpacing(0);
-    clipperLayout->addWidget(m_content, 0, Qt::AlignTop);
-
-    m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(6);
-    m_layout->addWidget(m_header);
-    m_layout->addWidget(m_clipper);
-    setLayout(m_layout);
+    setMinimumHeight(m_header->height());
 
     m_header->installEventFilter(this);
 
@@ -90,7 +78,7 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
 
     // 默认折叠
     m_expanded = false;
-    m_expandProgress = 0;
+    m_contentHeight = 0;
 }
 
 void ThinkingBlock::setThinkingContent(const QString &thinkingText)
@@ -116,16 +104,17 @@ void ThinkingBlock::setExpanded(bool expanded)
 
     if (m_anim == nullptr)
     {
-        m_anim = new QPropertyAnimation(this, "expandProgress", this);
-        m_anim->setDuration(200);
+        // 与 FluExpander 一致：驱动 contentHeight 属性，300ms OutCubic
+        m_anim = new QPropertyAnimation(this, "contentHeight", this);
+        m_anim->setDuration(300);
         m_anim->setEasingCurve(QEasingCurve::OutCubic);
         connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
             m_animating = false;
         });
     }
     m_anim->stop();
-    m_anim->setStartValue(m_expandProgress);
-    m_anim->setEndValue(m_expanded ? 100 : 0);
+    m_anim->setStartValue(m_contentHeight);
+    m_anim->setEndValue(m_expanded ? m_fullContentHeight : 0);
 
     // 延迟到下一帧再测量并启动动画：此刻布局已稳定，宽度确定，测量高度准确
     QTimer::singleShot(0, this, &ThinkingBlock::startExpandAnimation);
@@ -134,12 +123,29 @@ void ThinkingBlock::setExpanded(bool expanded)
     emit expandedChanged(m_expanded);
 }
 
-void ThinkingBlock::setExpandProgress(int progress)
+// 动画属性写入点：逐条对齐 FluExpander::setContentHeight（FluExpander.cpp:138-159）
+void ThinkingBlock::setContentHeight(int h)
 {
-    if (m_expandProgress == progress)
+    if (m_contentHeight == h)
         return;
-    m_expandProgress = progress;
-    applyProgress();
+    const int dy = h - m_contentHeight;
+    m_contentHeight = h;
+
+    // 自身：布局管理的控件，靠 minimumHeight 驱动布局，同时同步 resize 立即生效
+    resize(width(), m_header->height() + h);
+    setMinimumHeight(m_header->height() + h);
+
+    // 同步向上遍历父链逐帧 resize（复制 FluExpander 循环）：
+    //  ancestors 在同一帧内跟随高度变化，避免布局延迟生效造成的逐帧抖动；
+    // 到窗口或滚动区 viewport 为止（viewport 之上由滚动条机制接管）
+    QWidget *p = parentWidget();
+    while (p && p != window())
+    {
+        p->resize(p->width(), p->height() + dy);
+        if (p->objectName() == QStringLiteral("qt_scrollarea_viewport"))
+            break;
+        p = p->parentWidget();
+    }
     emit sizeChanged();
 }
 
@@ -160,6 +166,16 @@ bool ThinkingBlock::eventFilter(QObject *watched, QEvent *event)
 void ThinkingBlock::resizeEvent(QResizeEvent *event)
 {
     FluWidget::resizeEvent(event);
+
+    // 手动几何定位（照抄 FluExpander.cpp:79-89 的公式）：
+    // 头部铺满宽度固定在顶部；内容满尺寸，顶部锚定在 32 + contentHeight - full，
+    // 即 contentHeight 增大时内容从头部背后向下滑出，缩小时无可见区变化导致的重排
+    constexpr int kHeaderHeight = 32;
+    m_header->resize(event->size().width(), kHeaderHeight);
+    m_header->move(0, 0);
+    m_content->resize(event->size().width(), m_fullContentHeight);
+    m_content->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
+
     // 动画进行中不重测，避免"测量→动画→重排→再测量"循环
     if (m_animating)
         return;
@@ -238,10 +254,15 @@ void ThinkingBlock::measureContent()
 
     m_fullContentHeight = contentHeight;
     m_lastMeasuredWidth = w;
-    // 固定内容区尺寸：动画仅驱动裁剪容器高度，内容不被 resize
+    // 固定内容区尺寸：动画期间内容不被 resize，仅移动（底部藏于头部背后）
     m_content->setFixedSize(w, contentHeight);
 
-    applyProgress();
+    // 按当前展开状态刷新目标：已展开（非动画期，宽度变化触发重测）跳到新满高；
+    // 折叠态保持 0，等展开动画按最新 m_fullContentHeight 启动
+    // 折叠态无需定位：内容完全藏于不透明头部背后（其底边恒在头部底缘）
+    if (!m_animating && m_contentHeight > 0)
+        setContentHeight(m_fullContentHeight);
+    updateGeometry();
 }
 
 int ThinkingBlock::scrollbarExtentWidth() const
@@ -254,16 +275,12 @@ int ThinkingBlock::scrollbarExtentWidth() const
 
 void ThinkingBlock::startExpandAnimation()
 {
-    // 此时布局已稳定，先按最终宽度测量，再无缝启动动画
+    // 此时布局已稳定，先按最终宽度测量，再按当前状态决定终点无缝启动
     measureContent();
     if (m_anim && m_anim->state() == QPropertyAnimation::Stopped)
+    {
+        m_anim->setStartValue(m_contentHeight);
+        m_anim->setEndValue(m_expanded ? m_fullContentHeight : 0);
         m_anim->start();
-}
-
-void ThinkingBlock::applyProgress()
-{
-    // 动画驱动裁剪容器高度，内容本身高度始终为自然高度（文档布局稳定）
-    const int clipperH = qRound(m_fullContentHeight * m_expandProgress / 100.0);
-    m_clipper->setFixedHeight(clipperH);
-    m_clipper->setVisible(clipperH > 0);
+    }
 }
