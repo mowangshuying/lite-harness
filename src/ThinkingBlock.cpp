@@ -232,7 +232,7 @@ void ThinkingBlock::measureContent()
     }
 
     // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）
-    static constexpr int kMaxExpandedHeight = 400;
+    const int kMaxExpandedHeight = kMaxThinkingHeight;
 
     QTextDocument *doc = m_content->document();
     QSignalBlocker blocker(doc);

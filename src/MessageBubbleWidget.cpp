@@ -380,7 +380,23 @@ void MessageBubbleWidget::updateSize()
         }
         // QSizeF docSize = doc->size();
         QSizeF docSize = doc->size();
-        m_content->setFixedSize(availW, qCeil(docSize.height()));
+        int finalH = qCeil(docSize.height());
+
+        // 思考流式阶段高度上限：超限后气泡不再向下扩张，
+        // 内部滚动钉底跟随最新思考内容；finishStreaming 重建
+        // ThinkingBlock（折叠）后自然解除
+        const int kMaxThinkingHeight = ThinkingBlock::kMaxThinkingHeight;
+        const bool capThinking = m_streaming && m_thinkingStarted;
+        if (capThinking)
+            finalH = qMin(finalH, kMaxThinkingHeight);
+
+        m_content->setFixedSize(availW, finalH);
+
+        if (capThinking)
+        {
+            QScrollBar *vbar = m_content->verticalScrollBar();
+            vbar->setValue(vbar->maximum());
+        }
     }
 
     m_updatingSize = false;

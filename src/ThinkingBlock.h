@@ -20,6 +20,9 @@ class ThinkingBlock : public FluWidget
     Q_PROPERTY(int contentHeight READ contentHeight WRITE setContentHeight)
 
 public:
+    // 思考内容可见区最大高度（px）：ThinkingBlock 展开高度与流式思考气泡共用
+    static constexpr int kMaxThinkingHeight = 150;
+
     explicit ThinkingBlock(QWidget *parent = nullptr);
 
     void setThinkingContent(const QString &thinkingText);
