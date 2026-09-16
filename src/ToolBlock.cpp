@@ -33,6 +33,8 @@ QString ToolBlock::toolTitleText(const QString &toolName)
         return tr("已查找");
     if (toolName == QLatin1String("task"))
         return tr("已代办"); // 子代理代为完成该任务（s06 task 工具）
+    if (toolName == QLatin1String("load_skill"))
+        return tr("已加载"); // 按技能名载入 SKILL.md 全文（s07 load_skill 工具）
     return tr("已执行");
 }
 
