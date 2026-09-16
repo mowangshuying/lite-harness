@@ -48,8 +48,11 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
         }
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
-        // 用户 stop/异常时后端对待决询问已自动按拒绝回填：卡片同步收口为"已拒绝"留痕，
-        // 不重复调用 resolvePermission（避免双重裁决）
+        // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
+        // 必须显式按拒绝放行队列，否则 m_awaitingPermission/m_running 永真导致会话死锁；
+        // stop() 路径后端已自行回填时，resolvePermission 的待决守卫使其成为 no-op，不会双重裁决。
+        // 卡片同步落为"已拒绝"留痕（不发 userResolved，避免二次调用 resolvePermission）
+        m_agentLoop->resolvePermission(false);
         if (m_permissionCard && !m_permissionCard->isResolved())
             m_permissionCard->resolveDenySilently();
         if (m_currentBubble)
@@ -156,9 +159,12 @@ void ChatSessionPage::scrollToBottom()
 void ChatSessionPage::clearMessages()
 {
     m_currentBubble = nullptr;
-    // 清屏时若仍有待决权限卡：视为拒绝对待（后端队列停在裁决上，必须收口后再删控件）
+    // 先停后端：stop() 的待决分支按拒绝回填且**不续跑队列**——若只调 resolvePermission(false)
+    // 会同步续跑，同轮第二个待询问工具可能当场重建权限卡，随即被下面的 teardown 删掉，
+    // 后端再次挂起且无卡可裁决（Gate1 MAJOR-2）。收口后再删控件。
+    m_agentLoop->stop();
     if (m_permissionCard && !m_permissionCard->isResolved())
-        m_agentLoop->resolvePermission(false);
+        m_permissionCard->resolveDenySilently();
     m_permissionCard = nullptr;
     auto mainLayout = m_scrollView->getMainLayout();
     while (auto item = mainLayout->takeAt(0))
