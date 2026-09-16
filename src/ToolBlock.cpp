@@ -37,6 +37,8 @@ QString ToolBlock::toolTitleText(const QString &toolName)
         return tr("已加载"); // 按技能名载入 SKILL.md 全文（s07 load_skill 工具）
     if (toolName == QLatin1String("compact"))
         return tr("已压缩"); // 压缩会话上下文释放额度（s08 compact 工具）
+    if (toolName == QLatin1String("memory"))
+        return tr("已记忆"); // 记忆写入/合并等事件的合成卡片（s09 记忆系统）
     return tr("已执行");
 }
 
