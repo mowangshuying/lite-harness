@@ -57,17 +57,18 @@ QString safeOutputId(const QString &toolUseId)
     return safe.isEmpty() ? QStringLiteral("unknown") : safe;
 }
 
-// 从 Format A 文本行中提取候选路径（lcc 的 line.strip().split 语义；最后一条命中生效）
+// 从 Format A 文本行中提取候选路径（lcc compact_manager.py:110-113：块前缀含换行、
+// raw 行 startsWith("Full output: ") 匹配、首条命中即 break——first-wins）
 bool extractPersistedCandidate(const QString &content, QString *candidate)
 {
-    static const QString prefixA = QStringLiteral("Full output:");
+    static const QString prefixA = QStringLiteral("Full output: ");
     static const QString prefixB = QStringLiteral("[Earlier tool result saved at ");
-    if (content.startsWith(QStringLiteral("<persisted-output>"))) {
+    if (content.startsWith(QStringLiteral("<persisted-output>\n"))) {
         const QStringList lines = content.split(QLatin1Char('\n'));
         for (const QString &rawLine : lines) {
-            const QString line = rawLine.trimmed();
-            if (line.startsWith(prefixA)) {
-                *candidate = line.mid(prefixA.size()).trimmed(); // 最后命中覆盖（lcc 无 break）
+            if (rawLine.startsWith(prefixA)) {
+                *candidate = rawLine.mid(prefixA.size()).trimmed(); // 首命中即停（lcc first-wins）
+                break;
             }
         }
         return true; // 已尝试（candidate 可能仍为空 → 由调用方判空）
