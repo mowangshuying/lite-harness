@@ -10,6 +10,8 @@
 
 #include <functional>
 
+#include "CompactManager.h"
+
 class QProcess;
 class SubAgent;
 
@@ -75,10 +77,12 @@ private:
     // bash 走异步进程链、task 走子代理链（两个异步特判），其余经 handlers 表同步路由
     // （未注册名称回填 "Unknown tool: <name>"），最后 PostToolUse 钩子 + onToolFinished 统一收口
     // permissionGranted=true 为用户批准后的续跑路径，由 permission 钩子内部短路（仅 resolvePermission 内部使用）
+    // compact 工具（lcc s08）在钩子链与表路由之前特判：仅置位 m_compactRequested 并手动推进队列，
+    // 不回填结果、不发卡片、不触发 PostToolUse（批尾以 compact_history 整体替换历史）
     void executeTool(const QJsonObject &toolCall, const QHash<QString, ToolHandler> &handlers,
                      bool permissionGranted);
     // 主循环同步 handler 表：read/write/edit/glob（复用 baseFileToolHandlers）+ todo_write + load_skill；
-    // bash/task 为异步特判，不在此表
+    // bash/task 为异步特判，不在此表；compact 为 schema-only 特判（lcc s08），同样不入表
     QHash<QString, ToolHandler> mainToolHandlers();
     // 基础文件工具 handler 表（lcc s06 主/子代理共享注册形态）：以传入 workDir 为沙箱根，
     // 宿主与子代理各自构建、互不串扰（子代理不经 todo_write/task，工具集为其白名单子集）
@@ -106,6 +110,11 @@ private:
     // 子代理统一收口（lcc s06 R1）：级联 cancel → kill 流与进程 → 为 task 合成
     // "(cancelled)" tool_result 直写历史 → 清父队列；stop()/错误链/析构三路复用
     void cancelSubAgent();
+    // 压缩流水线挂接点（lcc s08）：发送请求前对会话（不含 system）跑 prepare() 五级压缩，
+    // 有变化则回写 m_messages（裁决 g：保留 m_messages[0] system）；返回是否发生了改写
+    bool applyCompactPipeline();
+    // 用压缩后的会话（不含 system）替换 m_messages：[system] + conversation 重新拼接
+    void applyCompressedConversation(const QVector<QJsonObject> &conversation);
     // 文件类工具（本地 IO，同步执行；经 handler 表路由，参数取自解析后的 arguments JSON）。
     // s06 起为静态并以 workDir 为沙箱根参数：宿主与子代理共用同一实现、各传各的目录
     static QString runReadFileIn(const QString &workDir, const QJsonObject &args);
@@ -117,7 +126,7 @@ private:
     QString runTodoWrite(const QJsonObject &args);
     // 沙箱路径解析（静态化供上述工具共用）：相对路径按 workDir 解析；逃逸时返回空串并置 *error
     static QString safePathIn(const QString &workDir, const QString &p, QString *error);
-    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill）
+    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact）
     static QJsonArray createToolsDefinition();
 
     // ---- 技能（lcc s07 SkillManager 内联移植：不建独立类，数据结构与方法置于本类私有段）----
@@ -173,6 +182,11 @@ private:
     // task 子代理（lcc s06）：串行队列保证同一时刻至多一个；随本对象父子销毁，QPointer 防回调竞态
     QPointer<SubAgent> m_activeSub;      // 正在运行的子代理（无则为 null）
     QJsonObject m_pendingTaskCall;       // 其对应的 tool call（cancelSubAgent 收口 "(cancelled)" 用）
+    // 上下文压缩（lcc s08）：引擎以回调取宿主 workDir/model/卡片出口，本对象构造时注入
+    CompactManager m_compact;            // 压缩引擎（转写与落盘目录随 workDir 动态解析）
+    bool m_compactRequested = false;     // compact 工具被调用（批尾以 compact_history 替换历史后消费）
+    int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc MAX_REACTIVE_RETRIES=1，每次 run 归零）
+    QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;

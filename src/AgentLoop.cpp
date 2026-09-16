@@ -202,7 +202,9 @@ QRegularExpression globToRegex(const QString &pattern)
 
 } // namespace
 
-AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
+AgentLoop::AgentLoop(QObject *parent)
+    : QObject(parent)
+    , m_compact([this] { return workDir(); }, [this] { return m_model; })
 {
     // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen3.8-max
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
@@ -214,6 +216,12 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
 
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
+
+    // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用三参 toolOutputReady，
+    // toolName 固定 "compact"，summary 为档位描述，output 携带转写路径与前后估算
+    m_compact.setCardSink([this](const QString &summary, const QString &output) {
+        emit toolOutputReady(QStringLiteral("compact"), summary, output);
+    });
 
     // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/skills/*/SKILL.md，目录注入 system prompt
     scanSkills();
@@ -282,6 +290,11 @@ void AgentLoop::run(const QString &userMessage)
     m_toolIterations = 0;
     // lcc s05：rounds_since_todo 为 loop() 的局部变量——每轮用户提问（run）从零起步
     m_roundsSinceTodo = 0;
+    // lcc s08：compact_requested / reactive_retries 同为 loop() 局部——每轮用户提问归零；
+    // active_request 记录本轮请求原文，供摘要消息 "Current user request" 字段使用
+    m_compactRequested = false;
+    m_reactiveRetries = 0;
+    m_activeRequest = userMessage;
 
     // UserPromptSubmit 钩子（lcc s04）：用户消息入历史前触发
     // （内置 context_inject 打印当前工作目录；返回值在 lcc 中亦被忽略）
@@ -302,9 +315,22 @@ void AgentLoop::run(const QString &userMessage)
 
 void AgentLoop::startChatRequest(const QJsonArray &messages)
 {
+    // 发送前压缩挂接（lcc s08 prepare：位于 lcc 主循环 while 顶部，即每次发起请求之前）：
+    // 命中改写时 m_messages 已被回写，请求消息从历史重建快照；未变化则沿用调用方快照
+    QJsonArray requestMessages = messages;
+    if (applyCompactPipeline())
+    {
+        requestMessages = QJsonArray();
+        for (const auto &msg : m_messages)
+            requestMessages.append(msg);
+    }
+    // 嵌套事件循环豁免（裁决 f）：prepare 内的摘要调用为阻塞式，返回后若用户已停止则放弃发送
+    if (!m_running)
+        return;
+
     QJsonObject request;
     request[QStringLiteral("model")] = m_model;
-    request[QStringLiteral("messages")] = messages;
+    request[QStringLiteral("messages")] = requestMessages;
     request[QStringLiteral("tools")] = createToolsDefinition();
     // 默认开启思考
     request[QStringLiteral("enable_thinking")] = true;
@@ -322,6 +348,8 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
     connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
         m_currentStream = nullptr;
         s->deleteLater();
+        // lcc s08：成功收到响应即视为上下文已可容纳，反应式重试预算复位（loop.py create 后 :50）
+        m_reactiveRetries = 0;
 
         // 无工具调用 -> 最终回复，循环结束
         const QJsonArray toolCalls = fullMsg.value(QStringLiteral("tool_calls")).toArray();
@@ -376,9 +404,62 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
         // lcc s06 R1 收口三路之一：错误链同样级联取消子代理并合成 "(cancelled)" 回填
         // （串行队列下宿主流错误与子代理运行实际互斥，此处为防御性接线）
         cancelSubAgent();
+        // 反应式压缩（lcc s08）：上下文超限且重试预算未用尽 → 压缩历史后重发请求，
+        // 否则落入原错误路径终止。关键词匹配依赖流错误文本（QOpenAi 未透传响应体时的
+        // 已知局限，登记偏差）；MAX_REACTIVE_RETRIES=1 为每轮用户提问的局部预算（run 归零）
+        const QString lowered = msg.toLower();
+        if ((lowered.contains(QStringLiteral("prompt_too_long")) ||
+             lowered.contains(QStringLiteral("too many tokens"))) &&
+            m_reactiveRetries < 1)
+        {
+            ++m_reactiveRetries;
+            const QVector<QJsonObject> replaced = m_compact.reactiveCompact(
+                m_messages.mid(1), m_activeRequest, tr("反应式压缩（上下文超限）"));
+            // 摘要为阻塞调用，期间用户可能已停止：放弃重发（stop 信号已负责收尾）
+            if (!m_running)
+                return;
+            applyCompressedConversation(replaced);
+            QJsonArray retryMessages;
+            for (const auto &msg2 : m_messages)
+                retryMessages.append(msg2);
+            startChatRequest(retryMessages);
+            return;
+        }
         m_running = false;
         emit error(msg);
     });
+}
+
+// 压缩流水线挂接（lcc s08 prepare）：对不含 system 的会话主体做五级压缩
+// （lcc 的 system 随每次请求单独下发、不在 messages 估算窗口内，此处以 mid(1) 对齐），
+// 有改写则回写历史并返回 true（调用方据此重建请求快照）
+bool AgentLoop::applyCompactPipeline()
+{
+    if (m_messages.isEmpty())
+        return false;
+    QVector<QJsonObject> conversation = m_messages.mid(1);
+    const QVector<QJsonObject> original = conversation;
+    m_compact.prepare(conversation, m_activeRequest, tr("自动压缩（上下文超限）"));
+    // prepare 内的摘要调用阻塞期间用户可能已 stop()：不回写，由调用方的 m_running 卫兵收尾
+    if (!m_running)
+        return false;
+    if (conversation == original)
+        return false;
+    applyCompressedConversation(conversation);
+    return true;
+}
+
+// 压缩结果回写（裁决 g）：保留 m_messages[0] system，会话主体整体替换
+// （lcc compact_history/reactive 的替换含 system —— lite 保留 system 前缀，因我们的
+// system 始终驻留历史首位且随每次请求快照下发）
+void AgentLoop::applyCompressedConversation(const QVector<QJsonObject> &conversation)
+{
+    if (m_messages.isEmpty())
+        return;
+    const QJsonObject systemMessage = m_messages.first();
+    m_messages.clear();
+    m_messages.append(systemMessage);
+    m_messages.append(conversation);
 }
 
 void AgentLoop::continueWithToolResults(const QJsonObject &assistantMessage)
@@ -432,6 +513,20 @@ void AgentLoop::runNextTool()
             m_roundsSinceTodo = 0;
         }
 
+        // 批尾 compact 替换（lcc s08 loop.py：结果批 append 进历史后，若 compact_requested 则
+        // compact_history 替换整个历史——顺序红线 reminder→results 追加→压缩替换，不可交换；
+        // 被替换的历史不再含 compact 的 tool_calls，OpenAI 配对因此保持完整）
+        if (m_compactRequested)
+        {
+            m_compactRequested = false;
+            const QVector<QJsonObject> replaced = m_compact.compactHistory(
+                m_messages.mid(1), m_activeRequest, tr("主动压缩（compact 工具）"));
+            // 摘要为阻塞调用，期间可能已被 stop()：放弃后续请求
+            if (!m_running)
+                return;
+            applyCompressedConversation(replaced);
+        }
+
         QJsonArray messagesJson;
         for (const auto &msg : m_messages)
             messagesJson.append(msg);
@@ -472,6 +567,16 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     const QJsonObject args =
         QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
     const QString summary = toolSummary(toolName, args);
+
+    // compact 工具（lcc s08）：loop.py 在 execute_tool 之前拦截（PreToolUse/PostToolUse 钩子
+    // 均不运行、不追加 tool_result、不发卡片、不计入 used_todo）——此处同样在钩子链之前
+    // 特判：仅置位并手动推进队列，压缩替换在批尾执行（见 runNextTool 的 flush 分支）
+    if (toolName == QStringLiteral("compact"))
+    {
+        m_compactRequested = true;
+        runNextTool();
+        return;
+    }
 
     // PreToolUse 钩子链（lcc s04）：s03 的权限门移入内置 permission 钩子之后，此处只处理
     // 通用返回协议。triggerPreToolUseHooks 首个非空返回即短路（逐字对齐 lcc trigger_hooks）：
@@ -1530,6 +1635,25 @@ QJsonArray AgentLoop::createToolsDefinition()
                           QStringLiteral("Load the full SKILL.md content by skill name."),
                           { { QStringLiteral("name"), QStringLiteral("string") } },
                           { QStringLiteral("name") }));
+
+    // compact（lcc s08 第 9 个工具）：schema-only —— 空 properties、无 required（逐字对齐
+    // lcc COMPACT 定义，描述无句号结尾）；不入 handler 表，executeTool 在钩子链前特判
+    {
+        QJsonObject inputSchema;
+        inputSchema[QStringLiteral("type")] = QStringLiteral("object");
+        inputSchema[QStringLiteral("properties")] = QJsonObject();
+
+        QJsonObject function;
+        function[QStringLiteral("name")] = QStringLiteral("compact");
+        function[QStringLiteral("description")] =
+            QStringLiteral("Summarize earlier conversation to free context space");
+        function[QStringLiteral("parameters")] = inputSchema;
+
+        QJsonObject tool;
+        tool[QStringLiteral("type")] = QStringLiteral("function");
+        tool[QStringLiteral("function")] = function;
+        tools.append(tool);
+    }
 
     return tools;
 }

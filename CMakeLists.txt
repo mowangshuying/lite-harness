@@ -46,6 +46,8 @@ set(src
         "src/AgentLoop.h"
         "src/SubAgent.cpp"
         "src/SubAgent.h"
+        "src/CompactManager.cpp"
+        "src/CompactManager.h"
     "src/App.cpp"
     "src/BasePage.cpp"
     "src/BasePage.h"
