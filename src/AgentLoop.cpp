@@ -23,15 +23,19 @@ namespace {
 // 工具调用轮次上限（防止模型反复请求工具形成死循环）
 constexpr int kMaxToolIterations = 30;
 
-// system prompt：告知模型当前工作目录（lcc s06 loop.py 原文）：todo 计划/更新指引 +
-// task 子代理使用指引；三段为相邻字面量隐式拼接，句与句之间没有空格，逐字保留
-QString makeSystemPrompt(const QString &workDir)
+// system prompt（lcc s07 loop.py build_system_prompt 原文逐字移植）：告知模型工作目录 +
+// 技能目录清单，并指引按需用 load_skill 读取全文。与 s06 三段无空格拼接不同，s07 起句间
+// 为正常空格（lcc 首段以 "tasks. " 结尾的空格真实存在）；\n\n 空行结构逐字保留。
+// s06 的 todo_write/task 指引句被 lcc 官方移除，此处不保留。
+// %2 = 技能目录文本（skillsCatalog）；多参 arg() 单次替换，替换值中的 % 字符不会被二次展开
+QString makeSystemPrompt(const QString &workDir, const QString &skillCatalog)
 {
     return QStringLiteral(
-               "You are a coding agent at %1."
-               "Before starting any multi-step task, use todo_write to plan your steps, and use todo_write to update your todo list, must update after each step."
-               "Use task for focused exploration or a self-contained subtask.")
-        .arg(workDir);
+               "You are a coding agent at %1. Use tools to solve tasks. "
+               "Act, don't explain.\n\n"
+               "Skills available:\n%2\n\n"
+               "Use load_skill to read the full instructions when a skill applies.")
+        .arg(workDir, skillCatalog);
 }
 
 // 危险命令黑名单
@@ -74,7 +78,7 @@ bool containsDestructiveCommand(const QString &command)
 }
 
 // 工具调用的关键参数摘要（lcc s02 tool_use info：bash→command、glob→pattern、文件工具→path；
-// s05 起 todo_write 为固定文案；s06 起 task→prompt，对齐 lcc 日志语义）
+// s05 起 todo_write 为固定文案；s06 起 task→prompt；s07 起 load_skill→name，对齐 lcc 日志语义）
 QString toolSummary(const QString &toolName, const QJsonObject &args)
 {
     if (toolName == QStringLiteral("bash"))
@@ -88,6 +92,8 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
         return QStringLiteral("update task list"); // lcc s06 原文（hooks.py）已去掉末尾冒号
     if (toolName == QStringLiteral("task"))
         return args.value(QStringLiteral("prompt")).toString();
+    if (toolName == QStringLiteral("load_skill"))
+        return args.value(QStringLiteral("name")).toString(); // lcc s07：摘要取技能名
     return QString();
 }
 
@@ -209,10 +215,13 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
 
-    // 初始 system prompt（包含工作目录）
+    // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/skills/*/SKILL.md，目录注入 system prompt
+    scanSkills();
+
+    // 初始 system prompt（包含工作目录与技能目录，lcc s07）
     QJsonObject systemMessage;
     systemMessage[QStringLiteral("role")] = QStringLiteral("system");
-    systemMessage[QStringLiteral("content")] = makeSystemPrompt(m_workDir);
+    systemMessage[QStringLiteral("content")] = makeSystemPrompt(m_workDir, skillsCatalog());
     m_messages.append(systemMessage);
 }
 
@@ -223,9 +232,13 @@ void AgentLoop::setWorkDir(const QString &dir)
         return;
     m_workDir = QDir(dir).absolutePath();
 
-    // system 消息始终位于历史首位（构造时写入），就地刷新使后续请求反映当前目录
+    // lcc s07 仅在启动时扫描一次；lite 有意超集：换工作目录时重扫技能并同步重建
+    // system prompt（技能目录随工作目录走，避免陈旧清单误导模型）
+    scanSkills();
+
+    // system 消息始终位于历史首位（构造时写入），就地刷新使后续请求反映当前目录与技能
     if (!m_messages.isEmpty())
-        m_messages[0][QStringLiteral("content")] = makeSystemPrompt(m_workDir);
+        m_messages[0][QStringLiteral("content")] = makeSystemPrompt(m_workDir, skillsCatalog());
 }
 
 QString AgentLoop::workDir() const
@@ -620,10 +633,14 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QSt
 
 QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
 {
-    // 主循环同步工具集：文件四件套 + todo_write（bash/task 为 executeTool 异步特判）
+    // 主循环同步工具集：文件四件套 + todo_write + load_skill（bash/task 为 executeTool 异步特判）；
+    // lcc s07：load_skill 仅主循环注册，子代理工具白名单不含它（见 SubAgent filterSubTools）
     QHash<QString, ToolHandler> handlers = baseFileToolHandlers(m_workDir);
     handlers.insert(QStringLiteral("todo_write"), [this](const QJsonObject &args) {
         return runTodoWrite(args);
+    });
+    handlers.insert(QStringLiteral("load_skill"), [this](const QJsonObject &args) {
+        return runLoadSkill(args);
     });
     return handlers;
 }
@@ -1036,6 +1053,193 @@ QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
     return shown.join(QLatin1Char('\n'));
 }
 
+// ---- 技能（lcc s07 SkillManager 内联移植：scan / catalog / load 三语义）----
+
+void AgentLoop::scanSkills()
+{
+    // 对应 lcc scan_skills()：整表重建；skills 目录缺失静默为空（对应 python return）
+    m_skills.clear();
+
+    const QString skillsDir = QDir(m_workDir).filePath(QStringLiteral("skills")); // lcc env.py: workDir/"skills"
+    if (!QFileInfo(skillsDir).isDir())
+        return;
+
+    // 越界防护根：解析后的清单必须仍位于 skills 目录内（lcc resolve().is_relative_to(root) 等价；
+    // canonicalFilePath 已归一化，root 为空表示目录不可解析）
+    const QString root = QFileInfo(skillsDir).canonicalFilePath();
+    if (root.isEmpty())
+        return;
+
+    // 对应 sorted(glob("*/SKILL.md"))：按目录名升序遍历。微小偏差：python glob 跳过 "." 开头的
+    // 隐藏目录，QDir::entryList 会包含——lite 有意超集，不作特判
+    QStringList dirs = QDir(skillsDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    dirs.sort(); // 码点升序 ≈ python sorted()（Windows 下 nt 文件系统 python 以 casefold 为键，差异极微）
+
+    // 空白切分正则（对应 python str.split() 的连续空白切分）
+    static const QRegularExpression wsRe(QStringLiteral("\\s+"));
+
+    for (const QString &dirName : dirs)
+    {
+        const QString manifestPath = QDir(skillsDir).filePath(dirName + QStringLiteral("/SKILL.md"));
+        const QFileInfo manifestInfo(manifestPath);
+        if (!manifestInfo.isFile()) // 对应 not is_file() → continue（QFileInfo::isFile 跟随符号链接，语义一致）
+            continue;
+        const QString resolved = manifestInfo.canonicalFilePath(); // 对应 resolve()
+        if (resolved.isEmpty() || (resolved != root && !resolved.startsWith(root + QLatin1Char('/'))))
+            continue; // 逃逸出 skills 根（符号链接指向外部等）→ 跳过
+
+        QFile file(resolved);
+        if (!file.open(QIODevice::ReadOnly))
+            continue; // 偏差：lcc 单文件读失败会抛异常中止整次扫描；lite 跳过该条继续（更稳健的有意超集）
+        const QString content = QString::fromUtf8(file.readAll()); // 对应 read_text(encoding="utf-8")
+
+        // ---- frontmatter 定位（lcc parse_frontmatter 的 splitlines(keepends) 偏移量移植）----
+        // 行终止符为 \n 或 \r，\r\n 视作一个；"行内容"截到首个终止符，即等价 rstrip("\r\n") 后的比较
+        auto lineEnd = [&content](int from) {
+            int i = from;
+            while (i < content.size() && content.at(i) != QLatin1Char('\n') && content.at(i) != QLatin1Char('\r'))
+                ++i;
+            return i;
+        };
+        auto skipEol = [&content](int end) {
+            if (end < content.size() && content.at(end) == QLatin1Char('\r')
+                && end + 1 < content.size() && content.at(end + 1) == QLatin1Char('\n'))
+                return 2; // \r\n
+            return end < content.size() ? 1 : 0; // 单个 \n / \r / 文件尾
+        };
+
+        QString metaName;
+        QString metaDesc;
+        QString body;
+        const int firstEnd = lineEnd(0);
+        const bool hasFrontmatter =
+            !content.isEmpty() && content.left(firstEnd) == QLatin1String("---"); // 首行 rstrip 后恰为 "---"
+        int closingStart = -1; // 第二条 "---" 行起点（-1 = 不存在闭合行 → 整体视为正文）
+        int closingEnd = -1;   // 其行尾（不含行终止符）
+        if (hasFrontmatter)
+        {
+            int pos = firstEnd + skipEol(firstEnd);
+            while (pos < content.size())
+            {
+                const int end = lineEnd(pos);
+                if (content.mid(pos, end - pos) == QLatin1String("---"))
+                {
+                    closingStart = pos;
+                    closingEnd = end;
+                    break;
+                }
+                pos = end + skipEol(end);
+            }
+        }
+
+        if (hasFrontmatter && closingStart >= 0)
+        {
+            const int metaStart = firstEnd + skipEol(firstEnd);
+            const QString metaRegion = content.mid(metaStart, closingStart - metaStart);
+            body = content.mid(closingEnd + skipEol(closingEnd)).trimmed(); // 对应 remainder.strip()
+
+            // ---- 极简 YAML 解析（登记偏差：lite 无 PyYAML 且禁止引入第三方库）----
+            // 仅识别顶格单行 `name:` / `description:` 平面标量（冒号后须有空格/制表或行尾，
+            // 值可选去除外层成对引号后 trim）；其余键、缩进、多行结构一律忽略，
+            // 效果 ≈ lcc yaml.safe_load 失败/非 dict 时回落 {} 走默认值的分支
+            auto stripQuotes = [](QString v) {
+                v = v.trimmed(); // 对应 str(...).strip()
+                if (v.size() >= 2
+                    && ((v.startsWith(QLatin1Char('"')) && v.endsWith(QLatin1Char('"')))
+                        || (v.startsWith(QLatin1Char('\'')) && v.endsWith(QLatin1Char('\'')))))
+                    v = v.mid(1, v.size() - 2).trimmed(); // 偏差：不处理 YAML 转义，仅去外层成对引号
+                return v;
+            };
+            const QStringList metaLines = metaRegion.split(QLatin1Char('\n'));
+            for (QString rawLine : metaLines)
+            {
+                while (rawLine.endsWith(QLatin1Char('\r')))
+                    rawLine.chop(1); // splitlines 语义：剥去 \r\n 残留
+                QString *target = nullptr;
+                int valueStart = 0;
+                if (rawLine.startsWith(QLatin1String("name:")))
+                {
+                    target = &metaName;
+                    valueStart = 5; // strlen("name:")
+                }
+                else if (rawLine.startsWith(QLatin1String("description:")))
+                {
+                    target = &metaDesc;
+                    valueStart = 12; // strlen("description:")
+                }
+                else
+                {
+                    continue;
+                }
+                if (rawLine.size() > valueStart && rawLine.at(valueStart) != QLatin1Char(' ')
+                    && rawLine.at(valueStart) != QLatin1Char('\t'))
+                    continue; // "name:x" 非 YAML 平面标量映射键 → 整行忽略
+                *target = stripQuotes(rawLine.mid(valueStart)); // 重复键后者覆盖前者（≈ PyYAML last-wins）
+            }
+        }
+        else
+        {
+            // 首行/闭合行任一缺失 → 无 frontmatter：meta 为空、正文取原文
+            // （对应 lcc return {}, text —— 此路径 lcc 不 strip，逐字保留）
+            body = content;
+        }
+
+        // name 缺省 = 技能目录名（对应 manifest.parent.name）
+        const QString name = metaName.isEmpty() ? dirName : metaName;
+        // description 缺省 = 正文首行（对应 body.split("\n", 1)[0]；空正文 → 空串行，语义一致）
+        const QString rawDesc =
+            metaDesc.isEmpty() ? body.split(QLatin1Char('\n'), Qt::KeepEmptyParts).first() : metaDesc;
+        // 清洗（对应 " ".join(str(desc).lstrip("# ").split())）：剥离开头的 '#'/' ' 字符，
+        // 再按连续空白切分、以单个空格重连
+        int lead = 0;
+        while (lead < rawDesc.size() && (rawDesc.at(lead) == QLatin1Char('#') || rawDesc.at(lead) == QLatin1Char(' ')))
+            ++lead;
+        const QString description =
+            rawDesc.mid(lead).split(wsRe, Qt::SkipEmptyParts).join(QLatin1Char(' '));
+
+        // content 保存整份文件原文（含 frontmatter，对应 "content": text）
+        // 对应 python dict 赋值语义：同名后扫覆盖值但保留原插入位置（catalog 依首次出现顺序）
+        bool replaced = false;
+        for (Skill &existing : m_skills)
+        {
+            if (existing.name == name)
+            {
+                existing = Skill{name, description, content};
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+            m_skills.append(Skill{name, description, content});
+    }
+}
+
+QString AgentLoop::skillsCatalog() const
+{
+    // 对应 lcc catalog()：空 → "(no skills found)"；否则逐行 "- {name}: {description}" 以 \n 连接
+    if (m_skills.isEmpty())
+        return QStringLiteral("(no skills found)");
+    QStringList lines;
+    lines.reserve(m_skills.size());
+    for (const Skill &skill : m_skills)
+        lines.append(QStringLiteral("- %1: %2").arg(skill.name, skill.description));
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString AgentLoop::runLoadSkill(const QJsonObject &args) const
+{
+    // 对应 lcc run_load_skill → skill_manager.load(name)：命中返回整份原文，未命中返回错误文本
+    // 偏差：lcc 缺 name 参数直接 TypeError 崩溃；此处回落空串返回 Unknown 错误
+    // （与 todo_write 缺参的 Graceful 处理同风格）
+    const QString name = args.value(QStringLiteral("name")).toString();
+    for (const Skill &skill : m_skills)
+    {
+        if (skill.name == name)
+            return skill.content;
+    }
+    return QStringLiteral("Error: Unknown skill '%1'").arg(name);
+}
+
 QString AgentLoop::renderTodos(const QVector<TodoItem> &items)
 {
     // lcc TodoManager.render 等价：空清单 "No todos"；标记 [ ]/[>]；[x] 对应
@@ -1319,6 +1523,13 @@ QJsonArray AgentLoop::createToolsDefinition()
         tool[QStringLiteral("function")] = function;
         tools.append(tool);
     }
+
+    // load_skill（lcc s07 第 8 个工具）：schema 无 minLength 等附加约束，makeTool lambda 即可表达；
+    // 描述与 required 逐字对齐 lcc LOAD_SKILL 定义
+    tools.append(makeTool(QStringLiteral("load_skill"),
+                          QStringLiteral("Load the full SKILL.md content by skill name."),
+                          { { QStringLiteral("name"), QStringLiteral("string") } },
+                          { QStringLiteral("name") }));
 
     return tools;
 }

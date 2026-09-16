@@ -77,7 +77,7 @@ private:
     // permissionGranted=true 为用户批准后的续跑路径，由 permission 钩子内部短路（仅 resolvePermission 内部使用）
     void executeTool(const QJsonObject &toolCall, const QHash<QString, ToolHandler> &handlers,
                      bool permissionGranted);
-    // 主循环同步 handler 表：read/write/edit/glob（复用 baseFileToolHandlers）+ todo_write；
+    // 主循环同步 handler 表：read/write/edit/glob（复用 baseFileToolHandlers）+ todo_write + load_skill；
     // bash/task 为异步特判，不在此表
     QHash<QString, ToolHandler> mainToolHandlers();
     // 基础文件工具 handler 表（lcc s06 主/子代理共享注册形态）：以传入 workDir 为沙箱根，
@@ -117,8 +117,26 @@ private:
     QString runTodoWrite(const QJsonObject &args);
     // 沙箱路径解析（静态化供上述工具共用）：相对路径按 workDir 解析；逃逸时返回空串并置 *error
     static QString safePathIn(const QString &workDir, const QString &p, QString *error);
-    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task）
+    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill）
     static QJsonArray createToolsDefinition();
+
+    // ---- 技能（lcc s07 SkillManager 内联移植：不建独立类，数据结构与方法置于本类私有段）----
+    // 一条技能记录：name/description 取自 SKILL.md 极简 frontmatter（缺省时回落目录名/正文首行），
+    // content 保存整份文件的原始文本（含 frontmatter，load_skill 原样返回）
+    struct Skill
+    {
+        QString name;
+        QString description;
+        QString content;
+    };
+    // 扫描 <m_workDir>/skills/*/SKILL.md 重建 m_skills（lcc scan_skills 等价）：目录缺失静默为空；
+    // 目录名升序遍历；同名技能后扫到的覆盖先扫到的（保留先插入位置，对齐 python dict 语义）
+    void scanSkills();
+    // 技能目录文本（lcc catalog 等价）：空 → "(no skills found)"；否则逐行 "- {name}: {description}" 以 \n 连接
+    QString skillsCatalog() const;
+    // load_skill 工具 handler（同步表路由，不经权限规则）：命中返回全文；未命中返回
+    // "Error: Unknown skill '{name}'"（lcc load 等价）
+    QString runLoadSkill(const QJsonObject &args) const;
 
     // ---- 生命周期钩子（lcc s04 HOOKS 注册表的内聚移植，事件名 → 有序 handler 列表）----
     // 各事件回调签名；返回空串表示放行/无副作用，非空含义按事件约定：
@@ -142,6 +160,7 @@ private:
 private:
     QString m_model;                 // 模型 ID，从环境变量 MODEL_ID 读取
     QString m_workDir;               // 工作目录，默认 QDir::currentPath()（构造时初始化）
+    QVector<Skill> m_skills;         // 技能表（lcc s07）：构造与 setWorkDir 时扫描重建，仅主线程访问
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
     bool m_running = false;          // 防并发（尽量只主线程）
     QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
