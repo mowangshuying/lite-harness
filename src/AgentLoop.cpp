@@ -79,6 +79,57 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
     return QString();
 }
 
+// PreToolUse 钩子的“需询问”返回协议前缀（C++ 移植约定，有意偏差）：
+// lcc 的 permission 钩子内部同步 input() 询问后直接返回拦截文本或 None；
+// GUI 无阻塞 stdin，钩子改为携带 "ASK:<reason>" 返回，由 dispatchToolCall 识别后
+// 发 permissionRequired 异步挂起（s03 机制，UI 契约零改动）。
+// 不带该前缀的非空返回值一律视为硬拦截文本（回填为 tool_result）。
+// 现有拦截文案（"Blocked: ..."）不以 "ASK:" 开头，两路径无冲突。
+const QString &askPrefix()
+{
+    static const QString prefix = QStringLiteral("ASK:");
+    return prefix;
+}
+
+// 从工具调用中提取工具名与解析后的 arguments（钩子与 dispatchToolCall 共用；
+// arguments 为流式拼装出的 JSON 字符串）
+QString callToolName(const QJsonObject &toolCall)
+{
+    return toolCall.value(QStringLiteral("function")).toObject().value(QStringLiteral("name")).toString();
+}
+
+QJsonObject callToolArgs(const QJsonObject &toolCall)
+{
+    const QString raw = toolCall.value(QStringLiteral("function")).toObject()
+                            .value(QStringLiteral("arguments")).toString();
+    return QJsonDocument::fromJson(raw.toUtf8()).object();
+}
+
+// log_before 钩子的参数预览（对应 lcc str(list(block.input.values())[:2])[:60]）：
+// 取前两个参数值拼为 "[v1, v2]" 后截 60 字符。
+// 偏差：QJsonObject 按键名字典序遍历（Python dict 为文档插入序）；非字符串值经 QVariant 转文本
+QString argsPreview(const QJsonObject &args)
+{
+    QStringList head;
+    for (auto it = args.constBegin(); it != args.constEnd() && head.size() < 2; ++it)
+        head.append(it.value().toVariant().toString());
+    return (QStringLiteral("[") + head.join(QStringLiteral(", ")) + QStringLiteral("]")).left(60);
+}
+
+// log_after 钩子的工具参数描述（逐字对应 lcc log_after_use_tool_hook 的 info 分支文案）。
+// 偏差：lcc 用 block.input[key] 直接取值（缺 key 会 KeyError），此处 .toString() 缺省为空串
+QString toolUseInfo(const QString &toolName, const QJsonObject &args)
+{
+    if (toolName == QStringLiteral("bash"))
+        return QStringLiteral("command: ") + args.value(QStringLiteral("command")).toString();
+    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
+        || toolName == QStringLiteral("edit_file"))
+        return QStringLiteral("path: ") + args.value(QStringLiteral("path")).toString();
+    if (toolName == QStringLiteral("glob"))
+        return QStringLiteral("pattern: ") + args.value(QStringLiteral("pattern")).toString();
+    return QString();
+}
+
 // glob 模式转正则（供 runGlob 使用）：
 // "**" 匹配任意层级路径；"**/" 允许零层或多层目录；"*" 匹配单层内任意字符（不跨 '/'）；
 // "?" 匹配单个非 '/' 字符；其余字符按字面量转义
@@ -136,6 +187,9 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
     // 工作目录默认取进程当前目录
     m_workDir = QDir::currentPath();
 
+    // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
+    registerBuiltinHooks();
+
     // 初始 system prompt（包含工作目录）
     QJsonObject systemMessage;
     systemMessage[QStringLiteral("role")] = QStringLiteral("system");
@@ -191,6 +245,10 @@ void AgentLoop::run(const QString &userMessage)
     m_running = true;
     m_toolIterations = 0;
 
+    // UserPromptSubmit 钩子（lcc s04）：用户消息入历史前触发
+    // （内置 context_inject 打印当前工作目录；返回值在 lcc 中亦被忽略）
+    triggerUserPromptSubmitHooks(userMessage);
+
     // 追加用户消息到会话历史
     QJsonObject userMessageObj;
     userMessageObj[QStringLiteral("role")] = QStringLiteral("user");
@@ -230,6 +288,21 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
         if (toolCalls.isEmpty())
         {
             m_messages.append(fullMsg);
+
+            // Stop 钩子（lcc s04）：循环即将结束（无 tool_calls）时触发。
+            // lcc 语义：若返回非空则作为一条 user 消息注入历史，但无论如何都 return——
+            // 并不存在“强制续跑”，注入内容只影响下一轮上下文（内置 summary_hook 恒返回
+            // None，故非空分支在 lcc 中实为死代码，此处原样保留为扩展点；
+            // lcc 原文误拼 "conent"，此处按正确键名 "content" 写入）
+            const QString force = triggerStopHooks();
+            if (!force.isEmpty())
+            {
+                QJsonObject injected;
+                injected[QStringLiteral("role")] = QStringLiteral("user");
+                injected[QStringLiteral("content")] = force;
+                m_messages.append(injected);
+            }
+
             m_running = false;
             emit finished(fullMsg.value(QStringLiteral("content")).toString());
             return;
@@ -315,30 +388,25 @@ void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGra
         QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
     const QString summary = toolSummary(toolName, args);
 
-    // 权限门（对齐 lcc s03 check_permission，控制台同步 input 改为 GUI 异步询问）：
-    // 1) bash 命中硬拒绝列表 → 不询问直接拒绝，原因写进 tool_result（GUI 无控制台，比 "Permission denied" 更有信息量）
-    // 2) 命中询问规则 → 发 permissionRequired 并暂停队列，等待 resolvePermission() 裁决后再续跑
-    //    permissionGranted=true 为批准后的续跑路径，跳过门避免二次询问
-    if (!permissionGranted)
+    // PreToolUse 钩子链（lcc s04）：s03 的权限门移入内置 permission 钩子之后，此处只处理
+    // 通用返回协议。triggerPreToolUseHooks 首个非空返回即短路（逐字对齐 lcc trigger_hooks）：
+    // 1) 以 "ASK:" 开头 → 需询问：发 permissionRequired 并暂停队列，等 resolvePermission() 裁决
+    //    （询问文案与 s03 逐字一致；ASK 前缀为 C++ 异步移植协议，lcc 为控制台同步 input）
+    // 2) 非空且无 ASK 前缀 → 硬拒绝（deny 列表命中）：不询问直接拒绝，原因写进 tool_result
+    // 3) 空 → 放行，进入执行路径
+    // permissionGranted=true 为批准后的续跑路径：permission 钩子内部短路，其余钩子（日志）照常执行
+    const QString gate = triggerPreToolUseHooks(toolCall, permissionGranted);
+    if (!gate.isEmpty())
     {
-        if (toolName == QStringLiteral("bash"))
-        {
-            const QString blocked = checkDenyList(args.value(QStringLiteral("command")).toString());
-            if (!blocked.isEmpty())
-            {
-                onToolFinished(toolCall, toolName, summary, blocked);
-                return;
-            }
-        }
-
-        const QString reason = checkPermissionRules(toolName, args);
-        if (!reason.isEmpty())
+        if (gate.startsWith(askPrefix()))
         {
             m_awaitingPermission = true;
             m_pendingPermissionCall = toolCall;
-            emit permissionRequired(toolName, summary, reason);
+            emit permissionRequired(toolName, summary, gate.mid(askPrefix().size()));
             return; // 队列暂停：不回填、不请求，等用户裁决
         }
+        onToolFinished(toolCall, toolName, summary, gate);
+        return;
     }
 
     // bash 走异步进程链
@@ -360,6 +428,11 @@ void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGra
         output = runGlob(args);
     else
         output = QStringLiteral("Unknown tool: %1").arg(toolName);
+
+    // PostToolUse 钩子（lcc s04）：handler 产出结果后、回填前触发。
+    // 文件工具与未知工具共用此出口（lcc 中 Unknown 分支同样触发 PostToolUse；
+    // 被 PreToolUse 拦截的调用不会走到这里，与 lcc 拒绝即 continue 的语义一致）
+    triggerPostToolUseHooks(toolCall, output);
 
     onToolFinished(toolCall, toolName, summary, output);
 }
@@ -418,7 +491,8 @@ void AgentLoop::resolvePermission(bool allow)
 
     if (!allow)
     {
-        // 拒绝：照常回填 "Permission denied" 并发 toolOutputReady（UI 可展示被拒），随后继续队列
+        // 拒绝：照常回填 "Permission denied" 并发 toolOutputReady（UI 可展示被拒），随后继续队列。
+        // 不触发 PostToolUse——lcc 中用户拒绝即 continue，handler 未运行（s04 语义）
         const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
         const QString toolName = function.value(QStringLiteral("name")).toString();
         const QJsonObject args = QJsonDocument::fromJson(
@@ -427,21 +501,149 @@ void AgentLoop::resolvePermission(bool allow)
         return;
     }
 
-    // 允许：该 toolCall 走原执行路径（跳过权限门；executeBashAsync 内置黑名单仍生效，双层防御）
+    // 允许：该 toolCall 重新走完整分发链（permission 钩子在 permissionGranted=true 时内部短路，
+    // 不再二次询问；日志等其他 PreToolUse 钩子照常执行，对齐 lcc 批准后继续走链的行为。
+    // executeBashAsync 内置黑名单仍生效——双层防御）
     dispatchToolCall(toolCall, /*permissionGranted = */ true);
+}
+
+// ---------------------------------------------------------------------------
+// 生命周期钩子（lcc s04）：注册顺序即执行顺序，与 lcc 尾部 register_hook 清单逐一对应。
+// 返回值约定：空串 ≡ lcc 的 None（放行/继续链）；非空短路（见各 trigger 函数与 askPrefix 注释）
+// ---------------------------------------------------------------------------
+
+void AgentLoop::registerBuiltinHooks()
+{
+    // UserPromptSubmit: context_inject —— 打印会话工作目录（lcc 用 Path.cwd()，此处对应 m_workDir）。
+    // "UserPromtSubmit" 为 lcc 原文拼写，按文案对齐原则逐字保留
+    m_userPromptSubmitHooks.append([this](const QString &) -> QString {
+        qDebug().noquote() << QStringLiteral("[HOOK] UserPromtSubmit: working in %1").arg(m_workDir);
+        return QString();
+    });
+
+    // PreToolUse #1: permission —— s03 的 checkDenyList / checkPermissionRules 检查逻辑原样移入
+    // 钩子（文案逐字不变）。permissionGranted=true 为批准后续跑：短路返回空，避免二次询问
+    m_preToolUseHooks.append([this](const QJsonObject &toolCall, bool permissionGranted) -> QString {
+        if (permissionGranted)
+            return QString();
+
+        const QString toolName = callToolName(toolCall);
+        const QJsonObject args = callToolArgs(toolCall);
+
+        if (toolName == QStringLiteral("bash"))
+        {
+            const QString blocked = checkDenyList(args.value(QStringLiteral("command")).toString());
+            if (!blocked.isEmpty())
+                return blocked; // 硬拒绝：直接作为拦截文本回填
+        }
+
+        const QString reason = checkPermissionRules(toolName, args);
+        if (!reason.isEmpty())
+            return askPrefix() + reason; // 需询问：异步协议，由 dispatchToolCall 挂起队列
+
+        return QString();
+    });
+
+    // PreToolUse #2: log_before —— 打印工具名与参数预览（lcc: [HOOK] name(args_preview)）
+    m_preToolUseHooks.append([](const QJsonObject &toolCall, bool) -> QString {
+        qDebug().noquote() << QStringLiteral("[HOOK] %1(%2)")
+                                  .arg(callToolName(toolCall), argsPreview(callToolArgs(toolCall)));
+        return QString();
+    });
+
+    // PostToolUse #1: log_after —— 打印工具调用信息与输出（lcc 原文案；
+    // lcc 在此再次打印 tool_use 行，与 log_before 有意重复，原样保留）
+    m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
+        const QString toolName = callToolName(toolCall);
+        qDebug().noquote() << QStringLiteral("[HOOK] tool_use: %1 - %2")
+                                  .arg(toolName, toolUseInfo(toolName, callToolArgs(toolCall)));
+        qDebug().noquote() << QStringLiteral("[HOOK] tool_result:%1").arg(output);
+        return QString();
+    });
+
+    // PostToolUse #2: large_output —— 超长输出提醒（lcc 阈值 100000 字符）。
+    // 注：本实现中 bash/read_file 输出在 handler 内已先行截断到 50000，钩子实际难以触发，
+    // 与 lcc 现状一致（lcc 的 run_bash 同样先 [:50000]），保留以对齐结构
+    m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
+        if (output.size() > 100000)
+            qDebug().noquote() << QStringLiteral("[HOOK] Large output from %1: %2 chars")
+                                      .arg(callToolName(toolCall)).arg(output.size());
+        return QString();
+    });
+
+    // Stop: summary —— 统计整场会话的工具调用次数并打印。
+    // lcc 扫描全量消息中的 tool_result 块；本实现为 OpenAI 格式，等价于统计 role=="tool"
+    // 的历史消息条数（含被拒/被拦截的回填项，lcc 同样计入），故直接扫 m_messages 而非成员计数
+    m_stopHooks.append([this]() -> QString {
+        int toolCount = 0;
+        for (const QJsonObject &msg : m_messages)
+        {
+            if (msg.value(QStringLiteral("role")).toString() == QStringLiteral("tool"))
+                ++toolCount;
+        }
+        qDebug().noquote() << QStringLiteral("[HOOK] Stop: session used %1 tool calls").arg(toolCount);
+        return QString();
+    });
+}
+
+QString AgentLoop::triggerUserPromptSubmitHooks(const QString &prompt)
+{
+    for (const auto &hook : m_userPromptSubmitHooks)
+    {
+        const QString result = hook(prompt);
+        if (!result.isEmpty())
+            return result; // 首个非空即短路（lcc: if result is not None: return result）
+    }
+    return QString();
+}
+
+QString AgentLoop::triggerPreToolUseHooks(const QJsonObject &toolCall, bool permissionGranted)
+{
+    for (const auto &hook : m_preToolUseHooks)
+    {
+        const QString result = hook(toolCall, permissionGranted);
+        if (!result.isEmpty())
+            return result;
+    }
+    return QString();
+}
+
+QString AgentLoop::triggerPostToolUseHooks(const QJsonObject &toolCall, const QString &output)
+{
+    for (const auto &hook : m_postToolUseHooks)
+    {
+        const QString result = hook(toolCall, output);
+        if (!result.isEmpty())
+            return result;
+    }
+    return QString();
+}
+
+QString AgentLoop::triggerStopHooks()
+{
+    for (const auto &hook : m_stopHooks)
+    {
+        const QString result = hook();
+        if (!result.isEmpty())
+            return result;
+    }
+    return QString();
 }
 
 void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args)
 {
     const QString command = args.value(QStringLiteral("command")).toString();
 
-    // 安全检查：危险命令黑名单（同步短路，不启动进程）
+    // 安全检查：危险命令黑名单（同步短路，不启动进程）。
+    // s01 内部黑名单与 s03 deny 列表双层防御保留；该输出按 handler 产出对待
+    // （对齐 lcc run_bash 的返回文案），同样触发 PostToolUse
     for (const auto &danger : dangerousCommands())
     {
         if (command.contains(danger, Qt::CaseInsensitive))
         {
-            onToolFinished(toolCall, QStringLiteral("bash"), command,
-                           QStringLiteral("Error: Dangerous command blocked: %1").arg(command));
+            const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
+            triggerPostToolUseHooks(toolCall, output);
+            onToolFinished(toolCall, QStringLiteral("bash"), command, output);
             return;
         }
     }
@@ -478,6 +680,9 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         }
         delete timedOut;
         process->deleteLater();
+
+        // PostToolUse 钩子（lcc s04）：bash handler 产出后、回填前触发
+        triggerPostToolUseHooks(toolCall, output);
 
         onToolFinished(toolCall, QStringLiteral("bash"), command, output);
     });
