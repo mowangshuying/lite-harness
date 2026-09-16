@@ -119,13 +119,16 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
 // ---- lcc s10 任务图文本层工具（python 语义近似，各处偏差登记）----
 // json.dumps 单值紧凑字面量近似：控制字符 Qt 用 \u00XX（python 用 \n 等简称）、
 // 非 ASCII Qt 原样 UTF-8（python 默认 ensure_ascii=True 转 \uXXXX）、null/true 与 None/True
-// 拼写差异——语义等价可再解析，仅观感偏差
+// 拼写差异——语义等价可再解析，仅观感偏差。
+// 注意：切片剥外层方括号必须在 QByteArray 字节空间进行后再 fromUtf8，
+// 反之（先转 QString 再按字节数 mid）在非 ASCII 内容下会因 UTF-8 字节数 >
+// UTF-16 码元数而超发 count，尾部 ']' 泄入返回值（Gate4 BLOCKER-1）。
 QString jsonCompactLiteral(const QJsonValue &value)
 {
     QJsonArray wrapper;
     wrapper.append(value);
     const QByteArray json = QJsonDocument(wrapper).toJson(QJsonDocument::Compact);
-    return QString::fromUtf8(json).mid(1, json.size() - 2);
+    return QString::fromUtf8(json.mid(1, json.size() - 2));
 }
 
 QString jsonStringLiteral(const QString &value)

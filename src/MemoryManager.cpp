@@ -245,6 +245,9 @@ bool MemoryManager::parseFrontmatter(const QString &text, QJsonObject *metadata,
     // lcc parse_frontmatter（:35-47）：无 "---\n" 开头 / 缺闭合 "---" / YAML 解析失败 /
     // 非映射 → 一律回落 ({}, 原文)。lite 无 PyYAML：仅支持单行 "key: value" 平铺标量
     // （极简解析，登记偏差）——缩进行、缺冒号行等 PyYAML 会报错的输入，此处同样整体回落。
+    // 失败路径 body 预置为全文（≈ lcc text.strip()，Gate4 MINOR-1），成功路径下方覆盖；
+    // metadata 出参由调用方默认空对象承载 ({}) 回落语义。
+    *body = text.trimmed();
     if (!text.startsWith(QLatin1String("---\n")))
         return false;
     const qsizetype closing = text.indexOf(QLatin1String("---"), 3);
