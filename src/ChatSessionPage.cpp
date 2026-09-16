@@ -63,6 +63,20 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
             scrollToBottom();
         }
     });
+    // 工具执行可视化：按到达顺序内嵌到当前流式气泡的时间线中（正文与工具块交替出现）
+    connect(m_agentLoop, &AgentLoop::toolOutputReady, this,
+            [this](const QString &command, const QString &output) {
+                if (m_currentBubble)
+                {
+                    m_currentBubble->appendToolExecution(command, output);
+                    QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                    return;
+                }
+                // 边界情况（无流式气泡，如信号在回合外到达）：独立气泡兜底，避免信息静默丢失
+                addMessage(MessageBubbleWidget::Role::Assistant,
+                           tr("已执行命令:\n```\n%1\n```\n\n输出:\n```\n%2\n```")
+                               .arg(command, output));
+            });
 
     connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
         addMessage(MessageBubbleWidget::Role::User, text);

@@ -3,8 +3,10 @@
 #include <FluWidget.h>
 #include <QElapsedTimer>
 #include <QTextBrowser>
+#include <QVector>
 
 class QTimer;
+class QVBoxLayout;
 
 class MessageBubbleWidget : public FluWidget
 {
@@ -19,7 +21,7 @@ public:
     Role role() const { return m_role; }
 
     void setContent(const QString &markdown);
-    QString content() const { return m_content->toMarkdown(); }
+    QString content() const;
     void refreshSize();
 
     // 流式渲染（打字机）：增量追加思考/正文，流结束一次性渲染 markdown
@@ -27,6 +29,10 @@ public:
     void appendThinkingText(const QString &delta);
     void appendText(const QString &delta);
     void finishStreaming();
+
+    // 工具执行节点（AgentLoop::toolOutputReady）：按到达顺序内嵌到气泡时间线，
+    // 将当前流式文本段冻结归档后插入可折叠的 ToolBlock，后续增量另起新段
+    void appendToolExecution(const QString &command, const QString &output);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -36,14 +42,37 @@ private:
     void updateSize();
     void scheduleStreamResize();
 
+    // 统一配置的文段视图（主视图 + 工具块之后的新段），登记到 m_textViews 供测量
+    QTextBrowser *makeTextView();
+    // 首个工具块/思考块到达时，将气泡重建为纵向时间线布局（幂等）
+    void rebuildAsTimeline();
+    // 冻结后按需新建当前流式段视图（懒加载，未冻结时即主视图）
+    QTextBrowser *ensureLiveView();
+    // 思考计时：只统计思考增量到达的区间（工具执行/正文流式期间暂停，多轮累加）
+    void stopThinkingInterval();
+
+private:
+    // 时间线中的一个文本段：正文 markdown 原文 + 渲染视图（工具块到达时冻结）
+    struct TextRun
+    {
+        QString markdown;
+        QTextBrowser *view = nullptr;
+    };
+
 private:
     Role m_role = Assistant;
     QTextBrowser *m_content = nullptr;
     bool m_updatingSize = false;
     bool m_streaming = false;
-    QString m_thinkingBuffer;   // 累积思考原文
-    QString m_textBuffer;       // 累积正文原文
-    QElapsedTimer m_thinkingTimer;  // 思考耗时计时（首个 thinkingDelta 起）
-    bool m_thinkingStarted = false; // 是否已开始计时
+    QString m_thinkingBuffer;             // 累积思考原文（整轮合并，结束时进 ThinkingBlock）
+    QVector<TextRun> m_textRuns;          // 已冻结的文本段（按到达顺序）
+    QString m_liveText;                   // 当前段正文原文（不含思考）
+    QTextBrowser *m_liveView = nullptr;   // 当前流式段视图（nullptr = 待新建下一段）
+    QVector<QTextBrowser *> m_textViews;  // 全部文段视图（含 m_content，逐段测量尺寸）
+    QVBoxLayout *m_timeline = nullptr;    // 时间线布局（出现工具块/思考块后非空）
+    QElapsedTimer m_thinkingTimer;        // 当前段思考计时器
+    bool m_thinkingStarted = false;       // 是否出现过思考（流式高度上限判据）
+    bool m_thinkingRunning = false;       // 当前思考区间计时进行中
+    int m_thinkingAccumMs = 0;            // 累积思考耗时（毫秒，不含工具执行等待）
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };

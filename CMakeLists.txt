@@ -63,6 +63,8 @@ set(src
     "src/MessageBubbleWidget.h"
     "src/ThinkingBlock.cpp"
     "src/ThinkingBlock.h"
+    "src/ToolBlock.cpp"
+    "src/ToolBlock.h"
     "src/QOpenAi.cpp"
     "src/QOpenAi.h"
     )
@@ -92,6 +94,9 @@ set (qss
         "./stylesheet/light/ThinkingBlock.qss"
         "./stylesheet/dark/ThinkingBlock.qss"
         "./stylesheet/atomOneDark/ThinkingBlock.qss"
+        "./stylesheet/light/ToolBlock.qss"
+        "./stylesheet/dark/ToolBlock.qss"
+        "./stylesheet/atomOneDark/ToolBlock.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 

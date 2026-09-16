@@ -1,0 +1,45 @@
+/* atomOneDark */
+ToolBlock {
+    background-color: transparent;
+}
+
+/* 实色底色：动画为 FluExpander 式头部遮挡滑出，需不透明底色遮住滑入头部背后的内容。
+   rgb(43,47,55) = 原 rgba(255,255,255,4) 叠加 ChatSessionPage 底色 rgb(40,44,52) 的合成实色 */
+#toolHeader {
+    background-color: rgb(43, 47, 55);
+    border: 1px solid rgb(56, 60, 68);
+    border-radius: 6px;
+}
+
+/* hover 实色 = 原 rgba(255,255,255,8) 叠加页底色的合成值 */
+#toolHeader:hover {
+    background-color: rgb(47, 51, 58);
+}
+
+#toolIcon {
+    color: rgb(171, 178, 191);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#toolTitle {
+    color: rgb(171, 178, 191);
+    font-size: 13px;
+}
+
+/* 命令行：等宽字体，颜色比标题略亮，突出"模型执行了什么" */
+#toolCommand {
+    color: rgb(212, 216, 224);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+#toolOutput {
+    background-color: rgba(255, 255, 255, 3);
+    border-left: 2px solid rgb(62, 68, 81);
+    padding: 4px 8px;
+    color: rgb(139, 148, 158);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
