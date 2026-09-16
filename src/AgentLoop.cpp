@@ -13,6 +13,13 @@ namespace {
 // 工具调用轮次上限（防止模型反复请求工具形成死循环）
 constexpr int kMaxToolIterations = 30;
 
+// system prompt：告知模型当前工作目录（与 lcc s01 语义一致）
+QString makeSystemPrompt(const QString &workDir)
+{
+    return QStringLiteral("You are a coding agent at %1. Use bash to solve tasks. Act, don't explain.")
+        .arg(workDir);
+}
+
 // 危险命令黑名单
 const QStringList &dangerousCommands()
 {
@@ -35,12 +42,31 @@ AgentLoop::AgentLoop(QObject *parent) : QObject(parent)
     if (m_model.isEmpty())
         m_model = QStringLiteral("qwen3.8-flash");
 
-    // 初始 system prompt
+    // 工作目录默认取进程当前目录
+    m_workDir = QDir::currentPath();
+
+    // 初始 system prompt（包含工作目录）
     QJsonObject systemMessage;
     systemMessage[QStringLiteral("role")] = QStringLiteral("system");
-    systemMessage[QStringLiteral("content")] =
-        QStringLiteral("You are a coding agent. Use bash to solve tasks. Act, don't explain.");
+    systemMessage[QStringLiteral("content")] = makeSystemPrompt(m_workDir);
     m_messages.append(systemMessage);
+}
+
+void AgentLoop::setWorkDir(const QString &dir)
+{
+    // 空串忽略；归一化为绝对路径
+    if (dir.isEmpty())
+        return;
+    m_workDir = QDir(dir).absolutePath();
+
+    // system 消息始终位于历史首位（构造时写入），就地刷新使后续请求反映当前目录
+    if (!m_messages.isEmpty())
+        m_messages[0][QStringLiteral("content")] = makeSystemPrompt(m_workDir);
+}
+
+QString AgentLoop::workDir() const
+{
+    return m_workDir;
 }
 
 AgentLoop::~AgentLoop()
@@ -210,7 +236,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall)
     // 异步执行（QProcess 为 this 子对象，析构自动清理）
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
-    process->setWorkingDirectory(QDir::currentPath());
+    process->setWorkingDirectory(m_workDir);
     m_activeProcesses.append(process);
 
     // 120 秒超时：kill 后 finished 信号触发，靠标志区分“超时被杀” vs “正常结束”

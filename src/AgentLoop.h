@@ -21,6 +21,10 @@ public:
     // 停止：取消当前流、kill 正在运行的 QProcess，并通知错误
     void stop();
 
+    // 设置工作目录：作为 bash 执行的 cwd，并注入 system prompt（空串忽略，路径归一化为绝对路径）
+    void setWorkDir(const QString &dir);
+    QString workDir() const;
+
 signals:
     // 思考过程增量（forward 给 UI）
     void thinkingDelta(const QString &delta);
@@ -49,6 +53,7 @@ private:
 
 private:
     QString m_model;                 // 模型 ID，从环境变量 MODEL_ID 读取
+    QString m_workDir;               // 工作目录，默认 QDir::currentPath()（构造时初始化）
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
     bool m_running = false;          // 防并发（尽量只主线程）
     QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
