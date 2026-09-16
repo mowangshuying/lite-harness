@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QHash>
+#include <QStringList>
 
 #include <functional>
 
@@ -127,7 +128,9 @@ private:
     QString runTodoWrite(const QJsonObject &args);
     // 沙箱路径解析（静态化供上述工具共用）：相对路径按 workDir 解析；逃逸时返回空串并置 *error
     static QString safePathIn(const QString &workDir, const QString &p, QString *error);
-    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact）
+    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact
+    // / create_task / update_task / list_tasks / get_task / claim_task / complete_task，共 15 个；
+    // s10 六个任务图工具仅注册进主循环表，子代理白名单不含）
     static QJsonArray createToolsDefinition();
 
     // ---- 技能（lcc s07 SkillManager 内联移植：不建独立类，数据结构与方法置于本类私有段）----
@@ -152,6 +155,53 @@ private:
     // 以当前工作目录/技能目录/记忆索引/本轮召回记录重建 m_messages[0] 的 system prompt
     // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 五段结构的 lite 等价）
     void rebuildSystemPromptMessage();
+
+    // ---- 任务图（lcc s10 TaskManager 内联移植：SkillManager 档——不建类文件，结构体+方法内联私有段）----
+    // 存储 <workDir>/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存（lcc env.py:19 第四隐藏目录）；
+    // 异常纪律：内核 bool+错误出参保持 lcc 抛错语义，六个 run_* 处理器把一切失败折叠为错误字符串
+    // 直接作为工具输出（lcc 裸抛崩主循环，lite 对齐 executeTool“一切失败皆字符串”纪律——登记偏差）
+    struct Task
+    {
+        QString id;
+        QString subject;
+        QString description;
+        QString status;
+        // python 的 owner: str | None 两态 → owned + owner（owned=false ≡ None；文案中呈现 'None'）
+        bool owned = false;
+        QString owner;
+        QStringList blockedBy;
+    };
+
+    // 内核方法（对应 lcc TaskManager 各方法；全部 const：仅读写磁盘，不改动 AgentLoop 自身状态）
+    QString taskRootDir() const;
+    bool taskFilePath(const QString &taskId, QString *path, QString *error) const;
+    bool taskExists(const QString &taskId, bool *exists, QString *error) const;
+    bool loadTask(const QString &taskId, Task *task, QString *error) const;
+    bool saveTask(const Task &task, QString *error) const;
+    bool createTask(const QString &subject, const QString &description, Task *task, QString *error) const;
+    // 环检测 DFS（lcc _depends_on）：load 失败容错跳过（状态文件 :109 裁决；与 incompleteDependencies
+    // 的“坏依赖计为未完”容错方向相反——lcc 特性原样复刻，勿统一）
+    bool dependsOn(const QString &startId, const QString &targetId, bool *depends, QString *error) const;
+    bool updateTaskDependencies(const QString &taskId, const QJsonArray &addBlockedBy,
+                                Task *updated, QString *error) const;
+    bool listTasks(QVector<Task> *tasks, QString *error) const;
+    QStringList incompleteDependencies(const Task &task) const;
+    bool canStart(const QString &taskId, bool *startable, QString *error) const;
+    // 状态机：业务性失败（状态不符/被阻塞）按 lcc 以文本形式经 result 返回（非 *error）；
+    // 读盘/校验类失败经 *error 返回，由 run_* 折叠为工具输出
+    bool claimTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
+    bool completeTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
+    // asdict + json.dumps(indent=2) 的等价：键序按 Task 声明序手工输出（id/subject/description/status/owner/blockedBy）
+    QString taskToJsonText(const Task &task) const;
+
+    // 六个工具 handler（mainToolHandlers 表路由同步执行；权限规则不涵盖任务图 → 无权限卡；
+    // 钩子文案零改动——toolUseInfo 不加任务图分支，对齐 lcc s10 hooks.py 字节不变）
+    QString runCreateTask(const QJsonObject &args) const;
+    QString runUpdateTask(const QJsonObject &args) const;
+    QString runListTasks() const;
+    QString runGetTask(const QJsonObject &args) const;
+    QString runClaimTask(const QJsonObject &args) const;
+    QString runCompleteTask(const QJsonObject &args) const;
 
     // ---- 生命周期钩子（lcc s04 HOOKS 注册表的内聚移植，事件名 → 有序 handler 列表）----
     // 各事件回调签名；返回空串表示放行/无副作用，非空含义按事件约定：
