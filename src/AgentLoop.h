@@ -43,6 +43,9 @@ signals:
     // toolName / summary 与 toolOutputReady 前两参同义；reason = 命中规则文案
     //（"Writing outside workspace" / "Potentially destructive command"）
     void permissionRequired(const QString &toolName, const QString &summary, const QString &reason);
+    // 待办清单更新（lcc s05，跨车道契约）：todo_write 每次成功更新（含清为空清单）后发射，
+    // 携带当前持久清单快照 [{content, status}, ...]；校验失败与权限询问中不发射
+    void todoUpdated(const QJsonArray &todos);
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 错误
@@ -75,9 +78,12 @@ private:
     QString runWriteFile(const QJsonObject &args);
     QString runEditFile(const QJsonObject &args);
     QString runGlob(const QJsonObject &args);
+    // 待办工具（lcc s05 TodoManager 等价）：校验通过后整体替换持久清单 m_todos 并返回
+    // 渲染文本（成功时内部发射 todoUpdated）；任一校验失败返回 "Error:..." 且清单不变
+    QString runTodoWrite(const QJsonObject &args);
     // 沙箱路径解析：相对路径按 m_workDir 解析；逃逸工作区时返回空串并置 *error
     QString safePath(const QString &p, QString *error) const;
-    // 工具定义（bash / read_file / write_file / edit_file / glob）
+    // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write）
     static QJsonArray createToolsDefinition();
 
     // ---- 生命周期钩子（lcc s04 HOOKS 注册表的内聚移植，事件名 → 有序 handler 列表）----
@@ -116,4 +122,16 @@ private:
     QVector<PreToolUseHook> m_preToolUseHooks;
     QVector<PostToolUseHook> m_postToolUseHooks;
     QVector<StopHook> m_stopHooks;
+
+    // 待办清单（lcc s05 TodoManager 等价物：轻量结构体 + 类成员持久化，不复刻类形态）
+    struct TodoItem
+    {
+        QString content;
+        QString status; // pending | in_progress | completed（校验归一后的值）
+    };
+    // 渲染面板文本（lcc TodoManager.render 等价的纯函数）：空清单返回 "No todos"
+    static QString renderTodos(const QVector<TodoItem> &items);
+    QVector<TodoItem> m_todos;          // 持久待办清单，todo_write 成功更新时整表替换
+    int m_roundsSinceTodo = 0;          // lcc rounds_since_todo：每轮用户提问（run）归零起步
+    bool m_usedTodoThisRound = false;   // lcc used_todo：每批 tool_calls 开始时归零
 };

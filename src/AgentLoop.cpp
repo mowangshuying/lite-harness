@@ -20,10 +20,15 @@ namespace {
 // 工具调用轮次上限（防止模型反复请求工具形成死循环）
 constexpr int kMaxToolIterations = 30;
 
-// system prompt：告知模型当前工作目录（与 lcc s02 语义一致，多工具版为 "Use tools"）
+// system prompt：告知模型当前工作目录（与 lcc s02 语义一致，多工具版为 "Use tools"）；
+// s05 起追加 todo 使用指引
 QString makeSystemPrompt(const QString &workDir)
 {
-    return QStringLiteral("You are a coding agent at %1. Use tools to solve tasks. Act, don't explain.")
+    // lcc s05 原文为三段相邻字面量隐式拼接，句与句之间没有空格，逐字保留
+    return QStringLiteral(
+               "You are a coding agent at %1."
+               "Before starting any multi-step task, use todo_write to plan your steps."
+               "Update status as you go.")
         .arg(workDir);
 }
 
@@ -66,7 +71,8 @@ bool containsDestructiveCommand(const QString &command)
     return re.match(command).hasMatch();
 }
 
-// 工具调用的关键参数摘要（lcc s02 tool_use info：bash→command、glob→pattern、文件工具→path）
+// 工具调用的关键参数摘要（lcc s02 tool_use info：bash→command、glob→pattern、文件工具→path；
+// s05 起 todo_write 为固定文案，对齐 lcc 日志语义）
 QString toolSummary(const QString &toolName, const QJsonObject &args)
 {
     if (toolName == QStringLiteral("bash"))
@@ -76,6 +82,8 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
     if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
         || toolName == QStringLiteral("edit_file"))
         return args.value(QStringLiteral("path")).toString();
+    if (toolName == QStringLiteral("todo_write"))
+        return QStringLiteral("update task list:"); // lcc s05 原文含末尾冒号
     return QString();
 }
 
@@ -127,6 +135,8 @@ QString toolUseInfo(const QString &toolName, const QJsonObject &args)
         return QStringLiteral("path: ") + args.value(QStringLiteral("path")).toString();
     if (toolName == QStringLiteral("glob"))
         return QStringLiteral("pattern: ") + args.value(QStringLiteral("pattern")).toString();
+    if (toolName == QStringLiteral("todo_write"))
+        return QStringLiteral("update task list:"); // lcc s05：无动态参数，原样文案
     return QString();
 }
 
@@ -244,6 +254,8 @@ void AgentLoop::run(const QString &userMessage)
 
     m_running = true;
     m_toolIterations = 0;
+    // lcc s05：rounds_since_todo 为 loop() 的局部变量——每轮用户提问（run）从零起步
+    m_roundsSinceTodo = 0;
 
     // UserPromptSubmit 钩子（lcc s04）：用户消息入历史前触发
     // （内置 context_inject 打印当前工作目录；返回值在 lcc 中亦被忽略）
@@ -333,6 +345,8 @@ void AgentLoop::continueWithToolResults(const QJsonObject &assistantMessage)
     m_messages.append(assistantMessage);
     m_pendingToolCalls = assistantMessage.value(QStringLiteral("tool_calls")).toArray();
     m_toolResultsReady = QJsonArray();
+    // lcc s05：used_todo 为每批 tool_calls 的轮内标志，新批次开始归零
+    m_usedTodoThisRound = false;
 
     runNextTool();
 }
@@ -348,6 +362,25 @@ void AgentLoop::runNextTool()
         for (const auto &value : m_toolResultsReady)
             m_messages.append(value.toObject());
         m_toolResultsReady = QJsonArray();
+
+        // 待办提醒（lcc s05）：本批 tool_calls 未"执行"todo_write 则计数 +1，执行过则归零。
+        // 与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行（handler 未跑）；
+        // 走到 handler 的即使返回校验错误也算执行过。
+        // lcc 把提醒作为 text 块并入同一条 tool_result user 消息，OpenAI 协议无混合
+        // content 块，故改为紧随其后的独立 user 消息（提醒文本逐字一致）。
+        if (m_usedTodoThisRound)
+            m_roundsSinceTodo = 0;
+        else
+            ++m_roundsSinceTodo;
+        if (m_roundsSinceTodo >= 3)
+        {
+            QJsonObject reminder;
+            reminder[QStringLiteral("role")] = QStringLiteral("user");
+            reminder[QStringLiteral("content")] =
+                QStringLiteral("<reminder>Update your todos.</reminder>");
+            m_messages.append(reminder);
+            m_roundsSinceTodo = 0;
+        }
 
         QJsonArray messagesJson;
         for (const auto &msg : m_messages)
@@ -426,6 +459,13 @@ void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGra
         output = runEditFile(args);
     else if (toolName == QStringLiteral("glob"))
         output = runGlob(args);
+    else if (toolName == QStringLiteral("todo_write"))
+    {
+        // lcc s05：纯内存同步执行（与文件工具同路径）。只要 handler 跑过即视为本轮
+        // 已用 todo（校验错误输出同样算）；被权限门拦截的不会走到这里，不置位
+        output = runTodoWrite(args);
+        m_usedTodoThisRound = true;
+    }
     else
         output = QStringLiteral("Unknown tool: %1").arg(toolName);
 
@@ -854,6 +894,118 @@ QString AgentLoop::runGlob(const QJsonObject &args)
     return shown.join(QLatin1Char('\n'));
 }
 
+QString AgentLoop::renderTodos(const QVector<TodoItem> &items)
+{
+    // lcc TodoManager.render 等价：空清单 "No todos"；标记 [ ]/[>]；[x] 对应
+    // pending/in_progress/completed；lcc 原文完成度统计元素以换行开头，
+    // '\n' join 后在清单与统计之间形成一空行
+    if (items.isEmpty())
+        return QStringLiteral("No todos");
+
+    QStringList lines;
+    for (const TodoItem &item : items)
+    {
+        QString marker = QStringLiteral("[ ]");
+        if (item.status == QStringLiteral("in_progress"))
+            marker = QStringLiteral("[>]");
+        else if (item.status == QStringLiteral("completed"))
+            marker = QStringLiteral("[x]");
+        lines.append(QStringLiteral("%1 %2").arg(marker, item.content));
+    }
+
+    int done = 0;
+    for (const TodoItem &item : items)
+    {
+        if (item.status == QStringLiteral("completed"))
+            ++done;
+    }
+    lines.append(QStringLiteral("\n(%1/%2 completed)").arg(done).arg(items.size()));
+
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString AgentLoop::runTodoWrite(const QJsonObject &args)
+{
+    // lcc s05 TodoManager.update 等价：全部校验通过才整表替换持久清单 m_todos，
+    // 任一校验失败原清单不变（lcc 抛 ValueError、run_todo_write 捕获转 "Error:{e}"）
+    QJsonValue todosValue = args.value(QStringLiteral("todos"));
+
+    // 模型偶发把 todos 传成 JSON 字符串（对应 lcc json.loads/ast.literal_eval 兼容
+    // 路径；lcc 的 literal_eval 无 Qt 等价，单引号 Python 字面量解析不了）。
+    // todos 缺失时 lcc 直接 TypeError 崩溃，此处按"非列表"优雅拒绝（有意偏差）
+    if (todosValue.isString())
+    {
+        QJsonParseError parseError;
+        const QJsonDocument parsed =
+            QJsonDocument::fromJson(todosValue.toString().toUtf8(), &parseError);
+        if (parseError.error != QJsonParseError::NoError)
+            return QStringLiteral("Error:todos must be a list or JSON array string");
+        if (!parsed.isArray())
+            return QStringLiteral("Error:todos must be a list");
+        todosValue = QJsonValue(parsed.array());
+    }
+
+    if (!todosValue.isArray())
+        return QStringLiteral("Error:todos must be a list");
+
+    const QJsonArray todos = todosValue.toArray();
+    if (todos.size() > 20)
+        return QStringLiteral("Error:Max 20 todos allowed");
+
+    QVector<TodoItem> validated;
+    int inProgressCount = 0;
+    for (int index = 0; index < todos.size(); ++index)
+    {
+        if (!todos.at(index).isObject())
+            return QStringLiteral("Error:todos[%1] must be an object").arg(index);
+
+        const QJsonObject todo = todos.at(index).toObject();
+        // lcc str(todo.get("content","")).strip() / str(todo.get("status","pending")).lower()：
+        // 非字符串值经 QVariant 转文本；status 仅在键缺失时取默认 pending（空串键值照旧报错）
+        const QString content =
+            todo.value(QStringLiteral("content")).toVariant().toString().trimmed();
+        QString status = QStringLiteral("pending");
+        if (todo.contains(QStringLiteral("status")))
+            status = todo.value(QStringLiteral("status")).toVariant().toString().toLower();
+
+        if (content.isEmpty())
+            return QStringLiteral("Error:todos[%1] requires content").arg(index);
+        if (status != QStringLiteral("pending") && status != QStringLiteral("in_progress")
+            && status != QStringLiteral("completed"))
+        {
+            return QStringLiteral("Error:todos[%1] has invalid status '%2'")
+                .arg(index)
+                .arg(status);
+        }
+        if (status == QStringLiteral("in_progress"))
+            ++inProgressCount;
+
+        validated.append(TodoItem{ content, status });
+    }
+
+    if (inProgressCount > 1)
+        return QStringLiteral("Error:Only one todo can be in_progress at a time");
+
+    m_todos = validated;
+
+    // lcc run_todo_write 成功路径：magenta 控制台面板 → qDebug（GUI 无控制台，去 ANSI）
+    const QString output = renderTodos(m_todos);
+    qDebug().noquote() << QStringLiteral("\n Current Tasks \n %1").arg(output);
+
+    // 跨车道契约：每次成功更新（含清空为 0 条）后广播持久清单快照 [{content, status}, ...]
+    QJsonArray snapshot;
+    for (const TodoItem &item : m_todos)
+    {
+        QJsonObject itemObj;
+        itemObj[QStringLiteral("content")] = item.content;
+        itemObj[QStringLiteral("status")] = item.status;
+        snapshot.append(itemObj);
+    }
+    emit todoUpdated(snapshot);
+
+    return output;
+}
+
 void AgentLoop::stop()
 {
     if (!m_running)
@@ -946,5 +1098,54 @@ QJsonArray AgentLoop::createToolsDefinition()
                           QStringLiteral("Find files matching a glob pattern; ** matches recursively."),
                           { {QStringLiteral("pattern"), QStringLiteral("string")} },
                           {QStringLiteral("pattern")}));
+
+    // todo_write（lcc s05）：todos 为嵌套 array<object{content,status}> schema，
+    // makeTool lambda 只支持平铺 string/integer 参数，按 lcc 原文手工构造；
+    // 外层包装与 makeTool 产物一致（type:function + function.parameters）
+    {
+        QJsonObject contentSchema;
+        contentSchema[QStringLiteral("type")] = QStringLiteral("string");
+        contentSchema[QStringLiteral("minLength")] = 1;
+
+        QJsonObject statusSchema;
+        statusSchema[QStringLiteral("type")] = QStringLiteral("string");
+        statusSchema[QStringLiteral("enum")] = QJsonArray::fromStringList(
+            { QStringLiteral("pending"), QStringLiteral("in_progress"),
+              QStringLiteral("completed") });
+
+        QJsonObject itemProperties;
+        itemProperties[QStringLiteral("content")] = contentSchema;
+        itemProperties[QStringLiteral("status")] = statusSchema;
+
+        QJsonObject items;
+        items[QStringLiteral("type")] = QStringLiteral("object");
+        items[QStringLiteral("properties")] = itemProperties;
+
+        QJsonObject todosSchema;
+        todosSchema[QStringLiteral("type")] = QStringLiteral("array");
+        todosSchema[QStringLiteral("maxItems")] = 20;
+        todosSchema[QStringLiteral("items")] = items;
+
+        QJsonObject properties;
+        properties[QStringLiteral("todos")] = todosSchema;
+
+        QJsonObject inputSchema;
+        inputSchema[QStringLiteral("type")] = QStringLiteral("object");
+        inputSchema[QStringLiteral("properties")] = properties;
+        inputSchema[QStringLiteral("required")] =
+            QJsonArray::fromStringList({ QStringLiteral("todos") });
+
+        QJsonObject function;
+        function[QStringLiteral("name")] = QStringLiteral("todo_write");
+        function[QStringLiteral("description")] =
+            QStringLiteral("Create and manage a task list for your current coding session.");
+        function[QStringLiteral("parameters")] = inputSchema;
+
+        QJsonObject tool;
+        tool[QStringLiteral("type")] = QStringLiteral("function");
+        tool[QStringLiteral("function")] = function;
+        tools.append(tool);
+    }
+
     return tools;
 }
