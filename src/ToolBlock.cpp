@@ -39,6 +39,18 @@ QString ToolBlock::toolTitleText(const QString &toolName)
         return tr("已压缩"); // 压缩会话上下文释放额度（s08 compact 工具）
     if (toolName == QLatin1String("memory"))
         return tr("已记忆"); // 记忆写入/合并等事件的合成卡片（s09 记忆系统）
+    if (toolName == QLatin1String("create_task"))
+        return tr("已建任务"); // 创建任务节点（s10 任务系统）
+    if (toolName == QLatin1String("update_task"))
+        return tr("已连依赖"); // 更新任务/建立依赖边（s10 任务系统）
+    if (toolName == QLatin1String("list_tasks"))
+        return tr("任务清单"); // 列出全部任务概览（s10 任务系统）
+    if (toolName == QLatin1String("get_task"))
+        return tr("任务详情"); // 查看单个任务详情（s10 任务系统）
+    if (toolName == QLatin1String("claim_task"))
+        return tr("已认领"); // 认领任务（s10 任务系统）
+    if (toolName == QLatin1String("complete_task"))
+        return tr("已完成"); // 完成任务（s10 任务系统）
     return tr("已执行");
 }
 
