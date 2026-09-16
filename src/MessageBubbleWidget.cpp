@@ -1,7 +1,6 @@
 #include "MessageBubbleWidget.h"
 #include "ThinkingBlock.h"
 #include "ToolBlock.h"
-#include <QColor>
 #include <QFrame>
 #include <QEvent>
 #include <QFontMetrics>
@@ -12,7 +11,6 @@
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QStringList>
-#include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
@@ -255,11 +253,10 @@ void MessageBubbleWidget::refreshSize()
 void MessageBubbleWidget::startStreaming(const QString &placeholder)
 {
     m_streaming = true;
-    m_thinkingBuffer.clear();
     m_liveText.clear();
-    m_thinkingStarted = false;
     m_thinkingRunning = false;
     m_thinkingAccumMs = 0;
+    m_liveThinking = nullptr;
     m_content->setPlainText(placeholder);
     m_liveView = m_content;
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
@@ -275,20 +272,19 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
     {
         m_thinkingTimer.start();
         m_thinkingRunning = true;
-        m_thinkingStarted = true;
+
+        // 思考块就地化：首个思考到达即创建并置于时间线顶部，
+        // 整个流式期间复用（多轮思考累计进同一块，与计时累加语义一致）
+        if (!m_liveThinking)
+        {
+            rebuildAsTimeline();
+            m_liveThinking = new ThinkingBlock(this);
+            m_timeline->insertWidget(0, m_liveThinking);
+        }
+        m_liveThinking->startLive();   // 头部切「思考中」并自动展开，增量在下拉区滚动可见
     }
 
-    m_thinkingBuffer += delta;
-
-    QTextBrowser *view = ensureLiveView();
-
-    // 灰色斜体追加，纯文本路径速度更快
-    QTextCursor cur = view->textCursor();
-    cur.movePosition(QTextCursor::End);
-    QTextCharFormat fmt;
-    fmt.setForeground(QColor(128, 128, 128));
-    fmt.setFontItalic(true);
-    cur.insertText(delta, fmt);
+    m_liveThinking->appendLiveText(delta);
 
     scheduleStreamResize();
 }
@@ -349,21 +345,16 @@ void MessageBubbleWidget::finishStreaming()
     m_streaming = false;
     if (m_streamResizeTimer)
         m_streamResizeTimer->stop();
+    // 思考收尾：若仍处思考区间则累计耗时，思考块切终态标题并折叠
     stopThinkingInterval();
 
-    const QString thinking = m_thinkingBuffer.trimmed();
-    // 思考耗时（秒）：各轮思考区间累加（不含正文流式与工具执行等待）
-    const int thinkingSeconds = qMax(0, m_thinkingAccumMs / 1000);
-
-    if (!m_timeline && thinking.isEmpty())
+    if (!m_timeline)
     {
         // 无思考、无工具块：直接渲染正文 markdown（保持原横向布局）
         m_content->setMarkdown(m_liveText);
         QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
         return;
     }
-
-    rebuildAsTimeline();
 
     // 收尾未冻结的流式段：归档后统一按 markdown 重建
     if (m_liveView)
@@ -376,31 +367,27 @@ void MessageBubbleWidget::finishStreaming()
     for (const TextRun &run : m_textRuns)
     {
         if (run.markdown.trimmed().isEmpty())
-            run.view->hide();   // 仅承载过思考的段：思考已并入顶部 ThinkingBlock
+            run.view->hide();   // 空文本段（思考不再经过正文视图，此处只会是占位残留）：收起不占位
         else
             run.view->setMarkdown(run.markdown);
     }
 
-    // 思考块置于时间线顶部（思考先于一切正文/工具发生）
-    if (!thinking.isEmpty())
-    {
-        auto *thinkingBlock = new ThinkingBlock(this);
-        thinkingBlock->setThinkingContent(thinking);
-        thinkingBlock->setThinkingDuration(thinkingSeconds);
-        thinkingBlock->setExpanded(false);
-        m_timeline->insertWidget(0, thinkingBlock);
-    }
+    // 思考块已在流式期间就地创建并收终态，不再重建（避免重复渲染与闪烁）
 
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }
 
 void MessageBubbleWidget::stopThinkingInterval()
 {
-    if (m_thinkingRunning)
-    {
-        m_thinkingAccumMs += int(m_thinkingTimer.elapsed());
-        m_thinkingRunning = false;
-    }
+    if (!m_thinkingRunning)
+        return;
+    m_thinkingAccumMs += int(m_thinkingTimer.elapsed());
+    m_thinkingRunning = false;
+
+    // 思考区间结束（首个正文增量 / 工具到达 / 流收尾三种判定时机）：
+    // 思考块标题切「思考了 N 秒」（N 为多轮累计），未被打扰则自动折叠
+    if (m_liveThinking)
+        m_liveThinking->stopLive(m_thinkingAccumMs / 1000);
 }
 
 void MessageBubbleWidget::scheduleStreamResize()
@@ -503,8 +490,8 @@ void MessageBubbleWidget::updateSize()
             return;
         }
 
-        // 逐段测量所有可见的文段视图（工具块会把正文切成多段）
-        const int kMaxThinkingHeight = ThinkingBlock::kMaxThinkingHeight;
+        // 逐段测量所有可见的文段视图（工具块会把正文切成多段；
+        // 思考块不在 m_textViews 中，其高度由自身测量/动画机制管理）
         for (QTextBrowser *view : m_textViews)
         {
             if (!view || view->isHidden())
@@ -519,22 +506,7 @@ void MessageBubbleWidget::updateSize()
                 viewDoc->setTextWidth(availW);
             }
             QSizeF docSize = viewDoc->size();
-            int finalH = qCeil(docSize.height());
-
-            // 思考流式阶段高度上限：超限后该段不再向下扩张，
-            // 内部滚动钉底跟随最新思考内容；finishStreaming 重建
-            // ThinkingBlock（折叠）后自然解除
-            const bool capThinking = m_streaming && m_thinkingStarted && view == m_liveView;
-            if (capThinking)
-                finalH = qMin(finalH, kMaxThinkingHeight);
-
-            view->setFixedSize(availW, finalH);
-
-            if (capThinking)
-            {
-                QScrollBar *vbar = view->verticalScrollBar();
-                vbar->setValue(vbar->maximum());
-            }
+            view->setFixedSize(availW, qCeil(docSize.height()));
         }
     }
 

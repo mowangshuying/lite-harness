@@ -7,6 +7,7 @@
 
 class QTimer;
 class QVBoxLayout;
+class ThinkingBlock;
 
 class MessageBubbleWidget : public FluWidget
 {
@@ -65,14 +66,13 @@ private:
     QTextBrowser *m_content = nullptr;
     bool m_updatingSize = false;
     bool m_streaming = false;
-    QString m_thinkingBuffer;             // 累积思考原文（整轮合并，结束时进 ThinkingBlock）
+    ThinkingBlock *m_liveThinking = nullptr; // 流式常驻思考块：首个思考增量创建，多轮复用累计
     QVector<TextRun> m_textRuns;          // 已冻结的文本段（按到达顺序）
     QString m_liveText;                   // 当前段正文原文（不含思考）
     QTextBrowser *m_liveView = nullptr;   // 当前流式段视图（nullptr = 待新建下一段）
     QVector<QTextBrowser *> m_textViews;  // 全部文段视图（含 m_content，逐段测量尺寸）
     QVBoxLayout *m_timeline = nullptr;    // 时间线布局（出现工具块/思考块后非空）
     QElapsedTimer m_thinkingTimer;        // 当前段思考计时器
-    bool m_thinkingStarted = false;       // 是否出现过思考（流式高度上限判据）
     bool m_thinkingRunning = false;       // 当前思考区间计时进行中
     int m_thinkingAccumMs = 0;            // 累积思考耗时（毫秒，不含工具执行等待）
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流

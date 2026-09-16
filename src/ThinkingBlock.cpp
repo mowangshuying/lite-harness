@@ -10,6 +10,7 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QStyle>
 #include <QTimer>
@@ -92,6 +93,63 @@ void ThinkingBlock::setThinkingDuration(int seconds)
 {
     m_durationSeconds = qMax(0, seconds);
     m_titleLabel->setText(durationText());
+}
+
+// ---- 流式进行态 ----
+
+void ThinkingBlock::startLive()
+{
+    if (m_live)
+        return;
+    m_live = true;
+    m_liveDots = 0;
+    m_titleLabel->setText(liveText());
+
+    if (m_liveTimer == nullptr)
+    {
+        // 克制的进行时态指示：标题尾部圆点轮播（0→3），不动用 QSS 新状态
+        m_liveTimer = new QTimer(this);
+        m_liveTimer->setInterval(400);
+        connect(m_liveTimer, &QTimer::timeout, this, [this]() {
+            m_liveDots = (m_liveDots + 1) % 4;
+            m_titleLabel->setText(liveText());
+        });
+    }
+    m_liveTimer->start();
+
+    if (!m_userInteracted)
+        setExpanded(true);
+}
+
+void ThinkingBlock::stopLive(int seconds)
+{
+    m_live = false;
+    if (m_liveTimer)
+        m_liveTimer->stop();
+    setThinkingDuration(seconds);
+    if (!m_userInteracted)
+        setExpanded(false);
+}
+
+void ThinkingBlock::appendLiveText(const QString &delta)
+{
+    QTextCursor cur = m_content->textCursor();
+    cur.movePosition(QTextCursor::End);
+    cur.insertText(delta);
+
+    // 展开态钉底跟随最新思考：延迟一帧等 measureContent 更新尺寸后再取最大值
+    if (m_expanded)
+    {
+        QTimer::singleShot(0, this, [this]() {
+            QScrollBar *bar = m_content->verticalScrollBar();
+            bar->setValue(bar->maximum());
+        });
+    }
+}
+
+QString ThinkingBlock::liveText() const
+{
+    return tr("思考中") + QStringLiteral(".").repeated(m_liveDots);
 }
 
 void ThinkingBlock::setExpanded(bool expanded)
@@ -192,6 +250,9 @@ void ThinkingBlock::resizeEvent(QResizeEvent *event)
 
 void ThinkingBlock::toggleExpanded()
 {
+    // 仅用户点击路径经过此处（程序化切换走 setExpanded）：记住用户意愿，
+    // 后续进行/终态的自动展开折叠不再覆盖
+    m_userInteracted = true;
     setExpanded(!m_expanded);
 }
 

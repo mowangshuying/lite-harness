@@ -5,6 +5,7 @@
 
 class QLabel;
 class QPropertyAnimation;
+class QTimer;
 class QEvent;
 class QResizeEvent;
 
@@ -28,6 +29,16 @@ public:
     void setThinkingContent(const QString &thinkingText);
     void setThinkingDuration(int seconds);
 
+    // ---- 流式进行态（思考生成期间占位展示）----
+    // startLive：头部切换为「思考中」（圆点轮播），未被打扰时自动展开；
+    // stopLive：恢复终态「思考了 N 秒」，未被打扰时自动折叠；
+    // appendLiveText：增量纯文本追加，限高内滚动并跟随最新内容（钉底）。
+    // 用户手动点过头部后，进行/终态切换不再自动改变展开状态（尊重用户操作）。
+    void startLive();
+    void stopLive(int seconds);
+    void appendLiveText(const QString &delta);
+    bool isLive() const { return m_live; }
+
     void setExpanded(bool expanded);
     bool isExpanded() const { return m_expanded; }
 
@@ -47,6 +58,7 @@ private:
     void toggleExpanded();
     void updateThemeIcons();
     QString durationText() const;
+    QString liveText() const;
     void scheduleMeasure();
     void measureContent();
     int scrollbarExtentWidth() const;
@@ -65,4 +77,10 @@ private:
     bool m_animating = false;       // 动画进行中：禁止 resizeEvent 重新测量
     int m_contentHeight = 0;        // 当前内容可见高度（0=完全折叠），动画驱动属性
     QPropertyAnimation *m_anim = nullptr;
+
+    // 流式进行态：头部「思考中」圆点轮播动画 + 用户手动操作记忆
+    bool m_live = false;
+    bool m_userInteracted = false;  // 用户手动展开/折叠过：进行/终态切换不再自动改展开状态
+    QTimer *m_liveTimer = nullptr;
+    int m_liveDots = 0;
 };
