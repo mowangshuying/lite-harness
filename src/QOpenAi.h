@@ -93,9 +93,13 @@ QString token();
 void setMaxRetries(int retries);
 int maxRetries();
 
-// 设置 / 获取请求超时（毫秒，默认 30000；<=0 表示不限时）
+// 设置 / 获取流式静默超时（毫秒，默认 60000）：每收到数据即重置，长回复不误杀；<=0 表示不限时
 void setTimeout(int milliseconds);
 int timeout();
+
+// 设置 / 获取阻塞式非流式请求总超时（毫秒，默认 120000；<=0 表示不限时）
+void setBlockingTimeout(int milliseconds);
+int blockingTimeout();
 
 // 设置 / 获取调试日志开关（输出请求 URL、请求体、状态码、SSE 帧）
 void setVerbose(bool enabled);

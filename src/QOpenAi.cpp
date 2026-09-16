@@ -22,7 +22,8 @@ public:
     QString url;
     QString token;
     int maxRetries = 0;          // 最大重试次数（仅 5xx / 429），默认 0 不重试
-    int networkTimeout = 30000;  // 请求超时（毫秒），默认 30s，<=0 不限时
+    int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
+    int blockingTimeout = 120000;   // 阻塞式非流式请求总超时（毫秒）：无中间字节可依据，按总量计；<=0 不限时
     bool verbose = false;        // 调试日志开关
 };
 
@@ -89,9 +90,9 @@ QJsonObject blockingRequest(OpenAiClient &c, const QString &endpoint, const QJso
         QEventLoop loop;
         QTimer timeoutTimer;
         timeoutTimer.setSingleShot(true);
-        if (c.networkTimeout > 0)
+        if (c.blockingTimeout > 0)
         {
-            timeoutTimer.start(c.networkTimeout);
+            timeoutTimer.start(c.blockingTimeout);
             QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&loop, &timedOut] {
                 timedOut = true;
                 loop.quit();
@@ -112,7 +113,7 @@ QJsonObject blockingRequest(OpenAiClient &c, const QString &endpoint, const QJso
         {
             reply->abort();
             reply->deleteLater();
-            return errorJson(QObject::tr("请求超时（%1 ms）。").arg(c.networkTimeout));
+            return errorJson(QObject::tr("请求超时（%1 ms）。").arg(c.blockingTimeout));
         }
 
         if (reply->error() != QNetworkReply::NoError)
@@ -180,7 +181,7 @@ ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
     connect(d->timeoutTimer, &QTimer::timeout, this, [this] {
         d->timedOut = true;
         if (client().verbose)
-            qDebug() << "QOpenAi [timeout] 超过" << client().networkTimeout << "ms";
+            qDebug() << "QOpenAi [timeout] 服务器静默超过" << client().streamIdleTimeout << "ms";
         if (d->reply)
             d->reply->abort();
     });
@@ -241,16 +242,21 @@ void ChatStream::sendRequest()
     connect(d->reply, &QNetworkReply::readyRead, this, &ChatStream::readIncoming);
     connect(d->reply, &QNetworkReply::finished, this, &ChatStream::finishStream);
 
-    // 每次请求独立计时；networkTimeout <= 0 时禁用超时
+    // 活动超时：首字节前窗口自此计时，readIncoming 每收到数据重置；streamIdleTimeout <= 0 时禁用
     d->timeoutTimer->stop();
-    if (c.networkTimeout > 0)
-        d->timeoutTimer->start(c.networkTimeout);
+    if (c.streamIdleTimeout > 0)
+        d->timeoutTimer->start(c.streamIdleTimeout);
 }
 
 void ChatStream::readIncoming()
 {
     if (!d->reply || d->done)
         return;
+
+    // 收到任何字节即证明连接存活：重置静默窗口（QTimer::start 对运行中的单次定时器即重启）
+    const int idleMs = client().streamIdleTimeout;
+    if (idleMs > 0)
+        d->timeoutTimer->start(idleMs);
 
     d->buffer.append(d->reply->readAll());
 
@@ -407,12 +413,12 @@ void ChatStream::finishStream()
     {
         const QString errorMsg = d->reply->errorString();
 
-        // 超时中止（区别于主动取消）
+        // 静默超时中止（区别于主动取消）：服务器连续无字节输出
         if (d->timedOut)
         {
             d->done = true;
             cleanupReply();
-            emit error(tr("请求超时（%1 ms）。").arg(c.networkTimeout));
+            emit error(tr("服务器无响应（连续 %1 ms 未收到数据）。").arg(c.streamIdleTimeout));
             return;
         }
 
@@ -593,12 +599,22 @@ int maxRetries()
 
 void setTimeout(int milliseconds)
 {
-    client().networkTimeout = qMax(0, milliseconds);
+    client().streamIdleTimeout = qMax(0, milliseconds);
 }
 
 int timeout()
 {
-    return client().networkTimeout;
+    return client().streamIdleTimeout;
+}
+
+void setBlockingTimeout(int milliseconds)
+{
+    client().blockingTimeout = qMax(0, milliseconds);
+}
+
+int blockingTimeout()
+{
+    return client().blockingTimeout;
 }
 
 void setVerbose(bool enabled)
