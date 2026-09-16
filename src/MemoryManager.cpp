@@ -191,14 +191,15 @@ void MemoryManager::setCardSink(CardSink sink)
 
 QString MemoryManager::storeDir() const
 {
-    // lcc env.py :17：memoryDirPath = workDirPath / ".memory"
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".memory"));
+    // lcc env.py :17：memoryDirPath = workDirPath / ".memory"；
+    // lite 有意偏差：收进 .lite-harness 中间目录，不在用户项目根撒目录
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.memory"));
 }
 
 QString MemoryManager::indexFilePath() const
 {
     // lcc env.py :18：memoryIndexPath = memoryDirPath / "MEMORY.md"
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".memory/MEMORY.md"));
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.memory/MEMORY.md"));
 }
 
 bool MemoryManager::memoryPathSafe(const QString &filename, bool allowIndex,

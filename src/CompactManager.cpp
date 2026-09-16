@@ -95,12 +95,13 @@ void CompactManager::setCardSink(CardSink sink)
 
 QString CompactManager::transcriptDir() const
 {
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".transcripts"));
+    // lite 有意偏差：全部运行时目录收进 <workDir>/.lite-harness/ 中间层（lcc 放 workDir 直下）
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.transcripts"));
 }
 
 QString CompactManager::toolResultsDir() const
 {
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".task_outputs/tool-results"));
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.task_outputs/tool-results"));
 }
 
 // ---- OpenAI 形态谓词与估算 ----------------------------------------------------
@@ -151,7 +152,8 @@ qsizetype CompactManager::retreatToolBatch(const QVector<QJsonObject> &conversat
 
 // ---- 落盘辅助 ---------------------------------------------------------------
 
-// lcc write_transcript：<workDir>/.transcripts/transcript_<uuid>.jsonl，独占创建（python "x"）
+// lcc write_transcript：<workDir>/.lite-harness/.transcripts/transcript_<uuid>.jsonl，独占创建（python "x"；
+// lite 有意偏差：目录收进 .lite-harness 中间层，lcc 放 workDir 直下）
 QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation) const
 {
     QDir dir;
@@ -190,7 +192,8 @@ QString CompactManager::persistedOutputPath(const QString &content) const
     return QFileInfo(resolved).isFile() ? resolved : QString();
 }
 
-// lcc save_output：<workDir>/.task_outputs/tool-results/<safe_id>.txt（write_text 覆盖语义）
+// lcc save_output：<workDir>/.lite-harness/.task_outputs/tool-results/<safe_id>.txt（write_text 覆盖语义；
+// lite 有意偏差：目录收进 .lite-harness 中间层）
 bool CompactManager::saveOutput(const QString &toolUseId, const QString &output,
                                 QString *savedPath) const
 {

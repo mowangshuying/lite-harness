@@ -11,7 +11,8 @@
 /**
  * MemoryManager —— 持久记忆系统（对齐 lcc s09 memory_manager.py 的 MemoryManager）
  *
- * 非 QObject、无信号：存储位于 <workDir>/.memory/（MEMORY.md 索引 + <slug>.md 记录文件，
+ * 非 QObject、无信号：存储位于 <workDir>/.lite-harness/.memory/（lite 有意偏差：lcc 放
+ * workDir 直下，lite 收进 .lite-harness 中间目录；MEMORY.md 索引 + <slug>.md 记录文件，
  * 记录带极简 frontmatter，键序固定 name/description/type）。三大公共入口与 lcc 一致：
  *   - loadMemories：召回——LLM 从目录中挑选与最近请求相关的记录（失败回落关键词打分），
  *     拼接为 JSON 文本注入 system prompt 尾段；

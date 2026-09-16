@@ -370,6 +370,7 @@ config/
 .slim/deepwork/
 
 # agent runtime data (lcc parity: .memory/.task/.transcripts/.task_outputs)
+/.lite-harness/
 /.memory/
 /.task/
 /.transcripts/

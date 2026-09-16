@@ -142,7 +142,8 @@ private:
         QString description;
         QString content;
     };
-    // 扫描 <m_workDir>/skills/*/SKILL.md 重建 m_skills（lcc scan_skills 等价）：目录缺失静默为空；
+    // 扫描 <m_workDir>/.lite-harness/skills/*/SKILL.md 重建 m_skills（lcc scan_skills 等价；
+    // lite 有意偏差：技能目录收进 .lite-harness 中间目录）：目录缺失静默为空；
     // 目录名升序遍历；同名技能后扫到的覆盖先扫到的（保留先插入位置，对齐 python dict 语义）
     void scanSkills();
     // 技能目录文本（lcc catalog 等价）：空 → "(no skills found)"；否则逐行 "- {name}: {description}" 以 \n 连接
@@ -157,7 +158,8 @@ private:
     void rebuildSystemPromptMessage();
 
     // ---- 任务图（lcc s10 TaskManager 内联移植：SkillManager 档——不建类文件，结构体+方法内联私有段）----
-    // 存储 <workDir>/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存（lcc env.py:19 第四隐藏目录）；
+    // 存储 <workDir>/.lite-harness/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存
+    //（lcc env.py:19 第四隐藏目录；lite 有意偏差：收进 .lite-harness 中间目录）；
     // 异常纪律：内核 bool+错误出参保持 lcc 抛错语义，六个 run_* 处理器把一切失败折叠为错误字符串
     // 直接作为工具输出（lcc 裸抛崩主循环，lite 对齐 executeTool“一切失败皆字符串”纪律——登记偏差）
     struct Task

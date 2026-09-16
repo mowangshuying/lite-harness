@@ -320,7 +320,7 @@ AgentLoop::AgentLoop(QObject *parent)
         emit toolOutputReady(QStringLiteral("memory"), summary, output);
     });
 
-    // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/skills/*/SKILL.md，目录注入 system prompt
+    // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/.lite-harness/skills/*/SKILL.md，目录注入 system prompt
     scanSkills();
 
     // 初始 system prompt（lcc s09 五段：工作目录 + 技能目录 + 记忆段；
@@ -343,7 +343,7 @@ void AgentLoop::setWorkDir(const QString &dir)
     // system prompt（技能目录随工作目录走，避免陈旧清单误导模型）
     scanSkills();
 
-    // 记忆目录（.memory/）同样位于 workDir 之下，索引随新目录重读
+    // 记忆目录（.lite-harness/.memory/）同样挂在 workDir 的 .lite-harness 中间目录之下，索引随新目录重读
     // （s07 重扫超集语义延伸至 s09）
     rebuildSystemPromptMessage();
 }
@@ -1315,7 +1315,8 @@ void AgentLoop::scanSkills()
     // 对应 lcc scan_skills()：整表重建；skills 目录缺失静默为空（对应 python return）
     m_skills.clear();
 
-    const QString skillsDir = QDir(m_workDir).filePath(QStringLiteral("skills")); // lcc env.py: workDir/"skills"
+    // lcc env.py: workDir/"skills"；lite 有意偏差：收进 .lite-harness 中间目录，不在用户项目根撒目录
+    const QString skillsDir = QDir(m_workDir).filePath(QStringLiteral(".lite-harness/skills"));
     if (!QFileInfo(skillsDir).isDir())
         return;
 
@@ -1608,7 +1609,8 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
 
 // ============================================================================
 // lcc s10 任务图（TaskManager 内联移植，SkillManager 档：不建类文件）
-// 存储 <workDir>/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存；
+// 存储 <workDir>/.lite-harness/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存；
+//（lite 有意偏差：lcc 放 workDir 直下，lite 收进 .lite-harness 中间目录，见 taskRootDir）
 // 内核 bool + 错误出参保持 lcc 抛错语义，六个 run_* 处理器把一切失败折叠为错误字符串
 // 直接作为工具输出（lcc 裸抛崩主循环，lite 对齐 executeTool“一切失败皆字符串”纪律——登记偏差；
 // 错误字符串不加 'Error:' 前缀，内核文案逐字即工具输出）。
@@ -1617,8 +1619,9 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
 
 QString AgentLoop::taskRootDir() const
 {
-    // lcc env.py:19 taskDirPath = workDirPath / ".task"（第四隐藏目录）
-    return QDir(m_workDir).filePath(QStringLiteral(".task"));
+    // lcc env.py:19 taskDirPath = workDirPath / ".task"（第四隐藏目录）；
+    // lite 有意偏差：收进 .lite-harness 中间目录，不在用户项目根撒目录
+    return QDir(m_workDir).filePath(QStringLiteral(".lite-harness/.task"));
 }
 
 bool AgentLoop::taskFilePath(const QString &taskId, QString *path, QString *error) const
@@ -1626,10 +1629,10 @@ bool AgentLoop::taskFilePath(const QString &taskId, QString *path, QString *erro
     // lcc _path :37-45：ID 非 str（JSON 层已约束为字符串）或未过 fullmatch →
     // ValueError(f"Invalid task ID:{task_id!r}")（冒号后无空格，快照逐字）
     const QString root = taskRootDir();
-    // lcc _root :28-34 目录逃逸防御：lite 中 m_workDir 为归一化绝对路径、".task" 为固定段，
+    // lcc _root :28-34 目录逃逸防御：lite 中 m_workDir 为归一化绝对路径、".lite-harness/.task" 为固定段，
     // 该检查恒通过——防御死路径按 lcc 保留（状态文件 s10 裁决）
     const QString workRoot = QDir::cleanPath(m_workDir);
-    if (root != workRoot + QLatin1Char('/') + QStringLiteral(".task")) {
+    if (root != workRoot + QLatin1Char('/') + QStringLiteral(".lite-harness/.task")) {
         if (error)
             *error = QStringLiteral("TaskManager escapes the workspace");
         return false;
