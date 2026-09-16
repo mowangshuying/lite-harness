@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "CompactManager.h"
+#include "MemoryManager.h"
 
 class QProcess;
 class SubAgent;
@@ -147,6 +148,11 @@ private:
     // "Error: Unknown skill '{name}'"（lcc load 等价）
     QString runLoadSkill(const QJsonObject &args) const;
 
+    // ---- 记忆（lcc s09 MemoryManager：独立类承接存储与三条 LLM 链，本类持有实例）----
+    // 以当前工作目录/技能目录/记忆索引/本轮召回记录重建 m_messages[0] 的 system prompt
+    // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 五段结构的 lite 等价）
+    void rebuildSystemPromptMessage();
+
     // ---- 生命周期钩子（lcc s04 HOOKS 注册表的内聚移植，事件名 → 有序 handler 列表）----
     // 各事件回调签名；返回空串表示放行/无副作用，非空含义按事件约定：
     // - PreToolUse：硬拦截文本（回填为 tool_result）或 "ASK:<reason>" 前缀（触发异步询问）
@@ -187,6 +193,9 @@ private:
     bool m_compactRequested = false;     // compact 工具被调用（批尾以 compact_history 替换历史后消费）
     int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc MAX_REACTIVE_RETRIES=1，每次 run 归零）
     QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
+    // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用三参 toolOutputReady（"memory"）
+    MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，阻塞式，构造时注入回调）
+    QString m_relevantMemories;          // 本轮召回的记录文本（system prompt 尾段；run() 时刷新）
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;

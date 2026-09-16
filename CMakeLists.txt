@@ -48,6 +48,8 @@ set(src
         "src/SubAgent.h"
         "src/CompactManager.cpp"
         "src/CompactManager.h"
+        "src/MemoryManager.cpp"
+        "src/MemoryManager.h"
     "src/App.cpp"
     "src/BasePage.cpp"
     "src/BasePage.h"
