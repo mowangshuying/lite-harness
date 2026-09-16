@@ -30,8 +30,9 @@ signals:
     void thinkingDelta(const QString &delta);
     // 回复文本增量（逐字/逐段）
     void textDelta(const QString &delta);
-    // 工具执行结果（可选 UI 展示）
-    void toolOutputReady(const QString &command, const QString &output);
+    // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出
+    // 每次工具执行完成发射一次（含 Dangerous blocked / Unknown tool / 沙箱拒绝等错误结果）
+    void toolOutputReady(const QString &toolName, const QString &summary, const QString &output);
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 错误
@@ -44,11 +45,21 @@ private:
     void continueWithToolResults(const QJsonObject &assistantMessage);
     // 依次取出待执行工具，全部完成后回填结果并再次请求
     void runNextTool();
-    // 单个工具执行完成的统一收口（安全/超时等快捷路径也走这里）
-    void onToolFinished(const QJsonObject &toolCall, const QString &command, const QString &output);
+    // 按工具名路由一次工具调用：bash 走异步进程，文件类工具同步执行，未知工具回填错误结果
+    void dispatchToolCall(const QJsonObject &toolCall);
+    // 单个工具执行完成的统一收口（安全/超时/未知/沙箱等快捷路径也走这里）
+    void onToolFinished(const QJsonObject &toolCall, const QString &toolName,
+                        const QString &summary, const QString &output);
     // 异步执行 bash 命令（带安全检查与超时，不阻塞 UI）
-    void executeBashAsync(const QJsonObject &toolCall);
-    // bash 工具定义
+    void executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args);
+    // 文件类工具（本地 IO，同步执行；参数取自 tool 调用解析后的 arguments JSON）
+    QString runReadFile(const QJsonObject &args);
+    QString runWriteFile(const QJsonObject &args);
+    QString runEditFile(const QJsonObject &args);
+    QString runGlob(const QJsonObject &args);
+    // 沙箱路径解析：相对路径按 m_workDir 解析；逃逸工作区时返回空串并置 *error
+    QString safePath(const QString &p, QString *error) const;
+    // 工具定义（bash / read_file / write_file / edit_file / glob）
     static QJsonArray createToolsDefinition();
 
 private:
