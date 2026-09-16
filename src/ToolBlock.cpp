@@ -18,11 +18,28 @@
 
 #include <FluUtils.h>
 
+QString ToolBlock::toolTitleText(const QString &toolName)
+{
+    // 中文完成词条：与 lcc 各工具语义对齐，朴素直译；未知工具回退"已执行"
+    if (toolName == QLatin1String("bash"))
+        return tr("已执行");
+    if (toolName == QLatin1String("read_file"))
+        return tr("已读取");
+    if (toolName == QLatin1String("write_file"))
+        return tr("已写入");
+    if (toolName == QLatin1String("edit_file"))
+        return tr("已编辑");
+    if (toolName == QLatin1String("glob"))
+        return tr("已查找");
+    return tr("已执行");
+}
+
 ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    // ---- 标题栏：$ 提示符 + "已执行" + 命令 + 折叠箭头 ----
+    // ---- 标题栏：bash 为 [$ + 已执行]，其余工具为 [等宽工具名标签 + 中文词条]，
+    //      再接单行省略的关键参数与折叠箭头 ----
     m_header = new QWidget(this);
     m_header->setObjectName("toolHeader");
     m_header->setFixedHeight(32);
@@ -38,13 +55,20 @@ ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
     m_iconLabel->setAlignment(Qt::AlignCenter);
     m_iconLabel->setText(QStringLiteral("$"));
 
+    // 非 bash 工具的等宽名字标签（read_file / write_file / ...），默认隐藏；
+    // 与 $ 提示符互斥显示，隐藏时 QHBoxLayout 不计入宽度与间距
+    m_tagLabel = new QLabel(m_header);
+    m_tagLabel->setObjectName("toolTag");
+    m_tagLabel->setTextInteractionFlags(Qt::NoTextInteraction);
+    m_tagLabel->hide();
+
     m_titleLabel = new QLabel(m_header);
     m_titleLabel->setObjectName("toolTitle");
     m_titleLabel->setText(tr("已执行"));
 
-    m_commandLabel = new QLabel(m_header);
-    m_commandLabel->setObjectName("toolCommand");
-    m_commandLabel->setTextInteractionFlags(Qt::NoTextInteraction);
+    m_summaryLabel = new QLabel(m_header);
+    m_summaryLabel->setObjectName("toolCommand");
+    m_summaryLabel->setTextInteractionFlags(Qt::NoTextInteraction);
 
     m_arrowLabel = new QLabel(m_header);
     m_arrowLabel->setObjectName("toolArrow");
@@ -52,8 +76,9 @@ ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
     m_arrowLabel->setAlignment(Qt::AlignCenter);
 
     headerLayout->addWidget(m_iconLabel);
+    headerLayout->addWidget(m_tagLabel);
     headerLayout->addWidget(m_titleLabel);
-    headerLayout->addWidget(m_commandLabel, 1);
+    headerLayout->addWidget(m_summaryLabel, 1);
     headerLayout->addWidget(m_arrowLabel);
 
     // ---- 输出内容区：纯文本，尺寸固定为 min(自然高度, 上限)，动画期间仅平移 ----
@@ -90,44 +115,62 @@ ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
     m_content->hide();
 }
 
-void ToolBlock::setToolExecution(const QString &command, const QString &output)
+void ToolBlock::setToolExecution(const QString &toolName, const QString &summary, const QString &output)
 {
-    m_command = command;
-    refreshCommandLabel();
+    m_toolName = toolName;
+    m_summary = summary;
+
+    // 头部呈现方案：bash 保留 "$" 提示符观感；其余工具隐藏 $、显示等宽工具名标签。
+    // 中文词条统一承担"动作 + 完成态"语义，工具名标签承担"哪个工具"。
+    const bool prompt = usesPromptGlyph();
+    m_iconLabel->setVisible(prompt);
+    m_tagLabel->setVisible(!prompt);
+    if (!prompt)
+        m_tagLabel->setText(toolName);
+    m_titleLabel->setText(toolTitleText(toolName));
+
+    refreshSummaryLabel();
 
     // 输出走纯文本路径（50k 字符内性能可控），颜色/等宽字体由 QSS 控制
     m_content->setPlainText(output.isEmpty() ? tr("(无输出)") : output);
 }
 
-QString ToolBlock::singleLineCommand() const
+QString ToolBlock::singleLineSummary() const
 {
     // 头部单行显示：换行/制表压成空格，连续空白折叠（tooltip 与展开输出保留原文）
-    QString line = m_command;
+    QString line = m_summary;
     line.replace(QLatin1Char('\r'), QLatin1Char(' '));
     line.replace(QLatin1Char('\n'), QLatin1Char(' '));
     line.replace(QLatin1Char('\t'), QLatin1Char(' '));
     return line.simplified();
 }
 
-void ToolBlock::refreshCommandLabel()
+void ToolBlock::refreshSummaryLabel()
 {
-    if (m_command.isEmpty())
+    if (m_summary.isEmpty())
     {
-        m_commandLabel->setText(QString());
-        m_commandLabel->setToolTip(QString());
+        m_summaryLabel->setText(QString());
+        m_summaryLabel->setToolTip(QString());
         return;
     }
 
-    const QString text = singleLineCommand();
+    const QString text = singleLineSummary();
 
-    // 头部可用宽度 = 块宽 - 固定装饰（左右边距 12+10、图标 16、箭头 16、3 段间距 8*3）- 标题宽
-    static constexpr int kHeaderChrome = 12 + 10 + 16 + 16 + 8 * 3;
-    const int avail = qMax(40, width() - kHeaderChrome - m_titleLabel->sizeHint().width());
+    // 头部可用宽度 = 块宽 - 固定装饰（左右边距 12+10、前置标签、箭头 16、3 段间距 8*3）- 标题宽。
+    // 前置标签：bash 为 16px 的 $；其余为按内容自适应的等宽工具名标签（sizeHint 含 QSS padding）
+    const int leadWidth = usesPromptGlyph()
+                              ? m_iconLabel->width()
+                              : m_tagLabel->sizeHint().width();
+    static constexpr int kHeaderChrome = 12 + 10 + 16 + 8 * 3;
+    const int avail = qMax(40, width() - kHeaderChrome - leadWidth
+                                  - m_titleLabel->sizeHint().width());
 
-    QFontMetrics fm(m_commandLabel->font());
-    m_commandLabel->setText(fm.elidedText(text, Qt::ElideMiddle, avail));
-    m_commandLabel->setToolTip(text);
-    m_header->setToolTip(text);
+    QFontMetrics fm(m_summaryLabel->font());
+    m_summaryLabel->setText(fm.elidedText(text, Qt::ElideMiddle, avail));
+    m_summaryLabel->setToolTip(text);
+    m_header->setToolTip(usesPromptGlyph()
+                             ? text
+                             : QStringLiteral("%1  %2").arg(m_toolName, text));
 }
 
 void ToolBlock::setExpanded(bool expanded)
@@ -216,8 +259,8 @@ void ToolBlock::resizeEvent(QResizeEvent *event)
     m_content->resize(event->size().width(), m_fullContentHeight);
     m_content->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
 
-    // 命令省略宽度随块宽变化
-    refreshCommandLabel();
+    // 关键参数省略宽度随块宽变化
+    refreshSummaryLabel();
 
     // 动画进行中不重测，避免"测量→动画→重排→再测量"循环
     if (m_animating)

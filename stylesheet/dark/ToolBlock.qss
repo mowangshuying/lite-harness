@@ -23,6 +23,17 @@ ToolBlock {
     font-weight: bold;
 }
 
+/* 非 bash 工具的等宽名字标签（read_file / write_file / edit_file / glob）：
+   弱底圆角小片，颜色与命令行同级，突出"哪个工具" */
+#toolTag {
+    color: rgb(200, 200, 200);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 14);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
 #toolTitle {
     color: rgb(153, 153, 153);
     font-size: 13px;

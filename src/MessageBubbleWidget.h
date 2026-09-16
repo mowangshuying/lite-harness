@@ -31,8 +31,9 @@ public:
     void finishStreaming();
 
     // 工具执行节点（AgentLoop::toolOutputReady）：按到达顺序内嵌到气泡时间线，
-    // 将当前流式文本段冻结归档后插入可折叠的 ToolBlock，后续增量另起新段
-    void appendToolExecution(const QString &command, const QString &output);
+    // 将当前流式文本段冻结归档后插入可折叠的 ToolBlock，后续增量另起新段。
+    // toolName 为工具名；summary 为关键参数（bash=命令行，文件类=path，glob=pattern）
+    void appendToolExecution(const QString &toolName, const QString &summary, const QString &output);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

@@ -313,7 +313,7 @@ void MessageBubbleWidget::appendText(const QString &delta)
     scheduleStreamResize();
 }
 
-void MessageBubbleWidget::appendToolExecution(const QString &command, const QString &output)
+void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QString &summary, const QString &output)
 {
     // 仅助手气泡承载工具时间线；用户气泡防御性忽略
     if (m_role != Assistant)
@@ -337,7 +337,7 @@ void MessageBubbleWidget::appendToolExecution(const QString &command, const QStr
     }
 
     auto *block = new ToolBlock(this);
-    block->setToolExecution(command, output);
+    block->setToolExecution(toolName, summary, output);
     block->setExpanded(false);
     m_timeline->addWidget(block);
 
