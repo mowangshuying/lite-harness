@@ -1,0 +1,108 @@
+/* light */
+PermissionCard {
+    background-color: transparent;
+}
+
+/* 待决主体：琥珀淡染底 + 细描边，克制的警示感（浅底不刺眼）。
+   无遮挡动画，低透明度叠加页底色 rgb(249,249,249) 即可 */
+#pcBody {
+    background-color: rgba(194, 127, 0, 10);
+    border: 1px solid rgba(194, 127, 0, 55);
+    border-radius: 6px;
+}
+
+/* 圆形警示徽章：琥珀底白色感叹号 */
+#pcBadge {
+    background-color: rgb(194, 127, 0);
+    border-radius: 9px;
+    color: rgb(255, 255, 255);
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#pcTitle {
+    color: rgb(60, 60, 60);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* 等宽工具名标签：与 ToolBlock #toolTag 同款小片 */
+#pcTag {
+    color: rgb(60, 60, 60);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    background-color: rgba(0, 0, 0, 10);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+#pcVerb {
+    color: rgb(96, 96, 96);
+    font-size: 13px;
+}
+
+/* 关键参数：等宽字体，与工具块命令行同级观感 */
+#pcSummary {
+    color: rgb(60, 60, 60);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+/* 风险原因：深一档琥珀文字，浅底可读且不刺眼 */
+#pcReason {
+    color: rgb(157, 93, 0);
+    font-size: 12px;
+}
+
+/* 拒绝按钮：Fluent 中性标准按钮，默认焦点所在（安全动作占默认位） */
+#pcDenyButton {
+    background-color: rgb(255, 255, 255);
+    border: 1px solid rgba(0, 0, 0, 40);
+    border-radius: 4px;
+    padding: 0 16px;
+    color: rgb(60, 60, 60);
+    font-size: 13px;
+}
+#pcDenyButton:hover {
+    background-color: rgb(246, 246, 246);
+}
+#pcDenyButton:pressed {
+    background-color: rgb(238, 238, 238);
+    color: rgb(96, 96, 96);
+}
+#pcDenyButton:focus {
+    border: 1px solid rgb(96, 96, 96);
+}
+
+/* 允许按钮：琥珀描边、弱于拒绝一档，避免危险操作获得高对比默认确认 */
+#pcAllowButton {
+    background-color: transparent;
+    border: 1px solid rgba(194, 127, 0, 140);
+    border-radius: 4px;
+    padding: 0 16px;
+    color: rgb(157, 93, 0);
+    font-size: 13px;
+}
+#pcAllowButton:hover {
+    background-color: rgba(194, 127, 0, 18);
+}
+#pcAllowButton:pressed {
+    background-color: rgba(194, 127, 0, 30);
+}
+
+/* 裁决留痕：弱化单行。允许显绿；拒绝为安全动作，保持中性灰不施红 */
+#pcTrace {
+    background-color: transparent;
+}
+#pcTraceIcon {
+    font-size: 13px;
+    font-weight: bold;
+    color: rgb(120, 120, 120);
+}
+#pcTraceIcon[outcome="allowed"] {
+    color: rgb(16, 124, 16);
+}
+#pcTraceLabel {
+    color: rgb(120, 120, 120);
+    font-size: 13px;
+}

@@ -2,10 +2,12 @@
 
 #include "BasePage.h"
 #include "MessageBubbleWidget.h"
+#include <QPointer>
 
 class FluVScrollView;
 class ChatMsgEdit;
 class AgentLoop;
+class PermissionCard;
 
 class ChatSessionPage : public BasePage
 {
@@ -31,4 +33,5 @@ private:
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
     MessageBubbleWidget *m_currentBubble = nullptr;   // 当前流式气泡
+    QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
 };

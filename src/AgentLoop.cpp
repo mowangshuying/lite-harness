@@ -40,6 +40,45 @@ const QStringList &dangerousCommands()
     return list;
 }
 
+// 硬禁止列表（lcc s03 DENY_LIST）：命中即拒绝，不询问
+const QStringList &denyPatterns()
+{
+    static const QStringList list = {
+        QStringLiteral("rm -rf /"),
+        QStringLiteral("sudo"),
+        QStringLiteral("shutdown"),
+        QStringLiteral("reboot"),
+        QStringLiteral("mkfs"),
+        QStringLiteral("dd if="),
+        QStringLiteral("> /dev/sda"),
+    };
+    return list;
+}
+
+// 破坏性命令词正则（lcc s03 DESTRUCTIVE_COMMAND_WORD，防绕过升级）：
+// (?i) 忽略大小写；(?:^|[;&|()\n{}"'`]) 匹配串首或分隔符/花括号/引号（覆盖 powershell -Command "..." 与 & {...} 嵌套写法）；
+// (?:rm|del|erase|ri|rmdir|rd|Remove-Item) 各类删除命令及别名；(?=\s|$|[;&|(){}]) 词尾断言防 "rms" 类前缀误伤。
+// Qt6 PCRE 原生支持 (?i) 与 lookahead；反引号在原始字符串中无需转义
+bool containsDestructiveCommand(const QString &command)
+{
+    static const QRegularExpression re(QStringLiteral(
+        R"RE((?i)(?:^|[;&|()\n{}"'`])\s*(?:rm|del|erase|ri|rmdir|rd|Remove-Item)(?=\s|$|[;&|(){}]))RE"));
+    return re.match(command).hasMatch();
+}
+
+// 工具调用的关键参数摘要（lcc s02 tool_use info：bash→command、glob→pattern、文件工具→path）
+QString toolSummary(const QString &toolName, const QJsonObject &args)
+{
+    if (toolName == QStringLiteral("bash"))
+        return args.value(QStringLiteral("command")).toString();
+    if (toolName == QStringLiteral("glob"))
+        return args.value(QStringLiteral("pattern")).toString();
+    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
+        || toolName == QStringLiteral("edit_file"))
+        return args.value(QStringLiteral("path")).toString();
+    return QString();
+}
+
 // glob 模式转正则（供 runGlob 使用）：
 // "**" 匹配任意层级路径；"**/" 允许零层或多层目录；"*" 匹配单层内任意字符（不跨 '/'）；
 // "?" 匹配单个非 '/' 字符；其余字符按字面量转义
@@ -267,23 +306,40 @@ void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolN
     runNextTool();
 }
 
-void AgentLoop::dispatchToolCall(const QJsonObject &toolCall)
+void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGranted)
 {
     // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）
     const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
     const QString toolName = function.value(QStringLiteral("name")).toString();
     const QJsonObject args =
         QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+    const QString summary = toolSummary(toolName, args);
 
-    // 人类可读摘要（对齐 lcc s02 的 tool_use info：关键参数行）
-    QString summary;
-    if (toolName == QStringLiteral("bash"))
-        summary = args.value(QStringLiteral("command")).toString();
-    else if (toolName == QStringLiteral("glob"))
-        summary = args.value(QStringLiteral("pattern")).toString();
-    else if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
-             || toolName == QStringLiteral("edit_file"))
-        summary = args.value(QStringLiteral("path")).toString();
+    // 权限门（对齐 lcc s03 check_permission，控制台同步 input 改为 GUI 异步询问）：
+    // 1) bash 命中硬拒绝列表 → 不询问直接拒绝，原因写进 tool_result（GUI 无控制台，比 "Permission denied" 更有信息量）
+    // 2) 命中询问规则 → 发 permissionRequired 并暂停队列，等待 resolvePermission() 裁决后再续跑
+    //    permissionGranted=true 为批准后的续跑路径，跳过门避免二次询问
+    if (!permissionGranted)
+    {
+        if (toolName == QStringLiteral("bash"))
+        {
+            const QString blocked = checkDenyList(args.value(QStringLiteral("command")).toString());
+            if (!blocked.isEmpty())
+            {
+                onToolFinished(toolCall, toolName, summary, blocked);
+                return;
+            }
+        }
+
+        const QString reason = checkPermissionRules(toolName, args);
+        if (!reason.isEmpty())
+        {
+            m_awaitingPermission = true;
+            m_pendingPermissionCall = toolCall;
+            emit permissionRequired(toolName, summary, reason);
+            return; // 队列暂停：不回填、不请求，等用户裁决
+        }
+    }
 
     // bash 走异步进程链
     if (toolName == QStringLiteral("bash"))
@@ -306,6 +362,73 @@ void AgentLoop::dispatchToolCall(const QJsonObject &toolCall)
         output = QStringLiteral("Unknown tool: %1").arg(toolName);
 
     onToolFinished(toolCall, toolName, summary, output);
+}
+
+QString AgentLoop::checkDenyList(const QString &command) const
+{
+    // 子串匹配，按列表顺序取第一个命中项（对齐 lcc check_deny_list；
+    // 大小写不敏感与仓库既有 bash 黑名单风格一致，较 lcc 的大小写敏感更严格——Windows 命令名本就不区分大小写）
+    for (const QString &pattern : denyPatterns())
+    {
+        if (command.contains(pattern, Qt::CaseInsensitive))
+            return QStringLiteral("Blocked: %1 is on the deny list").arg(pattern);
+    }
+    return QString();
+}
+
+QString AgentLoop::checkPermissionRules(const QString &toolName, const QJsonObject &args) const
+{
+    // 规则 1（lcc PERMISSION_RULES）：read/write/edit_file 的 path 逃逸工作区。
+    // lcc 用未归一化的拼接判定，这里复用 safePath 的越界检测结果，语义一致
+    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
+        || toolName == QStringLiteral("edit_file"))
+    {
+        QString err;
+        if (safePath(args.value(QStringLiteral("path")).toString(), &err).isEmpty())
+            return QStringLiteral("Writing outside workspace");
+        return QString();
+    }
+
+    // 规则 2：bash 命中破坏性命令词正则，或包含关键子串（子串部分区分大小写，逐字对齐 lcc）
+    if (toolName == QStringLiteral("bash"))
+    {
+        const QString command = args.value(QStringLiteral("command")).toString();
+        if (containsDestructiveCommand(command) || command.contains(QStringLiteral("rm "))
+            || command.contains(QStringLiteral("> /etc/")) || command.contains(QStringLiteral("chmod 777")))
+            return QStringLiteral("Potentially destructive command");
+    }
+
+    // 其余工具（glob 等）无询问规则
+    return QString();
+}
+
+void AgentLoop::resolvePermission(bool allow)
+{
+    // UI 收到 permissionRequired 后回传裁决；无待决询问时忽略
+    if (!m_awaitingPermission)
+        return;
+
+    const QJsonObject toolCall = m_pendingPermissionCall;
+    m_pendingPermissionCall = QJsonObject();
+    m_awaitingPermission = false;
+
+    // stop() 已清理状态的话此处兜底：不再续跑工具链
+    if (!m_running)
+        return;
+
+    if (!allow)
+    {
+        // 拒绝：照常回填 "Permission denied" 并发 toolOutputReady（UI 可展示被拒），随后继续队列
+        const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
+        const QString toolName = function.value(QStringLiteral("name")).toString();
+        const QJsonObject args = QJsonDocument::fromJson(
+            function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+        onToolFinished(toolCall, toolName, toolSummary(toolName, args), QStringLiteral("Permission denied"));
+        return;
+    }
+
+    // 允许：该 toolCall 走原执行路径（跳过权限门；executeBashAsync 内置黑名单仍生效，双层防御）
+    dispatchToolCall(toolCall, /*permissionGranted = */ true);
 }
 
 void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args)
@@ -530,6 +653,20 @@ void AgentLoop::stop()
 {
     if (!m_running)
         return;
+
+    // 待决权限询问：视为 deny，直接回填历史保持 tool_use/tool_result 配对完整
+    //（OpenAI 协议要求每个 tool_call 必有对应 tool 消息；不经 onToolFinished 以免续跑队列或发展示信号）
+    if (m_awaitingPermission)
+    {
+        QJsonObject toolResult;
+        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+        toolResult[QStringLiteral("tool_call_id")] =
+            m_pendingPermissionCall.value(QStringLiteral("id")).toString();
+        toolResult[QStringLiteral("content")] = QStringLiteral("Permission denied");
+        m_messages.append(toolResult);
+        m_pendingPermissionCall = QJsonObject();
+        m_awaitingPermission = false;
+    }
 
     // 中断正在执行的 QProcess（其 finished 后 onToolFinished 因 m_running=false 不再继续）
     for (QProcess *p : m_activeProcesses)

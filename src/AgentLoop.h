@@ -25,6 +25,10 @@ public:
     void setWorkDir(const QString &dir);
     QString workDir() const;
 
+    // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
+    // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
+    void resolvePermission(bool allow);
+
 signals:
     // 思考过程增量（forward 给 UI）
     void thinkingDelta(const QString &delta);
@@ -33,6 +37,10 @@ signals:
     // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出
     // 每次工具执行完成发射一次（含 Dangerous blocked / Unknown tool / 沙箱拒绝等错误结果）
     void toolOutputReady(const QString &toolName, const QString &summary, const QString &output);
+    // 权限门：工具调用命中询问规则（不含硬拒绝列表项）时发射，队列暂停等待 resolvePermission() 裁决
+    // toolName / summary 与 toolOutputReady 前两参同义；reason = 命中规则文案
+    //（"Writing outside workspace" / "Potentially destructive command"）
+    void permissionRequired(const QString &toolName, const QString &summary, const QString &reason);
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 错误
@@ -45,8 +53,14 @@ private:
     void continueWithToolResults(const QJsonObject &assistantMessage);
     // 依次取出待执行工具，全部完成后回填结果并再次请求
     void runNextTool();
-    // 按工具名路由一次工具调用：bash 走异步进程，文件类工具同步执行，未知工具回填错误结果
-    void dispatchToolCall(const QJsonObject &toolCall);
+    // 按工具名路由一次工具调用：先过权限门（硬拒绝直接回填 / 询问规则暂停队列），
+    // 然后 bash 走异步进程、文件类工具同步执行、未知工具回填错误结果
+    // permissionGranted=true 为用户批准后的续跑路径，跳过权限门（仅 resolvePermission 内部使用）
+    void dispatchToolCall(const QJsonObject &toolCall, bool permissionGranted = false);
+    // 权限门·硬拒绝列表（仅 bash）：命中返回 "Blocked: {pattern} is on the deny list"，未命中返回空串
+    QString checkDenyList(const QString &command) const;
+    // 权限门·询问规则：命中返回规则文案（调用方应暂停队列并发 permissionRequired），未命中返回空串
+    QString checkPermissionRules(const QString &toolName, const QJsonObject &args) const;
     // 单个工具执行完成的统一收口（安全/超时/未知/沙箱等快捷路径也走这里）
     void onToolFinished(const QJsonObject &toolCall, const QString &toolName,
                         const QString &summary, const QString &output);
@@ -72,4 +86,6 @@ private:
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息
     QList<QProcess *> m_activeProcesses; // 正在运行的 QProcess，stop()/析构时 kill
+    QJsonObject m_pendingPermissionCall; // 等待权限裁决的工具调用（队列暂停上下文）
+    bool m_awaitingPermission = false;   // 权限询问中（permissionRequired 已发、resolvePermission 未到）
 };

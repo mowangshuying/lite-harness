@@ -1,0 +1,107 @@
+/* atomOneDark */
+PermissionCard {
+    background-color: transparent;
+}
+
+/* 待决主体：atomOneDark 语法黄 #E5C07B 淡染底 + 细描边，叠加页底色 rgb(40,44,52) */
+#pcBody {
+    background-color: rgba(229, 192, 123, 12);
+    border: 1px solid rgba(229, 192, 123, 45);
+    border-radius: 6px;
+}
+
+/* 圆形警示徽章：语法黄底深色感叹号，贴合 atomOneDark 色板 */
+#pcBadge {
+    background-color: rgb(229, 192, 123);
+    border-radius: 9px;
+    color: rgb(40, 44, 52);
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#pcTitle {
+    color: rgb(210, 214, 222);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* 等宽工具名标签：与 ToolBlock #toolTag 同款小片 */
+#pcTag {
+    color: rgb(212, 216, 224);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 16);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+#pcVerb {
+    color: rgb(171, 178, 191);
+    font-size: 13px;
+}
+
+/* 关键参数：等宽字体，与工具块命令行同级观感 */
+#pcSummary {
+    color: rgb(212, 216, 224);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+/* 风险原因：语法黄文字，冷灰底上保持警示辨识 */
+#pcReason {
+    color: rgb(229, 192, 123);
+    font-size: 12px;
+}
+
+/* 拒绝按钮：atomOneDark 标准按钮底 #3C424C，默认焦点所在 */
+#pcDenyButton {
+    background-color: rgb(60, 66, 76);
+    border: 1px solid rgb(72, 78, 89);
+    border-radius: 4px;
+    padding: 0 16px;
+    color: rgb(220, 223, 228);
+    font-size: 13px;
+}
+#pcDenyButton:hover {
+    background-color: rgb(66, 72, 82);
+}
+#pcDenyButton:pressed {
+    background-color: rgb(56, 61, 70);
+    color: rgb(171, 178, 191);
+}
+#pcDenyButton:focus {
+    border: 1px solid rgb(140, 148, 160);
+}
+
+/* 允许按钮：语法黄描边、弱于拒绝一档，避免危险操作获得高对比默认确认 */
+#pcAllowButton {
+    background-color: transparent;
+    border: 1px solid rgba(229, 192, 123, 120);
+    border-radius: 4px;
+    padding: 0 16px;
+    color: rgb(229, 192, 123);
+    font-size: 13px;
+}
+#pcAllowButton:hover {
+    background-color: rgba(229, 192, 123, 18);
+}
+#pcAllowButton:pressed {
+    background-color: rgba(229, 192, 123, 28);
+}
+
+/* 裁决留痕：弱化单行。允许显 atomOneDark 绿 #98C379；拒绝保持中性灰不施红 */
+#pcTrace {
+    background-color: transparent;
+}
+#pcTraceIcon {
+    font-size: 13px;
+    font-weight: bold;
+    color: rgb(139, 148, 158);
+}
+#pcTraceIcon[outcome="allowed"] {
+    color: rgb(152, 195, 121);
+}
+#pcTraceLabel {
+    color: rgb(139, 148, 158);
+    font-size: 13px;
+}
