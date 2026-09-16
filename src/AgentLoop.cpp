@@ -1,6 +1,7 @@
 #include "AgentLoop.h"
 
 #include "QOpenAi.h"
+#include "SubAgent.h" // startSubAgentTask/cancelSubAgent/resolvePermission 需要完整类型
 
 #include <QJsonDocument>
 #include <QProcess>
@@ -15,20 +16,21 @@
 #include <QTimer>
 #include <QDebug>
 
+#include <memory>
+
 namespace {
 
 // 工具调用轮次上限（防止模型反复请求工具形成死循环）
 constexpr int kMaxToolIterations = 30;
 
-// system prompt：告知模型当前工作目录（与 lcc s02 语义一致，多工具版为 "Use tools"）；
-// s05 起追加 todo 使用指引
+// system prompt：告知模型当前工作目录（lcc s06 loop.py 原文）：todo 计划/更新指引 +
+// task 子代理使用指引；三段为相邻字面量隐式拼接，句与句之间没有空格，逐字保留
 QString makeSystemPrompt(const QString &workDir)
 {
-    // lcc s05 原文为三段相邻字面量隐式拼接，句与句之间没有空格，逐字保留
     return QStringLiteral(
                "You are a coding agent at %1."
-               "Before starting any multi-step task, use todo_write to plan your steps."
-               "Update status as you go.")
+               "Before starting any multi-step task, use todo_write to plan your steps, and use todo_write to update your todo list, must update after each step."
+               "Use task for focused exploration or a self-contained subtask.")
         .arg(workDir);
 }
 
@@ -72,7 +74,7 @@ bool containsDestructiveCommand(const QString &command)
 }
 
 // 工具调用的关键参数摘要（lcc s02 tool_use info：bash→command、glob→pattern、文件工具→path；
-// s05 起 todo_write 为固定文案，对齐 lcc 日志语义）
+// s05 起 todo_write 为固定文案；s06 起 task→prompt，对齐 lcc 日志语义）
 QString toolSummary(const QString &toolName, const QJsonObject &args)
 {
     if (toolName == QStringLiteral("bash"))
@@ -83,13 +85,15 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
         || toolName == QStringLiteral("edit_file"))
         return args.value(QStringLiteral("path")).toString();
     if (toolName == QStringLiteral("todo_write"))
-        return QStringLiteral("update task list:"); // lcc s05 原文含末尾冒号
+        return QStringLiteral("update task list"); // lcc s06 原文（hooks.py）已去掉末尾冒号
+    if (toolName == QStringLiteral("task"))
+        return args.value(QStringLiteral("prompt")).toString();
     return QString();
 }
 
 // PreToolUse 钩子的“需询问”返回协议前缀（C++ 移植约定，有意偏差）：
 // lcc 的 permission 钩子内部同步 input() 询问后直接返回拦截文本或 None；
-// GUI 无阻塞 stdin，钩子改为携带 "ASK:<reason>" 返回，由 dispatchToolCall 识别后
+// GUI 无阻塞 stdin，钩子改为携带 "ASK:<reason>" 返回，由 executeTool 识别后
 // 发 permissionRequired 异步挂起（s03 机制，UI 契约零改动）。
 // 不带该前缀的非空返回值一律视为硬拦截文本（回填为 tool_result）。
 // 现有拦截文案（"Blocked: ..."）不以 "ASK:" 开头，两路径无冲突。
@@ -99,7 +103,7 @@ const QString &askPrefix()
     return prefix;
 }
 
-// 从工具调用中提取工具名与解析后的 arguments（钩子与 dispatchToolCall 共用；
+// 从工具调用中提取工具名与解析后的 arguments（钩子与 executeTool 共用；
 // arguments 为流式拼装出的 JSON 字符串）
 QString callToolName(const QJsonObject &toolCall)
 {
@@ -136,7 +140,12 @@ QString toolUseInfo(const QString &toolName, const QJsonObject &args)
     if (toolName == QStringLiteral("glob"))
         return QStringLiteral("pattern: ") + args.value(QStringLiteral("pattern")).toString();
     if (toolName == QStringLiteral("todo_write"))
-        return QStringLiteral("update task list:"); // lcc s05：无动态参数，原样文案
+        return QStringLiteral("update task list"); // lcc s06 原文（hooks.py）已去掉末尾冒号
+    if (toolName == QStringLiteral("task"))
+        // lcc 原文为 f"task: {block.input.get('prompt','')}" 不截断；task prompt 可能很长，
+        // 为避免日志刷屏截 60 字符（裁决项，有意偏离 lcc）
+        return QStringLiteral("task: ")
+            + args.value(QStringLiteral("prompt")).toString().left(60);
     return QString();
 }
 
@@ -227,6 +236,10 @@ QString AgentLoop::workDir() const
 AgentLoop::~AgentLoop()
 {
     // 与 stop() 相同但静默（不发信号）
+    // lcc s06 R1 收口三路之一（析构）：先级联取消子代理——cancel 抑制其完成回调，
+    // "(cancelled)" 回填进即将清空的历史属良性无害
+    cancelSubAgent();
+
     for (QProcess *p : m_activeProcesses)
     {
         if (p)
@@ -282,6 +295,8 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
     request[QStringLiteral("tools")] = createToolsDefinition();
     // 默认开启思考
     request[QStringLiteral("enable_thinking")] = true;
+    // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
+    request[QStringLiteral("max_tokens")] = 8000;
     // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
 
     QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
@@ -301,11 +316,10 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
         {
             m_messages.append(fullMsg);
 
-            // Stop 钩子（lcc s04）：循环即将结束（无 tool_calls）时触发。
-            // lcc 语义：若返回非空则作为一条 user 消息注入历史，但无论如何都 return——
-            // 并不存在“强制续跑”，注入内容只影响下一轮上下文（内置 summary_hook 恒返回
-            // None，故非空分支在 lcc 中实为死代码，此处原样保留为扩展点；
-            // lcc 原文误拼 "conent"，此处按正确键名 "content" 写入）
+            // Stop 钩子（lcc s04 引入，s06 起为"续跑"语义）：返回非空则作为一条 user
+            // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，kMaxToolIterations=30
+            // 兜底，不加额外计数上限）。内置 summary 钩子恒返回空串，故默认行为与 s04 一致
+            // 直接收尾。lcc 原文误拼 "conent"，此处按正确键名 "content" 写入
             const QString force = triggerStopHooks();
             if (!force.isEmpty())
             {
@@ -313,6 +327,18 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
                 injected[QStringLiteral("role")] = QStringLiteral("user");
                 injected[QStringLiteral("content")] = force;
                 m_messages.append(injected);
+
+                if (++m_toolIterations > kMaxToolIterations)
+                {
+                    m_running = false;
+                    emit error(tr("工具调用次数超过上限（%1 次），终止循环。").arg(kMaxToolIterations));
+                    return;
+                }
+                QJsonArray messagesJson;
+                for (const auto &msg : m_messages)
+                    messagesJson.append(msg);
+                startChatRequest(messagesJson);
+                return;
             }
 
             m_running = false;
@@ -334,6 +360,9 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
     connect(s, &QOpenAi::ChatStream::error, this, [this, s](const QString &msg) {
         m_currentStream = nullptr;
         s->deleteLater();
+        // lcc s06 R1 收口三路之一：错误链同样级联取消子代理并合成 "(cancelled)" 回填
+        // （串行队列下宿主流错误与子代理运行实际互斥，此处为防御性接线）
+        cancelSubAgent();
         m_running = false;
         emit error(msg);
     });
@@ -363,22 +392,30 @@ void AgentLoop::runNextTool()
             m_messages.append(value.toObject());
         m_toolResultsReady = QJsonArray();
 
-        // 待办提醒（lcc s05）：本批 tool_calls 未"执行"todo_write 则计数 +1，执行过则归零。
-        // 与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行（handler 未跑）；
-        // 走到 handler 的即使返回校验错误也算执行过。
-        // lcc 把提醒作为 text 块并入同一条 tool_result user 消息，OpenAI 协议无混合
-        // content 块，故改为紧随其后的独立 user 消息（提醒文本逐字一致）。
+        // 待办提醒（lcc s05 引入，s06 改并入形态）：本批 tool_calls 未"执行"todo_write 则
+        // 计数 +1，执行过则归零。与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行
+        // （handler 未跑）；走到 handler 的即使返回校验错误也算执行过。
+        // lcc s06 把提醒文本并入最后一条 tool_result 的 content 尾部（OpenAI 协议 tool 消息
+        // content 为扁平字符串，直接字符串拼接；提醒内文逐字一致，不再发独立 user 消息）
         if (m_usedTodoThisRound)
             m_roundsSinceTodo = 0;
         else
             ++m_roundsSinceTodo;
         if (m_roundsSinceTodo >= 3)
         {
-            QJsonObject reminder;
-            reminder[QStringLiteral("role")] = QStringLiteral("user");
-            reminder[QStringLiteral("content")] =
-                QStringLiteral("<reminder>Update your todos.</reminder>");
-            m_messages.append(reminder);
+            const QString reminder =
+                QStringLiteral("\n\n<reminder>Update your todos.</reminder>");
+            for (int i = m_messages.size() - 1; i >= 0; --i)
+            {
+                if (m_messages.at(i).value(QStringLiteral("role")).toString()
+                    == QStringLiteral("tool"))
+                {
+                    QJsonObject &tail = m_messages[i];
+                    tail[QStringLiteral("content")] =
+                        tail.value(QStringLiteral("content")).toString() + reminder;
+                    break;
+                }
+            }
             m_roundsSinceTodo = 0;
         }
 
@@ -390,7 +427,7 @@ void AgentLoop::runNextTool()
     }
 
     const QJsonObject toolCall = m_pendingToolCalls.takeAt(0).toObject();
-    dispatchToolCall(toolCall);
+    executeTool(toolCall, mainToolHandlers(), /*permissionGranted=*/false);
 }
 
 void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolName,
@@ -412,7 +449,9 @@ void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolN
     runNextTool();
 }
 
-void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGranted)
+void AgentLoop::executeTool(const QJsonObject &toolCall,
+                            const QHash<QString, ToolHandler> &handlers,
+                            bool permissionGranted)
 {
     // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）
     const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
@@ -442,42 +481,42 @@ void AgentLoop::dispatchToolCall(const QJsonObject &toolCall, bool permissionGra
         return;
     }
 
-    // bash 走异步进程链
+    // bash 走异步进程链（不进 handler 表：跨事件循环回填，表内只放同步工具）
     if (toolName == QStringLiteral("bash"))
     {
         executeBashAsync(toolCall, args);
         return;
     }
 
-    // 文件类工具为本地 IO，同步执行；未知工具不中断循环，错误内容作为结果回填（对齐 lcc Unknown 分支）
-    QString output;
-    if (toolName == QStringLiteral("read_file"))
-        output = runReadFile(args);
-    else if (toolName == QStringLiteral("write_file"))
-        output = runWriteFile(args);
-    else if (toolName == QStringLiteral("edit_file"))
-        output = runEditFile(args);
-    else if (toolName == QStringLiteral("glob"))
-        output = runGlob(args);
-    else if (toolName == QStringLiteral("todo_write"))
+    // task 走子代理异步链（lcc s06）：独立上下文黑盒，完成后经回调走 onToolFinished 收口
+    if (toolName == QStringLiteral("task"))
     {
-        // lcc s05：纯内存同步执行（与文件工具同路径）。只要 handler 跑过即视为本轮
-        // 已用 todo（校验错误输出同样算）；被权限门拦截的不会走到这里，不置位
-        output = runTodoWrite(args);
-        m_usedTodoThisRound = true;
+        startSubAgentTask(toolCall, args);
+        return;
     }
-    else
-        output = QStringLiteral("Unknown tool: %1").arg(toolName);
+
+    // 其余工具经 handler 表同步路由；未注册名称不中断循环，错误内容作为结果回填
+    // （对齐 lcc Unknown 分支；lite-harness 文案 "Unknown tool: %1" 保持不变）
+    const auto it = handlers.constFind(toolName);
+    const QString output = it == handlers.constEnd()
+        ? QStringLiteral("Unknown tool: %1").arg(toolName)
+        : it.value()(args);
+
+    // lcc s05 语义保留：只要 todo_write 的 handler 跑过即视为本轮已用 todo（校验错误输出
+    // 同样算）；被权限门拦截的不会走到这里，不置位（lcc s06 中拦截也置位，此为 s05 行为红线，
+    // 作为已知偏差记录）
+    if (toolName == QStringLiteral("todo_write"))
+        m_usedTodoThisRound = true;
 
     // PostToolUse 钩子（lcc s04）：handler 产出结果后、回填前触发。
-    // 文件工具与未知工具共用此出口（lcc 中 Unknown 分支同样触发 PostToolUse；
+    // 表内工具与未知工具共用此出口（lcc 中 Unknown 分支同样触发 PostToolUse；
     // 被 PreToolUse 拦截的调用不会走到这里，与 lcc 拒绝即 continue 的语义一致）
     triggerPostToolUseHooks(toolCall, output);
 
     onToolFinished(toolCall, toolName, summary, output);
 }
 
-QString AgentLoop::checkDenyList(const QString &command) const
+QString AgentLoop::checkDenyList(const QString &command)
 {
     // 子串匹配，按列表顺序取第一个命中项（对齐 lcc check_deny_list；
     // 大小写不敏感与仓库既有 bash 黑名单风格一致，较 lcc 的大小写敏感更严格——Windows 命令名本就不区分大小写）
@@ -489,15 +528,17 @@ QString AgentLoop::checkDenyList(const QString &command) const
     return QString();
 }
 
-QString AgentLoop::checkPermissionRules(const QString &toolName, const QJsonObject &args) const
+QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &toolName,
+                                        const QJsonObject &args)
 {
     // 规则 1（lcc PERMISSION_RULES）：read/write/edit_file 的 path 逃逸工作区。
-    // lcc 用未归一化的拼接判定，这里复用 safePath 的越界检测结果，语义一致
+    // lcc 用未归一化的拼接判定，这里复用 safePathIn 的越界检测结果，语义一致
+    // （s06 起以显式 workDir 参数为准：子代理共用同一逻辑、各查各的沙箱根）
     if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
         || toolName == QStringLiteral("edit_file"))
     {
         QString err;
-        if (safePath(args.value(QStringLiteral("path")).toString(), &err).isEmpty())
+        if (safePathIn(workDir, args.value(QStringLiteral("path")).toString(), &err).isEmpty())
             return QStringLiteral("Writing outside workspace");
         return QString();
     }
@@ -517,35 +558,134 @@ QString AgentLoop::checkPermissionRules(const QString &toolName, const QJsonObje
 
 void AgentLoop::resolvePermission(bool allow)
 {
-    // UI 收到 permissionRequired 后回传裁决；无待决询问时忽略
-    if (!m_awaitingPermission)
-        return;
-
-    const QJsonObject toolCall = m_pendingPermissionCall;
-    m_pendingPermissionCall = QJsonObject();
-    m_awaitingPermission = false;
-
-    // stop() 已清理状态的话此处兜底：不再续跑工具链
-    if (!m_running)
-        return;
-
-    if (!allow)
+    // UI 收到 permissionRequired 后回传裁决（宿主询问与子代理转发的询问共用本入口，
+    // 串行队列保证同一时刻至多一方等待）。lcc s06：路由到当前挂起方；无待决询问时忽略
+    if (m_awaitingPermission)
     {
-        // 拒绝：照常回填 "Permission denied" 并发 toolOutputReady（UI 可展示被拒），随后继续队列。
-        // 不触发 PostToolUse——lcc 中用户拒绝即 continue，handler 未运行（s04 语义）
-        const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
-        const QString toolName = function.value(QStringLiteral("name")).toString();
-        const QJsonObject args = QJsonDocument::fromJson(
-            function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
-        onToolFinished(toolCall, toolName, toolSummary(toolName, args), QStringLiteral("Permission denied"));
+        const QJsonObject toolCall = m_pendingPermissionCall;
+        m_pendingPermissionCall = QJsonObject();
+        m_awaitingPermission = false;
+
+        // stop() 已清理状态的话此处兜底：不再续跑工具链
+        if (!m_running)
+            return;
+
+        if (!allow)
+        {
+            // 拒绝：照常回填 "Permission denied" 并发 toolOutputReady（UI 可展示被拒），随后继续队列。
+            // 不触发 PostToolUse——lcc 中用户拒绝即 continue，handler 未运行（s04 语义）
+            const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
+            const QString toolName = function.value(QStringLiteral("name")).toString();
+            const QJsonObject args = QJsonDocument::fromJson(
+                function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+            onToolFinished(toolCall, toolName, toolSummary(toolName, args), QStringLiteral("Permission denied"));
+            return;
+        }
+
+        // 允许：该 toolCall 重新走完整执行链（permission 钩子在 permissionGranted=true 时内部短路，
+        // 不再二次询问；日志等其他 PreToolUse 钩子照常执行，对齐 lcc 批准后继续走链的行为。
+        // executeBashAsync 内置黑名单仍生效——双层防御）
+        executeTool(toolCall, mainToolHandlers(), /*permissionGranted = */ true);
         return;
     }
 
-    // 允许：该 toolCall 重新走完整分发链（permission 钩子在 permissionGranted=true 时内部短路，
-    // 不再二次询问；日志等其他 PreToolUse 钩子照常执行，对齐 lcc 批准后继续走链的行为。
-    // executeBashAsync 内置黑名单仍生效——双层防御）
-    dispatchToolCall(toolCall, /*permissionGranted = */ true);
+    // 宿主未在询问：若子代理正在等待裁决，把决定转发给它
+    if (m_activeSub && m_activeSub->isAwaitingPermission())
+        m_activeSub->resolvePermission(allow);
 }
+
+// ---------------------------------------------------------------------------
+// 工具 handler 表与 task 子代理（lcc s06）
+// ---------------------------------------------------------------------------
+
+QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QString &workDir)
+{
+    // 宿主与子代理共用的同步文件工具集（lcc s06 toolsHandlers/subToolsHandlers 的交集部分）：
+    // 各自以传入的 workDir 为沙箱根构建，互不串扰
+    QHash<QString, ToolHandler> handlers;
+    handlers.insert(QStringLiteral("read_file"), [workDir](const QJsonObject &args) {
+        return runReadFileIn(workDir, args);
+    });
+    handlers.insert(QStringLiteral("write_file"), [workDir](const QJsonObject &args) {
+        return runWriteFileIn(workDir, args);
+    });
+    handlers.insert(QStringLiteral("edit_file"), [workDir](const QJsonObject &args) {
+        return runEditFileIn(workDir, args);
+    });
+    handlers.insert(QStringLiteral("glob"), [workDir](const QJsonObject &args) {
+        return runGlobIn(workDir, args);
+    });
+    return handlers;
+}
+
+QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
+{
+    // 主循环同步工具集：文件四件套 + todo_write（bash/task 为 executeTool 异步特判）
+    QHash<QString, ToolHandler> handlers = baseFileToolHandlers(m_workDir);
+    handlers.insert(QStringLiteral("todo_write"), [this](const QJsonObject &args) {
+        return runTodoWrite(args);
+    });
+    return handlers;
+}
+
+void AgentLoop::startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args)
+{
+    // 串行队列下同一时刻至多一个子代理；异常残留时直接拒绝重复启动
+    if (m_activeSub)
+        return;
+
+    SubAgent *sub = new SubAgent(this, this, m_workDir, m_model,
+                                 args.value(QStringLiteral("prompt")).toString());
+    // 子代理权限询问透明转发：复用宿主同一个 3 参 permissionRequired 信号，UI 零改动
+    connect(sub, &SubAgent::permissionRequired, this, &AgentLoop::permissionRequired);
+
+    m_activeSub = sub;
+    m_pendingTaskCall = toolCall;
+
+    // 完成回调：子代理黑盒收口，仅把最终汇总文本作为 tool_result 交还父循环
+    //（"task" 的 toolOutputReady 供 UI 展示；stop()/错误链已先行收口时 onToolFinished
+    // 的 !m_running 兜底自然静默）
+    sub->start([this, toolCall, args](const QString &result) {
+        m_activeSub = nullptr;
+        m_pendingTaskCall = QJsonObject();
+        onToolFinished(toolCall, QStringLiteral("task"),
+                       toolSummary(QStringLiteral("task"), args), result);
+    });
+}
+
+void AgentLoop::cancelSubAgent()
+{
+    if (!m_activeSub)
+        return;
+
+    SubAgent *sub = m_activeSub.data();
+    m_activeSub = nullptr;
+    sub->cancel();      // 级联：kill 流与进程、丢弃其待裁决询问、抑制完成回调
+    sub->deleteLater();
+
+    // 为父级 task 调用合成 "(cancelled)" tool_result，直写历史保持 tool_use/tool_result
+    // 配对（不经 onToolFinished：停发展示信号、不续跑队列——s03 stop() 待决权限的同款收口）
+    if (!m_pendingTaskCall.isEmpty())
+    {
+        QJsonObject toolResult;
+        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+        toolResult[QStringLiteral("tool_call_id")] =
+            m_pendingTaskCall.value(QStringLiteral("id")).toString();
+        toolResult[QStringLiteral("content")] = QStringLiteral("(cancelled)");
+        m_messages.append(toolResult);
+        m_pendingTaskCall = QJsonObject();
+    }
+    m_pendingToolCalls = QJsonArray();
+    m_toolResultsReady = QJsonArray();
+}
+
+// SubAgent（友元）复用的内部工具函数静态转发
+const QString &AgentLoop::askPrefixOf() { return askPrefix(); }
+QString AgentLoop::toolSummaryOf(const QString &toolName, const QJsonObject &args)
+{
+    return toolSummary(toolName, args);
+}
+const QStringList &AgentLoop::dangerousCommandList() { return dangerousCommands(); }
 
 // ---------------------------------------------------------------------------
 // 生命周期钩子（lcc s04）：注册顺序即执行顺序，与 lcc 尾部 register_hook 清单逐一对应。
@@ -562,11 +702,9 @@ void AgentLoop::registerBuiltinHooks()
     });
 
     // PreToolUse #1: permission —— s03 的 checkDenyList / checkPermissionRules 检查逻辑原样移入
-    // 钩子（文案逐字不变）。permissionGranted=true 为批准后续跑：短路返回空，避免二次询问
+    // 钩子（文案逐字不变）。permissionGranted=true（批准后续跑）只跳过询问规则；
+    // deny 列表检查始终执行——拒绝先于用户意志，且防御队列重放/迟到的续跑路径
     m_preToolUseHooks.append([this](const QJsonObject &toolCall, bool permissionGranted) -> QString {
-        if (permissionGranted)
-            return QString();
-
         const QString toolName = callToolName(toolCall);
         const QJsonObject args = callToolArgs(toolCall);
 
@@ -577,9 +715,12 @@ void AgentLoop::registerBuiltinHooks()
                 return blocked; // 硬拒绝：直接作为拦截文本回填
         }
 
-        const QString reason = checkPermissionRules(toolName, args);
+        if (permissionGranted)
+            return QString(); // 已批准：跳过询问，日志等其余钩子照常执行
+
+        const QString reason = checkPermissionRules(m_workDir, toolName, args);
         if (!reason.isEmpty())
-            return askPrefix() + reason; // 需询问：异步协议，由 dispatchToolCall 挂起队列
+            return askPrefix() + reason; // 需询问：异步协议，由 executeTool 挂起队列
 
         return QString();
     });
@@ -694,8 +835,10 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     process->setWorkingDirectory(m_workDir);
     m_activeProcesses.append(process);
 
-    // 120 秒超时：kill 后 finished 信号触发，靠标志区分“超时被杀” vs “正常结束”
-    auto *timedOut = new bool(false);
+    // 120 秒超时：kill 后 finished 信号触发，靠标志区分“超时被杀” vs “正常结束”。
+    // shared_ptr 捕获（MINOR-2 修复）：若进程从未启动/不发 finished，超时闭包与
+    // 标志随最后一个捕获者释放，不再裸 new/delete 泄漏
+    auto timedOut = std::make_shared<bool>(false);
     QTimer::singleShot(120000, process, [process, timedOut]() {
         *timedOut = true;
         process->kill();
@@ -718,7 +861,6 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
             if (output.isEmpty())
                 output = QStringLiteral("(no output)");
         }
-        delete timedOut;
         process->deleteLater();
 
         // PostToolUse 钩子（lcc s04）：bash handler 产出后、回填前触发
@@ -730,12 +872,12 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
 }
 
-QString AgentLoop::safePath(const QString &p, QString *error) const
+QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString *error)
 {
     // 相对路径按工作区解析，绝对路径直接使用；cleanPath 归一化 "../" 与分隔符（Windows 反斜杠转正斜杠）
     const QString joined = QDir::isAbsolutePath(p)
         ? QDir::cleanPath(p)
-        : QDir::cleanPath(m_workDir + QLatin1Char('/') + p);
+        : QDir::cleanPath(workDir + QLatin1Char('/') + p);
 
     // 存在部分尽量取 canonical path（消解符号链接/大小写真实形态）；
     // 文件尚不存在时（write 场景）规范化已存在的父目录后接原文件名
@@ -755,7 +897,7 @@ QString AgentLoop::safePath(const QString &p, QString *error) const
     }
 
     // 前缀比较带目录分隔符边界（防 "D:/work" 误判 "D:/work-evil"），Windows 下大小写不敏感
-    const QString root = QDir::cleanPath(m_workDir);
+    const QString root = QDir::cleanPath(workDir);
     if (absPath.compare(root, Qt::CaseInsensitive) != 0
         && !absPath.startsWith(root + QLatin1Char('/'), Qt::CaseInsensitive))
     {
@@ -766,11 +908,11 @@ QString AgentLoop::safePath(const QString &p, QString *error) const
     return absPath;
 }
 
-QString AgentLoop::runReadFile(const QJsonObject &args)
+QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     QString err;
-    const QString abs = safePath(path, &err);
+    const QString abs = safePathIn(workDir, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -801,12 +943,12 @@ QString AgentLoop::runReadFile(const QJsonObject &args)
     return output;
 }
 
-QString AgentLoop::runWriteFile(const QJsonObject &args)
+QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     const QString content = args.value(QStringLiteral("content")).toString();
     QString err;
-    const QString abs = safePath(path, &err);
+    const QString abs = safePathIn(workDir, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -823,13 +965,13 @@ QString AgentLoop::runWriteFile(const QJsonObject &args)
     return QStringLiteral("Wrote %1 bytes to %2").arg(bytes.size()).arg(path);
 }
 
-QString AgentLoop::runEditFile(const QJsonObject &args)
+QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     const QString oldText = args.value(QStringLiteral("old_text")).toString();
     const QString newText = args.value(QStringLiteral("new_text")).toString();
     QString err;
-    const QString abs = safePath(path, &err);
+    const QString abs = safePathIn(workDir, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -854,7 +996,7 @@ QString AgentLoop::runEditFile(const QJsonObject &args)
     return QStringLiteral("Edited %1").arg(path);
 }
 
-QString AgentLoop::runGlob(const QJsonObject &args)
+QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
 {
     // 统一分隔符风格（模型可能给出反斜杠模式）
     QString pattern = args.value(QStringLiteral("pattern")).toString();
@@ -864,18 +1006,18 @@ QString AgentLoop::runGlob(const QJsonObject &args)
     if (!re.isValid())
         return QStringLiteral("Error:%1").arg(re.errorString());
 
-    // 以工作区为根递归遍历，按相对路径匹配；结果过滤 safePath 逃逸项（如符号链接指向外部）
+    // 以工作区为根递归遍历，按相对路径匹配；结果过滤 safePathIn 逃逸项（如符号链接指向外部）
     QStringList collected;
     QSet<QString> seen;
-    QDirIterator it(m_workDir, QDir::AllEntries | QDir::NoDotAndDotDot,
+    QDirIterator it(workDir, QDir::AllEntries | QDir::NoDotAndDotDot,
                     QDirIterator::Subdirectories);
     while (it.hasNext())
     {
-        const QString rel = QDir(m_workDir).relativeFilePath(it.next());
+        const QString rel = QDir(workDir).relativeFilePath(it.next());
         if (!re.match(rel).hasMatch())
             continue;
         QString err;
-        if (safePath(rel, &err).isEmpty())
+        if (safePathIn(workDir, rel, &err).isEmpty())
             continue;
         if (!seen.contains(rel))
         {
@@ -926,8 +1068,9 @@ QString AgentLoop::renderTodos(const QVector<TodoItem> &items)
 
 QString AgentLoop::runTodoWrite(const QJsonObject &args)
 {
-    // lcc s05 TodoManager.update 等价：全部校验通过才整表替换持久清单 m_todos，
-    // 任一校验失败原清单不变（lcc 抛 ValueError、run_todo_write 捕获转 "Error:{e}"）
+    // lcc s06 update_todos 等价：无状态——只校验并渲染本次入参，不落任何持久清单
+    // （lcc s05 的 TodoManager.items 持久化与 'Current Tasks' 控制台面板在 s06 移除）；
+    // 任一校验失败返回 "Error:..."（lcc 抛 ValueError、run_todo_write 捕获转 "Error:{e}"）
     QJsonValue todosValue = args.value(QStringLiteral("todos"));
 
     // 模型偶发把 todos 传成 JSON 字符串（对应 lcc json.loads/ast.literal_eval 兼容
@@ -986,15 +1129,13 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
     if (inProgressCount > 1)
         return QStringLiteral("Error:Only one todo can be in_progress at a time");
 
-    m_todos = validated;
+    // lcc s06：渲染本次入参并直接返回（无持久化、无 s05 的 'Current Tasks' 控制台面板）
+    const QString output = renderTodos(validated);
 
-    // lcc run_todo_write 成功路径：magenta 控制台面板 → qDebug（GUI 无控制台，去 ANSI）
-    const QString output = renderTodos(m_todos);
-    qDebug().noquote() << QStringLiteral("\n Current Tasks \n %1").arg(output);
-
-    // 跨车道契约：每次成功更新（含清空为 0 条）后广播持久清单快照 [{content, status}, ...]
+    // 跨车道契约：每次校验通过（含清为空清单）后广播本次输入清单快照 [{content, status}, ...]，
+    // 供 TodoCard 渲染（无状态下由模型逐轮重发全量清单维持面板内容）
     QJsonArray snapshot;
-    for (const TodoItem &item : m_todos)
+    for (const TodoItem &item : validated)
     {
         QJsonObject itemObj;
         itemObj[QStringLiteral("content")] = item.content;
@@ -1010,6 +1151,10 @@ void AgentLoop::stop()
 {
     if (!m_running)
         return;
+
+    // lcc s06 R1：task 子代理在跑则先级联取消并合成 "(cancelled)" 配对回填。
+    // 串行队列下"宿主待裁决"与"子代理运行中"互斥，随后的待决权限分支自然空转
+    cancelSubAgent();
 
     // 待决权限询问：视为 deny，直接回填历史保持 tool_use/tool_result 配对完整
     //（OpenAI 协议要求每个 tool_call 必有对应 tool 消息；不经 onToolFinished 以免续跑队列或发展示信号）
@@ -1139,6 +1284,34 @@ QJsonArray AgentLoop::createToolsDefinition()
         function[QStringLiteral("name")] = QStringLiteral("todo_write");
         function[QStringLiteral("description")] =
             QStringLiteral("Create and manage a task list for your current coding session.");
+        function[QStringLiteral("parameters")] = inputSchema;
+
+        QJsonObject tool;
+        tool[QStringLiteral("type")] = QStringLiteral("function");
+        tool[QStringLiteral("function")] = function;
+        tools.append(tool);
+    }
+
+    // task（lcc s06）：prompt 带 minLength 约束，makeTool lambda 不支持该字段，
+    // 与 todo_write 同款手工构造；外层包装一致
+    {
+        QJsonObject promptSchema;
+        promptSchema[QStringLiteral("type")] = QStringLiteral("string");
+        promptSchema[QStringLiteral("minLength")] = 1;
+
+        QJsonObject properties;
+        properties[QStringLiteral("prompt")] = promptSchema;
+
+        QJsonObject inputSchema;
+        inputSchema[QStringLiteral("type")] = QStringLiteral("object");
+        inputSchema[QStringLiteral("properties")] = properties;
+        inputSchema[QStringLiteral("required")] =
+            QJsonArray::fromStringList({ QStringLiteral("prompt") });
+
+        QJsonObject function;
+        function[QStringLiteral("name")] = QStringLiteral("task");
+        function[QStringLiteral("description")] =
+            QStringLiteral("Run a subagent with fresh conversation context and return its final text.");
         function[QStringLiteral("parameters")] = inputSchema;
 
         QJsonObject tool;

@@ -42,8 +42,10 @@ include_directories(
 
 set(inc "")
 set(src 
-    "src/AgentLoop.cpp"
-    "src/AgentLoop.h"
+        "src/AgentLoop.cpp"
+        "src/AgentLoop.h"
+        "src/SubAgent.cpp"
+        "src/SubAgent.h"
     "src/App.cpp"
     "src/BasePage.cpp"
     "src/BasePage.h"
