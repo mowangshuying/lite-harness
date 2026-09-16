@@ -368,3 +368,9 @@ config/
 
 # deepwork local state
 .slim/deepwork/
+
+# agent runtime data (lcc parity: .memory/.task/.transcripts/.task_outputs)
+/.memory/
+/.task/
+/.transcripts/
+/.task_outputs/
