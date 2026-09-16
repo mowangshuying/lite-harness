@@ -8,6 +8,7 @@ class FluVScrollView;
 class ChatMsgEdit;
 class AgentLoop;
 class PermissionCard;
+class TodoCard;
 
 class ChatSessionPage : public BasePage
 {
@@ -34,4 +35,5 @@ private:
     AgentLoop *m_agentLoop = nullptr;
     MessageBubbleWidget *m_currentBubble = nullptr;   // 当前流式气泡
     QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
+    QPointer<TodoCard> m_todoCard;                    // 会话流常驻任务清单卡（首次 todoUpdated 挂载，此后就地刷新；clearMessages 销毁后置空）
 };

@@ -67,6 +67,8 @@ set(src
     "src/ToolBlock.h"
     "src/PermissionCard.cpp"
     "src/PermissionCard.h"
+    "src/TodoCard.cpp"
+    "src/TodoCard.h"
     "src/QOpenAi.cpp"
     "src/QOpenAi.h"
     )
@@ -102,6 +104,9 @@ set (qss
         "./stylesheet/light/PermissionCard.qss"
         "./stylesheet/dark/PermissionCard.qss"
         "./stylesheet/atomOneDark/PermissionCard.qss"
+        "./stylesheet/light/TodoCard.qss"
+        "./stylesheet/dark/TodoCard.qss"
+        "./stylesheet/atomOneDark/TodoCard.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 

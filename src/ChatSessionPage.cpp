@@ -10,6 +10,7 @@
 #include "AgentLoop.h"
 #include "ToolBlock.h"
 #include "PermissionCard.h"
+#include "TodoCard.h"
 
 ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
 {
@@ -109,6 +110,21 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
                 QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
             });
 
+    // 任务清单：会话流常驻卡片 —— 首次 todoUpdated 时挂到流末尾（锚定在首次出现的
+    // 时间线位置，之后只就地刷新内容、不再增殖；lcc s05 全量替换语义由 TodoCard 内部消化）。
+    // 信号契约：todoUpdated(todos)，元素 {content, status: pending|in_progress|completed}
+    connect(m_agentLoop, &AgentLoop::todoUpdated, this, [this](const QJsonArray &todos) {
+        if (!m_todoCard)
+        {
+            auto *card = new TodoCard(this);
+            // QPointer：clearMessages 销毁或异常删除后自动置空，下次信号到达再自动重挂
+            m_todoCard = card;
+            m_scrollView->getMainLayout()->addWidget(card);
+        }
+        m_todoCard->setTodos(todos);
+        QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+    });
+
     connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
         addMessage(MessageBubbleWidget::Role::User, text);
         startAssistantStream(text); // 创建流式气泡并启动代理循环
@@ -166,6 +182,7 @@ void ChatSessionPage::clearMessages()
     if (m_permissionCard && !m_permissionCard->isResolved())
         m_permissionCard->resolveDenySilently();
     m_permissionCard = nullptr;
+    m_todoCard = nullptr; // 常驻任务卡随下方销毁循环一并移除（QPointer 本会自动置空，显式清引用表明意图）
     auto mainLayout = m_scrollView->getMainLayout();
     while (auto item = mainLayout->takeAt(0))
     {

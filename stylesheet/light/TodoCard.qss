@@ -1,0 +1,92 @@
+/* light */
+TodoCard {
+    background-color: transparent;
+}
+
+/* 实色底色：动画为 FluExpander 式头部遮挡滑出，需不透明底色遮住滑入头部背后的列表。
+   rgb(243,243,243) = ToolBlock #toolHeader 同款合成实色，保持家族一致 */
+#todoHeader {
+    background-color: rgb(243, 243, 243);
+    border: 1px solid rgba(0, 0, 0, 12);
+    border-radius: 6px;
+}
+
+/* hover 实色 = 与 ToolBlock 头部同款合成值 */
+#todoHeader:hover {
+    background-color: rgb(236, 236, 236);
+}
+
+/* 标题：与 PermissionCard #pcTitle 同级（面板标题语义） */
+#todoTitle {
+    color: rgb(60, 60, 60);
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* 完成计数 done/total：与 ToolBlock #toolTitle 同灰（次要信息） */
+#todoCount {
+    color: rgb(96, 96, 96);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+/* 滚动容器与视口透出卡片底，列表宿主负责淡染面板底 */
+#todoScroll {
+    background-color: transparent;
+    border: none;
+}
+#todoScroll > QWidget {
+    background-color: transparent;
+}
+
+/* 列表面板底：与 ToolBlock #toolOutput 同款淡染，状态面板气质
+   （顶部圆角由头部遮挡，底部不做圆角——QSS 四值简写不受支持，与家族其余块一致取直角） */
+#todoList {
+    background-color: rgba(0, 0, 0, 3);
+}
+
+/* 行基态：透明左侧描边占位（与 active 行等宽，状态切换时文字不跳位）；
+   行高/边距常量与 TodoCard.cpp kRowHeight 等注释保持耦合 */
+#todoRow {
+    background-color: transparent;
+    border-left: 2px solid transparent;
+    border-radius: 4px;
+}
+
+/* 三态记号（○/●/✓ 文本字形，颜色随状态） */
+#todoMark {
+    font-size: 12px;
+}
+#todoText {
+    font-size: 13px;
+}
+
+/* 待办：空心圆 + 常规灰字 */
+#todoRow[status="pending"] #todoMark {
+    color: rgb(120, 120, 120);
+}
+#todoRow[status="pending"] #todoText {
+    color: rgb(96, 96, 96);
+}
+
+/* 进行中：最强视觉权重 —— 琥珀实心圆 + 淡染底行 + 琥珀左描边 + 加粗正文
+   （琥珀与 PermissionCard 警示同谱系 rgb(194,127,0)） */
+#todoRow[status="active"] {
+    background-color: rgba(194, 127, 0, 14);
+    border-left: 2px solid rgba(194, 127, 0, 160);
+}
+#todoRow[status="active"] #todoMark {
+    color: rgb(194, 127, 0);
+}
+#todoRow[status="active"] #todoText {
+    color: rgb(60, 60, 60);
+    font-weight: bold;
+}
+
+/* 已完成：降级不消失 —— 绿勾（PermissionCard 留痕绿同值）+ 留痕灰字 */
+#todoRow[status="done"] #todoMark {
+    color: rgb(16, 124, 16);
+}
+#todoRow[status="done"] #todoText {
+    color: rgb(120, 120, 120);
+}
