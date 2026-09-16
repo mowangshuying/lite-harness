@@ -52,10 +52,14 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
         // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
         // 必须显式按拒绝放行队列，否则 m_awaitingPermission/m_running 永真导致会话死锁；
         // stop() 路径后端已自行回填时，resolvePermission 的待决守卫使其成为 no-op，不会双重裁决。
-        // 卡片同步落为"已拒绝"留痕（不发 userResolved，避免二次调用 resolvePermission）
+        // 卡片同步落为"已拒绝"留痕（不发 userResolved，避免二次调用 resolvePermission）。
+        // Gate2 MAJOR-1：先捕获事发时的旧卡——resolvePermission(false) 同步续跑队列时，
+        // 同批下一个待询问调用可能就地再建"新卡"（handler 置 m_permissionCard）。
+        // 只收旧卡，新卡留给用户裁决，否则后端再次永久挂起且无卡可裁。
+        QPointer<PermissionCard> staleCard = m_permissionCard;
         m_agentLoop->resolvePermission(false);
-        if (m_permissionCard && !m_permissionCard->isResolved())
-            m_permissionCard->resolveDenySilently();
+        if (staleCard && !staleCard->isResolved())
+            staleCard->resolveDenySilently();
         if (m_currentBubble)
         {
             m_currentBubble->finishStreaming();
