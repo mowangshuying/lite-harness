@@ -15,10 +15,10 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     vMainLayout->setSpacing(15);
 
     auto label = new QLabel(this);
-    label->setFixedSize(30, 30);
+    label->setFixedSize(45, 45);
 
     QPixmap pixmap(":/res/LiteHarness.ico");
-    pixmap = pixmap.scaled(30, 30);
+    pixmap = pixmap.scaled(45, 45);
     label->setPixmap(pixmap);
     vMainLayout->addWidget(label,0, Qt::AlignHCenter);
 

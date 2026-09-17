@@ -85,7 +85,7 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     settingsVersionBox->getVersionLabel()->setText(tr("0.0.1"));
 
     QIcon appIcon = QIcon(":/res/LiteHarness.ico");
-    settingsVersionBox->getIconLabel()->setPixmap(appIcon.pixmap(QSize(24, 24)));
+    settingsVersionBox->getIconLabel()->setPixmap(appIcon.pixmap(QSize(45, 45)));
 
     auto infoLabel = new FluLabel;
     infoLabel->setWordWrap(true);
