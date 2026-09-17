@@ -6,10 +6,11 @@ class QLabel;
 class QPushButton;
 
 // 权限确认卡片（s03：危险操作审批）：
-//   AgentLoop::permissionRequired 到达时在会话流底部挂载，包含
+//   AgentLoop::permissionRequired 到达时挂进当前流式气泡的时间线（与工具块同一套
+//   约定，回合外兜底挂会话流底部），包含
 //   警示徽章 + "需要权限确认" + 等宽工具名标签 + 请求词条 + 关键参数（中部省略 + tooltip）
 //   + reason 中文转译（琥珀点缀）+ 「拒绝 / 允许」按钮（拒绝持有默认焦点，安全优先）。
-//   用户裁决后整卡收起，仅留一行弱化的"已允许/已拒绝"留痕在时间线中。
+//   用户裁决后整卡收起，仅留一行弱化的"已允许/已拒绝"留痕停在时间线该位置。
 // 不使用系统模态对话框：AgentLoop 为事件驱动异步，卡片内嵌于消息流不打断阅读。
 class PermissionCard : public FluWidget
 {

@@ -98,7 +98,8 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
             });
 
     // 权限确认：工具即将执行但需用户裁决，后端队列暂停直至 resolvePermission。
-    // 卡片挂载在会话流末尾（当前流式气泡之下、随列表滚动）；裁决后收为单行留痕。
+    // 卡片挂进当前流式气泡的时间线（与工具块同一套约定：裁决留痕停在对应工具执行
+    // 之前，后续工具块/正文出现在其后）；回合外兜底（无流式气泡）挂会话流末尾。
     // 信号契约：permissionRequired(toolName, summary, reason)，reason 为英文短句（卡片内转译中文）
     connect(m_agentLoop, &AgentLoop::permissionRequired, this,
             [this](const QString &toolName, const QString &summary, const QString &reason) {
@@ -110,7 +111,10 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
                         [this](bool allow) { m_agentLoop->resolvePermission(allow); });
                 card->setPermissionRequest(toolName, summary, reason);
                 m_permissionCard = card;
-                m_scrollView->getMainLayout()->addWidget(card);
+                if (m_currentBubble)
+                    m_currentBubble->appendPermissionCard(card);
+                else
+                    m_scrollView->getMainLayout()->addWidget(card);
                 QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
             });
 

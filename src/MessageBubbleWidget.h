@@ -36,6 +36,11 @@ public:
     // toolName 为工具名；summary 为关键参数（bash=命令行，文件类=path，glob=pattern）
     void appendToolExecution(const QString &toolName, const QString &summary, const QString &output);
 
+    // 权限确认卡（AgentLoop::permissionRequired）：会话页创建 PermissionCard 并接好
+    // 信号后交此挂进气泡时间线（冻结当前正文段后追加），裁决留痕停在对应工具执行
+    // 之前，后续工具块/正文另起新段出现在其后。气泡不依赖卡片具体类型，仅接管几何
+    void appendPermissionCard(QWidget *card);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;

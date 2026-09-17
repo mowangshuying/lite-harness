@@ -354,6 +354,35 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }
 
+void MessageBubbleWidget::appendPermissionCard(QWidget *card)
+{
+    // 仅助手气泡承载权限时间线；用户气泡防御性忽略
+    if (m_role != Assistant || !card)
+        return;
+
+    // 权限询问到达时思考输出已结束：结算本轮思考区间（幂等，无进行中区间为 no-op），
+    // 保证思考块先于权限卡收终态
+    stopThinkingInterval();
+
+    rebuildAsTimeline();
+
+    // 冻结当前流式段（与 appendToolExecution 同一套约定）：后续正文经
+    // ensureLiveView 在权限卡之后另起新段，保证时间线因果顺序
+    if (m_liveView)
+    {
+        if (m_liveView->document()->isEmpty())
+            m_liveView->hide();
+        else
+            m_textRuns.append({m_liveText, m_liveView});
+        m_liveView = nullptr;
+        m_liveText.clear();
+    }
+
+    m_timeline->addWidget(card);
+
+    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+}
+
 void MessageBubbleWidget::finishStreaming()
 {
     m_streaming = false;
