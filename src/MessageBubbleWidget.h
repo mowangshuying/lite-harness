@@ -50,7 +50,7 @@ private:
     void rebuildAsTimeline();
     // 冻结后按需新建当前流式段视图（懒加载，未冻结时即主视图）
     QTextBrowser *ensureLiveView();
-    // 思考计时：只统计思考增量到达的区间（工具执行/正文流式期间暂停，多轮累加）
+    // 思考计时：每轮独立思考区间计时（工具执行/正文打断即停，下一轮重新起表）
     void stopThinkingInterval();
 
 private:
@@ -66,14 +66,13 @@ private:
     QTextBrowser *m_content = nullptr;
     bool m_updatingSize = false;
     bool m_streaming = false;
-    ThinkingBlock *m_liveThinking = nullptr; // 流式常驻思考块：首个思考增量创建，多轮复用累计
+    ThinkingBlock *m_liveThinking = nullptr; // 当前轮思考块：每轮思考区间新建，按到达顺序插入时间线
     QVector<TextRun> m_textRuns;          // 已冻结的文本段（按到达顺序）
     QString m_liveText;                   // 当前段正文原文（不含思考）
     QTextBrowser *m_liveView = nullptr;   // 当前流式段视图（nullptr = 待新建下一段）
     QVector<QTextBrowser *> m_textViews;  // 全部文段视图（含 m_content，逐段测量尺寸）
     QVBoxLayout *m_timeline = nullptr;    // 时间线布局（出现工具块/思考块后非空）
-    QElapsedTimer m_thinkingTimer;        // 当前段思考计时器
+    QElapsedTimer m_thinkingTimer;        // 当前轮思考计时器
     bool m_thinkingRunning = false;       // 当前思考区间计时进行中
-    int m_thinkingAccumMs = 0;            // 累积思考耗时（毫秒，不含工具执行等待）
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };

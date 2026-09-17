@@ -255,7 +255,6 @@ void MessageBubbleWidget::startStreaming(const QString &placeholder)
     m_streaming = true;
     m_liveText.clear();
     m_thinkingRunning = false;
-    m_thinkingAccumMs = 0;
     m_liveThinking = nullptr;
     m_content->setPlainText(placeholder);
     m_liveView = m_content;
@@ -267,20 +266,35 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
     if (!m_streaming || delta.isEmpty())
         return;
 
-    // 首个 thinkingDelta 启动计时；工具执行后重新出现的思考（下一轮）续接计时
+    // 新思考区间开始（首轮，或工具/正文打断后重新开始的下一轮）：本轮独立计时
     if (!m_thinkingRunning)
     {
         m_thinkingTimer.start();
         m_thinkingRunning = true;
 
-        // 思考块就地化：首个思考到达即创建并置于时间线顶部，
-        // 整个流式期间复用（多轮思考累计进同一块，与计时累加语义一致）
-        if (!m_liveThinking)
+        rebuildAsTimeline();
+
+        // 冻结上一正文段（与 appendToolExecution 同一套约定）：
+        // 后续正文经 ensureLiveView 在思考块之后另起新段，保证时间线因果顺序
+        if (m_liveView)
         {
-            rebuildAsTimeline();
-            m_liveThinking = new ThinkingBlock(this);
-            m_timeline->insertWidget(0, m_liveThinking);
+            if (m_liveView->document()->isEmpty())
+                m_liveView->hide();
+            else
+                m_textRuns.append({m_liveText, m_liveView});
+            m_liveView = nullptr;
+            m_liveText.clear();
         }
+
+        // 每轮思考独立建块并按到达顺序插入时间线：
+        // 首轮置顶（此时尚无正文/工具，空主视图收起不占位）；
+        // 后续轮次追加到当前位置（上一 ToolBlock/正文段之后）
+        auto *block = new ThinkingBlock(this);
+        if (!m_liveThinking)
+            m_timeline->insertWidget(0, block);
+        else
+            m_timeline->addWidget(block);
+        m_liveThinking = block;
         m_liveThinking->startLive();   // 头部切「思考中」并自动展开，增量在下拉区滚动可见
     }
 
@@ -345,7 +359,7 @@ void MessageBubbleWidget::finishStreaming()
     m_streaming = false;
     if (m_streamResizeTimer)
         m_streamResizeTimer->stop();
-    // 思考收尾：若仍处思考区间则累计耗时，思考块切终态标题并折叠
+    // 思考收尾：若仍处思考区间则结算本轮耗时，思考块切终态标题并折叠
     stopThinkingInterval();
 
     if (!m_timeline)
@@ -381,13 +395,13 @@ void MessageBubbleWidget::stopThinkingInterval()
 {
     if (!m_thinkingRunning)
         return;
-    m_thinkingAccumMs += int(m_thinkingTimer.elapsed());
+    const int elapsedMs = int(m_thinkingTimer.elapsed());
     m_thinkingRunning = false;
 
-    // 思考区间结束（首个正文增量 / 工具到达 / 流收尾三种判定时机）：
-    // 思考块标题切「思考了 N 秒」（N 为多轮累计），未被打扰则自动折叠
+    // 本轮思考区间结束（首个正文增量 / 工具到达 / 流收尾三种判定时机）：
+    // 本轮思考块标题切「思考了 N 秒」（N 为本轮耗时），未被打扰则自动折叠
     if (m_liveThinking)
-        m_liveThinking->stopLive(m_thinkingAccumMs / 1000);
+        m_liveThinking->stopLive(elapsedMs / 1000);
 }
 
 void MessageBubbleWidget::scheduleStreamResize()
