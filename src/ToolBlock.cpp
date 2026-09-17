@@ -66,7 +66,7 @@ ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
     m_header->setCursor(Qt::PointingHandCursor);
 
     auto *headerLayout = new QHBoxLayout(m_header);
-    headerLayout->setContentsMargins(12, 0, 10, 0);
+    headerLayout->setContentsMargins(12, 4, 10, 4);
     headerLayout->setSpacing(8);
 
     m_iconLabel = new QLabel(m_header);
