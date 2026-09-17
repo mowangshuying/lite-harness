@@ -1,7 +1,7 @@
 ChatMsgEdit {
     background-color: rgb(40, 44, 52);
-    border: 2px solid rgb(56, 60, 68);
-    border-radius: 5px;
+    border: 2px solid rgba(255, 255, 255, 12);
+    border-radius: 10px;
 }
 
 ChatMsgEdit[focused="true"] {
