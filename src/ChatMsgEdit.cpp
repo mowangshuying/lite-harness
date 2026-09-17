@@ -121,8 +121,8 @@ bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
                 QString text = m_textEdit->toPlainText().trimmed();
                 if (!text.isEmpty())
                 {
-                    emit sendMessage(text);
                     m_textEdit->clear();
+                    emit sendMessage(text);
                 }
                 return true; // 拦截事件，不插入换行
             }
