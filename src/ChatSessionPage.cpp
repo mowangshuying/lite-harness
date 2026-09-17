@@ -97,6 +97,17 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
                                .arg(ToolBlock::toolTitleText(toolName), toolName, summary, output));
             });
 
+    // 记忆沉淀阶段开始（仅自然结束分支，阻塞提取/合并前发射）：正文就地定稿
+    // markdown 并在气泡时间线挂「记忆整理中...」live 进度卡；提取结果卡
+    // （toolOutputReady toolName="memory"）到达后就地切换为终态留痕
+    connect(m_agentLoop, &AgentLoop::memoryPhaseStarted, this, [this]() {
+        if (m_currentBubble)
+        {
+            m_currentBubble->appendMemoryProgress();
+            QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+        }
+    });
+
     // 权限确认：工具即将执行但需用户裁决，后端队列暂停直至 resolvePermission。
     // 卡片挂进当前流式气泡的时间线（与工具块同一套约定：裁决留痕停在对应工具执行
     // 之前，后续工具块/正文出现在其后）；回合外兜底（无流式气泡）挂会话流末尾。

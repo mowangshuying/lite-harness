@@ -504,7 +504,9 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
             // kMaxToolIterations 上限分支均不提取，lcc 语义不修正）：提取 → 有新增则合并。
             // 两条链均为阻塞调用（嵌套循环豁免窗口同 s08 裁决 f，此处已无活动流）；
             // 期间 stop() 进入则不再发 finished（stop 已自行收尾），记忆卡片若已发出
-            // 与 s08 压缩卡片同族（登记偏差）。mid(1) 排除 system 与 lcc 会话主体对齐
+            // 与 s08 压缩卡片同族（登记偏差）。mid(1) 排除 system 与 lcc 会话主体对齐。
+            // 阻塞开始前先通知 UI：正文就地定稿 markdown + 挂记忆进度 live 卡
+            emit memoryPhaseStarted();
             const int stored = m_memory.extractMemories(m_messages.mid(1));
             if (m_running && stored >= 1)
                 m_memory.consolidateMemories();

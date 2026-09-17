@@ -8,6 +8,7 @@
 class QTimer;
 class QVBoxLayout;
 class ThinkingBlock;
+class ToolBlock;
 
 class MessageBubbleWidget : public FluWidget
 {
@@ -40,6 +41,16 @@ public:
     // 信号后交此挂进气泡时间线（冻结当前正文段后追加），裁决留痕停在对应工具执行
     // 之前，后续工具块/正文另起新段出现在其后。气泡不依赖卡片具体类型，仅接管几何
     void appendPermissionCard(QWidget *card);
+
+    // 正文定稿：冻结当前流式段并一次性渲染 markdown，气泡保持打开（幂等）。
+    // 记忆沉淀开始前调用（AgentLoop::memoryPhaseStarted），避免长文本在阻塞
+    // 提取期间停留纯文本态；finishStreaming 复用同一套定稿逻辑
+    void finalizeStreamedText();
+
+    // 记忆沉淀进度 live 卡（AgentLoop::memoryPhaseStarted）：定稿正文后在时间线
+    // 末尾挂「记忆整理中...」轮播卡；提取结果卡（toolName="memory"）到达时
+    // 就地切换为终态留痕；无新增（stored=0 无卡）则 finishStreaming 时收口删除
+    void appendMemoryProgress();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -79,5 +90,6 @@ private:
     QVBoxLayout *m_timeline = nullptr;    // 时间线布局（出现工具块/思考块后非空）
     QElapsedTimer m_thinkingTimer;        // 当前轮思考计时器
     bool m_thinkingRunning = false;       // 当前思考区间计时进行中
+    ToolBlock *m_liveMemoryBlock = nullptr; // 记忆沉淀进度卡（live 态），结果卡到达就地切换
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };

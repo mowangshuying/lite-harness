@@ -56,6 +56,10 @@ signals:
     // （含清为空清单）后发射，携带本次输入清单的快照 [{content, status}, ...]（不再持久化，
     // 由模型按计划逐轮重发全量清单）；校验失败与权限询问中不发射
     void todoUpdated(const QJsonArray &todos);
+    // 记忆沉淀阶段开始（仅自然结束分支）：正文流已毕、即将进入阻塞的记忆提取/合并，
+    // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡，避免长文本停留纯文本态、
+    // 阻塞期间无任何进度指示
+    void memoryPhaseStarted();
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 错误

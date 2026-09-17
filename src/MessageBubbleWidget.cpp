@@ -329,6 +329,17 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     if (m_role != Assistant)
         return;
 
+    // 记忆提取结果卡：live 进度卡还挂在时间线上则就地收终态（标题切「已记忆」、
+    // 停轮播），不再另起新块；后续合并卡到达时 m_liveMemoryBlock 已空，照常追加
+    if (m_liveMemoryBlock && toolName == QLatin1String("memory"))
+    {
+        stopThinkingInterval();
+        m_liveMemoryBlock->setToolExecution(toolName, summary, output);
+        m_liveMemoryBlock = nullptr;
+        QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+        return;
+    }
+
     // 等待工具结果的这段时间不计入思考耗时
     stopThinkingInterval();
 
@@ -383,12 +394,42 @@ void MessageBubbleWidget::appendPermissionCard(QWidget *card)
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
 }
 
-void MessageBubbleWidget::finishStreaming()
+void MessageBubbleWidget::appendMemoryProgress()
 {
-    m_streaming = false;
-    if (m_streamResizeTimer)
-        m_streamResizeTimer->stop();
-    // 思考收尾：若仍处思考区间则结算本轮耗时，思考块切终态标题并折叠
+    // 仅助手气泡承载记忆时间线；用户气泡防御性忽略
+    if (m_role != Assistant)
+        return;
+
+    // 正文先定稿：记忆提取/合并是阻塞调用（秒级到分钟级），不能让长文本
+    // 停留纯文本态等 finished
+    finalizeStreamedText();
+
+    rebuildAsTimeline();
+
+    // 冻结当前流式段（防御：finalizeStreamedText 的时间线分支已归档则 no-op；
+    // 无 timeline 分支定稿后 m_liveView 仍指向主视图，与 appendToolExecution
+    // 同一套约定归档，保证 live 卡挂在已渲染正文之后）
+    if (m_liveView)
+    {
+        if (m_liveView->document()->isEmpty())
+            m_liveView->hide();
+        else
+            m_textRuns.append({m_liveText, m_liveView});
+        m_liveView = nullptr;
+        m_liveText.clear();
+    }
+
+    auto *block = new ToolBlock(this);
+    block->startLive(tr("记忆整理中"));
+    m_timeline->addWidget(block);
+    m_liveMemoryBlock = block;
+
+    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+}
+
+void MessageBubbleWidget::finalizeStreamedText()
+{
+    // 思考收尾：若仍处思考区间则结算本轮耗时，思考块切终态标题并折叠（幂等）
     stopThinkingInterval();
 
     if (!m_timeline)
@@ -418,6 +459,23 @@ void MessageBubbleWidget::finishStreaming()
     // 思考块已在流式期间就地创建并收终态，不再重建（避免重复渲染与闪烁）
 
     QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+}
+
+void MessageBubbleWidget::finishStreaming()
+{
+    m_streaming = false;
+    if (m_streamResizeTimer)
+        m_streamResizeTimer->stop();
+
+    // 记忆沉淀无新增（stored=0，无结果卡就地切换）：收口 live 进度卡，不留空壳
+    if (m_liveMemoryBlock)
+    {
+        m_timeline->removeWidget(m_liveMemoryBlock);
+        m_liveMemoryBlock->deleteLater();
+        m_liveMemoryBlock = nullptr;
+    }
+
+    finalizeStreamedText();
 }
 
 void MessageBubbleWidget::stopThinkingInterval()

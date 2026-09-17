@@ -137,6 +137,11 @@ ToolBlock::ToolBlock(QWidget *parent) : FluWidget(parent)
 
 void ToolBlock::setToolExecution(const QString &toolName, const QString &summary, const QString &output)
 {
+    // live 进行态收口：停轮播，标题/标签由下方按终态重建
+    m_live = false;
+    if (m_liveTimer)
+        m_liveTimer->stop();
+
     m_toolName = toolName;
     m_summary = summary;
 
@@ -153,6 +158,37 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
 
     // 输出走纯文本路径（50k 字符内性能可控），颜色/等宽字体由 QSS 控制
     m_content->setPlainText(output.isEmpty() ? tr("(无输出)") : output);
+}
+
+void ToolBlock::startLive(const QString &liveTitle)
+{
+    if (m_live)
+        return;
+    m_live = true;
+    m_liveTitle = liveTitle;
+    m_liveDots = 0;
+
+    // live 期工具身份未知：隐藏 $ 提示符与工具名标签，仅留轮播标题 + 箭头
+    m_iconLabel->hide();
+    m_tagLabel->hide();
+    m_summaryLabel->clear();
+    m_titleLabel->setText(liveText());
+
+    // 圆点轮播（同 ThinkingBlock 的 live 机制）：400ms 相位 0..3 循环
+    if (!m_liveTimer) {
+        m_liveTimer = new QTimer(this);
+        m_liveTimer->setInterval(400);
+        connect(m_liveTimer, &QTimer::timeout, this, [this]() {
+            m_liveDots = (m_liveDots + 1) % 4;
+            m_titleLabel->setText(liveText());
+        });
+    }
+    m_liveTimer->start();
+}
+
+QString ToolBlock::liveText() const
+{
+    return m_liveTitle + QStringLiteral(".").repeated(m_liveDots);
 }
 
 QString ToolBlock::singleLineSummary() const

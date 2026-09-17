@@ -7,11 +7,13 @@ class QLabel;
 class QPropertyAnimation;
 class QEvent;
 class QResizeEvent;
+class QTimer;
 
 // 工具执行折叠块（对齐 ThinkingBlock 的视觉与交互语言）：
 //   标题栏（bash：$ 提示符；其余工具：等宽工具名标签 + 中文完成词条 + 单行省略的关键参数）
 //   + 可展开/折叠的输出内容区。
-// 数据来源为 AgentLoop::toolOutputReady（工具执行完成后发射，因此头部恒为完成态）。
+// 数据来源为 AgentLoop::toolOutputReady（工具执行完成后发射，因此头部恒为完成态）；
+// 例外是记忆沉淀阶段：startLive 先挂"进行中"圆点轮播标题，setToolExecution 到达后收终态。
 // 动画机制与 ThinkingBlock / FluExpander 同源：QPropertyAnimation 驱动
 // "contentHeight"，setContentHeight 内同步向上遍历父链逐帧 resize；头部以
 // stackUnder 叠放在内容之上，内容从头部背后滑出/收回（纯手动几何，无外层布局）。
@@ -31,8 +33,12 @@ public:
     static QString toolTitleText(const QString &toolName);
 
     // 头部展示"哪个工具 + 关键参数"（bash 的 summary 即命令行，其余为 path/pattern），
-    // 展开区展示输出原文
+    // 展开区展示输出原文。若此前 startLive 进入过 live 态，本次调用自动收终态
     void setToolExecution(const QString &toolName, const QString &summary, const QString &output);
+
+    // live 进行态（记忆沉淀阶段专用）：标题为 liveTitle + 圆点轮播（同 ThinkingBlock），
+    // 隐藏 $/工具名标签（工具身份此刻未知）；setToolExecution 到达自动收终态
+    void startLive(const QString &liveTitle);
 
     void setExpanded(bool expanded);
     bool isExpanded() const { return m_expanded; }
@@ -54,6 +60,7 @@ private:
     void updateThemeIcons();
     void refreshSummaryLabel();       // 按当前宽度对关键参数做中部省略
     QString singleLineSummary() const;
+    QString liveText() const;         // live 态标题：m_liveTitle + 轮播圆点
     bool usesPromptGlyph() const { return m_toolName == QLatin1String("bash"); }
     void scheduleMeasure();
     void measureContent();
@@ -71,6 +78,10 @@ private:
 
     QString m_toolName;               // 工具名（bash/read_file/write_file/edit_file/glob/...）
     QString m_summary;                // 关键参数原文（省略显示 + tooltip 全文）
+    bool m_live = false;              // live 进行态（startLive 置位，setToolExecution 收口）
+    QString m_liveTitle;              // live 态标题文本（如"记忆整理中"）
+    int m_liveDots = 0;               // 圆点轮播相位 0..3
+    QTimer *m_liveTimer = nullptr;    // 懒建 400ms 轮播定时器
     int m_fullContentHeight = 0;      // 展开时输出区完整高度（min(自然高度, 上限)，随宽度重测）
     bool m_expanded = false;
     bool m_animating = false;         // 动画进行中：禁止 resizeEvent 重新测量
