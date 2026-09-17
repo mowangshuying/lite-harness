@@ -26,6 +26,9 @@ public:
 
     // 启动代理循环（异步，不阻塞 UI 线程）
     void run(const QString &userMessage);
+    // 代理循环是否运行中（UI 预查：运行中勿动旧气泡现场，避免触发 run() 重入卫兵后
+    // error 链收掉新气泡导致旧循环后续 delta 无处可落）
+    bool isRunning() const { return m_running; }
     // 停止：取消当前流、kill 正在运行的 QProcess，并通知错误
     void stop();
 

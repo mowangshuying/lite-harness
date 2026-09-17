@@ -134,6 +134,23 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
     });
 
     connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
+        // 运行态预查：运行中不建气泡、不动旧现场。若照旧走 startAssistantStream，
+        // 旧气泡会被先冻结、新气泡又被 run() 拒绝后的 error 链收掉置空，
+        // 旧循环后续 delta 全部丢失、时间线撕裂（重入提示改由本 handler 独立气泡给出）。
+        if (m_agentLoop->isRunning())
+        {
+            // 待决权限按拒绝放行队列（防死锁：挂起期间不放行则 m_awaitingPermission/
+            // m_running 永真）；与 error handler 同一套 staleCard 约定——resolvePermission(false)
+            // 同步续跑时同批下一个待询问调用可能就地再建新卡，只收旧卡、新卡留给用户裁决。
+            // 无待决询问时 resolvePermission 的待决守卫使其成为 no-op。
+            QPointer<PermissionCard> staleCard = m_permissionCard;
+            m_agentLoop->resolvePermission(false);
+            if (staleCard && !staleCard->isResolved())
+                staleCard->resolveDenySilently();
+            addMessage(MessageBubbleWidget::Role::Assistant,
+                       QStringLiteral("*Error:* Agent 仍在运行中，请等待完成后再发送"));
+            return;
+        }
         addMessage(MessageBubbleWidget::Role::User, text);
         startAssistantStream(text); // 创建流式气泡并启动代理循环
     });

@@ -900,9 +900,16 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
 
 void AgentLoop::startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args)
 {
-    // 串行队列下同一时刻至多一个子代理；异常残留时直接拒绝重复启动
+    // 串行队列下同一时刻至多一个子代理；防御回填：异常残留时不能直接 return——
+    // 该 task 调用将永不收口，队列停摆且 m_running 永真（会话卡死）。
+    // 回填错误结果续跑队列，与 Unknown tool / 沙箱拒绝同一套约定。
     if (m_activeSub)
+    {
+        onToolFinished(toolCall, QStringLiteral("task"),
+                       toolSummary(QStringLiteral("task"), args),
+                       QStringLiteral("Error: another subagent is already active"));
         return;
+    }
 
     SubAgent *sub = new SubAgent(this, this, m_workDir, m_model,
                                  args.value(QStringLiteral("prompt")).toString());
