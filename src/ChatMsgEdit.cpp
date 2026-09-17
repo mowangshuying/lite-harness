@@ -6,6 +6,7 @@
 #include <QKeySequence>
 #include <QKeyEvent>
 #include <QMimeData>
+#include <QStyle>
 #include <functional>
 #include <FluLabel.h>
 #include "SendMsgButton.h"
@@ -99,7 +100,14 @@ bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_textEdit)
     {
-        if (event->type() == QEvent::KeyPress)
+        if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut)
+        {
+            // 焦点态经 focused 属性驱动 QSS 边框反馈（FluentUI 标准模式：setProperty + polish）
+            setProperty("focused", event->type() == QEvent::FocusIn);
+            style()->unpolish(this);
+            style()->polish(this);
+        }
+        else if (event->type() == QEvent::KeyPress)
         {
             auto keyEvent = static_cast<QKeyEvent *>(event);
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)

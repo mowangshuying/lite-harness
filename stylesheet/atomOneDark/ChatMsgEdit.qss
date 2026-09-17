@@ -4,6 +4,10 @@ ChatMsgEdit {
     border-radius: 5px;
 }
 
+ChatMsgEdit[focused="true"] {
+    border: 2px solid rgb(82, 139, 255);
+}
+
 #textEdit {
     background-color: rgb(40, 44, 52);
     border: 1px solid transparent;
