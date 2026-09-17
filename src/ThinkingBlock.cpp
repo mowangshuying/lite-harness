@@ -1,6 +1,7 @@
 #include "ThinkingBlock.h"
 
 #include <QEvent>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -17,6 +18,11 @@
 #include <QtMath>
 
 #include <FluUtils.h>
+
+namespace {
+// QSS #thinkingContent 上下 padding 各 4px（三主题一致）
+constexpr int kVerticalChrome = 8;
+}
 
 ThinkingBlock::ThinkingBlock(QWidget *parent) : FluWidget(parent)
 {
@@ -128,7 +134,13 @@ void ThinkingBlock::stopLive(int seconds)
         m_liveTimer->stop();
     setThinkingDuration(seconds);
     if (!m_userInteracted)
-        setExpanded(false);
+    {
+        setExpanded(false);   // 折叠动画启动前的重测已按完整限高进行
+    }
+    else
+    {
+        scheduleMeasure();    // 用户保持展开：解除单行限高，按完整限高重测
+    }
 }
 
 void ThinkingBlock::appendLiveText(const QString &delta)
@@ -292,15 +304,14 @@ void ThinkingBlock::measureContent()
         return;
     }
 
-    // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）
-    const int kMaxExpandedHeight = kMaxThinkingHeight;
+    // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）；
+    // 进行态且用户未手动操作时压缩为单行，钉底滚动只显示最新一行思考内容
+    const int kMaxExpandedHeight = (m_live && !m_userInteracted) ? liveLineHeight() : kMaxThinkingHeight;
 
     QTextDocument *doc = m_content->document();
     QSignalBlocker blocker(doc);
 
-    // 内容区尺寸固定（min(自然高度, 上限)，滚动条宽度已计入），动画期间不变化；
-    // kVerticalChrome = QSS #thinkingContent 上下 padding 各 4px（三主题一致）
-    static constexpr int kVerticalChrome = 8;
+    // 内容区尺寸固定（min(自然高度, 上限)，滚动条宽度已计入），动画期间不变化
     doc->setTextWidth(w);
     const int naturalHeight = qCeil(doc->size().height()) + kVerticalChrome;
 
@@ -324,6 +335,13 @@ void ThinkingBlock::measureContent()
     if (!m_animating && m_contentHeight > 0)
         setContentHeight(m_fullContentHeight);
     updateGeometry();
+}
+
+int ThinkingBlock::liveLineHeight() const
+{
+    // 单行思考文本高度：文档默认字体（随 QSS 主题）行高 + 内容区上下 padding
+    const QFontMetricsF fm(m_content->document()->defaultFont());
+    return qCeil(fm.lineSpacing()) + kVerticalChrome;
 }
 
 int ThinkingBlock::scrollbarExtentWidth() const

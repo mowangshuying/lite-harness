@@ -30,10 +30,13 @@ public:
     void setThinkingDuration(int seconds);
 
     // ---- 流式进行态（思考生成期间占位展示）----
-    // startLive：头部切换为「思考中」（圆点轮播），未被打扰时自动展开；
+    // startLive：头部切换为「思考中」（圆点轮播），未被打扰时自动展开，
+    //   展开可见高度压缩为单行文本，钉底滚动只显示最新一行思考内容；
     // stopLive：恢复终态「思考了 N 秒」，未被打扰时自动折叠；
-    // appendLiveText：增量纯文本追加，限高内滚动并跟随最新内容（钉底）。
-    // 用户手动点过头部后，进行/终态切换不再自动改变展开状态（尊重用户操作）。
+    //   此后手动展开按完整限高（kMaxThinkingHeight）显示全部内容。
+    // appendLiveText：增量纯文本追加，单行视口内滚动并跟随最新内容（钉底）。
+    // 用户手动点过头部后，进行/终态切换不再自动改变展开状态（尊重用户操作），
+    // 且进行态恢复完整限高视图（视为用户主动要求查看更多）。
     void startLive();
     void stopLive(int seconds);
     void appendLiveText(const QString &delta);
@@ -61,6 +64,7 @@ private:
     QString liveText() const;
     void scheduleMeasure();
     void measureContent();
+    int liveLineHeight() const;
     int scrollbarExtentWidth() const;
     void startExpandAnimation();
 
