@@ -161,7 +161,7 @@ private:
 
     // ---- 记忆（lcc s09 MemoryManager：独立类承接存储与三条 LLM 链，本类持有实例）----
     // 以当前工作目录/技能目录/记忆索引/本轮召回记录重建 m_messages[0] 的 system prompt
-    // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 五段结构的 lite 等价）
+    // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 六段结构（含 lcc 7e33a8e temp 段）的 lite 等价）
     void rebuildSystemPromptMessage();
 
     // ---- 任务图（lcc s10 TaskManager 内联移植：SkillManager 档——不建类文件，结构体+方法内联私有段）----
@@ -178,6 +178,9 @@ private:
         // python 的 owner: str | None 两态 → owned + owner（owned=false ≡ None；文案中呈现 'None'）
         bool owned = false;
         QString owner;
+        // 创建时间戳（lcc c3fe3f2 对齐）：对应 python float epoch 秒、create() 时 datetime.now().timestamp()；
+        // 声明序在 owner 之后、blockedBy 之前，taskToJsonText 手工拼行需按此声明序输出该键
+        double timestamp = 0.0;
         QStringList blockedBy;
     };
 
@@ -200,7 +203,7 @@ private:
     // 读盘/校验类失败经 *error 返回，由 run_* 折叠为工具输出
     bool claimTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
     bool completeTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
-    // asdict + json.dumps(indent=2) 的等价：键序按 Task 声明序手工输出（id/subject/description/status/owner/blockedBy）
+    // asdict + json.dumps(indent=2) 的等价：键序按 Task 声明序手工输出（id/subject/description/status/owner/timestamp/blockedBy）
     QString taskToJsonText(const Task &task) const;
 
     // 六个工具 handler（mainToolHandlers 表路由同步执行；权限规则不涵盖任务图 → 无权限卡；
