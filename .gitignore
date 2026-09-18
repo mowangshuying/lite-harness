@@ -375,3 +375,6 @@ config/
 /.task/
 /.transcripts/
 /.task_outputs/
+
+# agent scratch tooling (debug/edit scripts, logs)
+/.tools/
