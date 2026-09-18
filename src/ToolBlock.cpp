@@ -1,4 +1,5 @@
 #include "ToolBlock.h"
+#include "ToolTagKind.h"
 
 #include <QEvent>
 #include <QFontMetrics>
@@ -152,6 +153,9 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
     m_tagLabel->setVisible(!prompt);
     if (!prompt)
         m_tagLabel->setText(toolName);
+    // 工具名标签按语义类别着色：这里只打类别属性 toolTagKind，具体颜色由主题 QSS 的
+    // [toolTagKind=...] 决定；未知工具归 other，沿用中性小片底色。
+    ToolTagKind::applyTo(m_tagLabel, toolName);
     m_titleLabel->setText(toolTitleText(toolName));
 
     refreshSummaryLabel();

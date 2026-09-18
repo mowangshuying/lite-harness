@@ -71,6 +71,7 @@ set(src
     "src/ThinkingBlock.h"
     "src/ToolBlock.cpp"
     "src/ToolBlock.h"
+    "src/ToolTagKind.h"
     "src/PermissionCard.cpp"
     "src/PermissionCard.h"
     "src/TodoCard.cpp"

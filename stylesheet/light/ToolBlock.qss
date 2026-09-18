@@ -34,6 +34,36 @@ ToolBlock {
     padding: 1px 6px;
 }
 
+/* 语义类别着色：ToolTagKind.h 给标签打上 toolTagKind 动态属性
+   （read / search / write / run / plan / delegate），只回答“这是哪类工具”，
+   不承载执行结果语义（头部没有状态色，只有中性图标 + 中文词条）。
+   未知工具归 other，保持上面的中性小片底色。
+   注：bash 在头部显示 “$” 提示符而非工具名标签，它的 run 色只在 PermissionCard 可见。 */
+#toolTag[toolTagKind="read"] {
+    color: rgb(30, 96, 176);
+    background-color: rgba(30, 96, 176, 18);
+}
+#toolTag[toolTagKind="search"] {
+    color: rgb(0, 128, 152);
+    background-color: rgba(0, 128, 152, 18);
+}
+#toolTag[toolTagKind="write"] {
+    color: rgb(142, 76, 172);
+    background-color: rgba(142, 76, 172, 18);
+}
+#toolTag[toolTagKind="run"] {
+    color: rgb(190, 100, 30);
+    background-color: rgba(190, 100, 30, 18);
+}
+#toolTag[toolTagKind="plan"] {
+    color: rgb(150, 110, 20);
+    background-color: rgba(150, 110, 20, 18);
+}
+#toolTag[toolTagKind="delegate"] {
+    color: rgb(40, 128, 70);
+    background-color: rgba(40, 128, 70, 18);
+}
+
 #toolTitle {
     color: rgb(96, 96, 96);
     font-size: 13px;

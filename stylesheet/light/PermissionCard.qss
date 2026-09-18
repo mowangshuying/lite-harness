@@ -36,6 +36,33 @@ PermissionCard {
     padding: 1px 6px;
 }
 
+/* 语义类别着色：与 ToolBlock #toolTag 共用 ToolTagKind.h 的类别属性，
+   同一工具在待决卡片与历史块里显示同一种颜色 */
+#pcTag[toolTagKind="read"] {
+    color: rgb(30, 96, 176);
+    background-color: rgba(30, 96, 176, 18);
+}
+#pcTag[toolTagKind="search"] {
+    color: rgb(0, 128, 152);
+    background-color: rgba(0, 128, 152, 18);
+}
+#pcTag[toolTagKind="write"] {
+    color: rgb(142, 76, 172);
+    background-color: rgba(142, 76, 172, 18);
+}
+#pcTag[toolTagKind="run"] {
+    color: rgb(190, 100, 30);
+    background-color: rgba(190, 100, 30, 18);
+}
+#pcTag[toolTagKind="plan"] {
+    color: rgb(150, 110, 20);
+    background-color: rgba(150, 110, 20, 18);
+}
+#pcTag[toolTagKind="delegate"] {
+    color: rgb(40, 128, 70);
+    background-color: rgba(40, 128, 70, 18);
+}
+
 #pcVerb {
     color: rgb(96, 96, 96);
     font-size: 13px;

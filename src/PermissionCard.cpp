@@ -1,4 +1,5 @@
 #include "PermissionCard.h"
+#include "ToolTagKind.h"
 #include <FluUtils.h>
 #include <FluThemeUtils.h>
 #include <QFontMetrics>
@@ -143,6 +144,8 @@ void PermissionCard::setPermissionRequest(const QString &toolName, const QString
     m_summary = summary;
 
     m_tagLabel->setText(toolName);
+    // 工具名标签与 ToolBlock 共用同一套语义类别着色，保持两处视图的视觉语言一致。
+    ToolTagKind::applyTo(m_tagLabel, toolName);
     m_verbLabel->setText(toolPendingText(toolName));
     m_reasonLabel->setText(translateReason(reason));
     refreshTexts();
