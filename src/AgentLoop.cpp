@@ -22,7 +22,7 @@
 namespace {
 
 // 工具调用轮次上限（防止模型反复请求工具形成死循环）
-constexpr int kMaxToolIterations = 100;
+constexpr int kMaxToolIterations = 300;
 
 // system prompt（lcc s09 loop.py build_system_prompt :29-65 五段 "\n\n" join 的移植）：
 // 基础指引 + 技能清单 + 记忆反注入声明 + 记忆目录 + 相关记忆记录。
@@ -476,7 +476,7 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
             m_messages.append(fullMsg);
 
             // Stop 钩子（lcc s04 引入，s06 起为"续跑"语义）：返回非空则作为一条 user
-            // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，kMaxToolIterations=100
+            // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，kMaxToolIterations=300
             // 兜底，不加额外计数上限）。内置 summary 钩子恒返回空串，故默认行为与 s04 一致
             // 直接收尾。lcc 原文误拼 "conent"，此处按正确键名 "content" 写入
             const QString force = triggerStopHooks();
