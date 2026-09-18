@@ -18,6 +18,8 @@ public:
 
     void addMessage(MessageBubbleWidget::Role role, const QString &content);
     void startConversation(const QString &text);
+    // 宿主注入初始模型（同步输入区下拉与 AgentLoop；需在 startConversation 前调用使首轮即用该模型）
+    void setModel(const QString &model);
     void scrollToBottom();
     void clearMessages();
 

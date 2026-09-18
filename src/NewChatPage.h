@@ -12,6 +12,9 @@ public:
 
     void onThemeChanged() override;
 
+    // 输入区当前选中的模型（宿主创建会话时读取，注入新会话继承）
+    QString currentModel() const;
+
 signals:
     void newChatRequested(const QString &text);
 

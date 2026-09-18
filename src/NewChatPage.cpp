@@ -36,3 +36,9 @@ void NewChatPage::onThemeChanged()
     BasePage::onThemeChanged();
     FluStyleSheetUtils::setQssByFileName("NewChatPage.qss", this, FluThemeUtils::getUtils()->getTheme());
 }
+
+QString NewChatPage::currentModel() const
+{
+    // 直读输入区下拉（无后端，初值即选项首项 qwen3.8-flash）
+    return m_chatMsgEdit->currentModel();
+}

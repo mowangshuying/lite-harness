@@ -32,6 +32,10 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
 
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
     m_agentLoop = new AgentLoop(this);
+    // 模型切换接线：用户在下拉框改选 → 后端 setModel（下一轮请求生效）
+    connect(m_inputEdit, &ChatMsgEdit::modelChanged, m_agentLoop, &AgentLoop::setModel);
+    // 初始显示同步为后端生效模型（MODEL_ID 环境变量值不在两选项内时，下拉回落显示 qwen3.8-flash）
+    m_inputEdit->setCurrentModel(m_agentLoop->model());
     connect(m_agentLoop, &AgentLoop::finished, this, [this](const QString &reply) {
         // 防御收口：正常契约下待决权限会暂停队列、finished 不会先于裁决到达；
         // 若出现残留待决卡片，落为"已拒绝"留痕（不再转呼 resolvePermission，交给后端收口）
@@ -194,6 +198,14 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
     m_agentLoop->run(userText);
+}
+
+void ChatSessionPage::setModel(const QString &model)
+{
+    // 宿主注入初始模型（如新建会话页继承用户选择）：编辑器与后端同步设置，
+    // 两条路径均不回环信号，无循环触发风险
+    m_agentLoop->setModel(model);
+    m_inputEdit->setCurrentModel(model);
 }
 
 void ChatSessionPage::startConversation(const QString &text)

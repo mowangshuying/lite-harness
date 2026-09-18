@@ -369,6 +369,14 @@ QString AgentLoop::workDir() const
     return m_workDir;
 }
 
+void AgentLoop::setModel(const QString &model)
+{
+    // 空串忽略；运行中改值不打断当前请求，下一轮请求自然生效
+    if (model.isEmpty())
+        return;
+    m_model = model;
+}
+
 // 就地刷新历史首位的 system 消息（lcc s09 loop.py :72 build_system_prompt 每轮提问
 // 重建的 lite 等价：system 常驻历史首位而非独立参数）
 void AgentLoop::rebuildSystemPromptMessage()

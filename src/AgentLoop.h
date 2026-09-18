@@ -36,6 +36,10 @@ public:
     void setWorkDir(const QString &dir);
     QString workDir() const;
 
+    // 切换模型：下一轮请求生效（主请求即时读 m_model；压缩/记忆回调为取值 lambda，同样即时读到新值）
+    void setModel(const QString &model);
+    QString model() const { return m_model; }
+
     // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
     void resolvePermission(bool allow);

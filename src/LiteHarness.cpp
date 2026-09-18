@@ -100,6 +100,8 @@ void LiteHarness::__createSession(const QString &text)
         title = tr("新会话");
 
     auto sessionPage = new ChatSessionPage;
+    // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
+    sessionPage->setModel(m_newChatPage->currentModel());
     sessionPage->startConversation(text);
     m_sessions.insert(key, sessionPage);
     m_sLayout->addWidget(key, sessionPage);
