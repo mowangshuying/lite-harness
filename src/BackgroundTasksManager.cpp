@@ -38,7 +38,7 @@ void BackgroundTasksManager::recordResult(const QString &taskId, const QString &
     m_results.insert(taskId, formatBashResult(output, exitCode, timedOut));
     m_ready.append(taskId);
     // lcc 在 collect() 打印本行；lite 按移植规格在记账时打印（有意偏差，见头文件注释）
-    qDebug("[background] collected %1: %2", taskId, it->status);
+    qDebug().noquote() << QStringLiteral("[background] collected %1: %2").arg(taskId, it->status);
 }
 
 QStringList BackgroundTasksManager::collect()

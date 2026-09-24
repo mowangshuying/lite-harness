@@ -129,6 +129,13 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
     if (toolName == QStringLiteral("update_task") || toolName == QStringLiteral("get_task")
         || toolName == QStringLiteral("claim_task") || toolName == QStringLiteral("complete_task"))
         return args.value(QStringLiteral("task_id")).toString();
+    // lcc s12 定时任务：摘要取 cron 表达式/固定短文本/job_id（仿 s10 风格，lcc 无对应钩子文案）
+    if (toolName == QStringLiteral("schedule_cron"))
+        return QStringLiteral("schedule cron ") + args.value(QStringLiteral("cron")).toString();
+    if (toolName == QStringLiteral("list_crons"))
+        return QStringLiteral("cron list");
+    if (toolName == QStringLiteral("cancel_cron"))
+        return QStringLiteral("cancel cron ") + args.value(QStringLiteral("job_id")).toString();
     return QString();
 }
 
@@ -312,6 +319,7 @@ AgentLoop::AgentLoop(QObject *parent)
     : QObject(parent)
     , m_compact([this] { return workDir(); }, [this] { return m_model; })
     , m_memory([this] { return workDir(); }, [this] { return m_model; })
+    , m_cron([this] { return workDir(); })
 {
     // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen3.8-max
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
@@ -346,6 +354,20 @@ AgentLoop::AgentLoop(QObject *parent)
     systemMessage[QStringLiteral("content")] = QString();
     m_messages.append(systemMessage);
     rebuildSystemPromptMessage();
+
+    // 定时任务运行时（lcc s12 start_runtime_threads 转译）：QTimer 1s 节拍替代 python daemon 线程
+    //（登记偏差）；tick 恒跑、以 isRuntimeStarted 短路（setWorkDir 的 stop→start 期间不误轮询）。
+    // 装载 durable 台账（此刻 workDir=QDir::currentPath()，ChatSessionPage 随后 setWorkDir 会重载）
+    m_cronTick = new QTimer(this);
+    m_cronTick->setInterval(1000);
+    connect(m_cronTick, &QTimer::timeout, this, [this] {
+        if (!m_cron.isRuntimeStarted())
+            return;
+        m_cron.pollDueJobs(QDateTime::currentDateTime());
+        tryDeliverCron();
+    });
+    m_cronTick->start();
+    m_cron.start();
 }
 
 void AgentLoop::setWorkDir(const QString &dir)
@@ -354,6 +376,11 @@ void AgentLoop::setWorkDir(const QString &dir)
     if (dir.isEmpty())
         return;
     m_workDir = QDir(dir).absolutePath();
+
+    // lcc s12：换工作目录重载 durable 台账（stop→start 复位启动标志后重读新目录的
+    // scheduled_tasks.json；load 幂等去重——同 id 已登记则跳过，见 CronSchedulerManager 偏差注释）
+    m_cron.stop();
+    m_cron.start();
 
     // lcc s07 仅在启动时扫描一次；lite 有意超集：换工作目录时重扫技能并同步重建
     // system prompt（技能目录随工作目录走，避免陈旧清单误导模型）
@@ -400,6 +427,11 @@ AgentLoop::~AgentLoop()
             p->kill();
     }
     m_activeProcesses.clear();
+
+    // lcc s12：停表并复位运行时（QTimer 随本对象父子关系销毁，无需 delete）
+    if (m_cronTick)
+        m_cronTick->stop();
+    m_cron.stop();
 
     if (m_currentStream)
     {
@@ -934,6 +966,7 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     // 主循环同步工具集：文件四件套 + todo_write + load_skill + 任务图六件套（bash/task 为 executeTool 异步特判）；
     // lcc s07：load_skill 仅主循环注册，子代理工具白名单不含它（见 SubAgent filterSubTools）；
     // lcc s10：任务图六件套同为仅主循环注册（lcc subTools/subToolsHandlers 仍为五工具，天然不进 sub）
+    // lcc s12：cron 三件套同为仅主循环注册（子代理白名单不含，天然不进 sub）
     QHash<QString, ToolHandler> handlers = baseFileToolHandlers(m_workDir);
     handlers.insert(QStringLiteral("todo_write"), [this](const QJsonObject &args) {
         return runTodoWrite(args);
@@ -958,6 +991,15 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     });
     handlers.insert(QStringLiteral("complete_task"), [this](const QJsonObject &args) {
         return runCompleteTask(args);
+    });
+    handlers.insert(QStringLiteral("schedule_cron"), [this](const QJsonObject &args) {
+        return runScheduleCron(args);
+    });
+    handlers.insert(QStringLiteral("cancel_cron"), [this](const QJsonObject &args) {
+        return runCancelCron(args);
+    });
+    handlers.insert(QStringLiteral("list_crons"), [this](const QJsonObject &) {
+        return runListCrons();
     });
     return handlers;
 }
@@ -1234,7 +1276,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
         // lcc 在 Popen 成功后打印；QProcess 启动是异步的，无法同步检测启动失败——
         // 登记后乐观打印，失败随后经 errorOccurred 补记（已知偏差）
-        qDebug("[background] started %1 %2", taskId, command.left(60));
+        qDebug().noquote() << QStringLiteral("[background] started %1 %2").arg(taskId, command.left(60));
         return;
     }
 
@@ -2334,10 +2376,81 @@ QString AgentLoop::runCompleteTask(const QJsonObject &args) const
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// 定时任务（lcc s12）：三个 handler 走 mainToolHandlers 表路由；交付由 m_cronTick 驱动
+// ---------------------------------------------------------------------------
+
+QString AgentLoop::runScheduleCron(const QJsonObject &args)
+{
+    // lcc run_schedule_cron：错误串前缀 Error:；成功文本为完整 prompt（非 [:60]，
+    // 截断只出现在台账日志与清单行）；recurring/durable 缺省 true（lcc 函数签名默认参数）
+    const QString cron = args.value(QStringLiteral("cron")).toString();
+    const QString prompt = args.value(QStringLiteral("prompt")).toString();
+    const bool recurring = args.value(QStringLiteral("recurring")).toBool(true);
+    const bool durable = args.value(QStringLiteral("durable")).toBool(true);
+
+    CronSchedulerManager::CronJob job;
+    const QString error = m_cron.scheduleJob(cron, prompt, recurring, durable, &job);
+    if (!error.isEmpty())
+        return QStringLiteral("Error: %1").arg(error);
+    return QStringLiteral("Scheduled %1: %2 -> %3").arg(job.id, cron, prompt);
+}
+
+QString AgentLoop::runCancelCron(const QJsonObject &args)
+{
+    // lcc run_cancel_cron 直通 cancel_job（"Cancelled x" / "Job x not found" 原样返回）
+    return m_cron.cancelJob(args.value(QStringLiteral("job_id")).toString());
+}
+
+QString AgentLoop::runListCrons()
+{
+    return m_cron.listCrons();
+}
+
+void AgentLoop::tryDeliverCron()
+{
+    // 空闲边界交付（lcc loop.py wait_for_cli_event 仅在等待输入时消费 cron_queue——
+    // 运行中永不注入，到期任务在队列里等；无 busy 注入是 s12 定案行为）
+    if (m_running)
+        return;
+
+    const QList<CronSchedulerManager::CronJob> fired = m_cron.consumeQueue();
+    if (fired.isEmpty())
+        return;
+
+    // 双形态文本（lcc deliver：history 逐任务 append "[Scheduled] {prompt}"，
+    // _run_turn 用无 "\n" join 原文——lite 合并为单条消息，lcc N 条 → lite 1 条，登记偏差）
+    QStringList displayParts;
+    QStringList requestParts;
+    for (const CronSchedulerManager::CronJob &job : fired)
+    {
+        displayParts << QStringLiteral("[Scheduled] %1").arg(job.prompt);
+        requestParts << job.prompt;
+    }
+
+    // 直连同栈：emit 返回时宿主 run() 已置位 m_running（或已走 error 链拒绝）；
+    // lcc try/except restore+raise 的 lite 等价：未接管则 restore 下个 tick 重试
+    emit scheduledUserMessage(displayParts.join(QLatin1Char('\n')),
+                              requestParts.join(QLatin1Char('\n')));
+
+    if (!m_running)
+    {
+        m_cron.restoreCronJobs(fired);
+        return;
+    }
+
+    for (const CronSchedulerManager::CronJob &job : fired)
+        qInfo().noquote() << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
+    m_cron.acknowledgeCronJobs(fired);
+}
+
 void AgentLoop::stop()
 {
     if (!m_running)
         return;
+
+    // lcc s12：停止按钮不杀 cron 运行时——调度器存续仅令交付暂停于 m_running 卫兵，
+    // 空闲后队列自动续投（若在此停掉调度，stop 一次即永久停摆，durable 任务跨会话失效）
 
     // lcc s06 R1：task 子代理在跑则先级联取消并合成 "(cancelled)" 配对回填。
     // 串行队列下"宿主待裁决"与"子代理运行中"互斥，随后的待决权限分支自然空转
@@ -2641,6 +2754,26 @@ QJsonArray AgentLoop::createToolsDefinition()
                           QStringLiteral("Complete the task claimed by this agent."),
                           { {QStringLiteral("task_id"), QStringLiteral("string")} },
                           {QStringLiteral("task_id")}));
+
+    // ---- lcc s12 定时任务三件套（第 16~18 个）：仅主循环注册，子代理白名单不含；
+    // 描述与参数逐字对齐 lcc SCHEDULE_CRON/LIST_CRONS/CANCEL_CRON。模型对定时的
+    // 感知仅来自 schema 本身（lcc s12 无 system prompt 新增段——对齐，非遗漏）。
+    // makeTool 空 props/空 required 产出 "properties":{} 与 "required":[]，
+    // 恰合 LIST_CRONS（区别于 s10 list_tasks 无 required 键才手工构造）----
+    tools.append(makeTool(QStringLiteral("schedule_cron"),
+                          QStringLiteral("Schedule a prompt with a 5-field cron expression."),
+                          { {QStringLiteral("cron"), QStringLiteral("string")},
+                            {QStringLiteral("prompt"), QStringLiteral("string")},
+                            {QStringLiteral("recurring"), QStringLiteral("boolean")},
+                            {QStringLiteral("durable"), QStringLiteral("boolean")} },
+                          {QStringLiteral("cron"), QStringLiteral("prompt")}));
+    tools.append(makeTool(QStringLiteral("list_crons"),
+                          QStringLiteral("List scheduled cron jobs."),
+                          QList<QPair<QString, QString>>{}, QStringList{}));
+    tools.append(makeTool(QStringLiteral("cancel_cron"),
+                          QStringLiteral("Cancel a cron job by ID."),
+                          { {QStringLiteral("job_id"), QStringLiteral("string")} },
+                          {QStringLiteral("job_id")}));
 
     return tools;
 }

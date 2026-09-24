@@ -13,10 +13,12 @@
 
 #include "BackgroundTasksManager.h"
 #include "CompactManager.h"
+#include "CronSchedulerManager.h"
 #include "MemoryManager.h"
 
 class QProcess;
 class SubAgent;
+class QTimer;
 
 class AgentLoop : public QObject
 {
@@ -65,6 +67,10 @@ signals:
     // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡，避免长文本停留纯文本态、
     // 阻塞期间无任何进度指示
     void memoryPhaseStarted();
+    // 定时任务送达（lcc s12）：cron tick 到点且处于空闲边界，交付两条文本——
+    // displayText 带 "[Scheduled] " 前缀供 UI 展示，activeRequestText 为无原文前缀拼接的活跃请求
+    //（lcc deliver 双路：history 存前缀版、_run_turn 用原文 join）
+    void scheduledUserMessage(const QString &displayText, const QString &activeRequestText);
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 错误
@@ -127,6 +133,11 @@ private:
     // 合并语义），否则新增一条 user 消息。两个挂载点：run() 追加用户消息后、
     // runNextTool() 批尾 flush 之后（compact 之前）
     void injectBackgroundResults();
+    // 定时任务空闲交付（lcc s12 run_delivery 转译）：仅 m_running=false 时消费队列——
+    // emit scheduledUserMessage 同栈直连（宿主同步 run() 置位），发后回读 m_running 判定
+    // 宿主是否接管：未接管（无 UI 接线/防御拒绝）→ restoreCronJobs 待下个 tick 重试；
+    // 已接管 → 逐任务 qInfo delivered 后 acknowledgeCronJobs（lcc 双形态文本见信号注释）
+    void tryDeliverCron();
     // task 工具（lcc s06）：启动 SubAgent 异步链（独立上下文黑盒；权限询问经本类
     // permissionRequired 转发；完成回调以汇总文本走 onToolFinished 收口）
     void startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args);
@@ -150,8 +161,9 @@ private:
     // 沙箱路径解析（静态化供上述工具共用）：相对路径按 workDir 解析；逃逸时返回空串并置 *error
     static QString safePathIn(const QString &workDir, const QString &p, QString *error);
     // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact
-    // / create_task / update_task / list_tasks / get_task / claim_task / complete_task，共 15 个；
-    // s10 六个任务图工具仅注册进主循环表，子代理白名单不含）
+    // / create_task / update_task / list_tasks / get_task / claim_task / complete_task
+    // / schedule_cron / list_crons / cancel_cron，共 18 个；
+    // s10 六个任务图工具仅注册进主循环表，子代理白名单不含；lcc s12 cron 三件套同为仅主循环注册）
     static QJsonArray createToolsDefinition();
 
     // ---- 技能（lcc s07 SkillManager 内联移植：不建独立类，数据结构与方法置于本类私有段）----
@@ -229,6 +241,12 @@ private:
     QString runClaimTask(const QJsonObject &args) const;
     QString runCompleteTask(const QJsonObject &args) const;
 
+    // ---- 定时任务（lcc s12 cron 三件套 handler，mainToolHandlers 表路由；改台账+落盘故非 const；
+    // recurring/durable 缺省 true 对齐 lcc run_schedule_cron 默认参数；子代理白名单不含）----
+    QString runScheduleCron(const QJsonObject &args);
+    QString runCancelCron(const QJsonObject &args);
+    QString runListCrons();
+
     // ---- 生命周期钩子（lcc s04 HOOKS 注册表的内聚移植，事件名 → 有序 handler 列表）----
     // 各事件回调签名；返回空串表示放行/无副作用，非空含义按事件约定：
     // - PreToolUse：硬拦截文本（回填为 tool_result）或 "ASK:<reason>" 前缀（触发异步询问）
@@ -276,6 +294,10 @@ private:
     // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由
     // executeBashAsync 后台模式异步驱动，仅主线程访问，无锁
     BackgroundTasksManager m_backgroundTasks;
+    // 定时任务（lcc s12 CronSchedulerManager 纯数据移植）：同 m_backgroundTasks 单实例纪律——
+    // tick 轮询/交付/三 handler 共用本成员；1s QTimer 替代 lcc daemon 线程（登记偏差）
+    CronSchedulerManager m_cron;
+    QTimer *m_cronTick = nullptr; // 秒级节拍：pollDueJobs + tryDeliverCron（仅主线程）
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;

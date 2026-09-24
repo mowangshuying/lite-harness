@@ -148,6 +148,17 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
         QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
     });
 
+    // 定时任务送达（lcc s12）：后端空闲 tick 交付——展示走带前缀文本，活跃请求走无原文本
+    //（lcc deliver 双形态）；复用用户发消息的既有两步链路。首行 isRunning 防御分支
+    // 同栈直连下理论不可达（tryDeliverCron 已查 m_running），保留作后端契约变动的保险
+    connect(m_agentLoop, &AgentLoop::scheduledUserMessage, this,
+            [this](const QString &displayText, const QString &activeRequestText) {
+        if (m_agentLoop->isRunning())
+            return;
+        addMessage(MessageBubbleWidget::Role::User, displayText);
+        startAssistantStream(activeRequestText);
+    });
+
     connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
         // 运行态预查：运行中不建气泡、不动旧现场。若照旧走 startAssistantStream，
         // 旧气泡会被先冻结、新气泡又被 run() 拒绝后的 error 链收掉置空，
@@ -226,6 +237,7 @@ void ChatSessionPage::clearMessages()
     // 先停后端：stop() 的待决分支按拒绝回填且**不续跑队列**——若只调 resolvePermission(false)
     // 会同步续跑，同轮第二个待询问工具可能当场重建权限卡，随即被下面的 teardown 删掉，
     // 后端再次挂起且无卡可裁决（Gate1 MAJOR-2）。收口后再删控件。
+    // lcc s12：stop() 不杀 cron 运行时，清史也不停调度器——durable 任务跨会话存活（勿在此停表）
     m_agentLoop->stop();
     if (m_permissionCard && !m_permissionCard->isResolved())
         m_permissionCard->resolveDenySilently();

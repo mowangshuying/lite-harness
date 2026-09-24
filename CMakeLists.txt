@@ -52,6 +52,8 @@ set(src
         "src/MemoryManager.h"
         "src/BackgroundTasksManager.cpp"
         "src/BackgroundTasksManager.h"
+        "src/CronSchedulerManager.cpp"
+        "src/CronSchedulerManager.h"
     "src/App.cpp"
     "src/BasePage.cpp"
     "src/BasePage.h"
