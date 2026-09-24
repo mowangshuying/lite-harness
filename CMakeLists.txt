@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(lite-harness VERSION 0.0.1)
+# 版本号与 tag v0.1.0 对齐（原 0.0.1 与实际发布版本脱节）
+project(lite-harness VERSION 0.1.0)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -15,119 +16,42 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_BINARY_DIR}/bin")
 # 自定义 Find 模块路径
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core)
-find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml Network)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Charts Core5Compat Xml Network)
+# 组件裁剪：本工程实际仅使用 Widgets / Svg(FluentUI 需要) / Network(LLM 请求)
+# Charts、Core5Compat 由 FluentUI 子构建自行 find_package，根处无需重复申请；Xml 无任何引用
+# 已删除注释掉的 Qt5 探测行（历史死代码）
+find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network)
 
+# MSVC IDE 调试环境：将 Qt bin 目录注入 VS 调试器 PATH，保证 F5 调试可加载 DLL
+# 已删除中间变量的 message(STATUS) 噪音输出，仅保留最终结果提示
 if (MSVC_IDE)
-	message(STATUS "Qt6Widgets_LIBRARIES: ${Qt6Widgets_LIBRARIES}")
 	get_target_property(V_LOCATION ${Qt6Widgets_LIBRARIES} IMPORTED_LOCATION)
-	message(STATUS "V_LOCATION: ${V_LOCATION}")
 	cmake_path(GET V_LOCATION PARENT_PATH V_RUN_PATH)
-	message(STATUS "V_RUN_PATH: ${V_RUN_PATH}")
 	set(CMAKE_VS_DEBUGGER_ENVIRONMENT "PATH=%PATH%;${V_RUN_PATH}")
 	message(STATUS "CMAKE_VS_DEBUGGER_ENVIRONMENT: ${CMAKE_VS_DEBUGGER_ENVIRONMENT}")
 endif()
 
 # add_subdirectory(src)
 add_subdirectory(3rdparty/FluentUI)
-add_subdirectory(3rdparty/sqlite)
-add_subdirectory(3rdparty/sqlite_orm)
+# 摘除 sqlite / sqlite_orm 子构建：全仓零引用（src/ 与 FluentUI 均经 grep 核实），
+# 免去约 25 万行 C 死重编译；3rdparty 目录保留，仅移出构建图
+# 原全局 include_directories 一并移除：sqlite_orm/include 随死依赖删除，
+# FluentUI controls/utils 两行下方改为 target_include_directories（作用域收敛到本目标）
 
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/controls
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/sqlite_orm/include
-)
+# 源文件列表自动化：CONFIGURE_DEPENDS 在构建时检测文件增删并自动重新 configure，
+# 取代手工枚举（易漏加新文件）；路径相对 CMAKE_CURRENT_SOURCE_DIR（仓库根）
+file(GLOB src CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
 
-set(inc "")
-set(src 
-        "src/AgentLoop.cpp"
-        "src/AgentLoop.h"
-        "src/SubAgent.cpp"
-        "src/SubAgent.h"
-        "src/CompactManager.cpp"
-        "src/CompactManager.h"
-        "src/MemoryManager.cpp"
-        "src/MemoryManager.h"
-        "src/BackgroundTasksManager.cpp"
-        "src/BackgroundTasksManager.h"
-        "src/CronSchedulerManager.cpp"
-        "src/CronSchedulerManager.h"
-        "src/SessionStore.cpp"
-        "src/SessionStore.h"
-        "src/NavItem.h"
-        "src/ToolNames.h"
-    "src/App.cpp"
-    "src/BasePage.cpp"
-    "src/BasePage.h"
-    "src/ChatMsgEdit.cpp"
-    "src/ChatMsgEdit.h"
-    "src/LiteHarness.cpp"
-    "src/LiteHarness.h"
-    "src/SendMsgButton.cpp"
-    "src/SendMsgButton.h"
-    "src/SettingsPage.cpp"
-    "src/SettingsPage.h"
-    "src/NewChatPage.cpp"
-    "src/NewChatPage.h"
-    "src/ChatSessionPage.cpp"
-    "src/ChatSessionPage.h"
-    "src/FluentInputDialog.cpp"
-    "src/FluentInputDialog.h"
-    "src/MessageBubbleWidget.cpp"
-    "src/MessageBubbleWidget.h"
-    "src/ThinkingBlock.cpp"
-    "src/ThinkingBlock.h"
-    "src/ToolBlock.cpp"
-    "src/ToolBlock.h"
-    "src/ToolTagKind.h"
-    "src/PermissionCard.cpp"
-    "src/PermissionCard.h"
-    "src/TodoCard.cpp"
-    "src/TodoCard.h"
-    "src/QOpenAi.cpp"
-    "src/QOpenAi.h"
-    )
-
-set (qss
-        "./stylesheet/light/BasePage.qss"
-        "./stylesheet/dark/BasePage.qss"
-        "./stylesheet/atomOneDark/BasePage.qss"
-        "./stylesheet/light/ChatMsgEdit.qss"
-        "./stylesheet/dark/ChatMsgEdit.qss"
-        "./stylesheet/atomOneDark/ChatMsgEdit.qss"
-        "./stylesheet/light/SendMsgButton.qss"
-        "./stylesheet/dark/SendMsgButton.qss"
-        "./stylesheet/atomOneDark/SendMsgButton.qss"
-        "./stylesheet/light/LiteHarness.qss"
-        "./stylesheet/dark/LiteHarness.qss"
-        "./stylesheet/atomOneDark/LiteHarness.qss"
-        "./stylesheet/light/SettingsPage.qss"
-        "./stylesheet/dark/SettingsPage.qss"
-        "./stylesheet/atomOneDark/SettingsPage.qss"
-        "./stylesheet/light/NewChatPage.qss"
-        "./stylesheet/dark/NewChatPage.qss"
-        "./stylesheet/atomOneDark/NewChatPage.qss"
-        "./stylesheet/light/ChatSessionPage.qss"
-        "./stylesheet/dark/ChatSessionPage.qss"
-        "./stylesheet/atomOneDark/ChatSessionPage.qss"
-        "./stylesheet/light/ThinkingBlock.qss"
-        "./stylesheet/dark/ThinkingBlock.qss"
-        "./stylesheet/atomOneDark/ThinkingBlock.qss"
-        "./stylesheet/light/ToolBlock.qss"
-        "./stylesheet/dark/ToolBlock.qss"
-        "./stylesheet/atomOneDark/ToolBlock.qss"
-        "./stylesheet/light/PermissionCard.qss"
-        "./stylesheet/dark/PermissionCard.qss"
-        "./stylesheet/atomOneDark/PermissionCard.qss"
-        "./stylesheet/light/TodoCard.qss"
-        "./stylesheet/dark/TodoCard.qss"
-        "./stylesheet/atomOneDark/TodoCard.qss"
-        "./stylesheet/light/FluentInputDialog.qss"
-        "./stylesheet/dark/FluentInputDialog.qss"
-        "./stylesheet/atomOneDark/FluentInputDialog.qss"
-)
+# QSS 主题样式表自动化（light/dark/atomOneDark 三主题，原手工枚举 36 项），理由同上
+# 注意：file(GLOB) 返回绝对路径，而 qt_add_resources 对绝对路径要求显式 QT_RESOURCE_ALIAS；
+# 这里统一转回相对仓库根路径，与原手工清单 "./stylesheet/..." 形态一致，
+# 保证 QRC 别名仍为 /stylesheet/<theme>/<name>.qss，运行时 FluStyleSheetUtils 路径解析不受影响
+file(GLOB_RECURSE qss CONFIGURE_DEPENDS "stylesheet/*.qss")
+set(qss_rel "")
+foreach(f ${qss})
+    file(RELATIVE_PATH rf ${CMAKE_CURRENT_SOURCE_DIR} ${f})
+    list(APPEND qss_rel "./${rf}")
+endforeach()
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 
 set(res
@@ -136,10 +60,22 @@ set(res
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${res})
 
 set(TGT lite-harness)
-add_executable(${TGT} ${src} ${inc} "${CMAKE_CURRENT_SOURCE_DIR}/LiteHarness.rc")
+# 原 ${inc} 引用随空的 set(inc "") 一并删除（从未有内容，死变量）
+add_executable(${TGT} ${src} "${CMAKE_CURRENT_SOURCE_DIR}/LiteHarness.rc")
+
+# FluentUI 头文件搜索路径：由全局 include_directories 迁移为仅作用于本目标，
+# 避免污染后续 add_subdirectory 的构建（等价性：原全局块位于 FluentUI 子构建之后，仅本可执行消费）
+target_include_directories(${TGT} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/controls
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils
+)
+
+# MSVC：/W4 提升警告可见性；/utf-8 统一源码与执行字符集（避免中文注释按系统代码页误读）
+# 不加 /WX：第三方/存量警告不致中断构建
+target_compile_options(${TGT} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 
 ### qss
-qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss})
+qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss_rel})
 
 ### icon
 qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
