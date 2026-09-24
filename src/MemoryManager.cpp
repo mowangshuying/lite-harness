@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QPair>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QtMath>
 
@@ -118,14 +119,23 @@ bool readMemoryText(const QString &path, QString *out)
 
 bool writeMemoryText(const QString &path, const QString &text, QString *error)
 {
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    // 覆盖写改 QSaveFile 原子写：防止中途失败（磁盘满/崩溃）毁掉既有记忆文件留下半截内容，
+    // 对齐全仓覆盖写纪律；失败时 cancelWriting 丢弃临时文件不伤目标
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
     {
         if (error)
             *error = file.errorString();
         return false;
     }
-    file.write(text.toUtf8());
+    const QByteArray bytes = text.toUtf8();
+    if (file.write(bytes) != bytes.size() || !file.commit())
+    {
+        if (error)
+            *error = file.errorString();
+        file.cancelWriting();
+        return false;
+    }
     return true;
 }
 

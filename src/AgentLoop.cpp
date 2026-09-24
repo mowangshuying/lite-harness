@@ -3,6 +3,7 @@
 #include "QOpenAi.h"
 #include "SubAgent.h" // startSubAgentTask/cancelSubAgent/resolvePermission 需要完整类型
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植，全仓唯一事实源）
+#include "AgentConstants.h" // 模型/超时/截断常量单源（替代散落字面量）
 
 #include <QJsonDocument>
 #include <QProcess>
@@ -322,10 +323,11 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     , m_cron([this] { return sessionDataRoot(); })
     , m_sessionDataId(sessionDataId)
 {
-    // 模型 ID：优先环境变量 MODEL_ID，缺省 qwen3.8-max
+    // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::kDefaultModel（清单首项；
+    // 原注释误写 qwen3.8-max，实际回落一直是 flash，随单源化一并订正）
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())
-        m_model = QStringLiteral("qwen3.8-flash");
+        m_model = AgentConst::kDefaultModel;
 
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
@@ -435,7 +437,7 @@ void AgentLoop::rebuildSystemPromptMessage()
 
 // 会话历史落盘（按会话隔离，路径派生自 sessionDataRoot）：仅写纯 wire 消息（除 [0] 系统消息），
 // 展示层元数据不入库。落盘后顺带刷新索引 lastActiveMs——但只在该会话已在 index.json 登记时更新，
-// 不新建条目（条目登记由 LiteHarness::__createSession 负责，此处仅续活）
+// 不新建条目（条目登记由 LiteHarness::createSession 负责，此处仅续活）
 void AgentLoop::persistHistory()
 {
     // 回退路径（无 ID）与空历史：不落盘，避免污染全局 .lite-harness 目录
@@ -454,11 +456,20 @@ void AgentLoop::persistHistory()
     const QString path = QDir(sessionDataRoot()).filePath(QStringLiteral("history.json"));
     QDir().mkpath(QFileInfo(path).absolutePath());
     QSaveFile file(path);
+    // 失败不再静默 return：会话历史丢失属数据完整性事故，必须留痕（路径 + 原因）便于排查
     if (!file.open(QIODevice::WriteOnly))
+    {
+        qWarning().noquote() << QStringLiteral("[history] persistHistory 打开失败 %1: %2")
+                                    .arg(path, file.errorString());
         return;
+    }
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     if (!file.commit())
+    {
+        qWarning().noquote() << QStringLiteral("[history] persistHistory 提交失败 %1: %2")
+                                    .arg(path, file.errorString());
         return;
+    }
 
     // 索引仅刷新已存在条目的 lastActiveMs（未登记则跳过，语义与 upsert 的"只更新不新建"分支一致）
     const QString storeRoot = QDir(m_workDir).filePath(QStringLiteral(".lite-harness"));
@@ -678,8 +689,8 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
     request[QStringLiteral("tools")] = createToolsDefinition();
     // 默认开启思考
     request[QStringLiteral("enable_thinking")] = true;
-    // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
-    request[QStringLiteral("max_tokens")] = 8000;
+    // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致，取自单源常量）
+    request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
     // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
 
     QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
@@ -940,11 +951,27 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
                             const QHash<QString, ToolHandler> &handlers,
                             bool permissionGranted)
 {
-    // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）
+    // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）。
+    // 解析失败不再静默变空对象（此前空跑会带着缺字段的 args 误入 handler）：直接以错误
+    // 文本回填模型并携带原始参数前 100 字符便于模型自纠；空串/纯空白参数维持旧语义视作
+    // 空对象（无参工具合法路径，COMPACT/无参调用不受影响）。
     const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
     const QString toolName = function.value(QStringLiteral("name")).toString();
-    const QJsonObject args =
-        QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+    const QString argsText = function.value(QStringLiteral("arguments")).toString();
+    QJsonObject args;
+    if (!argsText.trimmed().isEmpty())
+    {
+        QJsonParseError parseErr{};
+        const QJsonDocument argsDoc = QJsonDocument::fromJson(argsText.toUtf8(), &parseErr);
+        if (!argsDoc.isObject())
+        {
+            const QString output = QStringLiteral("Error: invalid tool arguments JSON (%1): %2")
+                                       .arg(parseErr.errorString(), argsText.left(100));
+            onToolFinished(toolCall, toolName, toolSummary(toolName, args), output);
+            return;
+        }
+        args = argsDoc.object();
+    }
     const QString summary = toolSummary(toolName, args);
 
     // compact 工具（lcc s08）：loop.py 在 execute_tool 之前拦截（PreToolUse/PostToolUse 钩子
@@ -1417,7 +1444,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // shared_ptr 捕获（MINOR-2 修复）：若进程从未启动/不发 finished，超时闭包与
     // 标志随最后一个捕获者释放，不再裸 new/delete 泄漏
     auto timedOut = std::make_shared<bool>(false);
-    QTimer::singleShot(120000, process, [process, timedOut]() {
+    QTimer::singleShot(AgentConst::kBashTimeoutMs, process, [process, timedOut]() {
         *timedOut = true;
         process->kill();
     });
@@ -1447,13 +1474,13 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
                 QString output;
                 if (*timedOut)
                 {
-                    output = QStringLiteral("Error: Timeout (120s)");
+                    output = AgentConst::kBashTimeoutError;
                 }
                 else
                 {
                     output = QString::fromLocal8Bit(process->readAllStandardOutput());
-                    if (output.length() > 50000)
-                        output = output.left(50000); // 截断
+                    if (output.length() > AgentConst::kOutputCharLimit)
+                        output = output.left(AgentConst::kOutputCharLimit); // 截断
                     if (output.isEmpty())
                         output = QStringLiteral("(no output)");
                 }
@@ -1476,13 +1503,13 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         QString output;
         if (*timedOut)
         {
-            output = QStringLiteral("Error: Timeout (120s)");
+            output = AgentConst::kBashTimeoutError;
         }
         else
         {
             output = QString::fromLocal8Bit(process->readAllStandardOutput());
-            if (output.length() > 50000)
-                output = output.left(50000); // 截断
+            if (output.length() > AgentConst::kOutputCharLimit)
+                output = output.left(AgentConst::kOutputCharLimit); // 截断
             if (output.isEmpty())
                 output = QStringLiteral("(no output)");
             // 前台对齐 lcc s11 run_bash 重构（共用 run_bash_process + format_bash_result）：
@@ -1594,8 +1621,8 @@ QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args
     }
 
     QString output = lines.join(QLatin1Char('\n'));
-    if (output.length() > 50000)
-        output = output.left(50000); // 截断
+    if (output.length() > AgentConst::kOutputCharLimit)
+        output = output.left(AgentConst::kOutputCharLimit); // 截断
     if (output.isEmpty())
         output = QStringLiteral("(no output)");
     return output;
@@ -1614,12 +1641,17 @@ QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &arg
     if (!QDir().mkpath(QFileInfo(abs).dir().absolutePath()))
         return QStringLiteral("Error:cannot create directory:%1").arg(QFileInfo(abs).dir().absolutePath());
 
-    QFile file(abs);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    // 原子写防止中途失败毁目标文件（旧 QFile Truncate 在磁盘满/崩溃时留下半截内容），
+    // 对齐同文件 persistHistory 的 QSaveFile 纪律；失败时 cancelWriting 丢弃临时文件不伤目标
+    QSaveFile file(abs);
+    if (!file.open(QIODevice::WriteOnly))
         return QStringLiteral("Error: %1").arg(file.errorString()); // lcc run_write 带空格（G3）
     const QByteArray bytes = content.toUtf8();
-    if (file.write(bytes) != bytes.size())
-        return QStringLiteral("Error: %1").arg(file.errorString());
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        const QString reason = file.errorString();
+        file.cancelWriting(); // 丢弃临时文件并关闭句柄，目标路径不受影响
+        return QStringLiteral("Error: %1").arg(reason);
+    }
     return QStringLiteral("Wrote %1 bytes to %2").arg(bytes.size()).arg(path);
 }
 
@@ -1647,12 +1679,18 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     QString edited = text;
     edited.replace(index, oldString.size(), newString);
 
+    // 保持"读全文→替换→写回"语义，仅写回改原子（QSaveFile）：防止写回中途失败毁原文件；
+    // 先 close 读句柄，避免 Windows 下 commit 的重命名被自身打开句柄阻塞
     file.close();
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return QStringLiteral("Error:%1").arg(file.errorString());
     const QByteArray bytes = edited.toUtf8();
-    if (file.write(bytes) != bytes.size())
-        return QStringLiteral("Error:%1").arg(file.errorString());
+    QSaveFile out(abs);
+    if (!out.open(QIODevice::WriteOnly))
+        return QStringLiteral("Error:%1").arg(out.errorString());
+    if (out.write(bytes) != bytes.size() || !out.commit()) {
+        const QString reason = out.errorString();
+        out.cancelWriting(); // 丢弃临时文件，不伤目标
+        return QStringLiteral("Error:%1").arg(reason);
+    }
     return QStringLiteral("Edited %1").arg(path);
 }
 
@@ -2171,15 +2209,18 @@ bool AgentLoop::saveTask(const Task &task, QString *error) const
     if (!taskFilePath(task.id, &path, error))
         return false;
     QDir().mkpath(taskRootDir()); // lcc _path(create_root=True) → _root(create=True) mkdir parents
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    // 状态文件原子覆写（QSaveFile）：防止半截 JSON 毁掉任务图，对齐 persistHistory 纪律；
+    // 失败时 cancelWriting 丢弃临时文件不伤目标
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
         // lcc write_text 抛 OSError；lite 归一错误串族（登记偏差）
         if (error)
             *error = QStringLiteral("Task file write failed: %1").arg(path);
         return false;
     }
     const QByteArray bytes = taskToJsonText(task).toUtf8();
-    if (file.write(bytes) != bytes.size()) {
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        file.cancelWriting();
         if (error)
             *error = QStringLiteral("Task file write failed: %1").arg(path);
         return false;
@@ -2205,9 +2246,11 @@ bool AgentLoop::createTask(const QString &subject, const QString &description, T
         QString path;
         if (!taskFilePath(id, &path, error))
             return false; // 随机 ID 恒过正则，理论不可达
-        QFile file(path);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
-            continue; // NewOnly（≡ open("x")）：撞名 → FileExistsError → 重试
+        if (QFile::exists(path))
+            continue; // 撞名重试 ≡ 原 NewOnly 语义（QSaveFile 无独占创建；GUI 线程串行循环，无并发竞态）
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly))
+            continue;
         Task created;
         created.id = id;
         created.subject = trimmed;
@@ -2218,7 +2261,8 @@ bool AgentLoop::createTask(const QString &subject, const QString &description, T
         // toMSecsSinceEpoch() 为 qint64，除以 1000.0 提升为 double，与 struct Task 字段类型一致
         created.timestamp = QDateTime::currentDateTime().toMSecsSinceEpoch() / 1000.0;
         const QByteArray bytes = taskToJsonText(created).toUtf8();
-        if (file.write(bytes) != bytes.size()) {
+        if (file.write(bytes) != bytes.size() || !file.commit()) {
+            file.cancelWriting(); // 丢弃临时文件，目标路径从未被污染
             if (error)
                 *error = QStringLiteral("Task file write failed: %1").arg(path);
             return false;

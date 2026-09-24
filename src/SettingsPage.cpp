@@ -13,19 +13,20 @@
 
 namespace {
 
-// 默认工作目录：全仓首个 QSettings 用法，独立存储于 LiteHarness/LiteHarness，
-// 与主题/语言配置互不影响（themeChanged、setLanguage 走 FluentUI 自身机制，非此处）。
+// 默认工作目录：QSettings 用法，组织/应用名已在 App.cpp 全局设定（LiteHarness/LiteHarness），
+// 默认构造命中与旧显式双参构造相同的注册表键；与主题/语言配置互不影响
+// （themeChanged、setLanguage 走 FluentUI 自身机制，非此处）。
 const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 
 QString readDefaultWorkDir()
 {
-    QSettings settings(QStringLiteral("LiteHarness"), QStringLiteral("LiteHarness"));
+    QSettings settings;
     return settings.value(kDefaultWorkDirKey).toString();
 }
 
 void writeDefaultWorkDir(const QString &value)
 {
-    QSettings settings(QStringLiteral("LiteHarness"), QStringLiteral("LiteHarness"));
+    QSettings settings;
     settings.setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 

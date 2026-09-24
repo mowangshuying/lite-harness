@@ -39,10 +39,21 @@ bool isRetryableStatus(int httpStatus)
     return httpStatus == 429 || httpStatus >= 500;
 }
 
-// 指数退避：第 n 次重试（从 1 起）等待 1000 * 2^(n-1) 毫秒（1s, 2s, 4s...）
+// 指数退避：第 n 次重试（从 1 起）等待 1000 * 2^(n-1) 毫秒（1s, 2s, 4s...）。
+// 指数钳制到 [0,6]（最大 64s）：n 过大时 1<<(n-1) 位移 ≥32 为 UB，负数位移同为 UB
 int retryDelayMs(int retryNumber)
 {
-    return 1000 * (1 << (retryNumber - 1));
+    const int exponent = qBound(0, retryNumber - 1, 6);
+    return 1000 * (1 << exponent);
+}
+
+// base URL 归一：去掉全部尾部斜杠（endpointFor 与 setUrl 共用，消除两份重复实现）
+QString trimTrailingSlashes(const QString &url)
+{
+    QString base = url;
+    while (base.endsWith(QLatin1Char('/')))
+        base.chop(1);
+    return base;
 }
 
 QJsonObject errorJson(const QString &message)
@@ -58,10 +69,7 @@ QString endpointFor(OpenAiClient &c, QOpenAi::ChatStream::Mode mode)
     const char *suffix = mode == QOpenAi::ChatStream::Mode::LegacyCompletion
         ? "/completions"
         : "/chat/completions";
-    QString base = c.url;
-    while (base.endsWith(QLatin1Char('/')))
-        base.chop(1);
-    return base + QString::fromLatin1(suffix);
+    return trimTrailingSlashes(c.url) + QString::fromLatin1(suffix);
 }
 
 // 阻塞式非流式请求（含退避重试与超时）：成功返回响应 JSON，失败返回含 error 字段的对象
@@ -162,7 +170,8 @@ class ChatStream::Private
 {
 public:
     QNetworkReply *reply = nullptr;
-    QByteArray buffer;         // SSE 累积缓冲
+    QByteArray buffer;         // SSE 累积缓冲（仅存未成行的残段）
+    QByteArray pendingFrame;   // 当前帧已收集的行（遇空行=帧边界时整帧派发）
     QString thinking;          // 累积推理原文
     QString content;           // 累积正文原文
     QJsonArray toolCalls;      // 累积的 tool_calls（按 index 对齐，含占位）
@@ -260,16 +269,30 @@ void ChatStream::readIncoming()
 
     d->buffer.append(d->reply->readAll());
 
-    // 归一化 CRLF 为 LF，兼容 \r\n\r\n 和 \n\n 两种帧分隔符
-    d->buffer.replace("\r\n", "\n");
-
-    int idx = 0;
-    while ((idx = d->buffer.indexOf("\n\n")) != -1)
+    // 增量行提取（替代旧「整缓冲 replace("\r\n") + indexOf("\n\n")」——后者每次 readyRead
+    // 对全量缓冲扫描/重写，是 O(n²)）。逐行取整行，行尾单个 '\r' 即 CRLF 归一（跨 chunk 的
+    // "\r" + "\n" 天然由「无整行则留在 buffer」处理）；空行为帧边界：将已收集行以 '\n'
+    // 拼回后整帧派发，与旧实现等价（processFrame 对帧仅做 trimmed()+data: 前缀判断，
+    // 行内重组不影响语义；帧内含非 data: 行依旧静默忽略）。
+    for (;;)
     {
-        const QByteArray frame = d->buffer.left(idx);
-        d->buffer.remove(0, idx + 2);
-        if (!frame.trimmed().isEmpty())
-            processFrame(frame);
+        const int nl = d->buffer.indexOf('\n');
+        if (nl < 0)
+            break;
+        QByteArray line = d->buffer.left(nl);
+        d->buffer.remove(0, nl + 1);
+        if (line.endsWith('\r'))
+            line.chop(1);
+        if (line.isEmpty())
+        {
+            if (!d->pendingFrame.trimmed().isEmpty())
+                processFrame(d->pendingFrame);
+            d->pendingFrame.clear();
+            continue;
+        }
+        if (!d->pendingFrame.isEmpty())
+            d->pendingFrame += '\n';
+        d->pendingFrame += line;
     }
 }
 
@@ -282,7 +305,7 @@ void ChatStream::processFrame(const QByteArray &frame)
 
     QByteArray line = frame.trimmed();
     if (!line.startsWith("data:"))
-        return;
+        return; // 非 data: 帧即噪声（心跳/注释行），静默跳过——噪声容忍已在此分支存在
 
     const QString payload = QString::fromUtf8(line.mid(5).trimmed());
     if (payload == "[DONE]")
@@ -294,6 +317,8 @@ void ChatStream::processFrame(const QByteArray &frame)
     const QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8());
     if (!doc.isObject())
     {
+        // 带 data: 前缀却是坏 JSON：属协议错误而非噪声（噪声已在上方非 data: 分支被吸收），
+        // 维持 emit error 终局语义——调用方（AgentLoop/SubAgent）错误分支会落盘历史，不做降级
         emit error(tr("SSE 帧 JSON 解析失败: %1").arg(payload.left(200)));
         return;
     }
@@ -565,11 +590,8 @@ CategoryCompletion &completion()
 
 void setUrl(const QString &url)
 {
-    // base URL（不含端点路径），统一去掉尾部斜杠
-    QString base = url;
-    while (base.endsWith(QLatin1Char('/')))
-        base.chop(1);
-    client().url = base;
+    // base URL（不含端点路径），统一去掉尾部斜杠（与 endpointFor 共用同一 trim 实现）
+    client().url = trimTrailingSlashes(url);
 }
 
 QString url()

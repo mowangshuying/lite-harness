@@ -2,6 +2,7 @@
 
 #include "QOpenAi.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
+#include "AgentConstants.h" // 模型清单/max_tokens/bash 超时与截断上限单源
 
 #include <QDebug>
 #include <QJsonDocument>
@@ -123,8 +124,8 @@ void SubAgent::startChatRequest()
     request[QStringLiteral("messages")] = messagesJson;
     // 成员函数内调用私有静态（friend 生效），过滤交给自由函数
     request[QStringLiteral("tools")] = filterSubTools(AgentLoop::createToolsDefinition());
-    // lcc s06：显式输出上限（与主循环同为 8000）；子代理不开 enable_thinking（黑盒无思考展示）
-    request[QStringLiteral("max_tokens")] = 8000;
+    // lcc s06：显式输出上限（与主循环同取 AgentConst::kMaxTokens）；子代理不开 enable_thinking（黑盒无思考展示）
+    request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
 
     QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
     m_currentStream = s;
@@ -196,11 +197,26 @@ void SubAgent::runNextTool()
 
 void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
 {
-    // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）
+    // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）。
+    // 解析失败不再静默变空对象（与主循环 AgentLoop::executeTool 同纪律）：直接以错误文本
+    // 回填模型并携带原始参数前 100 字符；空串/纯空白参数维持旧语义视作空对象。
     const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
     const QString toolName = function.value(QStringLiteral("name")).toString();
-    const QJsonObject args =
-        QJsonDocument::fromJson(function.value(QStringLiteral("arguments")).toString().toUtf8()).object();
+    const QString argsText = function.value(QStringLiteral("arguments")).toString();
+    QJsonObject args;
+    if (!argsText.trimmed().isEmpty())
+    {
+        QJsonParseError parseErr{};
+        const QJsonDocument argsDoc = QJsonDocument::fromJson(argsText.toUtf8(), &parseErr);
+        if (!argsDoc.isObject())
+        {
+            const QString output = QStringLiteral("Error: invalid tool arguments JSON (%1): %2")
+                                       .arg(parseErr.errorString(), argsText.left(100));
+            onToolFinished(toolCall, output);
+            return;
+        }
+        args = argsDoc.object();
+    }
     const QString summary = AgentLoop::toolSummaryOf(toolName, args);
 
     // PreToolUse 钩子链（共用宿主注册表，含 s03 权限门与日志钩子）。返回协议与主循环一致：
@@ -313,7 +329,7 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
 
     // 120 秒超时（与主循环一致；shared_ptr 标志随两回调捕获，无裸 new/delete——MINOR-2）
     auto timedOut = std::make_shared<bool>(false);
-    QTimer::singleShot(120000, process, [process, timedOut]() {
+    QTimer::singleShot(AgentConst::kBashTimeoutMs, process, [process, timedOut]() {
         *timedOut = true;
         process->kill();
     });
@@ -330,13 +346,13 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
         QString output;
         if (*timedOut)
         {
-            output = QStringLiteral("Error: Timeout (120s)");
+            output = AgentConst::kBashTimeoutError;
         }
         else
         {
             output = QString::fromLocal8Bit(process->readAllStandardOutput());
-            if (output.length() > 50000)
-                output = output.left(50000); // 截断（与主循环一致）
+            if (output.length() > AgentConst::kOutputCharLimit)
+                output = output.left(AgentConst::kOutputCharLimit); // 截断（与主循环一致）
             if (output.isEmpty())
                 output = QStringLiteral("(no output)");
         }

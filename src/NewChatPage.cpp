@@ -86,7 +86,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     // 初值：设置页默认工作目录（存在且为目录时）优先，否则进程当前目录
     {
-        QSettings settings(QStringLiteral("LiteHarness"), QStringLiteral("LiteHarness"));
+        QSettings settings; // 组织/应用名已在 App.cpp 全局设定，默认构造命中同一注册表键
         const QString stored = settings.value(QStringLiteral("defaultWorkDir")).toString();
         if (!stored.isEmpty() && QFileInfo(stored).isDir())
             m_workDir = stored;

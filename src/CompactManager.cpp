@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QUuid>
 
 #include <algorithm>
@@ -169,9 +170,15 @@ QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation
         qWarning().noquote() << QStringLiteral("[compact] 无法创建转写文件 %1").arg(path);
         return QString();
     }
+    // 保持 QFile 逐行追加（NewOnly 独占创建，非覆盖场景，原子写纪律不适用），
+    // 但写失败不再静默：记日志后中断，转写文件供事后审计，缺行须可见
     for (const QJsonObject &message : conversation) {
-        file.write(QJsonDocument(message).toJson(QJsonDocument::Compact).trimmed());
-        file.write("\n");
+        const QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact).trimmed();
+        if (file.write(line) != line.size() || file.write("\n") != 1) {
+            qWarning().noquote()
+                << QStringLiteral("[compact] 转写文件写入失败 %1: %2").arg(path, file.errorString());
+            break;
+        }
     }
     return QDir::cleanPath(path);
 }
@@ -203,12 +210,22 @@ bool CompactManager::saveOutput(const QString &toolUseId, const QString &output,
         return false;
     const QString path =
         QDir(toolResultsDir()).filePath(safeOutputId(toolUseId) + QStringLiteral(".txt"));
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1").arg(path);
+    // 覆盖写改 QSaveFile 原子写：防止半截输出污染已落盘文件（对齐全仓覆盖写纪律）；
+    // 失败时 cancelWriting 丢弃临时文件不伤目标
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
+                                    .arg(path, file.errorString());
         return false;
     }
-    file.write(output.toUtf8());
+    const QByteArray bytes = output.toUtf8();
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        const QString reason = file.errorString();
+        file.cancelWriting();
+        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
+                                    .arg(path, reason);
+        return false;
+    }
     if (savedPath)
         *savedPath = QDir::cleanPath(path);
     return true;

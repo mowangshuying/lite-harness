@@ -13,10 +13,11 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 #include <FluComboBox.h>
+#include "AgentConstants.h" // 模型清单单源（原文件内 static 列表迁入头文件，值不变）
 
-// 可选模型清单：字面量列表，不做注册表/配置等多余抽象；首项为回落默认项
+// 可选模型清单见 AgentConst::kModelOptions（AgentConstants.h）：字面量列表，
+// 不做注册表/配置等多余抽象；首项为回落默认项
 // （AgentLoop::model() 不在列表内时下拉显示并选中它）
-static const QStringList kModelOptions = {QStringLiteral("qwen3.8-flash"), QStringLiteral("qwen3.8-max")};
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
@@ -73,7 +74,7 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 模型下拉框：FluComboBox 自带三主题 QSS 与 hover/pressed 态，弹层为 FluIndicatorRoundMenu
     // （当前项左侧画主题色选中标识竖条，WinUI ComboBox 观感）；高度 30 与 SendMsgButton 同高
     m_modelComboBox = new FluComboBox(this);
-    m_modelComboBox->addItems(kModelOptions);
+    m_modelComboBox->addItems(AgentConst::kModelOptions);
     m_modelComboBox->setFixedWidth(130); // 紧凑宽度：容纳 "qwen3.8-flash" + chevron，不撑爆右对齐工具行
     toolSetsLayout->addWidget(m_modelComboBox);
 
