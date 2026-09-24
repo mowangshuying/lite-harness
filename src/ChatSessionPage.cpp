@@ -452,6 +452,27 @@ void ChatSessionPage::updateWorkDirDisplay()
                             : dir);
 }
 
+QString ChatSessionPage::sessionDataId() const
+{
+    return m_agentLoop ? m_agentLoop->sessionDataId() : QString();
+}
+
+QString ChatSessionPage::sessionDataRoot() const
+{
+    return m_agentLoop ? m_agentLoop->sessionDataRoot() : QString();
+}
+
+bool ChatSessionPage::isRunning() const
+{
+    return m_agentLoop && m_agentLoop->isRunning();
+}
+
+void ChatSessionPage::stop()
+{
+    if (m_agentLoop)
+        m_agentLoop->stop();
+}
+
 void ChatSessionPage::onThemeChanged()
 {
     BasePage::onThemeChanged();

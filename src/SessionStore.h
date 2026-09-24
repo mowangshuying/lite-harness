@@ -88,6 +88,24 @@ public:
         saveIndex(root, entries);
     }
 
+    // 删除单条会话索引项：命中 dataId 则移出并回写，返回 true；未命中返回 false（不写盘）。
+    // 仅管索引条目，会话数据目录 sessions/<id>（含 history.json）由调用方决定是否清理。
+    static bool removeEntry(const QString &root, const QString &dataId)
+    {
+        if (dataId.isEmpty())
+            return false;
+        QJsonArray entries = loadIndex(root);
+        for (int i = 0; i < entries.size(); ++i)
+        {
+            if (entries.at(i).toObject().value(QStringLiteral("dataId")).toString() != dataId)
+                continue;
+            entries.removeAt(i);
+            saveIndex(root, entries);
+            return true;
+        }
+        return false;
+    }
+
 private:
     SessionStore() = delete; // 纯静态工具，禁止实例化
 };

@@ -402,6 +402,11 @@ void AgentLoop::setSessionDataId(const QString &id)
     m_sessionDataId = id;
 }
 
+QString AgentLoop::sessionDataId() const
+{
+    return m_sessionDataId;
+}
+
 QString AgentLoop::sessionDataRoot() const
 {
     // 回退分支（无 ID）保持改造前的全局行为：m_workDir/.lite-harness

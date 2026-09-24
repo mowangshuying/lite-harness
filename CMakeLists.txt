@@ -56,6 +56,7 @@ set(src
         "src/CronSchedulerManager.h"
         "src/SessionStore.cpp"
         "src/SessionStore.h"
+        "src/NavItem.h"
         "src/ToolNames.h"
     "src/App.cpp"
     "src/BasePage.cpp"

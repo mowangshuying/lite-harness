@@ -34,6 +34,13 @@ public:
     // 从会话数据根/history.json 恢复：交 AgentLoop 载入内存历史后重放 UI，并同步模型下拉
     void restoreFromDisk();
 
+    // 会话标识/运行态/数据根转发（宿主 LiteHarness 据此定位 index 条目、删除前收尾运行中的循环、
+    // 删除时连同会话磁盘数据目录一并清理）
+    QString sessionDataId() const;
+    QString sessionDataRoot() const;
+    bool isRunning() const;
+    void stop();
+
     void onThemeChanged() override;
 
 protected:

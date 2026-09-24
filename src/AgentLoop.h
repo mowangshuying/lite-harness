@@ -50,6 +50,9 @@ public:
     // 会话数据目录短 ID（见构造函数注释）。setSessionDataId 仅供未走构造注入的扩展路径调用，
     // 须在首次落盘前设置；正常会话经 ChatSessionPage 构造注入。
     void setSessionDataId(const QString &id);
+    // 会话数据目录短 ID（构造注入或 setSessionDataId 设置；空=未隔离）。供上层按 dataId
+    // 定位/清理 index.json 条目与会话数据根。
+    QString sessionDataId() const;
     // 会话数据根：有 ID → <m_workDir>/.lite-harness/sessions/<id>，无 ID → <m_workDir>/.lite-harness（回退）。
     // 供 CompactManager/MemoryManager/CronSchedulerManager 注入回调与 taskRootDir 使用；
     // 三引擎内部各拼自己的叶子段（.memory/.transcripts/.../scheduled_tasks.json），故 .lite-harness 中间层统一在此拼。
