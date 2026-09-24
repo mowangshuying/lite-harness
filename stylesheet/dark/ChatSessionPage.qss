@@ -26,3 +26,13 @@ MessageBubbleWidget {
     margin-left: 4px;
     padding-left: 8px;
 }
+
+/* 只读工作目录页眉：12px 次要灰字（字号在代码设定以对齐 elide 量纲），
+   题头比路径更浅一档，与 NewChatPage 路径条同一套灰阶 token */
+ChatSessionPage QLabel#workDirCaption {
+    color: rgb(140, 140, 140);
+}
+
+ChatSessionPage QLabel#workDirPath {
+    color: rgb(175, 175, 175);
+}

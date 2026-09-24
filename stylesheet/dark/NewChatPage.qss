@@ -4,6 +4,37 @@ NewChatPage {
     border: 1px solid rgb(56, 56, 56);
 }
 
+/* 英雄页问候语：页面唯一大字（字号在 QSS 定义，QLabel 渲染无测量问题） */
 NewChatPage QLabel#welcomeLabel {
     color: rgb(200, 200, 200);
+    font-size: 26px;
+    font-weight: 600;
+}
+
+/* 工作目录行：12px 次要信息，题头比路径更浅一档，整体弱于输入框 */
+NewChatPage QLabel#workDirCaption {
+    color: rgb(140, 140, 140);
+}
+
+NewChatPage QLabel#workDirPath {
+    color: rgb(175, 175, 175);
+}
+
+/* 「浏览」：透明扁平文字钮，仅 hover 提亮为强调色，不抢焦点 */
+NewChatPage QToolButton#workDirBrowse {
+    color: rgb(175, 175, 175);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+}
+
+NewChatPage QToolButton#workDirBrowse:hover {
+    color: rgb(118, 185, 237);
+    background-color: rgba(255, 255, 255, 15);
+}
+
+NewChatPage QToolButton#workDirBrowse:pressed {
+    color: rgb(118, 185, 237);
+    background-color: rgba(255, 255, 255, 25);
 }

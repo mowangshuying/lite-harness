@@ -9,6 +9,7 @@ class ChatMsgEdit;
 class AgentLoop;
 class PermissionCard;
 class TodoCard;
+class QLabel;
 
 class ChatSessionPage : public BasePage
 {
@@ -16,7 +17,10 @@ class ChatSessionPage : public BasePage
 public:
     // sessionDataId：会话数据目录短 ID，透传给内部 AgentLoop 实现持久化数据按会话隔离
     // （空则回退全局 .lite-harness）；须经构造注入，先于 AgentLoop 体内首次 durable 装载定值。
-    explicit ChatSessionPage(const QString &sessionDataId = QString(), QWidget *parent = nullptr);
+    // workDir：会话工作目录，透传给 AgentLoop（空则回落 QDir::currentPath()）；同样须经构造注入，
+    // 令会话数据根/技能/进程 cwd 随所选目录解析，先于体内首次 durable 装载定值。
+    explicit ChatSessionPage(const QString &sessionDataId = QString(), const QString &workDir = QString(),
+                             QWidget *parent = nullptr);
 
     void addMessage(MessageBubbleWidget::Role role, const QString &content);
     void startConversation(const QString &text);
@@ -34,14 +38,20 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    // 工作目录路径 label 尺寸变化时按新宽度重新中间省略
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void startAssistantStream(const QString &userText);
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
+    // 只读工作目录显示：ToolTip 恒为全路径，可见文本按 label 当前宽度中间省略
+    void updateWorkDirDisplay();
 
 private:
     FluVScrollView *m_scrollView = nullptr;
+    QWidget *m_inputSection = nullptr;      // 底部同栏容器：只读工作目录条(上) + 输入框(下)，宽上限与 ChatMsgEdit 同为 800
+    QLabel *m_workDirLabel = nullptr;       // 工作目录路径显示（objectName workDirPath，配色见 ChatSessionPage.qss）
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
     MessageBubbleWidget *m_currentBubble = nullptr;   // 当前流式气泡

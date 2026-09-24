@@ -311,8 +311,12 @@ QRegularExpression globToRegex(const QString &pattern)
 
 } // namespace
 
-AgentLoop::AgentLoop(const QString &sessionDataId, QObject *parent)
+AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObject *parent)
     : QObject(parent)
+    // m_workDir 声明序先于 m_sessionDataId，故此处 init 也前置；务必先于下方 body 内
+    // scanSkills()/初始 system prompt/m_cron.start()（装载 durable 台账）定值，令各数据根随所选目录解析。
+    // 空则回落进程当前目录，语义与既有 setWorkDir 一致（归一化为绝对路径）。
+    , m_workDir(workDir.isEmpty() ? QDir::currentPath() : QDir(workDir).absolutePath())
     , m_compact([this] { return sessionDataRoot(); }, [this] { return m_model; })
     , m_memory([this] { return sessionDataRoot(); }, [this] { return m_model; })
     , m_cron([this] { return sessionDataRoot(); })
@@ -322,9 +326,6 @@ AgentLoop::AgentLoop(const QString &sessionDataId, QObject *parent)
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())
         m_model = QStringLiteral("qwen3.8-flash");
-
-    // 工作目录默认取进程当前目录
-    m_workDir = QDir::currentPath();
 
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
@@ -354,7 +355,8 @@ AgentLoop::AgentLoop(const QString &sessionDataId, QObject *parent)
 
     // 定时任务运行时（lcc s12 start_runtime_threads 转译）：QTimer 1s 节拍替代 python daemon 线程
     //（登记偏差）；tick 恒跑、以 isRuntimeStarted 短路（setWorkDir 的 stop→start 期间不误轮询）。
-    // 装载 durable 台账（此刻 workDir=QDir::currentPath()，ChatSessionPage 随后 setWorkDir 会重载）
+    // 装载 durable 台账（此刻 workDir 已由构造入参定值，sessionDataRoot 随所选目录解析；
+    // 不再依赖构造后 setWorkDir 的 stop→start 重载）
     m_cronTick = new QTimer(this);
     m_cronTick->setInterval(1000);
     connect(m_cronTick, &QTimer::timeout, this, [this] {

@@ -29,7 +29,10 @@ public:
     // 空则回退全局 <workDir>/.lite-harness/（保证未注入 ID 的独立构造路径行为不变）。
     // skills 始终共享 <workDir>/.lite-harness/skills，不受本 ID 影响。
     // 须在构造时注入：构造体内 m_cron.start() 会装载 durable 台账，先于任何落盘解析定值可免中途切根重复装载。
-    explicit AgentLoop(const QString &sessionDataId = QString(), QObject *parent = nullptr);
+    // workDir：会话工作目录（空则回落 QDir::currentPath()）。须经构造注入，令 m_workDir 先于构造体内
+    // m_cron.start()/scanSkills/初始 system prompt 定值，使各数据根与技能目录随所选目录解析，避免默认目录装载后再切根重载。
+    explicit AgentLoop(const QString &sessionDataId = QString(), const QString &workDir = QString(),
+                       QObject *parent = nullptr);
     ~AgentLoop() override;
 
     // 启动代理循环（异步，不阻塞 UI 线程）

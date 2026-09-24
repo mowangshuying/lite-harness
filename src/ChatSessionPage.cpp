@@ -6,6 +6,9 @@
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QFontMetrics>
 #include "ChatMsgEdit.h"
 #include "AgentLoop.h"
 #include "ToolBlock.h"
@@ -17,10 +20,16 @@
 #include <QHash>
 #include <QPair>
 
-ChatSessionPage::ChatSessionPage(const QString &sessionDataId, QWidget *parent) : BasePage(parent)
+// 消息列与底部输入组的统一栏宽上限（与 ChatMsgEdit::setMaximumWidth(800) 及 NewChatPage 输入栏同参）、
+// 页面水平留白（与下方 setContentsMargins 对齐），resizeEvent 据此钳制栏宽并水平居中
+static constexpr int kColumnMaxWidth = 800;
+static constexpr int kSideMargin = 35;
+
+ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
+                                 QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
-    vMainLayout->setContentsMargins(35, 35, 35, 35);
+    vMainLayout->setContentsMargins(kSideMargin, 35, kSideMargin, 35);
     vMainLayout->setSpacing(15);
     setLayout(vMainLayout);
 
@@ -28,20 +37,55 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, QWidget *parent) 
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
     m_scrollView->getMainLayout()->setContentsMargins(15, 15, 15, 15);
     m_scrollView->getMainLayout()->setSpacing(15);
-    vMainLayout->addWidget(m_scrollView, 1);
+    // 消息列与底部输入组同栏宽（resizeEvent 钳制 min(800, 可用宽)）并居中成同一阅读列
+    vMainLayout->addWidget(m_scrollView, 1, Qt::AlignHCenter);
 
-    auto hLayout = new QHBoxLayout();
-    m_inputEdit = new ChatMsgEdit(this);
-    // vMainLayout->addWidget(m_inputEdit, 0, Qt::AlignHCenter);
-    hLayout->addWidget(m_inputEdit, 1);
+    // 底部输入区：只读工作目录条在上、ChatMsgEdit 在下，同栏同宽（与消息列同列，
+    // 栏宽由 resizeEvent 钳制并居中；栏内子控件铺满栏宽，摆位关系不变）
+    m_inputSection = new QWidget(this);
+    auto sectionLayout = new QVBoxLayout(m_inputSection);
+    sectionLayout->setContentsMargins(0, 0, 0, 0);
+    sectionLayout->setSpacing(8); // 与 NewChatPage 输入栏同参数，路径条与输入框读作同一组件
+
+    // 工作目录页眉：「工作目录  <中间省略全路径>」——只读展示，无浏览入口、不可修改；
+    // 12px 次要灰字弱化，视觉语言与 NewChatPage 路径条一致（配色见各主题 ChatSessionPage.qss）
+    auto workDirRow = new QHBoxLayout();
+    workDirRow->setContentsMargins(4, 0, 0, 0); // 与下方输入框内文字起点同列
+    workDirRow->setSpacing(8);
+
+    auto workDirCaption = new QLabel(tr("工作目录"), m_inputSection);
+    workDirCaption->setObjectName("workDirCaption");
+
+    m_workDirLabel = new QLabel(m_inputSection);
+    m_workDirLabel->setObjectName("workDirPath");
+    m_workDirLabel->setMinimumWidth(0);               // 允许被压缩，配合中间省略截断超长路径
+    m_workDirLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_workDirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse); // 仅可选中复制，无修改交互
+    m_workDirLabel->installEventFilter(this);         // Resize 时按新宽度重新省略
+
+    // 字号在代码里设定（与 elide 的 QFontMetrics 量纲一致），配色交给三主题 QSS 跟随变色
+    QFont secondaryFont = workDirCaption->font();
+    secondaryFont.setPixelSize(12);
+    workDirCaption->setFont(secondaryFont);
+    m_workDirLabel->setFont(secondaryFont);
+
+    workDirRow->addWidget(workDirCaption);
+    workDirRow->addWidget(m_workDirLabel);
+    sectionLayout->addLayout(workDirRow);
+
+    m_inputEdit = new ChatMsgEdit(m_inputSection);
+    sectionLayout->addWidget(m_inputEdit);
 
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
-    // 会话数据 ID 经构造注入，令任务图/记忆/压缩转写/定时台账等落盘按会话隔离
-    m_agentLoop = new AgentLoop(sessionDataId, this);
+    // 会话数据 ID + 工作目录经构造注入：前者令任务图/记忆/压缩转写/定时台账等落盘按会话隔离，
+    // 后者令上述数据根、技能目录与 bash/子代理进程 cwd 全部随所选工作目录解析（空则回落进程当前目录）
+    m_agentLoop = new AgentLoop(sessionDataId, workDir, this);
     // 模型切换接线：用户在下拉框改选 → 后端 setModel（下一轮请求生效）
     connect(m_inputEdit, &ChatMsgEdit::modelChanged, m_agentLoop, &AgentLoop::setModel);
     // 初始显示同步为后端生效模型（MODEL_ID 环境变量值不在两选项内时，下拉回落显示 qwen3.8-flash）
     m_inputEdit->setCurrentModel(m_agentLoop->model());
+    // 工作目录在会话存续期固定（构造注入 AgentLoop），只读取一次生效值（含恢复会话的台账回填目录）
+    updateWorkDirDisplay();
     connect(m_agentLoop, &AgentLoop::finished, this, [this](const QString &reply) {
         // 防御收口：正常契约下待决权限会暂停队列、finished 不会先于裁决到达；
         // 若出现残留待决卡片，落为"已拒绝"留痕（不再转呼 resolvePermission，交给后端收口）
@@ -187,7 +231,7 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, QWidget *parent) 
         startAssistantStream(text); // 创建流式气泡并启动代理循环
     });
 
-    vMainLayout->addLayout(hLayout);
+    vMainLayout->addWidget(m_inputSection, 0, Qt::AlignHCenter);
 
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &ChatSessionPage::onThemeChanged);
     onThemeChanged();
@@ -360,6 +404,14 @@ void ChatSessionPage::clearMessages()
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
 {
     BasePage::resizeEvent(event);
+    // 统一钳制消息列与底部输入组栏宽为 min(800, 可用宽)（纯布局 stretch 无法表达"撑到上限后居中"，
+    // 与 NewChatPage 同款手法）；路径条随组宽变化触发 Resize，经 eventFilter 重新中间省略
+    const int columnWidth = qMin(kColumnMaxWidth, width() - 2 * kSideMargin);
+    if (m_scrollView)
+        m_scrollView->setFixedWidth(columnWidth);
+    if (m_inputSection)
+        m_inputSection->setFixedWidth(columnWidth);
+
     //m_scrollView->resize(event->size().width() - 100, m_scrollView->height());
 
     auto mainLayout = m_scrollView->getMainLayout();
@@ -379,6 +431,25 @@ void ChatSessionPage::resizeEvent(QResizeEvent *event)
                 bubble->refreshSize();
         }
     });
+}
+
+bool ChatSessionPage::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_workDirLabel && event->type() == QEvent::Resize)
+        updateWorkDirDisplay();
+    return BasePage::eventFilter(watched, event);
+}
+
+void ChatSessionPage::updateWorkDirDisplay()
+{
+    if (!m_workDirLabel || !m_agentLoop)
+        return;
+    const QString dir = m_agentLoop->workDir();
+    m_workDirLabel->setToolTip(dir);                  // 全路径经 ToolTip 兜底
+    const int w = m_workDirLabel->width();
+    m_workDirLabel->setText(w > 0
+                            ? QFontMetrics(m_workDirLabel->font()).elidedText(dir, Qt::ElideMiddle, w)
+                            : dir);
 }
 
 void ChatSessionPage::onThemeChanged()

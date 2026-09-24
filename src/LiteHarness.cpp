@@ -15,6 +15,7 @@
 #include "QOpenAi.h"
 #include "SessionStore.h"
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QVector>
 #include <QDateTime>
@@ -115,7 +116,10 @@ void LiteHarness::__createSession(const QString &text)
     const QString sessionDataId = QString::fromLatin1(
         QUuid::createUuid().toRfc4122().toHex().left(8));
 
-    auto sessionPage = new ChatSessionPage(sessionDataId);
+    // 新建会话页所选工作目录（默认取设置页默认目录或进程当前目录，可临时改选）
+    const QString newWorkDir = m_newChatPage->currentWorkDir();
+
+    auto sessionPage = new ChatSessionPage(sessionDataId, newWorkDir);
     // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
     sessionPage->setModel(m_newChatPage->currentModel());
     sessionPage->startConversation(text);
@@ -123,10 +127,12 @@ void LiteHarness::__createSession(const QString &text)
     m_sLayout->addWidget(key, sessionPage);
 
     // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
-    // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型
+    // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型。
+    // 索引「根」固定为进程当前目录下 .lite-harness（即 __restoreSessions 启动读取处），
+    // 只有条目「工作目录字段」记所选目录——若把根也改到所选目录，切换工作目录后旧会话将无法被发现。
     SessionStore::upsertEntry(
         QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness")),
-        sessionDataId, title, m_newChatPage->currentModel(), QDir::currentPath());
+        sessionDataId, title, m_newChatPage->currentModel(), newWorkDir);
 
     auto sessionsItem = (FluVNavigationIconTextItem *)m_navView->getItemByKey("SessionsGroup");
     auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
@@ -175,7 +181,14 @@ void LiteHarness::__restoreSessions()
         if (m_sessions.contains(key))
             continue;
 
-        auto page = new ChatSessionPage(dataId);
+        // 恢复时沿用条目记录的工作目录；目录已不存在则静默回退进程当前目录，
+        // 避免因外部删/移目录导致会话无法打开（数据仍在其原 sessions/<dataId> 下按所选根解析）
+        const QString entryWork = e.value(QStringLiteral("workDir")).toString();
+        const QString finalWork = (!entryWork.isEmpty() && QFileInfo(entryWork).isDir())
+                                      ? entryWork
+                                      : QDir::currentPath();
+
+        auto page = new ChatSessionPage(dataId, finalWork);
         page->restoreFromDisk(); // 无 history.json 则为空会话页
         m_sessions.insert(key, page);
         m_sLayout->addWidget(key, page);
