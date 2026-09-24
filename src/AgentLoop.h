@@ -118,7 +118,8 @@ private:
     // —— 供 SubAgent（友元）复用同一份实现的静态转发（转调 .cpp 内部同名工具函数）——
     static const QString &askPrefixOf();
     static QString toolSummaryOf(const QString &toolName, const QJsonObject &args);
-    static const QStringList &dangerousCommandList();
+    // lcc fddb23e G4 单源：bash 危险黑名单与权限门 DENY_LIST 共用同一份列表
+    static const QStringList &bashDenyList();
     // 单个工具执行完成的统一收口（安全/超时/未知/沙箱等快捷路径也走这里）
     void onToolFinished(const QJsonObject &toolCall, const QString &toolName,
                         const QString &summary, const QString &output);
@@ -133,10 +134,11 @@ private:
     // 合并语义），否则新增一条 user 消息。两个挂载点：run() 追加用户消息后、
     // runNextTool() 批尾 flush 之后（compact 之前）
     void injectBackgroundResults();
-    // 定时任务空闲交付（lcc s12 run_delivery 转译）：仅 m_running=false 时消费队列——
-    // emit scheduledUserMessage 同栈直连（宿主同步 run() 置位），发后回读 m_running 判定
-    // 宿主是否接管：未接管（无 UI 接线/防御拒绝）→ restoreCronJobs 待下个 tick 重试；
-    // 已接管 → 逐任务 qInfo delivered 后 acknowledgeCronJobs（lcc 双形态文本见信号注释）
+    // 定时任务空闲交付（lcc s12/31a99d1 run_delivery 转译）：仅 m_running=false 时经
+    // m_cron.runDelivery 收割——回调内 emit scheduledUserMessage 同栈直连（宿主同步 run()
+    // 置位）后回读 m_running 作为接管结果：未接管（无 UI 接线/防御拒绝）→ runDelivery
+    // 内部 restoreCronJobs 待下个 tick 重试；已接管 → 本批转入在途，ack 推迟至回合终局
+    // （正常收尾/停止/流错误/轮次上限）finalizeInFlightDelivery 收口（lcc 双形态文本见信号注释）
     void tryDeliverCron();
     // task 工具（lcc s06）：启动 SubAgent 异步链（独立上下文黑盒；权限询问经本类
     // permissionRequired 转发；完成回调以汇总文本走 onToolFinished 收口）

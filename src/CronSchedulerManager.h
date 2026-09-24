@@ -21,7 +21,10 @@
  *   - threading.RLock 三把锁 → 仅主线程访问、无锁（同 m_messages 纪律）；
  *   - secrets.token_hex(4) → QRandomGenerator 8 位小写十六进制（格式等价）；
  *   - lcc 交付失败靠调用方 try/except 后 restore 重投（at-least-once）→
- *     lite 同栈同步交付（emit 直连即完成入队），仅宿主拒收时等价 restore 重试；
+ *     lite 以 runDelivery/finalizeInFlightDelivery 两段式对齐同一语义（lcc 31a99d1），
+ *     仅存形态差：python 同步回调包整回合、异常 re-raise → lite 回调 bool 返回成败、
+ *     ack 推迟至宿主回合终局（成功/停止/流错误/轮次上限）收口；
+ *   - lcc log.py 彩色 ANSI 与 blank_before 排版 → lite qDebug/qInfo 系列忽略（观感偏差）；
  *   - 多个会话页同 workDir 各持一套台账时可能双触发——用户已接受的已知偏差；
  *   - 装载无剪枝：pending 的一次性任务重启后照常入队重投（逐字对齐 lcc
  *     load_durable_jobs 的 at-least-once 语义；移植规格书"装载即剪枝"一句与
@@ -98,6 +101,14 @@ public:
     // **不清** lastFired——at-least-once：宿主拒收时下个 tick 直接重试，不等下一整分钟；不落盘
     void restoreCronJobs(const QList<CronJob> &fired);
 
+    // 交付编排（lcc 31a99d1 run_delivery 转译）：收割→回调→按回调结果收尾——
+    // 空批返回 false 不动台账；回调 false（宿主拒收）→ restoreCronJobs 回队待重试、返回 false；
+    // 回调 true → 本批转入在途（m_inFlight），返回 true——ack 推迟到回合终局 finalizeInFlightDelivery
+    bool runDelivery(const std::function<bool(const QList<CronJob> &)> &deliver);
+    // 回合终局收口（lcc run_delivery 的 finally 语义）：在途批 success→acknowledge，否则 restore；
+    // 无在途 no-op（幂等——多终局点重复调用安全）
+    void finalizeInFlightDelivery(bool success);
+
     // 台账清单文本（lcc run_list_crons → list_cron_jobs 仅登记表现状快照，队列⊆台账恒成立）：
     // 空 → "No cron jobs."；否则每行 "%1: %2 -> %3 [%4, %5]"
     // （id, cron, prompt 前 60 字符, recurring/one-shot, durable/session），\n 连接
@@ -122,5 +133,6 @@ private:
     std::function<QString()> m_workDirSink;
     QHash<QString, CronJob> m_jobs; // 台账（lcc scheduled_jobs；lite 无插入序——遍历序偏差，仅观感）
     QList<CronJob> m_queue;         // 到期待交付队列（lcc cron_queue）
+    QList<CronJob> m_inFlight;      // 已交付待确认（lcc run_delivery 局部 fired 的成员化，两段式）
     bool m_runtimeStarted = false;  // lcc _runtime_started
 };

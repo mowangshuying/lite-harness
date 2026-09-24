@@ -555,7 +555,7 @@ void MemoryManager::rebuildMemoryIndex() const
                          lines.join(QLatin1Char('\n')) +
                              (lines.isEmpty() ? QString() : QStringLiteral("\n")),
                          &error))
-        qWarning().noquote() << QStringLiteral("[Memory index rebuild failed: %1]").arg(error);
+        qWarning().noquote() << QStringLiteral("[memory] index rebuild failed: %1").arg(error);
 }
 
 bool MemoryManager::writeMemoryFile(const QString &name, const QString &type,
@@ -779,7 +779,7 @@ int MemoryManager::extractMemories(const QVector<QJsonObject> &conversation) con
     const QString reply = blockingCreate(prompt, kExtractMaxTokens, &ok, &error);
     if (!ok)
     {
-        qWarning().noquote() << QStringLiteral("[Memory extraction skipped: %1]").arg(error);
+        qWarning().noquote() << QStringLiteral("[memory] extraction skipped: %1").arg(error);
         return 0;
     }
 
@@ -808,7 +808,7 @@ int MemoryManager::extractMemories(const QVector<QJsonObject> &conversation) con
                              &error))
         {
             // lcc 抛异常 → 外层 except：打印 skipped 并 return 0；已写文件保留（两侧皆非原子）
-            qWarning().noquote() << QStringLiteral("[Memory extraction skipped: %1]").arg(error);
+            qWarning().noquote() << QStringLiteral("[memory] extraction skipped: %1").arg(error);
             return 0;
         }
         MemoryRecord written;
@@ -825,7 +825,7 @@ int MemoryManager::extractMemories(const QVector<QJsonObject> &conversation) con
     if (stored > 0)
     {
         // lcc print(f"\n\033[33m[Memory: stored {stored} records]\033[0m") → GUI 卡片（去 ANSI）
-        emitCard(QStringLiteral("[Memory: stored %1 records]").arg(stored),
+        emitCard(QStringLiteral("[memory] stored %1 records").arg(stored),
                  storedNames.join(QLatin1Char('\n')));
     }
     return stored;
@@ -859,7 +859,7 @@ int MemoryManager::consolidateMemories() const
     if (catalog.size() > kConsolidateInputCharLimit)
     {
         qWarning().noquote() << QStringLiteral(
-            "[Memory consolidation skipped: memory store is too large for one consolidation pass]");
+            "[memory] consolidation skipped: memory store is too large for one consolidation pass");
         return 0;
     }
 
@@ -868,7 +868,7 @@ int MemoryManager::consolidateMemories() const
     const QString reply = blockingCreate(prompt, kConsolidateMaxTokens, &ok, &error);
     if (!ok)
     {
-        qWarning().noquote() << QStringLiteral("[Memory consolidation skipped: %1]").arg(error);
+        qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1").arg(error);
         return 0;
     }
 
@@ -893,7 +893,7 @@ int MemoryManager::consolidateMemories() const
     if (consolidated.isEmpty() || slugSet.size() != slugCount)
     {
         qWarning().noquote() << QStringLiteral(
-            "[Memory consolidation skipped: consolidation returned empty or duplicate records]");
+            "[memory] consolidation skipped: consolidation returned empty or duplicate records");
         return 0;
     }
 
@@ -904,7 +904,7 @@ int MemoryManager::consolidateMemories() const
         QString text;
         if (!readMemoryText(QDir(storeDir()).filePath(record.filename), &text))
         {
-            qWarning().noquote() << QStringLiteral("[Memory consolidation skipped: %1]")
+            qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1")
                                         .arg(QStringLiteral("failed to snapshot %1").arg(record.filename));
             return 0;
         }
@@ -958,7 +958,7 @@ int MemoryManager::consolidateMemories() const
                                 snapshot.value(record.filename), nullptr);
         }
         rebuildMemoryIndex();
-        qWarning().noquote() << QStringLiteral("[Memory consolidation skipped: %1]")
+        qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1")
                                     .arg(error.isEmpty() ? QStringLiteral("consolidation write failed; "
                                                                           "store rolled back")
                                                          : error);
@@ -966,7 +966,7 @@ int MemoryManager::consolidateMemories() const
     }
 
     // lcc :572-575 两段 f-string 拼合的打印 → GUI 卡片（去 ANSI）
-    emitCard(QStringLiteral("[Memory: consolidated %1 to %2 records]")
+    emitCard(QStringLiteral("[memory] consolidated %1 to %2 records")
                  .arg(records.size())
                  .arg(consolidated.size()),
              QStringLiteral("%1 -> %2").arg(records.size()).arg(consolidated.size()));

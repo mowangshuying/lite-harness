@@ -1,6 +1,7 @@
 #include "SubAgent.h"
 
 #include "QOpenAi.h"
+#include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
 
 #include <QDebug>
 #include <QJsonDocument>
@@ -14,8 +15,8 @@
 
 namespace {
 
-// 子代理轮次预算（lcc s06 MAX_SUBAGENT_TURNS）：每次发起请求消耗一轮，
-// 含 Stop 钩子续跑（lcc for range(50) 中 continue 同样占用迭代）
+// 子代理轮次预算（lcc s06 MAX_SUBAGENT_TURNS）：每次发起请求消耗一轮
+// （lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）
 constexpr int kMaxSubagentTurns = 50;
 
 // 子代理工具白名单（lcc s06 subTools）：主循环 7 工具定义中的前 5 个，
@@ -25,8 +26,8 @@ constexpr int kMaxSubagentTurns = 50;
 QJsonArray filterSubTools(const QJsonArray &all)
 {
     static const QSet<QString> allowed = {
-        QStringLiteral("bash"), QStringLiteral("read_file"), QStringLiteral("write_file"),
-        QStringLiteral("edit_file"), QStringLiteral("glob"),
+        ToolNames::BASH, ToolNames::READ_FILE, ToolNames::WRITE_FILE,
+        ToolNames::EDIT_FILE, ToolNames::GLOB,
     };
 
     QJsonArray sub;
@@ -37,7 +38,7 @@ QJsonArray filterSubTools(const QJsonArray &all)
         if (!allowed.contains(name))
             continue;
 
-        if (name == QStringLiteral("bash"))
+        if (name == ToolNames::BASH)
         {
             // 子代理 bash 专用（lcc s11 95242de sub_bash_info 等价）：从 schema  properties
             // 剔除 run_in_background——schema 层禁止后台（执行层双保险见 SubAgent::executeTool）。
@@ -141,18 +142,8 @@ void SubAgent::startChatRequest()
         {
             m_messages.append(fullMsg);
 
-            // Stop 钩子（共用宿主注册表，lcc s06）：非空返回注入一条 user 消息并续跑，
-            // 续跑同样消耗轮次预算（下一次 startChatRequest 顶部检查）
-            const QString force = m_host->triggerStopHooks();
-            if (!force.isEmpty())
-            {
-                QJsonObject injected;
-                injected[QStringLiteral("role")] = QStringLiteral("user");
-                injected[QStringLiteral("content")] = force;
-                m_messages.append(injected);
-                startChatRequest();
-                return;
-            }
+            // Stop 钩子不在子代理触发（lcc 9165f8f）：Stop 只在主循环最终回答处触发一次，
+            // 子代理黑盒终点即汇总；轮次上限收尾保留（startChatRequest 顶部检查）
 
             // extract_text 等价：OpenAI 形态下 content 即纯文本；空内容按 lcc 兜底文案
             const QString text = fullMsg.value(QStringLiteral("content")).toString();
@@ -232,14 +223,14 @@ void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
     }
 
     // bash 走子代理自身的异步进程链（收口点在进程 finished 回调，簿记独立于宿主）
-    if (toolName == QStringLiteral("bash"))
+    if (toolName == ToolNames::BASH)
     {
         // 子代理禁后台·执行层双保险（lcc s11 95242de allow_background=False 等价）：
         // schema 已删 run_in_background（见 filterSubTools），模型若仍幻觉带参，丢弃后
         // 永远前台执行；降级提示仅打控制台、不进模型可见输出（lcc log_warn 语义）
         QJsonObject bashArgs = args;
         if (bashArgs.take(QStringLiteral("run_in_background")).toBool())
-            qDebug() << "[background] not allowed in this context, running in foreground";
+                qWarning() << "[bg] not allowed in this context, running in foreground";
         executeBashAsync(toolCall, bashArgs);
         return;
     }
@@ -301,8 +292,9 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
 {
     const QString command = args.value(QStringLiteral("command")).toString();
 
-    // bash 内部危险黑名单（s01 双层防御保留；清单与文案与主循环逐字一致，经宿主静态口共用）
-    for (const QString &danger : AgentLoop::dangerousCommandList())
+    // bash 内部危险黑名单（lcc fddb23e G4 单源：与权限门 DENY_LIST 共用宿主 bashDenyList；
+    // 清单与文案与主循环逐字一致，经宿主静态口共用）
+    for (const QString &danger : AgentLoop::bashDenyList()) // lcc fddb23e 单源列表（G4）
     {
         if (command.contains(danger, Qt::CaseInsensitive))
         {

@@ -165,7 +165,7 @@ QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
         // 偏差登记：lcc 此处抛异常中断；lite 返回空串由调用方降级（不中断会话）
-        qWarning("CompactManager: 无法创建转写文件 %s", qPrintable(path));
+        qWarning().noquote() << QStringLiteral("[compact] 无法创建转写文件 %1").arg(path);
         return QString();
     }
     for (const QJsonObject &message : conversation) {
@@ -204,7 +204,7 @@ bool CompactManager::saveOutput(const QString &toolUseId, const QString &output,
         QDir(toolResultsDir()).filePath(safeOutputId(toolUseId) + QStringLiteral(".txt"));
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        qWarning("CompactManager: 无法写入工具输出文件 %s", qPrintable(path));
+        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1").arg(path);
         return false;
     }
     file.write(output.toUtf8());
@@ -451,8 +451,8 @@ QString CompactManager::summarizeHistory(const QVector<QJsonObject> &conversatio
     const QJsonObject response = QOpenAi::chat().create(request);
     if (response.contains(QStringLiteral("error"))) {
         // 偏差登记：lcc 让 HTTP 异常向上传播中断循环；lite 降级为占位摘要继续（GUI 场景不应中断）
-        qWarning("CompactManager: 摘要调用失败 %s",
-                 qPrintable(response.value(QStringLiteral("error")).toString()));
+        qWarning().noquote() << QStringLiteral("[compact] 摘要调用失败 %1")
+                                 .arg(response.value(QStringLiteral("error")).toString());
     } else {
         const QJsonArray choices = response.value(QStringLiteral("choices")).toArray();
         if (!choices.isEmpty())

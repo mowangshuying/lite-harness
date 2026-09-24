@@ -1,5 +1,6 @@
 #include "ToolBlock.h"
 #include "ToolTagKind.h"
+#include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）；"memory" 为 UI 伪键保持字面量
 
 #include <QEvent>
 #include <QFontMetrics>
@@ -22,41 +23,41 @@
 QString ToolBlock::toolTitleText(const QString &toolName)
 {
     // 中文完成词条：与 lcc 各工具语义对齐，朴素直译；未知工具回退"已执行"
-    if (toolName == QLatin1String("bash"))
+    if (toolName == ToolNames::BASH)
         return tr("已执行");
-    if (toolName == QLatin1String("read_file"))
+    if (toolName == ToolNames::READ_FILE)
         return tr("已读取");
-    if (toolName == QLatin1String("write_file"))
+    if (toolName == ToolNames::WRITE_FILE)
         return tr("已写入");
-    if (toolName == QLatin1String("edit_file"))
+    if (toolName == ToolNames::EDIT_FILE)
         return tr("已编辑");
-    if (toolName == QLatin1String("glob"))
+    if (toolName == ToolNames::GLOB)
         return tr("已查找");
-    if (toolName == QLatin1String("task"))
+    if (toolName == ToolNames::TASK)
         return tr("已代办"); // 子代理代为完成该任务（s06 task 工具）
-    if (toolName == QLatin1String("load_skill"))
+    if (toolName == ToolNames::LOAD_SKILL)
         return tr("已加载"); // 按技能名载入 SKILL.md 全文（s07 load_skill 工具）
-    if (toolName == QLatin1String("compact"))
+    if (toolName == ToolNames::COMPACT)
         return tr("已压缩"); // 压缩会话上下文释放额度（s08 compact 工具）
     if (toolName == QLatin1String("memory"))
         return tr("已记忆"); // 记忆写入/合并等事件的合成卡片（s09 记忆系统）
-    if (toolName == QLatin1String("create_task"))
+    if (toolName == ToolNames::CREATE_TASK)
         return tr("已建任务"); // 创建任务节点（s10 任务系统）
-    if (toolName == QLatin1String("update_task"))
+    if (toolName == ToolNames::UPDATE_TASK)
         return tr("已连依赖"); // 更新任务/建立依赖边（s10 任务系统）
-    if (toolName == QLatin1String("list_tasks"))
+    if (toolName == ToolNames::LIST_TASKS)
         return tr("任务清单"); // 列出全部任务概览（s10 任务系统）
-    if (toolName == QLatin1String("get_task"))
+    if (toolName == ToolNames::GET_TASK)
         return tr("任务详情"); // 查看单个任务详情（s10 任务系统）
-    if (toolName == QLatin1String("claim_task"))
+    if (toolName == ToolNames::CLAIM_TASK)
         return tr("已认领"); // 认领任务（s10 任务系统）
-    if (toolName == QLatin1String("complete_task"))
+    if (toolName == ToolNames::COMPLETE_TASK)
         return tr("已完成"); // 完成任务（s10 任务系统）
-    if (toolName == QLatin1String("schedule_cron"))
+    if (toolName == ToolNames::SCHEDULE_CRON)
         return tr("已排定时"); // 登记定时任务（s12 cron 系统）
-    if (toolName == QLatin1String("list_crons"))
+    if (toolName == ToolNames::LIST_CRONS)
         return tr("定时清单"); // 列出定时任务（s12 cron 系统）
-    if (toolName == QLatin1String("cancel_cron"))
+    if (toolName == ToolNames::CANCEL_CRON)
         return tr("已取消定时"); // 取消定时任务（s12 cron 系统）
     return tr("已执行");
 }

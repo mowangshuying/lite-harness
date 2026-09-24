@@ -2,6 +2,7 @@
 
 #include "QOpenAi.h"
 #include "SubAgent.h" // startSubAgentTask/cancelSubAgent/resolvePermission 需要完整类型
+#include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植，全仓唯一事实源）
 
 #include <QJsonDocument>
 #include <QProcess>
@@ -64,21 +65,12 @@ QString makeSystemPrompt(const QString &workDir, const QString &skillCatalog,
     return head + tempDir + tail;
 }
 
-// 危险命令黑名单
-const QStringList &dangerousCommands()
-{
-    static const QStringList list = {
-        QStringLiteral("rm -rf /"),
-        QStringLiteral("sudo"),
-        QStringLiteral("shutdown"),
-        QStringLiteral("reboot"),
-        QStringLiteral("> /dev/"),
-    };
-    return list;
-}
-
-// 硬禁止列表（lcc s03 DENY_LIST）：命中即拒绝，不询问
-const QStringList &denyPatterns()
+// bash 危险命令硬禁止列表（lcc fddb23e G4 单源化）：合并原执行层黑名单与权限门
+// DENY_LIST 两张同源异化表为唯一事实源，条目与顺序
+// 逐字 = lcc permission.py:8 DENY_LIST。命中即拒绝，不询问；供权限门 checkDenyList、
+// 主循环 executeBashAsync 与子代理（经 AgentLoop::bashDenyList 静态转发）三方共用。
+// 既有匹配语义偏差保留登记：主仓为大小写不敏感 contains，lcc 为区分大小写 in——仅数据单源
+const QStringList &bashDenyListImpl()
 {
     static const QStringList list = {
         QStringLiteral("rm -rf /"),
@@ -87,7 +79,7 @@ const QStringList &denyPatterns()
         QStringLiteral("reboot"),
         QStringLiteral("mkfs"),
         QStringLiteral("dd if="),
-        QStringLiteral("> /dev/sda"),
+        QStringLiteral("> /dev/"),
     };
     return list;
 }
@@ -107,34 +99,34 @@ bool containsDestructiveCommand(const QString &command)
 // s05 起 todo_write 为固定文案；s06 起 task→prompt；s07 起 load_skill→name，对齐 lcc 日志语义）
 QString toolSummary(const QString &toolName, const QJsonObject &args)
 {
-    if (toolName == QStringLiteral("bash"))
+    if (toolName == ToolNames::BASH)
         return args.value(QStringLiteral("command")).toString();
-    if (toolName == QStringLiteral("glob"))
+    if (toolName == ToolNames::GLOB)
         return args.value(QStringLiteral("pattern")).toString();
-    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
-        || toolName == QStringLiteral("edit_file"))
+    if (toolName == ToolNames::READ_FILE || toolName == ToolNames::WRITE_FILE
+        || toolName == ToolNames::EDIT_FILE)
         return args.value(QStringLiteral("path")).toString();
-    if (toolName == QStringLiteral("todo_write"))
+    if (toolName == ToolNames::TODO_WRITE)
         return QStringLiteral("update task list"); // lcc s06 原文（hooks.py）已去掉末尾冒号
-    if (toolName == QStringLiteral("task"))
+    if (toolName == ToolNames::TASK)
         return args.value(QStringLiteral("prompt")).toString();
-    if (toolName == QStringLiteral("load_skill"))
+    if (toolName == ToolNames::LOAD_SKILL)
         return args.value(QStringLiteral("name")).toString(); // lcc s07：摘要取技能名
     // lcc s10 任务图：create_task→subject；list_tasks→自拟固定短文本（仿 todo_write 风格，登记偏差）；
     // update/get/claim/complete_task→task_id（toolUseInfo 不加对应分支——lcc s10 hooks.py 字节不变）
-    if (toolName == QStringLiteral("create_task"))
+    if (toolName == ToolNames::CREATE_TASK)
         return args.value(QStringLiteral("subject")).toString();
-    if (toolName == QStringLiteral("list_tasks"))
+    if (toolName == ToolNames::LIST_TASKS)
         return QStringLiteral("task list");
-    if (toolName == QStringLiteral("update_task") || toolName == QStringLiteral("get_task")
-        || toolName == QStringLiteral("claim_task") || toolName == QStringLiteral("complete_task"))
+    if (toolName == ToolNames::UPDATE_TASK || toolName == ToolNames::GET_TASK
+        || toolName == ToolNames::CLAIM_TASK || toolName == ToolNames::COMPLETE_TASK)
         return args.value(QStringLiteral("task_id")).toString();
     // lcc s12 定时任务：摘要取 cron 表达式/固定短文本/job_id（仿 s10 风格，lcc 无对应钩子文案）
-    if (toolName == QStringLiteral("schedule_cron"))
+    if (toolName == ToolNames::SCHEDULE_CRON)
         return QStringLiteral("schedule cron ") + args.value(QStringLiteral("cron")).toString();
-    if (toolName == QStringLiteral("list_crons"))
+    if (toolName == ToolNames::LIST_CRONS)
         return QStringLiteral("cron list");
-    if (toolName == QStringLiteral("cancel_cron"))
+    if (toolName == ToolNames::CANCEL_CRON)
         return QStringLiteral("cancel cron ") + args.value(QStringLiteral("job_id")).toString();
     return QString();
 }
@@ -251,16 +243,16 @@ QString argsPreview(const QJsonObject &args)
 // 偏差：lcc 用 block.input[key] 直接取值（缺 key 会 KeyError），此处 .toString() 缺省为空串
 QString toolUseInfo(const QString &toolName, const QJsonObject &args)
 {
-    if (toolName == QStringLiteral("bash"))
+    if (toolName == ToolNames::BASH)
         return QStringLiteral("command: ") + args.value(QStringLiteral("command")).toString();
-    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
-        || toolName == QStringLiteral("edit_file"))
+    if (toolName == ToolNames::READ_FILE || toolName == ToolNames::WRITE_FILE
+        || toolName == ToolNames::EDIT_FILE)
         return QStringLiteral("path: ") + args.value(QStringLiteral("path")).toString();
-    if (toolName == QStringLiteral("glob"))
+    if (toolName == ToolNames::GLOB)
         return QStringLiteral("pattern: ") + args.value(QStringLiteral("pattern")).toString();
-    if (toolName == QStringLiteral("todo_write"))
+    if (toolName == ToolNames::TODO_WRITE)
         return QStringLiteral("update task list"); // lcc s06 原文（hooks.py）已去掉末尾冒号
-    if (toolName == QStringLiteral("task"))
+    if (toolName == ToolNames::TASK)
         // lcc 原文为 f"task: {block.input.get('prompt','')}" 不截断；task prompt 可能很长，
         // 为避免日志刷屏截 60 字符（裁决项，有意偏离 lcc）
         return QStringLiteral("task: ")
@@ -335,11 +327,11 @@ AgentLoop::AgentLoop(QObject *parent)
     // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用三参 toolOutputReady，
     // toolName 固定 "compact"，summary 为档位描述，output 携带转写路径与前后估算
     m_compact.setCardSink([this](const QString &summary, const QString &output) {
-        emit toolOutputReady(QStringLiteral("compact"), summary, output);
+        emit toolOutputReady(ToolNames::COMPACT, summary, output);
     });
 
     // 记忆卡片出口（lcc s09 裁决：复用三参 toolOutputReady，toolName 固定 "memory"，
-    // 零新增公共信号；[Memory: stored N records] / [Memory: consolidated A to B records]）
+    // 零新增公共信号；卡片文本 [memory] stored / [memory] consolidated 系列，lcc 终态 tag 化）
     m_memory.setCardSink([this](const QString &summary, const QString &output) {
         emit toolOutputReady(QStringLiteral("memory"), summary, output);
     });
@@ -549,6 +541,8 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
 
                 if (++m_toolIterations > kMaxToolIterations)
                 {
+                    // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
+                    m_cron.finalizeInFlightDelivery(false);
                     m_running = false;
 emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
                     return;
@@ -573,6 +567,8 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
             if (!m_running)
                 return;
 
+            // lcc 31a99d1：回合成功终局——确认在途 cron 批（at-least-once 收口）
+            m_cron.finalizeInFlightDelivery(true);
             m_running = false;
             emit finished(fullMsg.value(QStringLiteral("content")).toString());
             return;
@@ -581,6 +577,8 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
         // 有工具调用 -> 防死循环计数
         if (++m_toolIterations > kMaxToolIterations)
         {
+            // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
+            m_cron.finalizeInFlightDelivery(false);
             m_running = false;
             emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
             return;
@@ -616,6 +614,8 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
             startChatRequest(retryMessages);
             return;
         }
+        // lcc 31a99d1：流错误失败终局——在途 cron 批回队（反应式压缩重发分支非终局，不处理）
+        m_cron.finalizeInFlightDelivery(false);
         m_running = false;
         emit error(msg);
     });
@@ -767,7 +767,7 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     // compact 工具（lcc s08）：loop.py 在 execute_tool 之前拦截（PreToolUse/PostToolUse 钩子
     // 均不运行、不追加 tool_result、不发卡片、不计入 used_todo）——此处同样在钩子链之前
     // 特判：仅置位并手动推进队列，压缩替换在批尾执行（见 runNextTool 的 flush 分支）
-    if (toolName == QStringLiteral("compact"))
+    if (toolName == ToolNames::COMPACT)
     {
         m_compactRequested = true;
         runNextTool();
@@ -796,7 +796,7 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     }
 
     // bash 走异步进程链（不进 handler 表：跨事件循环回填，表内只放同步工具）
-    if (toolName == QStringLiteral("bash"))
+    if (toolName == ToolNames::BASH)
     {
         // 后台任务分支（lcc s11 execute_tool 后台门）：run_in_background 严格 true 时转异步，
         // 占位文本立即闭合 tool_use↔tool_result 配对，真实结果由后续回合收割注入
@@ -823,7 +823,7 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
 
             // lcc execute_tool 统一尾部：后台分支的占位输出同样触发 PostToolUse 后收口
             triggerPostToolUseHooks(toolCall, output);
-            onToolFinished(toolCall, QStringLiteral("bash"), command, output);
+            onToolFinished(toolCall, ToolNames::BASH, command, output);
             return;
         }
 
@@ -832,7 +832,7 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     }
 
     // task 走子代理异步链（lcc s06）：独立上下文黑盒，完成后经回调走 onToolFinished 收口
-    if (toolName == QStringLiteral("task"))
+    if (toolName == ToolNames::TASK)
     {
         startSubAgentTask(toolCall, args);
         return;
@@ -848,7 +848,7 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     // lcc s05 语义保留：只要 todo_write 的 handler 跑过即视为本轮已用 todo（校验错误输出
     // 同样算）；被权限门拦截的不会走到这里，不置位（lcc s06 中拦截也置位，此为 s05 行为红线，
     // 作为已知偏差记录）
-    if (toolName == QStringLiteral("todo_write"))
+    if (toolName == ToolNames::TODO_WRITE)
         m_usedTodoThisRound = true;
 
     // PostToolUse 钩子（lcc s04）：handler 产出结果后、回填前触发。
@@ -863,10 +863,15 @@ QString AgentLoop::checkDenyList(const QString &command)
 {
     // 子串匹配，按列表顺序取第一个命中项（对齐 lcc check_deny_list；
     // 大小写不敏感与仓库既有 bash 黑名单风格一致，较 lcc 的大小写敏感更严格——Windows 命令名本就不区分大小写）
-    for (const QString &pattern : denyPatterns())
+    for (const QString &pattern : bashDenyListImpl()) // lcc fddb23e 单源列表（G4）
     {
         if (command.contains(pattern, Qt::CaseInsensitive))
+        {
+            // lcc permission.py:42 log_error(reason) 转译：拒绝事件补 [permission] tag 控制台日志
+            //（级别取 qWarning，lcc 走 stderr 通道——登记偏差）；返回值文案不动
+            qWarning().noquote() << QStringLiteral("[permission] Permission denied by deny list");
             return QStringLiteral("Blocked: %1 is on the deny list").arg(pattern);
+        }
     }
     return QString();
 }
@@ -877,8 +882,8 @@ QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &t
     // 规则 1（lcc PERMISSION_RULES）：read/write/edit_file 的 path 逃逸工作区。
     // lcc 用未归一化的拼接判定，这里复用 safePathIn 的越界检测结果，语义一致
     // （s06 起以显式 workDir 参数为准：子代理共用同一逻辑、各查各的沙箱根）
-    if (toolName == QStringLiteral("read_file") || toolName == QStringLiteral("write_file")
-        || toolName == QStringLiteral("edit_file"))
+    if (toolName == ToolNames::READ_FILE || toolName == ToolNames::WRITE_FILE
+        || toolName == ToolNames::EDIT_FILE)
     {
         QString err;
         if (safePathIn(workDir, args.value(QStringLiteral("path")).toString(), &err).isEmpty())
@@ -887,7 +892,7 @@ QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &t
     }
 
     // 规则 2：bash 命中破坏性命令词正则，或包含关键子串（子串部分区分大小写，逐字对齐 lcc）
-    if (toolName == QStringLiteral("bash"))
+    if (toolName == ToolNames::BASH)
     {
         const QString command = args.value(QStringLiteral("command")).toString();
         if (containsDestructiveCommand(command) || command.contains(QStringLiteral("rm "))
@@ -946,16 +951,16 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QSt
     // 宿主与子代理共用的同步文件工具集（lcc s06 toolsHandlers/subToolsHandlers 的交集部分）：
     // 各自以传入的 workDir 为沙箱根构建，互不串扰
     QHash<QString, ToolHandler> handlers;
-    handlers.insert(QStringLiteral("read_file"), [workDir](const QJsonObject &args) {
+    handlers.insert(ToolNames::READ_FILE, [workDir](const QJsonObject &args) {
         return runReadFileIn(workDir, args);
     });
-    handlers.insert(QStringLiteral("write_file"), [workDir](const QJsonObject &args) {
+    handlers.insert(ToolNames::WRITE_FILE, [workDir](const QJsonObject &args) {
         return runWriteFileIn(workDir, args);
     });
-    handlers.insert(QStringLiteral("edit_file"), [workDir](const QJsonObject &args) {
+    handlers.insert(ToolNames::EDIT_FILE, [workDir](const QJsonObject &args) {
         return runEditFileIn(workDir, args);
     });
-    handlers.insert(QStringLiteral("glob"), [workDir](const QJsonObject &args) {
+    handlers.insert(ToolNames::GLOB, [workDir](const QJsonObject &args) {
         return runGlobIn(workDir, args);
     });
     return handlers;
@@ -968,37 +973,37 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     // lcc s10：任务图六件套同为仅主循环注册（lcc subTools/subToolsHandlers 仍为五工具，天然不进 sub）
     // lcc s12：cron 三件套同为仅主循环注册（子代理白名单不含，天然不进 sub）
     QHash<QString, ToolHandler> handlers = baseFileToolHandlers(m_workDir);
-    handlers.insert(QStringLiteral("todo_write"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::TODO_WRITE, [this](const QJsonObject &args) {
         return runTodoWrite(args);
     });
-    handlers.insert(QStringLiteral("load_skill"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::LOAD_SKILL, [this](const QJsonObject &args) {
         return runLoadSkill(args);
     });
-    handlers.insert(QStringLiteral("create_task"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::CREATE_TASK, [this](const QJsonObject &args) {
         return runCreateTask(args);
     });
-    handlers.insert(QStringLiteral("update_task"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::UPDATE_TASK, [this](const QJsonObject &args) {
         return runUpdateTask(args);
     });
-    handlers.insert(QStringLiteral("list_tasks"), [this](const QJsonObject &) {
+    handlers.insert(ToolNames::LIST_TASKS, [this](const QJsonObject &) {
         return runListTasks();
     });
-    handlers.insert(QStringLiteral("get_task"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::GET_TASK, [this](const QJsonObject &args) {
         return runGetTask(args);
     });
-    handlers.insert(QStringLiteral("claim_task"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::CLAIM_TASK, [this](const QJsonObject &args) {
         return runClaimTask(args);
     });
-    handlers.insert(QStringLiteral("complete_task"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::COMPLETE_TASK, [this](const QJsonObject &args) {
         return runCompleteTask(args);
     });
-    handlers.insert(QStringLiteral("schedule_cron"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::SCHEDULE_CRON, [this](const QJsonObject &args) {
         return runScheduleCron(args);
     });
-    handlers.insert(QStringLiteral("cancel_cron"), [this](const QJsonObject &args) {
+    handlers.insert(ToolNames::CANCEL_CRON, [this](const QJsonObject &args) {
         return runCancelCron(args);
     });
-    handlers.insert(QStringLiteral("list_crons"), [this](const QJsonObject &) {
+    handlers.insert(ToolNames::LIST_CRONS, [this](const QJsonObject &) {
         return runListCrons();
     });
     return handlers;
@@ -1011,8 +1016,8 @@ void AgentLoop::startSubAgentTask(const QJsonObject &toolCall, const QJsonObject
     // 回填错误结果续跑队列，与 Unknown tool / 沙箱拒绝同一套约定。
     if (m_activeSub)
     {
-        onToolFinished(toolCall, QStringLiteral("task"),
-                       toolSummary(QStringLiteral("task"), args),
+        onToolFinished(toolCall, ToolNames::TASK,
+                       toolSummary(ToolNames::TASK, args),
                        QStringLiteral("Error: another subagent is already active"));
         return;
     }
@@ -1031,8 +1036,8 @@ void AgentLoop::startSubAgentTask(const QJsonObject &toolCall, const QJsonObject
     sub->start([this, toolCall, args](const QString &result) {
         m_activeSub = nullptr;
         m_pendingTaskCall = QJsonObject();
-        onToolFinished(toolCall, QStringLiteral("task"),
-                       toolSummary(QStringLiteral("task"), args), result);
+        onToolFinished(toolCall, ToolNames::TASK,
+                       toolSummary(ToolNames::TASK, args), result);
     });
 }
 
@@ -1068,7 +1073,8 @@ QString AgentLoop::toolSummaryOf(const QString &toolName, const QJsonObject &arg
 {
     return toolSummary(toolName, args);
 }
-const QStringList &AgentLoop::dangerousCommandList() { return dangerousCommands(); }
+// lcc fddb23e G4 单源：子代理危险黑名单与权限门 DENY_LIST 共用同一份 bashDenyListImpl
+const QStringList &AgentLoop::bashDenyList() { return bashDenyListImpl(); }
 
 // ---------------------------------------------------------------------------
 // 生命周期钩子（lcc s04）：注册顺序即执行顺序，与 lcc 尾部 register_hook 清单逐一对应。
@@ -1078,9 +1084,9 @@ const QStringList &AgentLoop::dangerousCommandList() { return dangerousCommands(
 void AgentLoop::registerBuiltinHooks()
 {
     // UserPromptSubmit: context_inject —— 打印会话工作目录（lcc 用 Path.cwd()，此处对应 m_workDir）。
-    // "UserPromtSubmit" 为 lcc 原文拼写，按文案对齐原则逐字保留
+    // （lcc 终态已修正 "UserPromptSubmit" 拼写，同步跟进）
     m_userPromptSubmitHooks.append([this](const QString &) -> QString {
-        qDebug().noquote() << QStringLiteral("[HOOK] UserPromtSubmit: working in %1").arg(m_workDir);
+        qDebug().noquote() << QStringLiteral("[hook] UserPromptSubmit: working in %1").arg(m_workDir);
         return QString();
     });
 
@@ -1091,7 +1097,7 @@ void AgentLoop::registerBuiltinHooks()
         const QString toolName = callToolName(toolCall);
         const QJsonObject args = callToolArgs(toolCall);
 
-        if (toolName == QStringLiteral("bash"))
+        if (toolName == ToolNames::BASH)
         {
             const QString blocked = checkDenyList(args.value(QStringLiteral("command")).toString());
             if (!blocked.isEmpty())
@@ -1108,9 +1114,9 @@ void AgentLoop::registerBuiltinHooks()
         return QString();
     });
 
-    // PreToolUse #2: log_before —— 打印工具名与参数预览（lcc: [HOOK] name(args_preview)）
+    // PreToolUse #2: log_before —— 打印工具名与参数预览（lcc: [hook] name(args_preview)）
     m_preToolUseHooks.append([](const QJsonObject &toolCall, bool) -> QString {
-        qDebug().noquote() << QStringLiteral("[HOOK] %1(%2)")
+        qDebug().noquote() << QStringLiteral("[hook] %1(%2)")
                                   .arg(callToolName(toolCall), argsPreview(callToolArgs(toolCall)));
         return QString();
     });
@@ -1119,9 +1125,9 @@ void AgentLoop::registerBuiltinHooks()
     // lcc 在此再次打印 tool_use 行，与 log_before 有意重复，原样保留）
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
         const QString toolName = callToolName(toolCall);
-        qDebug().noquote() << QStringLiteral("[HOOK] tool_use: %1 - %2")
+        qDebug().noquote() << QStringLiteral("[hook] tool_use: %1 - %2")
                                   .arg(toolName, toolUseInfo(toolName, callToolArgs(toolCall)));
-        qDebug().noquote() << QStringLiteral("[HOOK] tool_result:%1").arg(output);
+        qDebug().noquote() << QStringLiteral("[hook] tool_result:\n%1").arg(output);
         return QString();
     });
 
@@ -1130,7 +1136,7 @@ void AgentLoop::registerBuiltinHooks()
     // 与 lcc 现状一致（lcc 的 run_bash 同样先 [:50000]），保留以对齐结构
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
         if (output.size() > 100000)
-            qDebug().noquote() << QStringLiteral("[HOOK] Large output from %1: %2 chars")
+            qDebug().noquote() << QStringLiteral("[hook] Large output from %1: %2 chars")
                                       .arg(callToolName(toolCall)).arg(output.size());
         return QString();
     });
@@ -1145,7 +1151,7 @@ void AgentLoop::registerBuiltinHooks()
             if (msg.value(QStringLiteral("role")).toString() == QStringLiteral("tool"))
                 ++toolCount;
         }
-        qDebug().noquote() << QStringLiteral("[HOOK] Stop: session used %1 tool calls").arg(toolCount);
+        qDebug().noquote() << QStringLiteral("[hook] Stop: session used %1 tool calls").arg(toolCount);
         return QString();
     });
 }
@@ -1206,13 +1212,13 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // 此处绝不可再走 onToolFinished）
     if (!background)
     {
-        for (const auto &danger : dangerousCommands())
+        for (const auto &danger : bashDenyListImpl()) // lcc fddb23e 单源列表（G4）
         {
             if (command.contains(danger, Qt::CaseInsensitive))
             {
                 const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
                 triggerPostToolUseHooks(toolCall, output);
-                onToolFinished(toolCall, QStringLiteral("bash"), command, output);
+                onToolFinished(toolCall, ToolNames::BASH, command, output);
                 return;
             }
         }
@@ -1276,7 +1282,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
         // lcc 在 Popen 成功后打印；QProcess 启动是异步的，无法同步检测启动失败——
         // 登记后乐观打印，失败随后经 errorOccurred 补记（已知偏差）
-        qDebug().noquote() << QStringLiteral("[background] started %1 %2").arg(taskId, command.left(60));
+        qDebug().noquote() << QStringLiteral("[bg] started %1 %2").arg(taskId, command.left(60));
         return;
     }
 
@@ -1305,7 +1311,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         // PostToolUse 钩子（lcc s04）：bash handler 产出后、回填前触发
         triggerPostToolUseHooks(toolCall, output);
 
-        onToolFinished(toolCall, QStringLiteral("bash"), command, output);
+        onToolFinished(toolCall, ToolNames::BASH, command, output);
     });
 
     process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
@@ -1338,7 +1344,7 @@ void AgentLoop::injectBackgroundResults()
         m_messages.append(injected);
     }
 
-    qDebug().noquote() << QStringLiteral("[Background notifications]\n%1").arg(joined);
+    qDebug().noquote() << QStringLiteral("[bg] notifications\n%1").arg(joined);
 }
 
 QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString *error)
@@ -1427,10 +1433,10 @@ QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &arg
 
     QFile file(abs);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return QStringLiteral("Error:%1").arg(file.errorString());
+        return QStringLiteral("Error: %1").arg(file.errorString()); // lcc run_write 带空格（G3）
     const QByteArray bytes = content.toUtf8();
     if (file.write(bytes) != bytes.size())
-        return QStringLiteral("Error:%1").arg(file.errorString());
+        return QStringLiteral("Error: %1").arg(file.errorString());
     return QStringLiteral("Wrote %1 bytes to %2").arg(bytes.size()).arg(path);
 }
 
@@ -2063,7 +2069,7 @@ bool AgentLoop::dependsOn(const QString &startId, const QString &targetId, bool 
         Task node;
         QString loadError;
         if (!loadTask(current, &node, &loadError)) {
-            qWarning().noquote() << QStringLiteral("[TaskManager] cycle check skipped unloadable task: %1")
+            qWarning().noquote() << QStringLiteral("[task] cycle check skipped unloadable task: %1")
                                         .arg(loadError);
             continue; // 容错：该节点出边视为不可达
         }
@@ -2216,7 +2222,7 @@ bool AgentLoop::claimTask(const QString &taskId, const QString &owner, QString *
     task.status = QStringLiteral("in_progress");
     if (!saveTask(task, error))
         return false;
-    qDebug().noquote() << QStringLiteral("[claim] %1 -> in_progress (owner: %2)").arg(task.subject, owner);
+    qDebug().noquote() << QStringLiteral("[task] claim %1 -> in_progress (owner: %2)").arg(task.subject, owner);
     *result = QStringLiteral("Claimed %1 %2").arg(task.id, task.subject);
     return true;
 }
@@ -2271,11 +2277,11 @@ bool AgentLoop::completeTask(const QString &taskId, const QString &owner, QStrin
         if (startable)
             unblocked.append(candidate.subject);
     }
-    qDebug().noquote() << QStringLiteral("[complete] %1").arg(task.subject);
+    qDebug().noquote() << QStringLiteral("[task] complete %1").arg(task.subject);
     QString message = QStringLiteral("Completed %1 (%2)").arg(task.id, task.subject);
     if (!unblocked.isEmpty()) {
         message += QStringLiteral("\nUnblocked: %1").arg(unblocked.join(QStringLiteral(", ")));
-        qDebug().noquote() << QStringLiteral("[unblocked] %1").arg(unblocked.join(QStringLiteral(", ")));
+        qDebug().noquote() << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
     }
     *result = message;
     return true;
@@ -2291,7 +2297,7 @@ QString AgentLoop::runCreateTask(const QJsonObject &args) const
     QString error;
     if (!createTask(subject, description, &task, &error))
         return error; // lcc 裸抛 → lite 原样文案直返（不加 'Error:' 前缀，登记裁决）
-    qDebug().noquote() << QStringLiteral("[Create] %1").arg(task.subject); // lcc run_create_task print
+    qDebug().noquote() << QStringLiteral("[task] create %1").arg(task.subject); // lcc run_create_task print
     return QStringLiteral("Created %1: %2").arg(task.id, task.subject);
 }
 
@@ -2310,7 +2316,7 @@ QString AgentLoop::runUpdateTask(const QJsonObject &args) const
     QString dependencies = updated.blockedBy.join(QStringLiteral(", "));
     if (dependencies.isEmpty())
         dependencies = QStringLiteral("(none)");
-    qDebug().noquote() << QStringLiteral("[update] %1 blockedBy: %2").arg(updated.subject, dependencies);
+    qDebug().noquote() << QStringLiteral("[task] update %1 blockedBy: %2").arg(updated.subject, dependencies);
     return QStringLiteral("Updated %1 blockedBy: %2").arg(updated.id, dependencies);
 }
 
@@ -2414,34 +2420,29 @@ void AgentLoop::tryDeliverCron()
     if (m_running)
         return;
 
-    const QList<CronSchedulerManager::CronJob> fired = m_cron.consumeQueue();
-    if (fired.isEmpty())
-        return;
+    // at-least-once 两段式（lcc 31a99d1 run_delivery 转译）：空批不动台账；回调返回
+    // false（宿主拒收）→ runDelivery 内部 restore 回队待下个空闲 tick 重试；true →
+    // 本批转入在途，ack 推迟至回合终局 finalizeInFlightDelivery 收口
+    m_cron.runDelivery([this](const QList<CronSchedulerManager::CronJob> &fired) {
+        // 双形态文本（lcc deliver：history 逐任务 append "[Scheduled] {prompt}"，
+        // _run_turn 用原文 "\n" join——lite 合并为单条消息，lcc N 条 → lite 1 条，登记偏差）
+        QStringList displayParts;
+        QStringList requestParts;
+        for (const CronSchedulerManager::CronJob &job : fired)
+        {
+            displayParts << QStringLiteral("[Scheduled] %1").arg(job.prompt);
+            requestParts << job.prompt;
+        }
 
-    // 双形态文本（lcc deliver：history 逐任务 append "[Scheduled] {prompt}"，
-    // _run_turn 用无 "\n" join 原文——lite 合并为单条消息，lcc N 条 → lite 1 条，登记偏差）
-    QStringList displayParts;
-    QStringList requestParts;
-    for (const CronSchedulerManager::CronJob &job : fired)
-    {
-        displayParts << QStringLiteral("[Scheduled] %1").arg(job.prompt);
-        requestParts << job.prompt;
-    }
+        // 直连同栈：emit 返回时宿主 run() 已置位 m_running（或已走 error 链拒绝）
+        emit scheduledUserMessage(displayParts.join(QLatin1Char('\n')),
+                                  requestParts.join(QLatin1Char('\n')));
 
-    // 直连同栈：emit 返回时宿主 run() 已置位 m_running（或已走 error 链拒绝）；
-    // lcc try/except restore+raise 的 lite 等价：未接管则 restore 下个 tick 重试
-    emit scheduledUserMessage(displayParts.join(QLatin1Char('\n')),
-                              requestParts.join(QLatin1Char('\n')));
-
-    if (!m_running)
-    {
-        m_cron.restoreCronJobs(fired);
-        return;
-    }
-
-    for (const CronSchedulerManager::CronJob &job : fired)
-        qInfo().noquote() << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
-    m_cron.acknowledgeCronJobs(fired);
+        // lcc deliver 在回合执行前打印 delivered——时序保持一致
+        for (const CronSchedulerManager::CronJob &job : fired)
+            qInfo().noquote() << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
+        return m_running; // 宿主是否接管 = 本批交付成功与否
+    });
 }
 
 void AgentLoop::stop()
@@ -2487,6 +2488,9 @@ void AgentLoop::stop()
         m_currentStream = nullptr;
     }
 
+    // lcc 31a99d1：用户停止 = 回合失败终局——在途 cron 批回队待下个空闲 tick 重投
+    m_cron.finalizeInFlightDelivery(false);
+
     m_running = false;
     emit error(tr("已停止。"));
 }
@@ -2523,28 +2527,28 @@ QJsonArray AgentLoop::createToolsDefinition()
     QJsonArray tools;
     // bash（lcc s11）：新增可选 run_in_background boolean（required 仍只有 command、描述不动，
     // 与 lcc schema 增量一致）；子代理侧经 SubAgent filterSubTools 删除该参数（双重禁令之 schema 层）
-    tools.append(makeTool(QStringLiteral("bash"), QStringLiteral("Run a shell command."),
+    tools.append(makeTool(ToolNames::BASH, QStringLiteral("Run a shell command."),
                           { {QStringLiteral("command"), QStringLiteral("string")},
                             {QStringLiteral("run_in_background"), QStringLiteral("boolean")} },
                           {QStringLiteral("command")}));
-    tools.append(makeTool(QStringLiteral("read_file"), QStringLiteral("Read file contents"),
+    tools.append(makeTool(ToolNames::READ_FILE, QStringLiteral("Read file contents"),
                           { {QStringLiteral("path"), QStringLiteral("string")},
                             {QStringLiteral("limit"), QStringLiteral("integer")} },
                           {QStringLiteral("path")}));
-    tools.append(makeTool(QStringLiteral("write_file"), QStringLiteral("Write content to a file"),
+    tools.append(makeTool(ToolNames::WRITE_FILE, QStringLiteral("Write content to a file"),
                           { {QStringLiteral("path"), QStringLiteral("string")},
                             {QStringLiteral("content"), QStringLiteral("string")} },
                           {QStringLiteral("path"), QStringLiteral("content")}));
     // lcc s02 原码 edit_file 漏了 required，此处修正
     // lcc s10 破坏性改名跟随：old_text/new_text → old_string/new_string（schema 与 run_edit 读键同步，
     // runEditFileIn 已改）；描述文案 s10 不变
-    tools.append(makeTool(QStringLiteral("edit_file"), QStringLiteral("Replace exact text in a file once."),
+    tools.append(makeTool(ToolNames::EDIT_FILE, QStringLiteral("Replace exact text in a file once."),
                           { {QStringLiteral("path"), QStringLiteral("string")},
                             {QStringLiteral("old_string"), QStringLiteral("string")},
                             {QStringLiteral("new_string"), QStringLiteral("string")} },
                           {QStringLiteral("path"), QStringLiteral("old_string"), QStringLiteral("new_string")}));
     // lcc s02 原码 glob 的 required 误写为 "require"，此处修正
-    tools.append(makeTool(QStringLiteral("glob"),
+    tools.append(makeTool(ToolNames::GLOB,
                           QStringLiteral("Find files matching a glob pattern; ** matches recursively."),
                           { {QStringLiteral("pattern"), QStringLiteral("string")} },
                           {QStringLiteral("pattern")}));
@@ -2586,7 +2590,7 @@ QJsonArray AgentLoop::createToolsDefinition()
             QJsonArray::fromStringList({ QStringLiteral("todos") });
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("todo_write");
+        function[QStringLiteral("name")] = ToolNames::TODO_WRITE;
         function[QStringLiteral("description")] =
             QStringLiteral("Create and manage a task list for your current coding session.");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2614,7 +2618,7 @@ QJsonArray AgentLoop::createToolsDefinition()
             QJsonArray::fromStringList({ QStringLiteral("prompt") });
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("task");
+        function[QStringLiteral("name")] = ToolNames::TASK;
         function[QStringLiteral("description")] =
             QStringLiteral("Run a subagent with fresh conversation context and return its final text.");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2627,7 +2631,7 @@ QJsonArray AgentLoop::createToolsDefinition()
 
     // load_skill（lcc s07 第 8 个工具）：schema 无 minLength 等附加约束，makeTool lambda 即可表达；
     // 描述与 required 逐字对齐 lcc LOAD_SKILL 定义
-    tools.append(makeTool(QStringLiteral("load_skill"),
+    tools.append(makeTool(ToolNames::LOAD_SKILL,
                           QStringLiteral("Load the full SKILL.md content by skill name."),
                           { { QStringLiteral("name"), QStringLiteral("string") } },
                           { QStringLiteral("name") }));
@@ -2640,7 +2644,7 @@ QJsonArray AgentLoop::createToolsDefinition()
         inputSchema[QStringLiteral("properties")] = QJsonObject();
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("compact");
+        function[QStringLiteral("name")] = ToolNames::COMPACT;
         function[QStringLiteral("description")] =
             QStringLiteral("Summarize earlier conversation to free context space");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2670,7 +2674,7 @@ QJsonArray AgentLoop::createToolsDefinition()
         inputSchema[QStringLiteral("additionalProperties")] = false;
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("create_task");
+        function[QStringLiteral("name")] = ToolNames::CREATE_TASK;
         function[QStringLiteral("description")] =
             QStringLiteral("Create a task and return its runtime-generated ID.");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2711,7 +2715,7 @@ QJsonArray AgentLoop::createToolsDefinition()
         inputSchema[QStringLiteral("additionalProperties")] = false;
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("update_task");
+        function[QStringLiteral("name")] = ToolNames::UPDATE_TASK;
         function[QStringLiteral("description")] =
             QStringLiteral("Add dependencies using IDs returned by create_task.");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2730,7 +2734,7 @@ QJsonArray AgentLoop::createToolsDefinition()
         inputSchema[QStringLiteral("properties")] = QJsonObject();
 
         QJsonObject function;
-        function[QStringLiteral("name")] = QStringLiteral("list_tasks");
+        function[QStringLiteral("name")] = ToolNames::LIST_TASKS;
         function[QStringLiteral("description")] =
             QStringLiteral("List tasks with status, owner, and dependencies.");
         function[QStringLiteral("parameters")] = inputSchema;
@@ -2743,14 +2747,14 @@ QJsonArray AgentLoop::createToolsDefinition()
 
     // get/claim/complete_task：task_id 无 pattern（逐字对齐 lcc，勿与 update_task 的 schema 混同），
     // required [task_id]，无 additionalProperties —— makeTool 可表达
-    tools.append(makeTool(QStringLiteral("get_task"), QStringLiteral("Get a task by ID."),
+    tools.append(makeTool(ToolNames::GET_TASK, QStringLiteral("Get a task by ID."),
                           { {QStringLiteral("task_id"), QStringLiteral("string")} },
                           {QStringLiteral("task_id")}));
-    tools.append(makeTool(QStringLiteral("claim_task"),
+    tools.append(makeTool(ToolNames::CLAIM_TASK,
                           QStringLiteral("Claim a pending task whose dependencies are complete."),
                           { {QStringLiteral("task_id"), QStringLiteral("string")} },
                           {QStringLiteral("task_id")}));
-    tools.append(makeTool(QStringLiteral("complete_task"),
+    tools.append(makeTool(ToolNames::COMPLETE_TASK,
                           QStringLiteral("Complete the task claimed by this agent."),
                           { {QStringLiteral("task_id"), QStringLiteral("string")} },
                           {QStringLiteral("task_id")}));
@@ -2760,17 +2764,17 @@ QJsonArray AgentLoop::createToolsDefinition()
     // 感知仅来自 schema 本身（lcc s12 无 system prompt 新增段——对齐，非遗漏）。
     // makeTool 空 props/空 required 产出 "properties":{} 与 "required":[]，
     // 恰合 LIST_CRONS（区别于 s10 list_tasks 无 required 键才手工构造）----
-    tools.append(makeTool(QStringLiteral("schedule_cron"),
+    tools.append(makeTool(ToolNames::SCHEDULE_CRON,
                           QStringLiteral("Schedule a prompt with a 5-field cron expression."),
                           { {QStringLiteral("cron"), QStringLiteral("string")},
                             {QStringLiteral("prompt"), QStringLiteral("string")},
                             {QStringLiteral("recurring"), QStringLiteral("boolean")},
                             {QStringLiteral("durable"), QStringLiteral("boolean")} },
                           {QStringLiteral("cron"), QStringLiteral("prompt")}));
-    tools.append(makeTool(QStringLiteral("list_crons"),
+    tools.append(makeTool(ToolNames::LIST_CRONS,
                           QStringLiteral("List scheduled cron jobs."),
                           QList<QPair<QString, QString>>{}, QStringList{}));
-    tools.append(makeTool(QStringLiteral("cancel_cron"),
+    tools.append(makeTool(ToolNames::CANCEL_CRON,
                           QStringLiteral("Cancel a cron job by ID."),
                           { {QStringLiteral("job_id"), QStringLiteral("string")} },
                           {QStringLiteral("job_id")}));

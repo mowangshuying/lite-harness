@@ -1,5 +1,7 @@
 #include "BackgroundTasksManager.h"
 
+#include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）
+
 #include <QDebug>
 
 QString BackgroundTasksManager::start(const QString &command, const QString &toolUseId,
@@ -22,7 +24,7 @@ QString BackgroundTasksManager::start(const QString &command, const QString &too
 bool BackgroundTasksManager::shouldRunBackground(const QString &toolName, const QJsonObject &args)
 {
     const QJsonValue flag = args.value(QStringLiteral("run_in_background"));
-    return toolName == QStringLiteral("bash")
+    return toolName == ToolNames::BASH
         && flag.type() == QJsonValue::Bool && flag.toBool();
 }
 
@@ -38,7 +40,7 @@ void BackgroundTasksManager::recordResult(const QString &taskId, const QString &
     m_results.insert(taskId, formatBashResult(output, exitCode, timedOut));
     m_ready.append(taskId);
     // lcc 在 collect() 打印本行；lite 按移植规格在记账时打印（有意偏差，见头文件注释）
-    qDebug().noquote() << QStringLiteral("[background] collected %1: %2").arg(taskId, it->status);
+    qDebug().noquote() << QStringLiteral("[bg] collected %1: %2").arg(taskId, it->status);
 }
 
 QStringList BackgroundTasksManager::collect()

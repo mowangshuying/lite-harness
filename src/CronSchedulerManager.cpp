@@ -405,7 +405,7 @@ void CronSchedulerManager::pollDueJobs(const QDateTime &moment)
         if (enqueueDueJob(job.id, marker))
             qInfo().noquote() << QStringLiteral("[cron] due %1: %2").arg(job.id, job.prompt.left(60));
         else
-            qInfo().noquote() << QStringLiteral("[cron] could not enqueue %1: failed to save scheduled_tasks.json").arg(job.id);
+            qCritical().noquote() << QStringLiteral("[cron] could not enqueue %1: failed to save scheduled_tasks.json").arg(job.id);
     }
 }
 
@@ -501,6 +501,37 @@ void CronSchedulerManager::restoreCronJobs(const QList<CronJob> &fired)
     }
 }
 
+// 交付编排（lcc 31a99d1 run_delivery 转译）：收割→回调→按回调结果收尾。
+// 偏差登记：lcc 回调抛异常时 restore 后 re-raise；lite 无异常链，回调以 bool 返回
+// 成败（宿主拒收=false），false 分支等价 restore，true 转入在途待终局确认。
+bool CronSchedulerManager::runDelivery(const std::function<bool(const QList<CronJob> &)> &deliver)
+{
+    const QList<CronJob> fired = consumeQueue();
+    if (fired.isEmpty())
+        return false; // 空批不动台账（lcc run_delivery 早退）
+
+    if (!deliver(fired))
+    {
+        restoreCronJobs(fired); // 拒收回队，下个空闲 tick 重试（at-least-once）
+        return false;
+    }
+    m_inFlight = fired; // ack 推迟到回合终局 finalizeInFlightDelivery
+    return true;
+}
+
+// 回合终局收口（lcc run_delivery 成功路径的 acknowledge 时机）：幂等，无在途 no-op
+void CronSchedulerManager::finalizeInFlightDelivery(bool success)
+{
+    if (m_inFlight.isEmpty())
+        return;
+    const QList<CronJob> fired = m_inFlight;
+    m_inFlight.clear();
+    if (success)
+        acknowledgeCronJobs(fired);
+    else
+        restoreCronJobs(fired); // 回合失败（停止/流错误/轮次上限）→ 回队重投
+}
+
 QString CronSchedulerManager::listCrons() const
 {
     if (m_jobs.isEmpty())
@@ -563,7 +594,7 @@ void CronSchedulerManager::loadDurableJobs()
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isArray())
     {
-        qInfo().noquote() << QStringLiteral("[cron] could not load scheduled_tasks.json: %1").arg(
+        qCritical().noquote() << QStringLiteral("[cron] could not load scheduled_tasks.json: %1").arg(
               parseError.error == QJsonParseError::NoError
                   ? QStringLiteral("file is not a JSON array")
                   : parseError.errorString());
@@ -578,7 +609,7 @@ void CronSchedulerManager::loadDurableJobs()
         QString error;
         if (!parseSavedJob(value, &job, &error))
         {
-            qInfo().noquote() << QStringLiteral("[cron] skipped invalid saved job: %1").arg(error);
+            qWarning().noquote() << QStringLiteral("[cron] skipped invalid saved job: %1").arg(error);
             continue;
         }
 
