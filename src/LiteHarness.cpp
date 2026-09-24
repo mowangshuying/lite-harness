@@ -52,9 +52,8 @@ void LiteHarness::__initUI()
 
 void LiteHarness::__initNavView()
 {
-    m_navView->setViewWidth(256);
     m_navView->hideSearchItem();
-    
+
     auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
     m_newChatPage = new NewChatPage;
     m_sLayout->addWidget("NewChatPage", m_newChatPage);
@@ -67,6 +66,9 @@ void LiteHarness::__initNavView()
 
     auto settingsPage = new SettingsPage;
     m_sLayout->addWidget("SettingsPage", settingsPage);
+
+    // setViewWidth 仅对已存在的 item 生效，须在全部 item 插入后调用，否则新增项停留在构造默认宽度 180
+    m_navView->setViewWidth(256);
 
     /// clicked
     // emit m_navView->keyChanged("NewChatPage");
