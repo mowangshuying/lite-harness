@@ -376,6 +376,10 @@ void ChatSessionPage::startConversation(const QString &text)
 
 void ChatSessionPage::scrollToBottom()
 {
+    // 先把挂起的布局变更结算，再读取 maximum——否则新增卡片（记忆进度卡/工具块等）
+    // 后立刻调用时，滚动条 range 仍是旧值，滚不到真正底部。
+    if (auto* vlayout = m_scrollView->getMainLayout())
+        vlayout->activate();
     auto scrollBar = m_scrollView->verticalScrollBar();
     scrollBar->setValue(scrollBar->maximum());
 }
