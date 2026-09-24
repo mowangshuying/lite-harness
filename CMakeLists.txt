@@ -50,6 +50,8 @@ set(src
         "src/CompactManager.h"
         "src/MemoryManager.cpp"
         "src/MemoryManager.h"
+        "src/BackgroundTasksManager.cpp"
+        "src/BackgroundTasksManager.h"
     "src/App.cpp"
     "src/BasePage.cpp"
     "src/BasePage.h"

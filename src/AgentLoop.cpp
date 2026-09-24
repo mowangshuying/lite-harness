@@ -439,6 +439,10 @@ void AgentLoop::run(const QString &userMessage)
     userMessageObj[QStringLiteral("content")] = userMessage;
     m_messages.append(userMessageObj);
 
+    // 后台任务收割注入（lcc s11 inject_background_results 挂载点一）：此刻末条即刚追加的
+    // user 消息 → 通知并入其 content 尾部（lcc 末条 user 合并语义）；无通知不动作
+    injectBackgroundResults();
+
     // 记忆召回（lcc s09 loop.py :71-72：每轮提问在 while 前 load_memories → 重建 system
     // prompt；空存储时选择段短路，零 LLM 调用）。mid(1) 排除 system，与 lcc 会话主体
     // 语义对齐。嵌套事件循环豁免（仿 s08 裁决 f）：此刻尚无活动流/权限挂起/子代理，
@@ -641,6 +645,11 @@ void AgentLoop::runNextTool()
             m_messages.append(value.toObject());
         m_toolResultsReady = QJsonArray();
 
+        // 后台任务收割注入（lcc s11 inject_background_results 挂载点二，对应 lcc while 顶部、
+        // compact 之前）：此刻末条为 tool 角色 → 新增独立 user 消息携带通知；无通知不动作。
+        // 置于 todo 提醒之前不影响其向后查找末条 tool 消息（新增 user 消息会被跳过）
+        injectBackgroundResults();
+
         // 待办提醒（lcc s05 引入，s06 改并入形态）：本批 tool_calls 未"执行"todo_write 则
         // 计数 +1，执行过则归零。与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行
         // （handler 未跑）；走到 handler 的即使返回校验错误也算执行过。
@@ -757,6 +766,35 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     // bash 走异步进程链（不进 handler 表：跨事件循环回填，表内只放同步工具）
     if (toolName == QStringLiteral("bash"))
     {
+        // 后台任务分支（lcc s11 execute_tool 后台门）：run_in_background 严格 true 时转异步，
+        // 占位文本立即闭合 tool_use↔tool_result 配对，真实结果由后续回合收割注入
+        if (BackgroundTasksManager::shouldRunBackground(toolName, args))
+        {
+            const QString command = args.value(QStringLiteral("command")).toString();
+            QString error;
+            const QString taskId = m_backgroundTasks.start(
+                command, toolCall.value(QStringLiteral("id")).toString(), &error);
+
+            QString output;
+            if (taskId.isEmpty())
+            {
+                // lcc: Popen 前校验失败（ValueError）折叠为 start error 文案，不起进程
+                output = QStringLiteral("[Background task start error] %1").arg(error);
+            }
+            else
+            {
+                output = QStringLiteral(
+                    "[Background task %1 started] The result will be collected on a later turn.")
+                    .arg(taskId);
+                executeBashAsync(toolCall, args, /*background=*/true, taskId);
+            }
+
+            // lcc execute_tool 统一尾部：后台分支的占位输出同样触发 PostToolUse 后收口
+            triggerPostToolUseHooks(toolCall, output);
+            onToolFinished(toolCall, QStringLiteral("bash"), command, output);
+            return;
+        }
+
         executeBashAsync(toolCall, args);
         return;
     }
@@ -1114,21 +1152,27 @@ QString AgentLoop::triggerStopHooks()
     return QString();
 }
 
-void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args)
+void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args,
+                                 bool background, const QString &taskId)
 {
     const QString command = args.value(QStringLiteral("command")).toString();
 
     // 安全检查：危险命令黑名单（同步短路，不启动进程）。
     // s01 内部黑名单与 s03 deny 列表双层防御保留；该输出按 handler 产出对待
-    // （对齐 lcc run_bash 的返回文案），同样触发 PostToolUse
-    for (const auto &danger : dangerousCommands())
+    // （对齐 lcc run_bash 的返回文案），同样触发 PostToolUse。
+    // 后台模式跳过（lcc 黑名单在前台 run_bash 内、后台分支绕过；且配对已由占位闭合，
+    // 此处绝不可再走 onToolFinished）
+    if (!background)
     {
-        if (command.contains(danger, Qt::CaseInsensitive))
+        for (const auto &danger : dangerousCommands())
         {
-            const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
-            triggerPostToolUseHooks(toolCall, output);
-            onToolFinished(toolCall, QStringLiteral("bash"), command, output);
-            return;
+            if (command.contains(danger, Qt::CaseInsensitive))
+            {
+                const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
+                triggerPostToolUseHooks(toolCall, output);
+                onToolFinished(toolCall, QStringLiteral("bash"), command, output);
+                return;
+            }
         }
     }
 
@@ -1147,8 +1191,55 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         process->kill();
     });
 
+    if (background)
+    {
+        // 后台收口（lcc run() 的转译）：不 onToolFinished、不触发钩子，仅记账。
+        // Qt 在 FailedToStart 的 errorOccurred 之后仍会发 finished，recorded 门闩保证恰好记一次
+        auto recorded = std::make_shared<bool>(false);
+
+        connect(process, &QProcess::errorOccurred, this,
+                [this, process, taskId, recorded](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart || *recorded)
+                return;
+            *recorded = true;
+            // lcc run() 的 except 分支文案形态：Error: {异常}: {消息} → Qt 无异常，取 errorString
+            m_backgroundTasks.recordResult(
+                taskId, QStringLiteral("Error: %1").arg(process->errorString()), -1, false);
+        });
+
+        connect(process, &QProcess::finished, this,
+                [this, process, taskId, timedOut, recorded](int exitCode, QProcess::ExitStatus) {
+            m_activeProcesses.removeAll(process);
+            if (!*recorded)
+            {
+                *recorded = true;
+                QString output;
+                if (*timedOut)
+                {
+                    output = QStringLiteral("Error: Timeout (120s)");
+                }
+                else
+                {
+                    output = QString::fromLocal8Bit(process->readAllStandardOutput());
+                    if (output.length() > 50000)
+                        output = output.left(50000); // 截断
+                    if (output.isEmpty())
+                        output = QStringLiteral("(no output)");
+                }
+                m_backgroundTasks.recordResult(taskId, output, exitCode, *timedOut);
+            }
+            process->deleteLater();
+        });
+
+        process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
+        // lcc 在 Popen 成功后打印；QProcess 启动是异步的，无法同步检测启动失败——
+        // 登记后乐观打印，失败随后经 errorOccurred 补记（已知偏差）
+        qDebug("[background] started %1 %2", taskId, command.left(60));
+        return;
+    }
+
     connect(process, &QProcess::finished, this,
-            [this, process, toolCall, command, timedOut](int, QProcess::ExitStatus) {
+            [this, process, toolCall, command, timedOut](int exitCode, QProcess::ExitStatus) {
         m_activeProcesses.removeAll(process);
 
         QString output;
@@ -1163,6 +1254,9 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
                 output = output.left(50000); // 截断
             if (output.isEmpty())
                 output = QStringLiteral("(no output)");
+            // 前台对齐 lcc s11 run_bash 重构（共用 run_bash_process + format_bash_result）：
+            // 非零退出码前缀 "Error: command exited with status N:"；超时仍用现有 Timeout 文案
+            output = BackgroundTasksManager::formatBashResult(output, exitCode, false);
         }
         process->deleteLater();
 
@@ -1173,6 +1267,36 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     });
 
     process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
+}
+
+// 收割后台任务通知并注入会话（lcc loop.py inject_background_results 的 OpenAI 形态转译：
+// lcc content block 列表 → lite 扁平字符串拼接，同 s05 todo 提醒形态；一次性消费，空则不动作）
+void AgentLoop::injectBackgroundResults()
+{
+    const QStringList notifications = m_backgroundTasks.collect();
+    if (notifications.isEmpty())
+        return;
+
+    const QString joined = notifications.join(QLatin1Char('\n'));
+
+    if (!m_messages.isEmpty()
+        && m_messages.back().value(QStringLiteral("role")).toString() == QStringLiteral("user"))
+    {
+        // lcc：末条是 user 消息则把通知并入其 content 尾部（块列表 extend → 字符串以空行分隔拼接）
+        QJsonObject &tail = m_messages.back();
+        tail[QStringLiteral("content")] =
+            tail.value(QStringLiteral("content")).toString() + QStringLiteral("\n\n") + joined;
+    }
+    else
+    {
+        // lcc：否则新增一条 user 消息（批尾 tool 结果 flush 后走此分支）
+        QJsonObject injected;
+        injected[QStringLiteral("role")] = QStringLiteral("user");
+        injected[QStringLiteral("content")] = joined;
+        m_messages.append(injected);
+    }
+
+    qDebug().noquote() << QStringLiteral("[Background notifications]\n%1").arg(joined);
 }
 
 QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString *error)
@@ -2284,8 +2408,11 @@ QJsonArray AgentLoop::createToolsDefinition()
     };
 
     QJsonArray tools;
+    // bash（lcc s11）：新增可选 run_in_background boolean（required 仍只有 command、描述不动，
+    // 与 lcc schema 增量一致）；子代理侧经 SubAgent filterSubTools 删除该参数（双重禁令之 schema 层）
     tools.append(makeTool(QStringLiteral("bash"), QStringLiteral("Run a shell command."),
-                          { {QStringLiteral("command"), QStringLiteral("string")} },
+                          { {QStringLiteral("command"), QStringLiteral("string")},
+                            {QStringLiteral("run_in_background"), QStringLiteral("boolean")} },
                           {QStringLiteral("command")}));
     tools.append(makeTool(QStringLiteral("read_file"), QStringLiteral("Read file contents"),
                           { {QStringLiteral("path"), QStringLiteral("string")},

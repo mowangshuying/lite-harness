@@ -11,6 +11,7 @@
 
 #include <functional>
 
+#include "BackgroundTasksManager.h"
 #include "CompactManager.h"
 #include "MemoryManager.h"
 
@@ -115,8 +116,17 @@ private:
     // 单个工具执行完成的统一收口（安全/超时/未知/沙箱等快捷路径也走这里）
     void onToolFinished(const QJsonObject &toolCall, const QString &toolName,
                         const QString &summary, const QString &output);
-    // 异步执行 bash 命令（带安全检查与超时，不阻塞 UI）
-    void executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args);
+    // 异步执行 bash 命令（带安全检查与超时，不阻塞 UI）。
+    // background=true 为后台任务模式（lcc s11）：跳过危险黑名单短路（lcc 黑名单在前台
+    // run_bash 内，后台分支绕过——配对已由占位闭合，不可再走 onToolFinished），结束时
+    // 不调 onToolFinished/不触发钩子，仅 m_backgroundTasks.recordResult(taskId, ...) 落账
+    void executeBashAsync(const QJsonObject &toolCall, const QJsonObject &args,
+                          bool background = false, const QString &taskId = QString());
+    // 收割后台任务通知并注入会话（lcc s11 loop.py inject_background_results）：
+    // 无通知直接返回（一次性消费）；末条为 user 角色则并入其 content 尾部（lcc 末条 user
+    // 合并语义），否则新增一条 user 消息。两个挂载点：run() 追加用户消息后、
+    // runNextTool() 批尾 flush 之后（compact 之前）
+    void injectBackgroundResults();
     // task 工具（lcc s06）：启动 SubAgent 异步链（独立上下文黑盒；权限询问经本类
     // permissionRequired 转发；完成回调以汇总文本走 onToolFinished 收口）
     void startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args);
@@ -262,6 +272,10 @@ private:
     // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用三参 toolOutputReady（"memory"）
     MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，阻塞式，构造时注入回调）
     QString m_relevantMemories;          // 本轮召回的记录文本（system prompt 尾段；run() 时刷新）
+    // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然
+    // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由
+    // executeBashAsync 后台模式异步驱动，仅主线程访问，无锁
+    BackgroundTasksManager m_backgroundTasks;
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;

@@ -2,6 +2,7 @@
 
 #include "QOpenAi.h"
 
+#include <QDebug>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QSet>
@@ -32,8 +33,28 @@ QJsonArray filterSubTools(const QJsonArray &all)
     for (const QJsonValue &value : all)
     {
         const QJsonObject function = value.toObject().value(QStringLiteral("function")).toObject();
-        if (allowed.contains(function.value(QStringLiteral("name")).toString()))
-            sub.append(value);
+        const QString name = function.value(QStringLiteral("name")).toString();
+        if (!allowed.contains(name))
+            continue;
+
+        if (name == QStringLiteral("bash"))
+        {
+            // 子代理 bash 专用（lcc s11 95242de sub_bash_info 等价）：从 schema  properties
+            // 剔除 run_in_background——schema 层禁止后台（执行层双保险见 SubAgent::executeTool）。
+            // QJsonObject 隐式共享，逐层拷贝修改即深拷贝语义（lcc deepcopy 的 lite 等价）
+            QJsonObject tool = value.toObject();
+            QJsonObject fn = tool.value(QStringLiteral("function")).toObject();
+            QJsonObject params = fn.value(QStringLiteral("parameters")).toObject();
+            QJsonObject props = params.value(QStringLiteral("properties")).toObject();
+            props.remove(QStringLiteral("run_in_background"));
+            params[QStringLiteral("properties")] = props;
+            fn[QStringLiteral("parameters")] = params;
+            tool[QStringLiteral("function")] = fn;
+            sub.append(tool);
+            continue;
+        }
+
+        sub.append(value);
     }
     return sub;
 }
@@ -213,7 +234,13 @@ void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
     // bash 走子代理自身的异步进程链（收口点在进程 finished 回调，簿记独立于宿主）
     if (toolName == QStringLiteral("bash"))
     {
-        executeBashAsync(toolCall, args);
+        // 子代理禁后台·执行层双保险（lcc s11 95242de allow_background=False 等价）：
+        // schema 已删 run_in_background（见 filterSubTools），模型若仍幻觉带参，丢弃后
+        // 永远前台执行；降级提示仅打控制台、不进模型可见输出（lcc log_warn 语义）
+        QJsonObject bashArgs = args;
+        if (bashArgs.take(QStringLiteral("run_in_background")).toBool())
+            qDebug() << "[background] not allowed in this context, running in foreground";
+        executeBashAsync(toolCall, bashArgs);
         return;
     }
 
