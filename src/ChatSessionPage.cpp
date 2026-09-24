@@ -25,8 +25,10 @@
 static constexpr int kColumnMaxWidth = 800;
 static constexpr int kSideMargin = 35;
 
-ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
-                                 QWidget *parent) : BasePage(parent)
+// 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit）。
+// 纯搬移自原构造函数，摆位/参数/注释逐句不变；m_inputSection 入列提前到本段末尾——
+// 构造期无布局 activate/show，widget 几何不受 addWidget 时机影响，行为等价
+void ChatSessionPage::buildLayout()
 {
     auto vMainLayout = new QVBoxLayout(this);
     vMainLayout->setContentsMargins(kSideMargin, 35, kSideMargin, 35);
@@ -76,6 +78,14 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     m_inputEdit = new ChatMsgEdit(m_inputSection);
     sectionLayout->addWidget(m_inputEdit);
 
+    vMainLayout->addWidget(m_inputSection, 0, Qt::AlignHCenter);
+}
+
+ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
+                                 QWidget *parent) : BasePage(parent)
+{
+    buildLayout();
+
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
     // 会话数据 ID + 工作目录经构造注入：前者令任务图/记忆/压缩转写/定时台账等落盘按会话隔离，
     // 后者令上述数据根、技能目录与 bash/子代理进程 cwd 全部随所选工作目录解析（空则回落进程当前目录）
@@ -86,6 +96,33 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     m_inputEdit->setCurrentModel(m_agentLoop->model());
     // 工作目录在会话存续期固定（构造注入 AgentLoop），只读取一次生效值（含恢复会话的台账回填目录）
     updateWorkDirDisplay();
+
+    // AgentLoop 输出信号 → UI 的接线整体搬移至 wireAgent()（纯移动，不改任何 lambda 逻辑）
+    wireAgent();
+
+    connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
+        // 运行态预查：运行中不建气泡、不动旧现场。若照旧走 startAssistantStream，
+        // 旧气泡会被先冻结、新气泡又被 run() 拒绝后的 error 链收掉置空，
+        // 旧循环后续 delta 全部丢失、时间线撕裂（重入提示改由本 handler 独立气泡给出）。
+        if (m_agentLoop->isRunning())
+        {
+            // 待决权限按拒绝放行队列（防死锁收口，含旧卡留痕，见 dismissPendingPermission）
+            dismissPendingPermission();
+            addMessage(MessageBubbleWidget::Role::Assistant,
+                       QStringLiteral("*Error:* Agent 仍在运行中，请等待完成后再发送"));
+            return;
+        }
+        addMessage(MessageBubbleWidget::Role::User, text);
+        startAssistantStream(text); // 创建流式气泡并启动代理循环
+    });
+
+    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &ChatSessionPage::onThemeChanged);
+    onThemeChanged();
+}
+
+// 构造拆分②：AgentLoop 全部输出信号到 UI 的接线（自原构造函数纯搬移，lambda 逻辑逐句不变）
+void ChatSessionPage::wireAgent()
+{
     connect(m_agentLoop, &AgentLoop::finished, this, [this](const QString &reply) {
         // 防御收口：正常契约下待决权限会暂停队列、finished 不会先于裁决到达；
         // 若出现残留待决卡片，落为"已拒绝"留痕（不再转呼 resolvePermission，交给后端收口）
@@ -104,16 +141,9 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
         // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
-        // 必须显式按拒绝放行队列，否则 m_awaitingPermission/m_running 永真导致会话死锁；
-        // stop() 路径后端已自行回填时，resolvePermission 的待决守卫使其成为 no-op，不会双重裁决。
-        // 卡片同步落为"已拒绝"留痕（不发 userResolved，避免二次调用 resolvePermission）。
-        // Gate2 MAJOR-1：先捕获事发时的旧卡——resolvePermission(false) 同步续跑队列时，
-        // 同批下一个待询问调用可能就地再建"新卡"（handler 置 m_permissionCard）。
-        // 只收旧卡，新卡留给用户裁决，否则后端再次永久挂起且无卡可裁。
-        QPointer<PermissionCard> staleCard = m_permissionCard;
-        m_agentLoop->resolvePermission(false);
-        if (staleCard && !staleCard->isResolved())
-            staleCard->resolveDenySilently();
+        // 显式按拒绝放行队列并收旧卡（见 dismissPendingPermission），否则
+        // m_awaitingPermission/m_running 永真导致会话死锁
+        dismissPendingPermission();
         if (m_currentBubble)
         {
             m_currentBubble->finishStreaming();
@@ -208,33 +238,20 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
         addMessage(MessageBubbleWidget::Role::User, displayText);
         startAssistantStream(activeRequestText);
     });
+}
 
-    connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
-        // 运行态预查：运行中不建气泡、不动旧现场。若照旧走 startAssistantStream，
-        // 旧气泡会被先冻结、新气泡又被 run() 拒绝后的 error 链收掉置空，
-        // 旧循环后续 delta 全部丢失、时间线撕裂（重入提示改由本 handler 独立气泡给出）。
-        if (m_agentLoop->isRunning())
-        {
-            // 待决权限按拒绝放行队列（防死锁：挂起期间不放行则 m_awaitingPermission/
-            // m_running 永真）；与 error handler 同一套 staleCard 约定——resolvePermission(false)
-            // 同步续跑时同批下一个待询问调用可能就地再建新卡，只收旧卡、新卡留给用户裁决。
-            // 无待决询问时 resolvePermission 的待决守卫使其成为 no-op。
-            QPointer<PermissionCard> staleCard = m_permissionCard;
-            m_agentLoop->resolvePermission(false);
-            if (staleCard && !staleCard->isResolved())
-                staleCard->resolveDenySilently();
-            addMessage(MessageBubbleWidget::Role::Assistant,
-                       QStringLiteral("*Error:* Agent 仍在运行中，请等待完成后再发送"));
-            return;
-        }
-        addMessage(MessageBubbleWidget::Role::User, text);
-        startAssistantStream(text); // 创建流式气泡并启动代理循环
-    });
-
-    vMainLayout->addWidget(m_inputSection, 0, Qt::AlignHCenter);
-
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &ChatSessionPage::onThemeChanged);
-    onThemeChanged();
+// error 链与运行中 sendMessage 拒绝分支共用的待决权限收口（原两处逐句重复，抽取单源）：
+// Gate2 MAJOR-1 约定——先捕获事发时的旧卡，resolvePermission(false) 同步续跑队列时，
+// 同批下一个待询问调用可能就地再建"新卡"（handler 置 m_permissionCard）。只收旧卡、
+// 新卡留给用户裁决，否则后端再次永久挂起且无卡可裁。无待决询问时 resolvePermission
+// 的待决守卫使其成为 no-op，不会双重裁决；resolveDenySilently 不发 userResolved，
+// 避免二次调用 resolvePermission。
+void ChatSessionPage::dismissPendingPermission()
+{
+    QPointer<PermissionCard> staleCard = m_permissionCard;
+    m_agentLoop->resolvePermission(false);
+    if (staleCard && !staleCard->isResolved())
+        staleCard->resolveDenySilently();
 }
 
 void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &content)
@@ -247,12 +264,12 @@ void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &
 
 void ChatSessionPage::startAssistantStream(const QString &userText)
 {
-    // 兜底：上一轮未收到 finished 时收尾清场
+    // 兜底：上一轮未收到 finished 时收尾清场。m_currentBubble 已为 QPointer，
+    // 下一行即赋新气泡，原此处的手工置空为死写入（被立即覆盖），随类型迁移一并去除；
+    // 其余置空点（finished/error/closeReplayBubble/clearMessages）承担「关闭流式槽位」
+    // 或「deleteLater 等待期立即隔离」语义，非冗余，保留
     if (m_currentBubble)
-    {
         m_currentBubble->finishStreaming();
-        m_currentBubble = nullptr;
-    }
 
     m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
     m_currentBubble->startStreaming();

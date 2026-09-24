@@ -49,6 +49,13 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit）的创建摆位
+    void buildLayout();
+    // 构造拆分（纯搬移不改行为）：AgentLoop 全部输出信号到 UI 的接线（finished/error/delta/工具/权限/任务/定时）
+    void wireAgent();
+    // 收口残留待决权限：后端 resolvePermission(false) 放行队列 + 旧卡落"已拒绝"留痕。
+    // error 链与运行中 sendMessage 拒绝分支共用同一 staleCard 约定（见定义处注释）
+    void dismissPendingPermission();
     void startAssistantStream(const QString &userText);
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
@@ -61,7 +68,9 @@ private:
     QLabel *m_workDirLabel = nullptr;       // 工作目录路径显示（objectName workDirPath，配色见 ChatSessionPage.qss）
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
-    MessageBubbleWidget *m_currentBubble = nullptr;   // 当前流式气泡
+    // QPointer：气泡若被异常销毁（如 clearMessages 的 deleteLater 序列）自动置空，
+    // 与 m_permissionCard/m_todoCard 同一初值纪律；流式槽位的显式清空语义保留（finishStreaming 不销毁气泡）
+    QPointer<MessageBubbleWidget> m_currentBubble;
     QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
     QPointer<TodoCard> m_todoCard;                    // 会话流常驻任务清单卡（首次 todoUpdated 挂载，此后就地刷新；clearMessages 销毁后置空）
 };

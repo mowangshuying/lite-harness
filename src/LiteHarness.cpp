@@ -25,6 +25,9 @@
 #include <QDateTime>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QColor>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 #include "FluentInputDialog.h"
 #include <QTimer>   // singleShot(0) 延一拍执行磁盘数据目录递归删除
 #include <QDebug>   // qWarning：目录删除失败仅告警容忍（外部编辑器占用等）
@@ -35,14 +38,14 @@ FRAMELESSHELPER_USE_NAMESPACE
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
     QOpenAi::initByEnv();
-    __initUI();
-    __initNavView();
-    __connect();
+    initUi();
+    initNavView();
+    setupConnections();
     // 导航骨架就绪后、事件循环前恢复历史会话（不切换当前页，仍停留在 NewChatPage）
-    __restoreSessions();
+    restoreSessions();
 }
 
-void LiteHarness::__initUI()
+void LiteHarness::initUi()
 {
     setWindowTitle("lite-harness");
     setWindowIcon(QIcon(":/res/LiteHarness.ico"));
@@ -53,11 +56,25 @@ void LiteHarness::__initUI()
     m_titleBar->chromePalette()->setTitleBarInactiveForegroundColor(Qt::black);
     m_titleBar->setFixedHeight(32);
 
-    auto hLayout = (QHBoxLayout *)m_titleBar->layout();
-    auto vLayout = (QVBoxLayout *)hLayout->itemAt(1)->layout();
-    auto hButtonLayout = (QHBoxLayout *)vLayout->itemAt(0)->layout();
-    auto themeButton = new FluThemeButton;
-    hButtonLayout->insertWidget(0, themeButton);
+    // 主题按钮挂载点：titlebar 固定三层布局 QHBoxLayout(顶) → 槽位1 QVBoxLayout(居中列) →
+    // 槽位0 QHBoxLayout(系统按钮行)（见 standardtitlebar.cpp 构造）。原 C 风格强转+硬索引在
+    // 上游结构变动时会空指针解引用/踩内存；改 qobject_cast 逐级判空，失配时 qWarning 跳过插入
+    // （不崩不回归），结构正常时视觉结果与原代码一致
+    auto *titleBarLayout = m_titleBar ? qobject_cast<QHBoxLayout *>(m_titleBar->layout()) : nullptr;
+    auto *centerSlot = titleBarLayout ? titleBarLayout->itemAt(1) : nullptr;
+    auto *centerLayout = centerSlot ? qobject_cast<QVBoxLayout *>(centerSlot->layout()) : nullptr;
+    auto *buttonSlot = centerLayout ? centerLayout->itemAt(0) : nullptr;
+    auto *buttonLayout = buttonSlot ? qobject_cast<QHBoxLayout *>(buttonSlot->layout()) : nullptr;
+    FluThemeButton *themeButton = nullptr;
+    if (buttonLayout)
+    {
+        themeButton = new FluThemeButton;
+        buttonLayout->insertWidget(0, themeButton);
+    }
+    else
+    {
+        qWarning() << "LiteHarness: unexpected titlebar layout structure, theme button not inserted";
+    }
 
     m_navView = new FluVNavigationView;
     // m_navView->setViewWidth(200);
@@ -65,40 +82,41 @@ void LiteHarness::__initUI()
     m_contentLayout->addWidget(m_navView);
     m_contentLayout->addLayout(m_sLayout);
 
-    // __initNavView();
-    FramelessWidgetsHelper::get(this)->setHitTestVisible(themeButton);
+    // initNavView();
+    if (themeButton)
+        FramelessWidgetsHelper::get(this)->setHitTestVisible(themeButton);
 }
 
-void LiteHarness::__initNavView()
+void LiteHarness::initNavView()
 {
     m_navView->hideSearchItem();
 
-    auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", "NewChatPage");
+    auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", NavKey::NewChatPage);
     m_newChatPage = new NewChatPage;
-    m_sLayout->addWidget("NewChatPage", m_newChatPage);
+    m_sLayout->addWidget(NavKey::NewChatPage, m_newChatPage);
 
     // Sessions 分组改用 NavItem（FluVNavigationIconTextItem 最小派生）：额外具备 removeChildItem，
     // 供会话删除时摘除对应导航子项。构造参数与 insertIconTextItem(3 参) 内部所建者一致（itemType=IconText），
-    // 仍经 addItemToMidLayout 注册进导航（setParentView + 布局成员），getItemByKey("SessionsGroup") 照常命中。
-    auto sessionsItem = new NavItem(FluAwesomeType::List, "Sessions", "SessionsGroup");
+    // 仍经 addItemToMidLayout 注册进导航（setParentView + 布局成员），getItemByKey(NavKey::SessionsGroup) 照常命中。
+    auto sessionsItem = new NavItem(FluAwesomeType::List, "Sessions", NavKey::SessionsGroup);
     m_navView->addItemToMidLayout(sessionsItem);
 
     auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
-    settingsItem->setKey("SettingsPage");
+    settingsItem->setKey(NavKey::SettingsPage);
     m_navView->addItemToBottomLayout(settingsItem);
 
     auto settingsPage = new SettingsPage;
-    m_sLayout->addWidget("SettingsPage", settingsPage);
+    m_sLayout->addWidget(NavKey::SettingsPage, settingsPage);
 
     // setViewWidth 仅对已存在的 item 生效，须在全部 item 插入后调用，否则新增项停留在构造默认宽度 180
     m_navView->setViewWidth(256);
 
     /// clicked
-    // emit m_navView->keyChanged("NewChatPage");
+    // emit m_navView->keyChanged(NavKey::NewChatPage);
     newChatItem->itemClicked();
 }
 
-void LiteHarness::__connect()
+void LiteHarness::setupConnections()
 {
     /// navView;
     connect(m_navView, &FluVNavigationView::keyChanged, this, [=](QString key) {
@@ -106,17 +124,17 @@ void LiteHarness::__connect()
     });
 
     /// new chat;
-    connect(m_newChatPage, &NewChatPage::newChatRequested, this, &LiteHarness::__createSession);
+    connect(m_newChatPage, &NewChatPage::newChatRequested, this, &LiteHarness::createSession);
 
     /// theme;
     onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
 }
 
-void LiteHarness::__createSession(const QString &text)
+void LiteHarness::createSession(const QString &text)
 {
     const int sessionId = ++m_sessionCount;
-    const QString key = QString("Session_%1").arg(sessionId);
+    const QString key = QString(NavKey::SessionKeyFmt).arg(sessionId);
 
     auto title = text.simplified();
     if (title.length() > 12)
@@ -143,19 +161,20 @@ void LiteHarness::__createSession(const QString &text)
 
     // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
     // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型。
-    // 索引「根」固定为进程当前目录下 .lite-harness（即 __restoreSessions 启动读取处），
-    // 只有条目「工作目录字段」记所选目录——若把根也改到所选目录，切换工作目录后旧会话将无法被发现。
+    // 索引「根」固定为进程当前目录下 .lite-harness（即 restoreSessions 启动读取处，
+    // 路径经 SessionStore::rootDirFor 单源派生），只有条目「工作目录字段」记所选目录——
+    // 若把根也改到所选目录，切换工作目录后旧会话将无法被发现。
     SessionStore::upsertEntry(
-        QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness")),
+        SessionStore::rootDirFor(QDir::currentPath()),
         sessionDataId, title, m_newChatPage->currentModel(), newWorkDir);
 
-    auto sessionsItem = (NavItem *)m_navView->getItemByKey("SessionsGroup");
-    auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
+    auto sessionsItem = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup);
+    auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, NavKey::SessionsGroup);
     if (childItem == nullptr)
         return;
     // 登记子项本体→key（重命名/删除反查专用），并递归给子项及其全部后代装右键过滤器
     // （行区域被 m_wrapWidget1/图标/标签/箭头占满，Qt 只投递最深接收者，装主体收不到）
-    __hookContextMenu(childItem);
+    hookContextMenu(childItem);
     m_childWidgetToKey.insert(childItem, key);
 
     // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
@@ -172,9 +191,9 @@ void LiteHarness::__createSession(const QString &text)
     childItem->onItemClicked();
 }
 
-void LiteHarness::__restoreSessions()
+void LiteHarness::restoreSessions()
 {
-    const QString root = QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness"));
+    const QString root = SessionStore::rootDirFor(QDir::currentPath());
     const QJsonArray index = SessionStore::loadIndex(root);
     if (index.isEmpty())
         return;
@@ -189,14 +208,14 @@ void LiteHarness::__restoreSessions()
              < b.value(QStringLiteral("createdMs")).toDouble();
     });
 
-    auto sessionsItem = (NavItem *)m_navView->getItemByKey("SessionsGroup");
+    auto sessionsItem = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup);
     for (const QJsonObject &e : std::as_const(entries))
     {
         const QString dataId = e.value(QStringLiteral("dataId")).toString();
         if (dataId.isEmpty())
             continue;
         // 导航 key 用 "Session_" + 十六进制 dataId：hex 永不等于新会话的十进制自增，避免键冲突
-        const QString key = QStringLiteral("Session_") + dataId;
+        const QString key = QString(NavKey::SessionPrefix) + dataId;
         if (m_sessions.contains(key))
             continue;
 
@@ -214,13 +233,13 @@ void LiteHarness::__restoreSessions()
         m_sLayout->addWidget(key, page);
 
         const QString title = e.value(QStringLiteral("title")).toString();
-        auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
+        auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, NavKey::SessionsGroup);
         if (childItem == nullptr)
             continue;
-        // 恢复的子项同样登记本体 + 递归装右键过滤器（同 __createSession）
-        __hookContextMenu(childItem);
+        // 恢复的子项同样登记本体 + 递归装右键过滤器（同 createSession）
+        hookContextMenu(childItem);
         m_childWidgetToKey.insert(childItem, key);
-        // 同 __createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
+        // 同 createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
         sessionsItem->setItemWidth(sessionsItem->width());
         // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
         if (m_navView->isLong())
@@ -233,7 +252,7 @@ void LiteHarness::__restoreSessions()
     }
 }
 
-void LiteHarness::__hookContextMenu(QWidget *childItem)
+void LiteHarness::hookContextMenu(QWidget *childItem)
 {
     // 会话子项行区域被后代控件占满（m_wrapWidget1/indicator/iconButton/label/arrow），
     // Qt 鼠标事件只投递最深接收者 → 必须给本体与全部后代逐一装过滤器并登记，
@@ -252,7 +271,7 @@ void LiteHarness::__hookContextMenu(QWidget *childItem)
     }
 }
 
-FluVNavigationIconTextItem *LiteHarness::__resolveSessionItem(QWidget *w) const
+FluVNavigationIconTextItem *LiteHarness::resolveSessionItem(QWidget *w) const
 {
     // 沿父子链向上找首个登记在册的会话子项本体（后代命中 → 归位到本体）
     for (QWidget *p = w; p; p = p->parentWidget())
@@ -281,7 +300,7 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
     if (me->button() != Qt::RightButton && !(me->buttons() & Qt::RightButton))
         return FluFrameLessWidget::eventFilter(watched, event);
 
-    auto *item = __resolveSessionItem(widget);
+    auto *item = resolveSessionItem(widget);
     if (!item)
         return false; // 已登记的右键一律吞掉，不放行（防漏给基类触发 itemClicked）
 
@@ -297,13 +316,13 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
         QTimer::singleShot(0, this, [this, item, gp]() {
             // 延拍期间子项可能已被删除（如切页/删会话），查表复核
             if (m_ctxWatchedToKey.contains(item))
-                __showSessionMenu(item, gp);
+                showSessionMenu(item, gp);
         });
     }
     return true; // 释放同样吞掉，规避基类 mouseReleaseEvent 触发 itemClicked
 }
 
-void LiteHarness::__showSessionMenu(QWidget *childItem, const QPoint &globalPos)
+void LiteHarness::showSessionMenu(QWidget *childItem, const QPoint &globalPos)
 {
     const QString key = m_childWidgetToKey.value(childItem);
     if (key.isEmpty())
@@ -311,8 +330,8 @@ void LiteHarness::__showSessionMenu(QWidget *childItem, const QPoint &globalPos)
     auto menu = new FluRoundMenu(this);
     auto renameAction = new FluAction(FluAwesomeType::Edit, tr("重命名"), menu);
     auto deleteAction = new FluAction(FluAwesomeType::Delete, tr("删除会话"), menu);
-    connect(renameAction, &QAction::triggered, this, [this, key]() { __renameSession(key); });
-    connect(deleteAction, &QAction::triggered, this, [this, key]() { __deleteSession(key); });
+    connect(renameAction, &QAction::triggered, this, [this, key]() { renameSession(key); });
+    connect(deleteAction, &QAction::triggered, this, [this, key]() { deleteSession(key); });
     menu->addAction(renameAction);
     menu->addAction(deleteAction);
     // 注意：FluRoundMenu::exec 并非 QMenu 的阻塞式 exec，它只是「动画定位 + show()」立即返回。
@@ -323,7 +342,7 @@ void LiteHarness::__showSessionMenu(QWidget *childItem, const QPoint &globalPos)
     menu->exec(globalPos);
 }
 
-void LiteHarness::__renameSession(const QString &key)
+void LiteHarness::renameSession(const QString &key)
 {
     if (!m_sessions.contains(key))
         return;
@@ -355,16 +374,17 @@ void LiteHarness::__renameSession(const QString &key)
     // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确
     if (m_navView->isLong())
     {
-        if (auto *grp = (NavItem *)m_navView->getItemByKey("SessionsGroup"))
+        if (auto *grp = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup))
             grp->adjustItemHeight(childItem);
     }
-    // 仅更新索引标题（model/workDir 传空即不覆盖），刷新 lastActiveMs
+    // 仅更新索引标题（model/workDir 传空即不覆盖），刷新 lastActiveMs；
+    // 根路径经 SessionStore::rootDirFor 单源派生（与原手写 ".lite-harness" 拼接等价）
     SessionStore::upsertEntry(
-        QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness")),
+        SessionStore::rootDirFor(QDir::currentPath()),
         dataId, text, QString(), QString());
 }
 
-void LiteHarness::__deleteSession(const QString &key)
+void LiteHarness::deleteSession(const QString &key)
 {
     if (!m_sessions.contains(key))
         return;
@@ -385,7 +405,7 @@ void LiteHarness::__deleteSession(const QString &key)
     // 若正显示被删页，先切回新建会话页，避免堆叠布局 currentWidget 悬空
     if (m_sLayout->currentWidget() == page)
     {
-        if (auto *newChat = (FluVNavigationIconTextItem *)m_navView->getItemByKey("NewChatPage"))
+        if (auto *newChat = (FluVNavigationIconTextItem *)m_navView->getItemByKey(NavKey::NewChatPage))
             newChat->onItemClicked(); // 触发 itemClicked→onItemClicked→keyChanged，堆叠切至 NewChatPage
     }
 
@@ -393,7 +413,7 @@ void LiteHarness::__deleteSession(const QString &key)
     const QString dataRoot = page->sessionDataRoot();
 
     // 从分组摘除导航子项（deleteLater 在 removeChildItem 内完成）
-    if (auto *grp = (NavItem *)m_navView->getItemByKey("SessionsGroup"))
+    if (auto *grp = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup))
         grp->removeChildItem(key);
     m_sLayout->removeWidget(key, page); // 仅移出堆叠，不销毁（page 仍由 m_sessions 持有）
     page->deleteLater();                // 当前页已切走，安全回收会话页及其子控件
@@ -407,9 +427,9 @@ void LiteHarness::__deleteSession(const QString &key)
     m_sessions.remove(key);
     m_keyToDataId.remove(key);
 
-    // 移出 index.json 条目
+    // 移出 index.json 条目（根路径经 SessionStore::rootDirFor 单源派生）
     SessionStore::removeEntry(
-        QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness")), dataId);
+        SessionStore::rootDirFor(QDir::currentPath()), dataId);
 
     // 连同磁盘数据目录一并删除。仅对已隔离会话（dataId 非空）执行——未注入 ID 时
     // sessionDataRoot() 回退全局 .lite-harness（含 index.json/skills），据此护栏避免误删全局数据。
@@ -426,28 +446,16 @@ void LiteHarness::__deleteSession(const QString &key)
 
 void LiteHarness::onThemeChanged()
 {
-    if (FluThemeUtils::isLightTheme())
-    {
-        m_titleBar->chromePalette()->setTitleBarActiveBackgroundColor(Qt::transparent);
-        m_titleBar->chromePalette()->setTitleBarInactiveBackgroundColor(Qt::transparent);
-        m_titleBar->chromePalette()->setTitleBarActiveForegroundColor(Qt::black);
-        m_titleBar->chromePalette()->setTitleBarInactiveForegroundColor(Qt::black);
-        m_titleBar->minimizeButton()->setActiveForegroundColor(Qt::black);
-        m_titleBar->closeButton()->setActiveForegroundColor(Qt::black);
-        m_titleBar->maximizeButton()->setActiveForegroundColor(Qt::black);
-        m_titleBar->show();
-    }
-    else
-    {
-        m_titleBar->chromePalette()->setTitleBarActiveBackgroundColor(Qt::transparent);
-        m_titleBar->chromePalette()->setTitleBarInactiveBackgroundColor(Qt::transparent);
-        m_titleBar->chromePalette()->setTitleBarActiveForegroundColor(Qt::white);
-        m_titleBar->chromePalette()->setTitleBarInactiveForegroundColor(Qt::white);
-
-        m_titleBar->minimizeButton()->setActiveForegroundColor(Qt::white);
-        m_titleBar->closeButton()->setActiveForegroundColor(Qt::white);
-        m_titleBar->maximizeButton()->setActiveForegroundColor(Qt::white);
-        m_titleBar->show();
-    }
-    FluStyleSheetUtils::setQssByFileName("LiteHarness.qss", this, FluThemeUtils::getUtils()->getTheme());   
+    // 原 if/else 两分支仅前景色一处差异（light=black / dark=white），背景恒透明；
+    // 变化参数提取为变量后单套调用收口，消除重复 4+3 行（行为与原分支逐句等价）
+    const QColor foreground = FluThemeUtils::isLightTheme() ? QColor(Qt::black) : QColor(Qt::white);
+    m_titleBar->chromePalette()->setTitleBarActiveBackgroundColor(Qt::transparent);
+    m_titleBar->chromePalette()->setTitleBarInactiveBackgroundColor(Qt::transparent);
+    m_titleBar->chromePalette()->setTitleBarActiveForegroundColor(foreground);
+    m_titleBar->chromePalette()->setTitleBarInactiveForegroundColor(foreground);
+    m_titleBar->minimizeButton()->setActiveForegroundColor(foreground);
+    m_titleBar->closeButton()->setActiveForegroundColor(foreground);
+    m_titleBar->maximizeButton()->setActiveForegroundColor(foreground);
+    m_titleBar->show();
+    FluStyleSheetUtils::setQssByFileName("LiteHarness.qss", this, FluThemeUtils::getUtils()->getTheme());
 }

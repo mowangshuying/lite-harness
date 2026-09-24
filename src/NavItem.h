@@ -1,5 +1,16 @@
 #pragma once
 
+// 导航/堆叠页键常量（单源化）：导航项 key 与 FluStackedLayout 页键必须成对一致，
+// 字面量散落在 LiteHarness.cpp 十余处易漂移（改一处漏一处 → keyChanged 找不到页），统一收敛于此。
+namespace NavKey
+{
+inline constexpr char NewChatPage[] = "NewChatPage";   // 新建会话页（导航项 + 堆叠页键）
+inline constexpr char SettingsPage[] = "SettingsPage"; // 设置页（导航项 + 堆叠页键）
+inline constexpr char SessionsGroup[] = "SessionsGroup"; // Sessions 导航分组（子项挂载点）
+inline constexpr char SessionPrefix[] = "Session_";    // 会话键前缀：恢复会话为 Session_+hex dataId
+inline constexpr char SessionKeyFmt[] = "Session_%1";  // 会话键格式：新会话 Session_+自增号（arg 填充）
+}
+
 // 导航分组项（Sessions 等）的最小派生：在 FluentUI 的 FluVNavigationIconTextItem 基础上，
 // 补一个「移除子项」的能力，用于会话删除时把对应导航子项从分组中摘除。
 // 基类 FluVNavigationIconTextItem 构造已把 (awesomeType,text,key) 委托到把 m_itemType 置为
