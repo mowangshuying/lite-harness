@@ -95,13 +95,14 @@ void CompactManager::setCardSink(CardSink sink)
 
 QString CompactManager::transcriptDir() const
 {
-    // lite 有意偏差：全部运行时目录收进 <workDir>/.lite-harness/ 中间层（lcc 放 workDir 直下）
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.transcripts"));
+    // lite 有意偏差：运行时目录收进宿主会话数据根（sink，含 .lite-harness/sessions/<id>）之下；
+    // sink 已含 .lite-harness 中间层，本处仅拼叶子段 .transcripts
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".transcripts"));
 }
 
 QString CompactManager::toolResultsDir() const
 {
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".lite-harness/.task_outputs/tool-results"));
+    return QDir(m_workDirSink()).filePath(QStringLiteral(".task_outputs/tool-results"));
 }
 
 // ---- OpenAI 形态谓词与估算 ----------------------------------------------------

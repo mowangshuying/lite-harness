@@ -551,7 +551,8 @@ QString CronSchedulerManager::listCrons() const
 
 QString CronSchedulerManager::durableFilePath() const
 {
-    return m_workDirSink() + QStringLiteral("/.lite-harness/scheduled_tasks.json");
+    // sink 为宿主会话数据根（含 .lite-harness 中间层/会话段），本处仅拼文件名
+    return m_workDirSink() + QStringLiteral("/scheduled_tasks.json");
 }
 
 bool CronSchedulerManager::saveDurableJobs()

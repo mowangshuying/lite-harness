@@ -24,7 +24,12 @@ class AgentLoop : public QObject
 {
     Q_OBJECT
 public:
-    explicit AgentLoop(QObject *parent = nullptr);
+    // sessionDataId：会话数据目录短 ID（可空）。非空时持久化数据（任务图/记忆/压缩转写/
+    // 工具输出/定时台账/prompt 临时目录）隔离到 <workDir>/.lite-harness/sessions/<id>/，
+    // 空则回退全局 <workDir>/.lite-harness/（保证未注入 ID 的独立构造路径行为不变）。
+    // skills 始终共享 <workDir>/.lite-harness/skills，不受本 ID 影响。
+    // 须在构造时注入：构造体内 m_cron.start() 会装载 durable 台账，先于任何落盘解析定值可免中途切根重复装载。
+    explicit AgentLoop(const QString &sessionDataId = QString(), QObject *parent = nullptr);
     ~AgentLoop() override;
 
     // 启动代理循环（异步，不阻塞 UI 线程）
@@ -38,6 +43,20 @@ public:
     // 设置工作目录：作为 bash 执行的 cwd，并注入 system prompt（空串忽略，路径归一化为绝对路径）
     void setWorkDir(const QString &dir);
     QString workDir() const;
+
+    // 会话数据目录短 ID（见构造函数注释）。setSessionDataId 仅供未走构造注入的扩展路径调用，
+    // 须在首次落盘前设置；正常会话经 ChatSessionPage 构造注入。
+    void setSessionDataId(const QString &id);
+    // 会话数据根：有 ID → <m_workDir>/.lite-harness/sessions/<id>，无 ID → <m_workDir>/.lite-harness（回退）。
+    // 供 CompactManager/MemoryManager/CronSchedulerManager 注入回调与 taskRootDir 使用；
+    // 三引擎内部各拼自己的叶子段（.memory/.transcripts/.../scheduled_tasks.json），故 .lite-harness 中间层统一在此拼。
+    QString sessionDataRoot() const;
+
+    // 只读会话消息（供 ChatSessionPage 在磁盘恢复后重放 UI；系统消息在下标 0，重放侧自行跳过）
+    const QVector<QJsonObject> &messages() const { return m_messages; }
+    // 从会话数据根/history.json 恢复历史：保留 [0] 系统消息、追加落盘消息、为缺失结果的 tool_call
+    // 回填占位，恢复模型。无 ID / 文件不存在（全新会话）返回 false 且不置 error
+    bool loadSavedHistory(QString *error = nullptr);
 
     // 切换模型：下一轮请求生效（主请求即时读 m_model；压缩/记忆回调为取值 lambda，同样即时读到新值）
     void setModel(const QString &model);
@@ -80,6 +99,9 @@ private:
     // task 子代理需要复用本类的钩子注册表、权限门静态检查、工具定义与 handler 表构建器，
     // 以及 ToolHandler 嵌套类型（对外部接口零暴露，仅友元可见）
     friend class SubAgent;
+    // ChatSessionPage 恢复历史时需按实时链路一致口径渲染工具折叠块，复用私有静态
+    // toolSummaryOf（与 SubAgent 同走友元通道，不为此扩大公开 API 面）
+    friend class ChatSessionPage;
 
     // 发起一次流式聊天请求
     void startChatRequest(const QJsonArray &messages);
@@ -192,8 +214,12 @@ private:
     // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 六段结构（含 lcc 7e33a8e temp 段）的 lite 等价）
     void rebuildSystemPromptMessage();
 
+    // 将 m_messages（除 [0] 系统消息）落盘到会话数据根/history.json；无 ID 或历史为空则 no-op。
+    // 顺带在索引已登记该会话时刷新 lastActiveMs（不新建条目，登记由 LiteHarness 负责）
+    void persistHistory();
+
     // ---- 任务图（lcc s10 TaskManager 内联移植：SkillManager 档——不建类文件，结构体+方法内联私有段）----
-    // 存储 <workDir>/.lite-harness/.task/task_<hex8>.json，一任务一文件，每操作直读盘无缓存
+    // 存储 <会话根>/.task/task_<hex8>.json（会话根见 sessionDataRoot，按会话隔离），一任务一文件，每操作直读盘无缓存
     //（lcc env.py:19 第四隐藏目录；lite 有意偏差：收进 .lite-harness 中间目录）；
     // 异常纪律：内核 bool+错误出参保持 lcc 抛错语义，六个 run_* 处理器把一切失败折叠为错误字符串
     // 直接作为工具输出（lcc 裸抛崩主循环，lite 对齐 executeTool“一切失败皆字符串”纪律——登记偏差）
@@ -271,6 +297,7 @@ private:
 private:
     QString m_model;                 // 模型 ID，从环境变量 MODEL_ID 读取
     QString m_workDir;               // 工作目录，默认 QDir::currentPath()（构造时初始化）
+    QString m_sessionDataId;         // 会话数据目录短 ID（构造注入）；空=回退全局 .lite-harness。置于 init-list 末位：子对象声明序无关（其注入 lambda 均为 [this] 惰性读取 sessionDataRoot），真正不变量=成员 init 早于构造体内 m_cron.start() 的 durable 装载
     QVector<Skill> m_skills;         // 技能表（lcc s07）：构造与 setWorkDir 时扫描重建，仅主线程访问
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
     bool m_running = false;          // 防并发（尽量只主线程）

@@ -15,7 +15,8 @@
  *   tool_result_budget → snip_compact →(超阈值时) micro_compact → fit_tool_results → compact_history
  *
  * 与宿主（AgentLoop）的耦合全部经由构造函数注入的回调：
- *   - workDirSink：动态读取宿主工作目录（setWorkDir 后路径自然跟随，对应 lcc env 目录）；
+ *   - workDirSink：动态读取宿主会话数据根（含 .lite-harness 或按会话隔离的 sessions/<id>，
+ *     setWorkDir/会话 ID 变化后路径自然跟随，对应 lcc env 目录）；
  *   - modelSink：摘要 LLM 调用使用的模型 id（与主循环一致）；
  *   - cardSink：压缩发生时回传 GUI 卡片（宿主复用 toolOutputReady，见裁决 e）。
  *

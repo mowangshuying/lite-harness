@@ -13,8 +13,8 @@
  * 纯数据管理器：不建线程——本仓全事件驱动、零线程先例。1s 轮询节拍由宿主
  * AgentLoop 的 QTimer 驱动（tick 内调 pollDueJobs + 交付），本类负责 cron 表达式
  * 校验/匹配、任务台账、到期队列收割与 scheduled_tasks.json 持久化。
- * 存储：<workDir>/.lite-harness/scheduled_tasks.json（仿 s07 技能/s10 任务的
- * .lite-harness 中间目录约定，保存时惰性 mkpath）。
+ * 存储：<会话数据根>/scheduled_tasks.json（会话数据根由宿主注入的 workDirSink 提供，
+ * 含 .lite-harness 或按会话隔离的 .lite-harness/sessions/<id>；保存时惰性 mkpath）。
  *
  * 与 lcc 的有意偏差（移植转译，登记在案）：
  *   - threading.Thread 1s 轮询 → 宿主 QTimer（AgentLoop m_cronTick）；
@@ -115,7 +115,7 @@ public:
     QString listCrons() const;
 
 private:
-    // 落盘文件路径：m_workDirSink() + "/.lite-harness/scheduled_tasks.json"
+    // 落盘文件路径：m_workDirSink() + "/scheduled_tasks.json"
     QString durableFilePath() const;
     // 全量重写 durable 任务（lcc _save_durable_jobs，QSaveFile 原子写，键名逐字：
     // id/cron/prompt/recurring/durable/pending_delivery/last_fired）；失败返回 false 供调用方回滚

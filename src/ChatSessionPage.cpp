@@ -11,8 +11,13 @@
 #include "ToolBlock.h"
 #include "PermissionCard.h"
 #include "TodoCard.h"
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QHash>
+#include <QPair>
 
-ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
+ChatSessionPage::ChatSessionPage(const QString &sessionDataId, QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
     vMainLayout->setContentsMargins(35, 35, 35, 35);
@@ -31,7 +36,8 @@ ChatSessionPage::ChatSessionPage(QWidget *parent) : BasePage(parent)
     hLayout->addWidget(m_inputEdit, 1);
 
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
-    m_agentLoop = new AgentLoop(this);
+    // 会话数据 ID 经构造注入，令任务图/记忆/压缩转写/定时台账等落盘按会话隔离
+    m_agentLoop = new AgentLoop(sessionDataId, this);
     // 模型切换接线：用户在下拉框改选 → 后端 setModel（下一轮请求生效）
     connect(m_inputEdit, &ChatMsgEdit::modelChanged, m_agentLoop, &AgentLoop::setModel);
     // 初始显示同步为后端生效模型（MODEL_ID 环境变量值不在两选项内时，下拉回落显示 qwen3.8-flash）
@@ -209,6 +215,105 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
     m_agentLoop->run(userText);
+}
+
+void ChatSessionPage::closeReplayBubble()
+{
+    if (m_currentBubble)
+    {
+        m_currentBubble->finishStreaming();
+        m_currentBubble = nullptr;
+    }
+}
+
+void ChatSessionPage::restoreFromDisk()
+{
+    // 载入内存历史失败（无 ID/文件不存在/损坏）→ 保持空会话（全新会话即此态）
+    if (!m_agentLoop->loadSavedHistory())
+        return;
+    replayHistory(m_agentLoop->messages());
+    // 恢复后端生效模型到下拉框；setCurrentModel 不发 modelChanged，无回环
+    m_inputEdit->setCurrentModel(m_agentLoop->model());
+}
+
+void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
+{
+    // messages 为剔除 system 的会话主体（AgentLoop::messages() 已跳过下标 0）。
+    // user 走 setContent；assistant 段（含其后的 tool 结果）合入同一条流式气泡，
+    // 依「正文 → 工具块」到达顺序镜像实时渲染。简化偏差：assistant 正文一次性成段
+    // 输出后再接工具块（实时为交替），且 reasoning_content 不重放（恢复态不显思考块）。
+    QHash<QString, QPair<QString, QString>> pendingToolCalls; // tool_call_id -> {工具名, 参数 JSON 串}
+    for (const QJsonObject &msg : messages)
+    {
+        const QString role = msg.value(QStringLiteral("role")).toString();
+        if (role == QLatin1String("user"))
+        {
+            closeReplayBubble(); // 收束上一段 assistant
+            addMessage(MessageBubbleWidget::Role::User,
+                       msg.value(QStringLiteral("content")).toString());
+            pendingToolCalls.clear();
+            continue;
+        }
+        if (role == QLatin1String("assistant"))
+        {
+            const QJsonArray toolCalls = msg.value(QStringLiteral("tool_calls")).toArray();
+            if (toolCalls.isEmpty())
+            {
+                // 终态回复（无工具调用）：独立流式气泡承载正文后收尾
+                closeReplayBubble();
+                m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
+                m_currentBubble->startStreaming();
+                m_scrollView->getMainLayout()->addWidget(m_currentBubble);
+                scrollToBottom();
+                const QString content = msg.value(QStringLiteral("content")).toString();
+                if (!content.isEmpty())
+                    m_currentBubble->appendText(content);
+                closeReplayBubble();
+            }
+            else
+            {
+                // 带工具的中间 assistant：惰性开气泡（tool 消息可能无正文），续写正文并登记工具调用
+                if (!m_currentBubble)
+                {
+                    m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
+                    m_currentBubble->startStreaming();
+                    m_scrollView->getMainLayout()->addWidget(m_currentBubble);
+                    scrollToBottom();
+                }
+                const QString content = msg.value(QStringLiteral("content")).toString();
+                if (!content.isEmpty())
+                    m_currentBubble->appendText(content);
+                for (const QJsonValue &c : toolCalls)
+                {
+                    const QJsonObject co = c.toObject();
+                    const QJsonObject fn = co.value(QStringLiteral("function")).toObject();
+                    pendingToolCalls.insert(
+                        co.value(QStringLiteral("id")).toString(),
+                        qMakePair(fn.value(QStringLiteral("name")).toString(),
+                                  fn.value(QStringLiteral("arguments")).toString()));
+                }
+            }
+            continue;
+        }
+        if (role == QLatin1String("tool"))
+        {
+            const QString callId = msg.value(QStringLiteral("tool_call_id")).toString();
+            auto it = pendingToolCalls.find(callId);
+            if (it == pendingToolCalls.end() || !m_currentBubble)
+                continue; // 无配对/无气泡：跳过（理论上恢复历史已补齐配对，此为防御）
+            const QString toolName = it.value().first;
+            const QString argsStr = it.value().second;
+            pendingToolCalls.erase(it);
+            const QJsonObject args =
+                QJsonDocument::fromJson(argsStr.toUtf8()).object();
+            const QString summary = AgentLoop::toolSummaryOf(toolName, args);
+            m_currentBubble->appendToolExecution(
+                toolName, summary, msg.value(QStringLiteral("content")).toString());
+            scrollToBottom();
+            continue;
+        }
+    }
+    closeReplayBubble(); // 收尾末段 assistant（含被中断的 tool_calls）
 }
 
 void ChatSessionPage::setModel(const QString &model)

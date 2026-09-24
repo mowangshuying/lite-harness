@@ -11,7 +11,14 @@
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
+#include <QUuid>
 #include "QOpenAi.h"
+#include "SessionStore.h"
+#include <QDir>
+#include <QJsonArray>
+#include <QVector>
+#include <QDateTime>
+#include <algorithm> // std::stable_sort（Qt6 已移除 qStableSort）
 
 
 FRAMELESSHELPER_USE_NAMESPACE
@@ -21,6 +28,8 @@ LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
     __initUI();
     __initNavView();
     __connect();
+    // 导航骨架就绪后、事件循环前恢复历史会话（不切换当前页，仍停留在 NewChatPage）
+    __restoreSessions();
 }
 
 void LiteHarness::__initUI()
@@ -101,17 +110,32 @@ void LiteHarness::__createSession(const QString &text)
     if (title.isEmpty())
         title = tr("新会话");
 
-    auto sessionPage = new ChatSessionPage;
+    // 会话数据目录短 ID：一次性 uuid8（不随重启复用，避免串写），与仓内 task_<hex8> 命名风格一致；
+    // 与导航 UI key（Session_%1，仅进程内自增）解耦——后者不能直接当数据目录名。
+    const QString sessionDataId = QString::fromLatin1(
+        QUuid::createUuid().toRfc4122().toHex().left(8));
+
+    auto sessionPage = new ChatSessionPage(sessionDataId);
     // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
     sessionPage->setModel(m_newChatPage->currentModel());
     sessionPage->startConversation(text);
     m_sessions.insert(key, sessionPage);
     m_sLayout->addWidget(key, sessionPage);
 
+    // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
+    // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型
+    SessionStore::upsertEntry(
+        QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness")),
+        sessionDataId, title, m_newChatPage->currentModel(), QDir::currentPath());
+
     auto sessionsItem = (FluVNavigationIconTextItem *)m_navView->getItemByKey("SessionsGroup");
     auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
     if (childItem == nullptr)
         return;
+
+    // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
+    // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
+    sessionsItem->setItemWidth(sessionsItem->width());
 
     if (m_navView->isLong())
     {
@@ -121,6 +145,56 @@ void LiteHarness::__createSession(const QString &text)
             sessionsItem->adjustItemHeight(sessionsItem);
     }
     childItem->onItemClicked();
+}
+
+void LiteHarness::__restoreSessions()
+{
+    const QString root = QDir(QDir::currentPath()).filePath(QStringLiteral(".lite-harness"));
+    const QJsonArray index = SessionStore::loadIndex(root);
+    if (index.isEmpty())
+        return;
+
+    // 收集并按创建时间升序稳定排序，使恢复后导航顺序与历史创建顺序一致
+    QVector<QJsonObject> entries;
+    entries.reserve(index.size());
+    for (const QJsonValue &v : index)
+        entries.append(v.toObject());
+    std::stable_sort(entries.begin(), entries.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        return a.value(QStringLiteral("createdMs")).toDouble()
+             < b.value(QStringLiteral("createdMs")).toDouble();
+    });
+
+    auto sessionsItem = (FluVNavigationIconTextItem *)m_navView->getItemByKey("SessionsGroup");
+    for (const QJsonObject &e : std::as_const(entries))
+    {
+        const QString dataId = e.value(QStringLiteral("dataId")).toString();
+        if (dataId.isEmpty())
+            continue;
+        // 导航 key 用 "Session_" + 十六进制 dataId：hex 永不等于新会话的十进制自增，避免键冲突
+        const QString key = QStringLiteral("Session_") + dataId;
+        if (m_sessions.contains(key))
+            continue;
+
+        auto page = new ChatSessionPage(dataId);
+        page->restoreFromDisk(); // 无 history.json 则为空会话页
+        m_sessions.insert(key, page);
+        m_sLayout->addWidget(key, page);
+
+        const QString title = e.value(QStringLiteral("title")).toString();
+        auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, "SessionsGroup");
+        if (childItem == nullptr)
+            continue;
+        // 同 __createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
+        sessionsItem->setItemWidth(sessionsItem->width());
+        // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
+        if (m_navView->isLong())
+        {
+            if (sessionsItem->getItems().size() == 1)
+                sessionsItem->onItemClicked();
+            else
+                sessionsItem->adjustItemHeight(sessionsItem);
+        }
+    }
 }
 
 void LiteHarness::onThemeChanged()
