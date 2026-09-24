@@ -25,7 +25,7 @@
 #include <QDateTime>
 #include <QEvent>
 #include <QMouseEvent>
-#include <QInputDialog>
+#include "FluentInputDialog.h"
 #include <QTimer>   // singleShot(0) 延一拍执行磁盘数据目录递归删除
 #include <QDebug>   // qWarning：目录删除失败仅告警容忍（外部编辑器占用等）
 #include <algorithm> // std::stable_sort（Qt6 已移除 qStableSort）
@@ -345,10 +345,9 @@ void LiteHarness::__renameSession(const QString &key)
         return;
 
     const QString oldTitle = childItem->getLabel()->text();
-    bool ok = false;
-    const QString text = QInputDialog::getText(this, tr("重命名会话"), tr("名称"),
-                                               QLineEdit::Normal, oldTitle, &ok)
-                             .simplified();
+    // FluentUI 风格输入框（与删除确认的 FluMessageBox 同款骨架），替代原生 QInputDialog
+    const auto [input, ok] = FluentInputDialog::getInputText(this, tr("重命名会话"), tr("名称"), oldTitle);
+    const QString text = input.simplified();
     if (!ok || text.isEmpty() || text == oldTitle)
         return;
 

@@ -1,0 +1,31 @@
+FluentInputDialog {
+    background-color: transparent;
+}
+
+FluentInputDialog QWidget#windowMask {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+FluentInputDialog QFrame#centerWidget {
+    background-color: rgb(44, 48, 54);
+    border-radius: 8px;
+}
+
+FluentInputDialog QLabel#titleLabel {
+    font-size: 18px;
+    font-weight: bold;
+    color: rgb(255, 255, 255);
+    background-color: transparent;
+}
+
+FluentInputDialog QLabel#infoLabel {
+    font-size: 14px;
+    color: rgb(255, 255, 255);
+    background-color: transparent;
+}
+
+FluentInputDialog QWidget#btnWidget {
+    background-color: rgb(50, 54, 60);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}

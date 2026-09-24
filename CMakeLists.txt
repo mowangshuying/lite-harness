@@ -73,6 +73,8 @@ set(src
     "src/NewChatPage.h"
     "src/ChatSessionPage.cpp"
     "src/ChatSessionPage.h"
+    "src/FluentInputDialog.cpp"
+    "src/FluentInputDialog.h"
     "src/MessageBubbleWidget.cpp"
     "src/MessageBubbleWidget.h"
     "src/ThinkingBlock.cpp"
@@ -122,6 +124,9 @@ set (qss
         "./stylesheet/light/TodoCard.qss"
         "./stylesheet/dark/TodoCard.qss"
         "./stylesheet/atomOneDark/TodoCard.qss"
+        "./stylesheet/light/FluentInputDialog.qss"
+        "./stylesheet/dark/FluentInputDialog.qss"
+        "./stylesheet/atomOneDark/FluentInputDialog.qss"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 
