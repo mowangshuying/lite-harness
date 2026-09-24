@@ -59,6 +59,7 @@ protected:
 private:
     void updateSize();
     void scheduleStreamResize();
+    void scheduleSizeUpdate();  // 去抖版尺寸测量排队（见 .cpp 注释）
 
     // 统一配置的文段视图（主视图 + 工具块之后的新段），登记到 m_textViews 供测量
     QTextBrowser *makeTextView();
@@ -81,6 +82,7 @@ private:
     Role m_role = Assistant;
     QTextBrowser *m_content = nullptr;
     bool m_updatingSize = false;
+    bool m_sizeUpdatePending = false;  // scheduleSizeUpdate 排队守卫
     bool m_streaming = false;
     ThinkingBlock *m_liveThinking = nullptr; // 当前轮思考块：每轮思考区间新建，按到达顺序插入时间线
     QVector<TextRun> m_textRuns;          // 已冻结的文本段（按到达顺序）

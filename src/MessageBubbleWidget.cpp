@@ -143,9 +143,8 @@ QTextBrowser *MessageBubbleWidget::makeTextView()
     // Only listen to contentsChanged; defer to let document layout settle.
     // documentLayoutChanged is NOT connected — it fires on every setTextWidth
     // and causes recursion with QTextBrowser's internal viewport resizing.
-    connect(view->document(), &QTextDocument::contentsChanged, this, [this]() {
-        QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
-    });
+    connect(view->document(), &QTextDocument::contentsChanged,
+            this, &MessageBubbleWidget::scheduleSizeUpdate);
 
     m_textViews.append(view);
     return view;
@@ -224,7 +223,7 @@ void MessageBubbleWidget::setContent(const QString &content)
 
     // Defer measurement so the document finishes its internal layout pass
     // before we measure idealWidth / document size.
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 QString MessageBubbleWidget::content() const
@@ -247,7 +246,7 @@ QString MessageBubbleWidget::content() const
 
 void MessageBubbleWidget::refreshSize()
 {
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::startStreaming(const QString &placeholder)
@@ -258,7 +257,7 @@ void MessageBubbleWidget::startStreaming(const QString &placeholder)
     m_liveThinking = nullptr;
     m_content->setPlainText(placeholder);
     m_liveView = m_content;
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::appendThinkingText(const QString &delta)
@@ -336,7 +335,7 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
         stopThinkingInterval();
         m_liveMemoryBlock->setToolExecution(toolName, summary, output);
         m_liveMemoryBlock = nullptr;
-        QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+        scheduleSizeUpdate();
         return;
     }
 
@@ -362,7 +361,7 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     block->setExpanded(false);
     m_timeline->addWidget(block);
 
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::appendPermissionCard(QWidget *card)
@@ -391,7 +390,7 @@ void MessageBubbleWidget::appendPermissionCard(QWidget *card)
 
     m_timeline->addWidget(card);
 
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::appendMemoryProgress()
@@ -424,7 +423,7 @@ void MessageBubbleWidget::appendMemoryProgress()
     m_timeline->addWidget(block);
     m_liveMemoryBlock = block;
 
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::finalizeStreamedText()
@@ -436,7 +435,7 @@ void MessageBubbleWidget::finalizeStreamedText()
     {
         // 无思考、无工具块：直接渲染正文 markdown（保持原横向布局）
         m_content->setMarkdown(m_liveText);
-        QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+        scheduleSizeUpdate();
         return;
     }
 
@@ -458,7 +457,7 @@ void MessageBubbleWidget::finalizeStreamedText()
 
     // 思考块已在流式期间就地创建并收终态，不再重建（避免重复渲染与闪烁）
 
-    QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+    scheduleSizeUpdate();
 }
 
 void MessageBubbleWidget::finishStreaming()
@@ -489,6 +488,21 @@ void MessageBubbleWidget::stopThinkingInterval()
     // 本轮思考块标题切「思考了 N 秒」（N 为本轮耗时），未被打扰则自动折叠
     if (m_liveThinking)
         m_liveThinking->stopLive(elapsedMs / 1000);
+}
+
+void MessageBubbleWidget::scheduleSizeUpdate()
+{
+    // 去抖合并：同一事件循环轮次内已排队则跳过。
+    // 原先 12 处 singleShot(0, updateSize) 在一帧内多事件（contentsChanged/
+    // 新块插入/重试）各排一次全量测量，现在合并为一次；回调先清守卫再测量，
+    // updateSize 内部的 availW<=0 重试路径因此仍能在下一轮正常排队
+    if (m_sizeUpdatePending)
+        return;
+    m_sizeUpdatePending = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_sizeUpdatePending = false;
+        updateSize();
+    });
 }
 
 void MessageBubbleWidget::scheduleStreamResize()
@@ -546,7 +560,7 @@ void MessageBubbleWidget::updateSize()
         if (availW <= 0)
         {
             m_updatingSize = false;
-            QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+            scheduleSizeUpdate();
             return;
         }
 
@@ -587,7 +601,7 @@ void MessageBubbleWidget::updateSize()
         {
             // Viewport not yet realized — retry on next event loop tick
             m_updatingSize = false;
-            QTimer::singleShot(0, this, &MessageBubbleWidget::updateSize);
+            scheduleSizeUpdate();
             return;
         }
 
