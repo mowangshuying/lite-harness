@@ -15,6 +15,7 @@
 #include "CompactManager.h"
 #include "CronSchedulerManager.h"
 #include "MemoryManager.h"
+#include "TaskStore.h"
 
 class QProcess;
 class SubAgent;
@@ -54,7 +55,7 @@ public:
     // 定位/清理 index.json 条目与会话数据根。
     QString sessionDataId() const;
     // 会话数据根：有 ID → <m_workDir>/.lite-harness/sessions/<id>，无 ID → <m_workDir>/.lite-harness（回退）。
-    // 供 CompactManager/MemoryManager/CronSchedulerManager 注入回调与 taskRootDir 使用；
+    // 供 CompactManager/MemoryManager/CronSchedulerManager/TaskStore 注入回调使用；
     // 三引擎内部各拼自己的叶子段（.memory/.transcripts/.../scheduled_tasks.json），故 .lite-harness 中间层统一在此拼。
     QString sessionDataRoot() const;
 
@@ -224,57 +225,6 @@ private:
     // 顺带在索引已登记该会话时刷新 lastActiveMs（不新建条目，登记由 LiteHarness 负责）
     void persistHistory();
 
-    // ---- 任务图（lcc s10 TaskManager 内联移植：SkillManager 档——不建类文件，结构体+方法内联私有段）----
-    // 存储 <会话根>/.task/task_<hex8>.json（会话根见 sessionDataRoot，按会话隔离），一任务一文件，每操作直读盘无缓存
-    //（lcc env.py:19 第四隐藏目录；lite 有意偏差：收进 .lite-harness 中间目录）；
-    // 异常纪律：内核 bool+错误出参保持 lcc 抛错语义，六个 run_* 处理器把一切失败折叠为错误字符串
-    // 直接作为工具输出（lcc 裸抛崩主循环，lite 对齐 executeTool“一切失败皆字符串”纪律——登记偏差）
-    struct Task
-    {
-        QString id;
-        QString subject;
-        QString description;
-        QString status;
-        // python 的 owner: str | None 两态 → owned + owner（owned=false ≡ None；文案中呈现 'None'）
-        bool owned = false;
-        QString owner;
-        // 创建时间戳（lcc c3fe3f2 对齐）：对应 python float epoch 秒、create() 时 datetime.now().timestamp()；
-        // 声明序在 owner 之后、blockedBy 之前，taskToJsonText 手工拼行需按此声明序输出该键
-        double timestamp = 0.0;
-        QStringList blockedBy;
-    };
-
-    // 内核方法（对应 lcc TaskManager 各方法；全部 const：仅读写磁盘，不改动 AgentLoop 自身状态）
-    QString taskRootDir() const;
-    bool taskFilePath(const QString &taskId, QString *path, QString *error) const;
-    bool taskExists(const QString &taskId, bool *exists, QString *error) const;
-    bool loadTask(const QString &taskId, Task *task, QString *error) const;
-    bool saveTask(const Task &task, QString *error) const;
-    bool createTask(const QString &subject, const QString &description, Task *task, QString *error) const;
-    // 环检测 DFS（lcc _depends_on）：load 失败容错跳过（状态文件 :109 裁决；与 incompleteDependencies
-    // 的“坏依赖计为未完”容错方向相反——lcc 特性原样复刻，勿统一）
-    bool dependsOn(const QString &startId, const QString &targetId, bool *depends, QString *error) const;
-    bool updateTaskDependencies(const QString &taskId, const QJsonArray &addBlockedBy,
-                                Task *updated, QString *error) const;
-    bool listTasks(QVector<Task> *tasks, QString *error) const;
-    QStringList incompleteDependencies(const Task &task) const;
-    bool canStart(const QString &taskId, bool *startable, QString *error) const;
-    // 状态机：业务性失败（状态不符/被阻塞）按 lcc 以文本形式经 result 返回（非 *error）；
-    // 读盘/校验类失败经 *error 返回，由 run_* 折叠为工具输出
-    bool claimTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
-    bool completeTask(const QString &taskId, const QString &owner, QString *result, QString *error) const;
-    // asdict + json.dumps(indent=2) 的等价：键序按 Task 声明序手工输出（id/subject/description/status/owner/timestamp/blockedBy）
-    QString taskToJsonText(const Task &task) const;
-
-    // 六个工具 handler（mainToolHandlers 表路由同步执行；权限规则不涵盖任务图 → 无权限卡；
-    // 钩子文案零改动——toolUseInfo 不加任务图分支，对齐 lcc s10 hooks.py 字节不变）
-    QString runCreateTask(const QJsonObject &args) const;
-    QString runUpdateTask(const QJsonObject &args) const;
-    QString runListTasks() const;
-    QString runGetTask(const QJsonObject &args) const;
-    QString runClaimTask(const QJsonObject &args) const;
-    QString runCompleteTask(const QJsonObject &args) const;
-
     // ---- 定时任务（lcc s12 cron 三件套 handler，mainToolHandlers 表路由；改台账+落盘故非 const；
     // recurring/durable 缺省 true 对齐 lcc run_schedule_cron 默认参数；子代理白名单不含）----
     QString runScheduleCron(const QJsonObject &args);
@@ -333,6 +283,10 @@ private:
     // tick 轮询/交付/三 handler 共用本成员；1s QTimer 替代 lcc daemon 线程（登记偏差）
     CronSchedulerManager m_cron;
     QTimer *m_cronTick = nullptr; // 秒级节拍：pollDueJobs + tryDeliverCron（仅主线程）
+    // 任务图存储（lcc s10 TaskManager 移植；重构第三轮自本类拆出为独立类文件）：
+    // 六个 run_* 经 mainToolHandlers 表直通本成员；sessionRootSink 惰性取会话数据根，
+    // setWorkDir 切根后自然生效（与拆分前每操作现取 sessionDataRoot() 逐点等价）
+    TaskStore m_taskStore;
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;
