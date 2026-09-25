@@ -25,9 +25,6 @@
 
 namespace {
 
-// 工具调用轮次上限（防止模型反复请求工具形成死循环）
-constexpr int kMaxToolIterations = 300;
-
 // system prompt（lcc s09 loop.py build_system_prompt :29-69 六段 "\n\n" join 的移植，含 lcc
 // 7e33a8e 追加的 prompt_temp）：基础指引 + 临时目录指引 + 技能清单 + 记忆反注入声明 +
 // 记忆目录 + 相关记忆记录。base/temp/skills 段沿用 lcc 原文逐字不动；句间为正常空格
@@ -647,6 +644,12 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     connect(s, &QOpenAi::ChatStream::textDelta, this, &AgentLoop::textDelta);
 
     connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
+        // 卫兵（第六轮审计 C1 纵深防御）：坏 JSON 帧 error 后流已成终局，但 error 回调
+        // 链可能已在栈内完成回合终局（setRunning(false)），此刻残留帧再触发本信号则
+        // 必须弃收——否则向已终局的历史追加孤儿 tool_calls 消息，下一回合上游 400。
+        // s 的清理由 error 回调/stop() 负责，本分支不重复处置
+        if (!m_running)
+            return;
         m_currentStream = nullptr;
         s->deleteLater();
         // lcc s08：成功收到响应即视为上下文已可容纳，反应式重试预算复位（loop.py create 后 :50）
@@ -670,13 +673,13 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                 injected[QStringLiteral("content")] = force;
                 m_messages.append(injected);
 
-                if (++m_toolIterations > kMaxToolIterations)
+                if (++m_toolIterations > AgentConst::kMaxToolIterations)
                 {
                     // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
                     m_cron.finalizeInFlightDelivery(false);
                     setRunning(false);
                     persistHistory(); // 轮次上限失败终局也落盘（已累积历史不丢）
-emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
+                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(AgentConst::kMaxToolIterations));
                     return;
                 }
                 QJsonArray messagesJson;
@@ -714,13 +717,13 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
         }
 
         // 有工具调用 -> 防死循环计数
-        if (++m_toolIterations > kMaxToolIterations)
+        if (++m_toolIterations > AgentConst::kMaxToolIterations)
         {
             // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
             m_cron.finalizeInFlightDelivery(false);
             setRunning(false);
             persistHistory(); // 轮次上限失败终局也落盘
-                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
+            emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(AgentConst::kMaxToolIterations));
             return;
         }
 
@@ -1036,7 +1039,10 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
         {
             const QString output = QStringLiteral("Error: invalid tool arguments JSON (%1): %2")
                                        .arg(parseErr.errorString(), argsText.left(100));
-            onToolFinished(toolCall, toolName, toolSummary(toolName, args), output);
+            // 摘要占位（第六轮审计 C8）：args 为空对象时 toolSummary 会渲染出空白卡片头，
+            // 改取原始参数文本前 40 字符，让用户至少看得见模型提交了什么
+            onToolFinished(toolCall, toolName,
+                           QStringLiteral("%1: %2").arg(toolName, argsText.left(40)), output);
             return;
         }
         args = argsDoc.object();
@@ -1415,7 +1421,7 @@ void AgentLoop::registerBuiltinHooks()
     // 注：本实现中 bash/read_file 输出在 handler 内已先行截断到 AgentConst::kOutputCharLimit，
     // 钩子实际难以触发，与 lcc 现状一致（lcc 的 run_bash 同样先行截断），保留以对齐结构
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
-        if (output.size() > 100000)
+        if (output.size() > AgentConst::kLargeOutputThreshold)
             qDebug().noquote() << QStringLiteral("[hook] Large output from %1: %2 chars")
                                       .arg(callToolName(toolCall)).arg(output.size());
         return QString();
@@ -1801,7 +1807,7 @@ QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
     else
     {
         collected.sort();
-        shown = collected.mid(0, 200); // 输出前 200 条
+        shown = collected.mid(0, AgentConst::kGlobDisplayLimit); // 输出前 kGlobDisplayLimit 条
         if (collected.size() > 200)
             shown.append(QStringLiteral("...(more matches omitted; narrow the pattern)"));
     }
@@ -2198,6 +2204,28 @@ void AgentLoop::stop()
         m_awaitingPermission = false;
     }
 
+    // 半途工具批收口（第六轮审计 C2）：批执行中停止时，已完成的工具结果还压在
+    // m_toolResultsReady、未执行的调用还在 m_pendingToolCalls，而带 tool_calls 的
+    // assistant 消息已入历史——不补齐则 tool 配对断裂，closeEvent 后的 persistHistory
+    // 会把坏历史落盘、下一回合收到上游 400。三步：flush 已完成结果 → 为剩余每条调用
+    // 合成 "(stopped)" 结果（与 cancelSubAgent 的 "(cancelled)" 同纪律，直写历史、不经
+    // onToolFinished——不发展示信号不续跑队列）→ 清空两队列。
+    // 置于上两步之后：子代理/待决权限各自负责在途调用的收口，本段只兜"已完成未回填 +
+    // 未开始"两类队列态；若 cancelSubAgent 已清空队列，本段自然空转
+    for (const auto &value : m_toolResultsReady)
+        m_messages.append(value.toObject());
+    m_toolResultsReady = QJsonArray();
+    for (const auto &value : m_pendingToolCalls)
+    {
+        QJsonObject toolResult;
+        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+        toolResult[QStringLiteral("tool_call_id")] =
+            value.toObject().value(QStringLiteral("id")).toString();
+        toolResult[QStringLiteral("content")] = QStringLiteral("(stopped)");
+        m_messages.append(toolResult);
+    }
+    m_pendingToolCalls = QJsonArray();
+
     // 中断正在执行的 QProcess（其 finished 后 onToolFinished 因 m_running=false 不再继续）
     for (QProcess *p : m_activeProcesses)
     {
@@ -2209,7 +2237,7 @@ void AgentLoop::stop()
     // 主动取消当前流（cancel 内部设 done=true，后续信号不再处理）
     if (m_currentStream)
     {
-        static_cast<QOpenAi::ChatStream*>(m_currentStream.data())->cancel();
+        m_currentStream->cancel();
         m_currentStream->disconnect(this);
         m_currentStream->deleteLater();
         m_currentStream = nullptr;
@@ -2320,7 +2348,7 @@ QJsonArray AgentLoop::createToolsDefinition()
 
         QJsonObject todosSchema;
         todosSchema[QStringLiteral("type")] = QStringLiteral("array");
-        todosSchema[QStringLiteral("maxItems")] = 20;
+        todosSchema[QStringLiteral("maxItems")] = AgentConst::kTodoMaxItems;
         todosSchema[QStringLiteral("items")] = items;
 
         QJsonObject properties;

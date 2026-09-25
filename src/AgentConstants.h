@@ -23,6 +23,20 @@ inline const QString kDefaultModel = kModelOptions.first();
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
 constexpr int kMaxTokens = 8000;
 
+// 工具调用轮次上限（防止模型反复请求工具形成死循环；自 AgentLoop.cpp 匿名 ns 收敛）
+constexpr int kMaxToolIterations = 300;
+
+// PostToolUse large_output 提醒阈值（字符数，lcc 语义独立于 kOutputCharLimit 截断上限：
+// 截断发生在 BashRunner/工具侧，此处是"未截断的超长输出"给模型的额外提醒门槛）
+constexpr qsizetype kLargeOutputThreshold = 100000;
+
+// todo_write 清单项数上限（schema maxItems，超限交模型重试）
+constexpr int kTodoMaxItems = 20;
+
+// glob 工具结果展示条数（超出部分折叠为 "more matches omitted" 提示；
+// 受 kGlobCollectLimit 收集上限约束，见上方注释的相对关系）
+constexpr qsizetype kGlobDisplayLimit = 200;
+
 // bash 工具执行超时（毫秒）：前台/后台/子代理三处共用
 constexpr int kBashTimeoutMs = 120000;
 

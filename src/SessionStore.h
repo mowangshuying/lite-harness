@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QDateTime>
+#include <QDebug>
 
 class SessionStore
 {
@@ -52,6 +53,14 @@ public:
         return file.commit();
     }
 
+    // 索引回写失败的统一告警（第六轮审计 C8）：仅 qWarning 不改控制流——history.json 会话主副本
+    // 不受影响，索引只影响启动恢复清单；失败多为暂态（占用/权限），下次登记会顺带重写整表。
+    static void warnIfSaveFailed(bool saved, const QString &root, const QString &op)
+    {
+        if (!saved)
+            qWarning() << "SessionStore:" << op << "写索引失败:" << indexFilePath(root);
+    }
+
     // 登记/刷新单条会话索引项：命中 dataId 就地更新（title/model/workDir 非空才覆盖）并刷新
     // lastActiveMs；未命中则追加新项（createdMs/lastActiveMs 取当前时刻）。title/model 传空表示不改动
     static void upsertEntry(const QString &root, const QString &dataId, const QString &title,
@@ -74,7 +83,7 @@ public:
                 obj[QStringLiteral("workDir")] = workDir;
             obj[QStringLiteral("lastActiveMs")] = now;
             entries[i] = obj;
-            saveIndex(root, entries);
+            warnIfSaveFailed(saveIndex(root, entries), root, QStringLiteral("upsert(更新)"));
             return;
         }
         QJsonObject entry;
@@ -85,7 +94,7 @@ public:
         entry[QStringLiteral("createdMs")] = now;
         entry[QStringLiteral("lastActiveMs")] = now;
         entries.append(entry);
-        saveIndex(root, entries);
+        warnIfSaveFailed(saveIndex(root, entries), root, QStringLiteral("upsert(追加)"));
     }
 
     // 删除单条会话索引项：命中 dataId 则移出并回写，返回 true；未命中返回 false（不写盘）。
@@ -100,7 +109,7 @@ public:
             if (entries.at(i).toObject().value(QStringLiteral("dataId")).toString() != dataId)
                 continue;
             entries.removeAt(i);
-            saveIndex(root, entries);
+            warnIfSaveFailed(saveIndex(root, entries), root, QStringLiteral("remove"));
             return true;
         }
         return false;

@@ -368,7 +368,7 @@ void SubAgent::cancel()
 
     if (m_currentStream)
     {
-        static_cast<QOpenAi::ChatStream *>(m_currentStream.data())->cancel();
+        m_currentStream->cancel();
         m_currentStream->disconnect();
         m_currentStream->deleteLater();
         m_currentStream = nullptr;

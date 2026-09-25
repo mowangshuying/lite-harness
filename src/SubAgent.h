@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "AgentLoop.h" // ToolHandler 为 AgentLoop 嵌套类型（friend class SubAgent 授权访问）
+#include "QOpenAi.h"   // m_currentStream 类型化弱引用需 ChatStream 完整类型（审计 C8）
 
 class QProcess;
 
@@ -76,7 +77,7 @@ private:
     QVector<QJsonObject> m_messages;        // 独立对话历史
     QJsonArray m_pendingToolCalls;          // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;          // 已执行完、待回填的 tool 结果消息
-    QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
+    QPointer<QOpenAi::ChatStream> m_currentStream = nullptr; // 当前 ChatStream（弱引用，类型化后取消处免 static_cast 向下转型）
     QList<QProcess *> m_activeProcesses;    // 正在运行的 QProcess，cancel()/析构时 kill
     QJsonObject m_pendingPermissionCall;    // 等待权限裁决的工具调用（自身队列暂停上下文）
     bool m_awaitingPermission = false;      // 权限询问中

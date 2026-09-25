@@ -15,6 +15,7 @@
 #include "CompactManager.h"
 #include "CronSchedulerManager.h"
 #include "MemoryManager.h"
+#include "QOpenAi.h" // m_currentStream 类型化弱引用需 ChatStream 完整类型（审计 C8）
 #include "TaskStore.h"
 
 class QProcess;
@@ -289,7 +290,7 @@ private:
     QVector<Skill> m_skills;         // 技能表（lcc s07）：构造与 setWorkDir 时扫描重建，仅主线程访问
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
     bool m_running = false;          // 防并发（尽量只主线程）；P2 起写入一律经 setRunning（runningChanged 同点发射）
-    QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
+    QPointer<QOpenAi::ChatStream> m_currentStream = nullptr; // 当前 ChatStream（弱引用，类型化后取消处免 static_cast 向下转型）
     // 侧链在途请求句柄（异步化 P1，设计文档 §3.4）：m_running 为 true 期间至多一条前链
     // （当前为记忆召回，P3 起压缩侧链共用本槽）。对象归属纪律同 m_currentStream：
     // parent 到 this 随析构自动作废（回调丢弃、在途 reply abort），QPointer 防终态后悬挂；

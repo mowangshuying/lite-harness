@@ -219,7 +219,12 @@ void ChatStream::processFrame(const QByteArray &frame)
     if (!doc.isObject())
     {
         // 带 data: 前缀却是坏 JSON：属协议错误而非噪声（噪声已在上方非 data: 分支被吸收），
-        // 维持 emit error 终局语义——调用方（AgentLoop/SubAgent）错误分支会落盘历史，不做降级
+        // 维持 emit error 终局语义——调用方（AgentLoop/SubAgent）错误分支会落盘历史，不做降级。
+        // 终局三件套与 finishStream 各错误分支对齐（done → cleanupReply → emit）：不置 done
+        // 则同批后续帧继续处理、残留帧还能触发 finishStream 发出 messageFinished，
+        // 与 error 后的回合终局竞态（第六轮审计 C1）
+        d->done = true;
+        cleanupReply();
         emit error(tr("SSE 帧 JSON 解析失败: %1").arg(payload.left(200)));
         return;
     }

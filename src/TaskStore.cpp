@@ -316,7 +316,13 @@ bool TaskStore::createTask(const QString &subject, const QString &description, T
             continue; // 撞名重试 ≡ 原 NewOnly 语义（QSaveFile 无独占创建；GUI 线程串行循环，无并发竞态）
         QSaveFile file(path);
         if (!file.open(QIODevice::WriteOnly))
-            continue;
+        {
+            // 第六轮审计 C4：open 失败非撞名（权限/磁盘类），continue 会空转百次后报
+            // 误导性的"无法分配唯一 ID"——立即返回真实原因，与本文件写盘失败文案族同式
+            if (error)
+                *error = QStringLiteral("Task file write failed: %1 (%2)").arg(path, file.errorString());
+            return false;
+        }
         Task created;
         created.id = id;
         created.subject = trimmed;
