@@ -118,8 +118,12 @@ private:
     // toolSummaryOf（与 SubAgent 同走友元通道，不为此扩大公开 API 面）
     friend class ChatSessionPage;
 
-    // 发起一次流式聊天请求
+    // 发起一次流式聊天请求（P3 起为「压缩前导 + 真实发起」两段式的入口：先跑
+    // applyCompactPipelineAsync，压缩续延落地后再 doStartChatRequest）
     void startChatRequest(const QJsonArray &messages);
+    // 真实发起段：组请求体、createStream、接三条信号（原 startChatRequest 主体逐字平移；
+    // 顶部保留 !m_running 防御卫兵）
+    void doStartChatRequest(const QJsonArray &requestMessages);
     // 有工具调用：追加带 tool_calls 的 assistant 消息并进入工具执行链
     void continueWithToolResults(const QJsonObject &assistantMessage);
     // 依次取出待执行工具，全部完成后回填结果并再次请求
@@ -184,8 +188,15 @@ private:
     // "(cancelled)" tool_result 直写历史 → 清父队列；stop()/错误链/析构三路复用
     void cancelSubAgent();
     // 压缩流水线挂接点（lcc s08）：发送请求前对会话（不含 system）跑 prepare() 五级压缩，
-    // 有变化则回写 m_messages（裁决 g：保留 m_messages[0] system）；返回是否发生了改写
+    // 有变化则回写 m_messages（裁决 g：保留 m_messages[0] system）；返回是否发生了改写。
+    // 同步版仅作迁移期兼容面（P3 后 startChatRequest 已改走异步版，P4 删净）
     bool applyCompactPipeline();
+    // 五级压缩异步挂接点（P3，设计文档 §2.3）：本地段同步跑，仅触发全量压缩时挂起；
+    // 续延在回写压缩结果后以最终消息快照交付 next（未改写则原样透传 callerMessages）。
+    // 在途句柄挂 m_sideRequest（与召回共用槽）：压缩中 stop → done 永久静默 →
+    // next 不执行、历史不被替换（P3 验证点）
+    void applyCompactPipelineAsync(const QJsonArray &callerMessages,
+                                   std::function<void(const QJsonArray &requestMessages)> next);
     // 用压缩后的会话（不含 system）替换 m_messages：[system] + conversation 重新拼接
     void applyCompressedConversation(const QVector<QJsonObject> &conversation);
     // 文件类工具（本地 IO，同步执行；经 handler 表路由，参数取自解析后的 arguments JSON）。

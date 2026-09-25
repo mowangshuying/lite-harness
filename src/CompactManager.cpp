@@ -446,10 +446,9 @@ QString CompactManager::summaryInput(const QVector<QJsonObject> &conversation) c
     return dumped.left(20000) + middleOmitMarker() + dumped.right(60000);
 }
 
-// lcc summarize_history：阻塞式一次 LLM 调用（QOpenAi::chat().create()）。
-// 嵌套事件循环豁免（裁决 f）：本调用只发生在宿主 startChatRequest 入口/批尾替换/反应式窗口，
-// 此刻无活动流、无挂起权限、无子代理在跑；返回后宿主检查 m_running 再决定是否继续发请求。
-QString CompactManager::summarizeHistory(const QVector<QJsonObject> &conversation) const
+// 摘要请求体：system（反注入三句）+ user（summaryInput）+ model/max_tokens。
+// 同步与异步两条链共用，保证请求逐字段等价（P3 拆分，照 P1 buildRecallPrompt 范式）
+QJsonObject CompactManager::buildSummaryRequest(const QVector<QJsonObject> &conversation) const
 {
     QJsonArray messages;
     QJsonObject systemMessage;
@@ -465,6 +464,16 @@ QString CompactManager::summarizeHistory(const QVector<QJsonObject> &conversatio
     request[QStringLiteral("model")] = m_modelSink();
     request[QStringLiteral("messages")] = messages;
     request[QStringLiteral("max_tokens")] = kSummaryMaxTokens;
+    return request;
+}
+
+// lcc summarize_history：阻塞式一次 LLM 调用（QOpenAi::chat().create()）。
+// 嵌套事件循环豁免（裁决 f）：本调用只发生在宿主 startChatRequest 入口/批尾替换/反应式窗口，
+// 此刻无活动流、无挂起权限、无子代理在跑；返回后宿主检查 m_running 再决定是否继续发请求。
+// 同步版仅作迁移期兼容面（P3 后 AgentLoop 三处已全改走异步链，P4 删净）。
+QString CompactManager::summarizeHistory(const QVector<QJsonObject> &conversation) const
+{
+    const QJsonObject request = buildSummaryRequest(conversation);
 
     QString summary;
     const QJsonObject response = QOpenAi::chat().create(request);
@@ -483,6 +492,30 @@ QString CompactManager::summarizeHistory(const QVector<QJsonObject> &conversatio
                           .trimmed();
     }
     return summary.isEmpty() ? QStringLiteral("(empty summary)") : summary;
+}
+
+// 摘要 LLM 段的异步版（P3，设计文档 §3.3）：请求体与同步链 buildSummaryRequest 逐字段
+// 等价，超时/取消/错误经 AsyncRequest 折叠为 error 字符串。失败/超时交付空串并保留同步链
+// 同款 qWarning 日志；"(empty summary)" 占位由上层组装点补齐（镜像同步链占位归属，等价）。
+// ctx 为生命周期锚：请求 parent 到 ctx，ctx 析构即链作废、done 永久静默（宿主契约：
+// ctx 存活期间 done 必达一次）；本函数对 conversation 仅只读（序列化进 prompt），无悬挂引用。
+QOpenAi::AsyncRequest *
+CompactManager::summarizeHistoryAsync(const QVector<QJsonObject> &conversation, QObject *ctx,
+                                      std::function<void(const QString &summary)> done) const
+{
+    return QOpenAi::AsyncRequest::sendText(
+        buildSummaryRequest(conversation), ctx,
+        [done](const QString &content, const QString &error) {
+            QString summary;
+            if (!error.isEmpty()) {
+                // 与同步链 error 键分支同款降级日志（超时/4xx/重试用尽/网络错误统一入口）
+                qWarning().noquote() << QStringLiteral("[compact] 摘要调用失败 %1").arg(error);
+            } else {
+                summary = content.trimmed();
+            }
+            if (done)
+                done(summary); // 失败/空内容一律交付空串，占位由调用点补
+        });
 }
 
 // lcc summary_message：单条 user 消息，含档位标签、当前请求、摘要与转写路径。
@@ -520,7 +553,8 @@ void CompactManager::emitCard(const QString &cardSummary, qsizetype beforeChars,
                    .arg(afterChars));
 }
 
-// lcc compact_history：转写全量 → 摘要 → 整个会话替换为单条摘要消息（print 由卡片承接）
+// lcc compact_history：转写全量 → 摘要 → 整个会话替换为单条摘要消息（print 由卡片承接）。
+// 同步版仅作迁移期兼容面（P4 删净），调用方应改走 compactHistoryAsync。
 QVector<QJsonObject> CompactManager::compactHistory(const QVector<QJsonObject> &conversation,
                                                     const QString &activeRequest,
                                                     const QString &cardSummary) const
@@ -536,8 +570,39 @@ QVector<QJsonObject> CompactManager::compactHistory(const QVector<QJsonObject> &
     return replaced;
 }
 
+// compact_history 的异步版（P3，设计文档 §2.3/§3.3）：转写落盘在同步段先行
+// （与摘要的相对时序、"(transcript unavailable)" 占位逐字不变），仅摘要段挂起；
+// 续延内组装 replaced、发卡片、再交付 done——卡片相对压缩替换的位置与同步版一致
+// （CardSink 时序红线）。this 捕获安全：本对象是宿主（ctx）成员，与 ctx 同生共死。
+QOpenAi::AsyncRequest *
+CompactManager::compactHistoryAsync(const QVector<QJsonObject> &conversation,
+                                    const QString &activeRequest, const QString &cardSummary,
+                                    QObject *ctx,
+                                    std::function<void(const QVector<QJsonObject> &replaced)> done) const
+{
+    const qsizetype beforeChars = estimateChars(conversation);
+    QString transcript = writeTranscript(conversation);
+    if (transcript.isEmpty())
+        transcript = QStringLiteral("(transcript unavailable)"); // 落盘失败占位（偏差登记）
+
+    return summarizeHistoryAsync(
+        conversation, ctx,
+        [this, conversation, activeRequest, cardSummary, beforeChars, transcript, done](
+            const QString &rawSummary) {
+            // 摘要失败/空内容 → "(empty summary)" 占位（同步链 summarizeHistory 末尾同款）
+            const QString summary =
+                rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
+            const QVector<QJsonObject> replaced{ summaryMessage(QStringLiteral("Compacted"),
+                                                                activeRequest, summary, transcript) };
+            emitCard(cardSummary, beforeChars, estimateChars(replaced), transcript);
+            if (done)
+                done(replaced);
+        });
+}
+
 // lcc reactive_compact：转写全量 → 保尾 KEEP_RECENT_MESSAGES(5) 条（回退防切开配对）→
-// 对旧段摘要 → [摘要消息(+尾段)]（print 由卡片承接）
+// 对旧段摘要 → [摘要消息(+尾段)]（print 由卡片承接）。
+// 同步版仅作迁移期兼容面（P4 删净），调用方应改走 reactiveCompactAsync。
 QVector<QJsonObject> CompactManager::reactiveCompact(const QVector<QJsonObject> &conversation,
                                                      const QString &activeRequest,
                                                      const QString &cardSummary) const
@@ -562,8 +627,51 @@ QVector<QJsonObject> CompactManager::reactiveCompact(const QVector<QJsonObject> 
     return replaced;
 }
 
+// reactive_compact 的异步版（P3）：空 conversation 短路零请求（done 同步交付原会话、
+// 返回 nullptr，与同步版"原样返回"逐字等价）；转写与 retreatToolBatch 配对保护回退在
+// 同步段先行（语义、占位不动），仅旧段摘要挂起；续延内组装与卡片时序同同步版。
+QOpenAi::AsyncRequest *
+CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
+                                     const QString &activeRequest, const QString &cardSummary,
+                                     QObject *ctx,
+                                     std::function<void(const QVector<QJsonObject> &replaced)> done) const
+{
+    if (conversation.isEmpty())
+    {
+        if (done)
+            done(conversation);
+        return nullptr;
+    }
+    const qsizetype beforeChars = estimateChars(conversation);
+    QString transcript = writeTranscript(conversation);
+    if (transcript.isEmpty())
+        transcript = QStringLiteral("(transcript unavailable)");
+    const qsizetype tailStart =
+        retreatToolBatch(conversation, qMax(0, conversation.size() - kKeepRecentMessages));
+    const QVector<QJsonObject> oldHistory =
+        tailStart > 0 ? conversation.first(tailStart) : conversation;
+
+    return summarizeHistoryAsync(
+        oldHistory, ctx,
+        [this, conversation, activeRequest, cardSummary, beforeChars, transcript, tailStart, done](
+            const QString &rawSummary) {
+            const QString summary =
+                rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
+            const QJsonObject message = summaryMessage(QStringLiteral("Reactive compact"),
+                                                       activeRequest, summary, transcript);
+            QVector<QJsonObject> replaced;
+            replaced.append(message);
+            if (tailStart > 0)
+                replaced.append(conversation.mid(tailStart));
+            emitCard(cardSummary, beforeChars, estimateChars(replaced), transcript);
+            if (done)
+                done(replaced);
+        });
+}
+
 // lcc prepare：预算 → 截断归档 →（仍超 50000）micro →（仍超）fit →（仍超）全量压缩。
 // target = int(50000*0.8) = 40000，与 lcc 一致。
+// 同步版仅作迁移期兼容面（P4 删净），调用方应改走 prepareAsync。
 void CompactManager::prepare(QVector<QJsonObject> &conversation, const QString &activeRequest,
                              const QString &autoCompactCardSummary) const
 {
@@ -577,4 +685,42 @@ void CompactManager::prepare(QVector<QJsonObject> &conversation, const QString &
         fitToolResults(conversation, targetChars);
     if (estimateChars(conversation) > kContextCharLimit)
         conversation = compactHistory(conversation, activeRequest, autoCompactCardSummary);
+}
+
+// prepare 的异步版（P3，设计文档 §2.3）：前四段本地管线同步跑（逐字平移同步版），
+// 仅触发全量压缩时经 compactHistoryAsync 挂起。conversation 按值入参（偏离 §3.3
+// 草案的原地引用：挂起跨越 await 后调用方栈上引用可能已析构，改由 done 按值交付
+// 最终态）；changed = 最终态与入参不等价，镜像同步宿主 `conversation == original`
+// 判定——挂起路径下即便本地段已改写会话，仍以最终 replaced 对 original 的比对为准。
+QOpenAi::AsyncRequest *
+CompactManager::prepareAsync(QVector<QJsonObject> conversation, const QString &activeRequest,
+                             const QString &autoCompactCardSummary, QObject *ctx,
+                             std::function<void(bool changed,
+                                                const QVector<QJsonObject> &conversation)> done) const
+{
+    const QVector<QJsonObject> original = conversation;
+    toolResultBudget(conversation);
+    snipCompact(conversation);
+    if (estimateChars(conversation) <= kContextCharLimit)
+    {
+        if (done)
+            done(conversation != original, conversation);
+        return nullptr;
+    }
+    const qsizetype targetChars = kContextCharLimit * 8 / 10;
+    microCompact(conversation, targetChars);
+    if (estimateChars(conversation) > kContextCharLimit)
+        fitToolResults(conversation, targetChars);
+    if (estimateChars(conversation) <= kContextCharLimit)
+    {
+        if (done)
+            done(conversation != original, conversation);
+        return nullptr;
+    }
+    return compactHistoryAsync(
+        conversation, activeRequest, autoCompactCardSummary, ctx,
+        [original, done](const QVector<QJsonObject> &replaced) {
+            if (done)
+                done(replaced != original, replaced);
+        });
 }

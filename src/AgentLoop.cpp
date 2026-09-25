@@ -610,16 +610,22 @@ void AgentLoop::run(const QString &userMessage)
 
 void AgentLoop::startChatRequest(const QJsonArray &messages)
 {
-    // 发送前压缩挂接（lcc s08 prepare：位于 lcc 主循环 while 顶部，即每次发起请求之前）：
-    // 命中改写时 m_messages 已被回写，请求消息从历史重建快照；未变化则沿用调用方快照
-    QJsonArray requestMessages = messages;
-    if (applyCompactPipeline())
-    {
-        requestMessages = QJsonArray();
-        for (const auto &msg : m_messages)
-            requestMessages.append(msg);
-    }
-    // 嵌套事件循环豁免（裁决 f）：prepare 内的摘要调用为阻塞式，返回后若用户已停止则放弃发送
+    // 发送前压缩挂接（lcc s08 prepare：位于 lcc 主循环 while 顶部，即每次发起请求之前）。
+    // P3 异步化：前四段本地管线仍同步跑，仅触发全量压缩时挂侧链；续延以最终快照
+    // 交付 doStartChatRequest（未改写则原样透传调用方快照）——本地早退路径下
+    // next 在本函数栈内同步执行，与挂起路径统一为"回调续延"单一时序模型
+    applyCompactPipelineAsync(messages,
+                              [this](const QJsonArray &requestMessages) {
+                                  doStartChatRequest(requestMessages);
+                              });
+}
+
+// 真实发起段：原 startChatRequest 主体逐字平移（组请求体、createStream、三信号接线）。
+// 顶部 !m_running 为防御卫兵：异步链的正常路径已由续延回调首行卫兵把关
+// （原"嵌套事件循环豁免（裁决 f）——阻塞摘要返回后用户已停止则放弃发送"的
+// 检查点随压缩挂起而失去语义，卫兵保留仅作纵深防御）
+void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
+{
     if (!m_running)
         return;
 
@@ -735,17 +741,27 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
              lowered.contains(QStringLiteral("too many tokens"))) &&
             m_reactiveRetries < 1)
         {
+            // 重试预算在发起前消费（原同步段 ++ 位置不动，防重试风暴）；空对话短路时
+            // 预算同样被消费——同步版行为一致（reactiveCompact 空对话原样返回后重发）
             ++m_reactiveRetries;
-            const QVector<QJsonObject> replaced = m_compact.reactiveCompact(
-                m_messages.mid(1), m_activeRequest, tr("反应式压缩（上下文超限）"));
-            // 摘要为阻塞调用，期间用户可能已停止：放弃重发（stop 信号已负责收尾）
-            if (!m_running)
-                return;
-            applyCompressedConversation(replaced);
-            QJsonArray retryMessages;
-            for (const auto &msg2 : m_messages)
-                retryMessages.append(msg2);
-            startChatRequest(retryMessages);
+            // P3 异步化：摘要侧链挂起，本函数立即返回（cancelSubAgent 保持在发起压缩
+            // 之前——原相对顺序不动）；续延交付后回写并重发。挂起窗口 m_running 恒 true
+            // （cron 拒投门槛持续成立，与召回在途契约一致，§6-9）；此间 stop → done
+            // 被 m_sideRequest cancel 永久静默 → 不重发、历史不被压缩替换（收尾由
+            // stop 自身完成），回调首行卫兵仅作防御复验
+            auto *req = m_compact.reactiveCompactAsync(
+                m_messages.mid(1), m_activeRequest, tr("反应式压缩（上下文超限）"), this,
+                [this](const QVector<QJsonObject> &replaced) {
+                    if (!m_running)
+                        return;
+                    applyCompressedConversation(replaced);
+                    QJsonArray retryMessages;
+                    for (const auto &msg2 : m_messages)
+                        retryMessages.append(msg2);
+                    startChatRequest(retryMessages);
+                });
+            if (req)
+                m_sideRequest = req;
             return;
         }
         // lcc 31a99d1：流错误失败终局——在途 cron 批回队（反应式压缩重发分支非终局，不处理）
@@ -761,6 +777,7 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
 // 有改写则回写历史并返回 true（调用方据此重建请求快照）
 bool AgentLoop::applyCompactPipeline()
 {
+    // 同步版仅作迁移期兼容面（P3 后 startChatRequest 已改走异步版，P4 删净）
     if (m_messages.isEmpty())
         return false;
     QVector<QJsonObject> conversation = m_messages.mid(1);
@@ -773,6 +790,45 @@ bool AgentLoop::applyCompactPipeline()
         return false;
     applyCompressedConversation(conversation);
     return true;
+}
+
+// 五级压缩异步挂接点（P3，设计文档 §2.3）：判定逻辑镜像同步版——本地四段在
+// CompactManager::prepareAsync 内同步跑，仅全量压缩（含摘要 LLM 调用）挂起。
+// 压缩中 stop → stop 的 m_sideRequest cancel 使 done 永久静默 → next 不执行、
+// 历史不被替换、不落盘（P3 验证点，对应同步版 :770 卫兵"阻塞摘要返回后不回了就不改写"）。
+// 落槽纪律：条件写入 `if (req)`——本地早退路径 done 在 prepareAsync 返回前已同步交付、
+// 回调链可能在栈内继续发起新侧链写槽，外层无条件清空会覆盖新句柄；挂起路径的 done
+// 必在后续事件循环交付（AsyncRequest 永不回调同步触发），与栈尾落槽无竞态。
+// §6-9 并发论证：本挂接点仅由 startChatRequest 驱动（单一前链），批尾与召回续延
+// 各自串成一条链，同一时刻至多一条侧链在途——与召回共用 m_sideRequest 槽安全
+void AgentLoop::applyCompactPipelineAsync(const QJsonArray &callerMessages,
+                                          std::function<void(const QJsonArray &requestMessages)> next)
+{
+    if (m_messages.isEmpty())
+    {
+        if (next)
+            next(callerMessages);
+        return;
+    }
+    auto *req = m_compact.prepareAsync(
+        m_messages.mid(1), m_activeRequest, tr("自动压缩（上下文超限）"), this,
+        [this, callerMessages, next](bool changed, const QVector<QJsonObject> &conversation) {
+            // 续延卫兵（同 P1 召回范式）：stop 后不回写历史、不发请求
+            if (!m_running)
+                return;
+            QJsonArray requestMessages = callerMessages;
+            if (changed)
+            {
+                applyCompressedConversation(conversation);
+                requestMessages = QJsonArray();
+                for (const auto &msg : m_messages)
+                    requestMessages.append(msg);
+            }
+            if (next)
+                next(requestMessages);
+        });
+    if (req)
+        m_sideRequest = req;
 }
 
 // 压缩结果回写（裁决 g）：保留 m_messages[0] system，会话主体整体替换
@@ -914,21 +970,38 @@ void AgentLoop::runNextTool()
 
         // 批尾 compact 替换（lcc s08 loop.py：结果批 append 进历史后，若 compact_requested 则
         // compact_history 替换整个历史——顺序红线 reminder→results 追加→压缩替换，不可交换；
-        // 被替换的历史不再含 compact 的 tool_calls，OpenAI 配对因此保持完整）
+        // 被替换的历史不再含 compact 的 tool_calls，OpenAI 配对因此保持完整）。
+        // P3 异步化：摘要段挂起为侧链，压缩之后的落盘检查点/快照/重发全部搬进续延，
+        // 相对顺序逐字不变；results 回填与 reminder 均已在同步段完成（红线起点不动）。
+        // 挂起窗口 m_running 恒 true：run() 重入被 :555 卫兵拒绝、工具链由 runNextTool
+        // 单一驱动 → 同一时刻至多一条前链在途，与召回/反应式压缩共用 m_sideRequest 槽
+        // 安全（§6-9 并发论证）。此间 stop → done 被 cancel 永久静默 → persistHistory
+        // 不执行、历史不被替换，停在上一检查点（同步版 :924 卫兵"阻塞摘要返回后不回了
+        // 就不改写"同款语义），回调首行卫兵仅作防御复验
         if (m_compactRequested)
         {
             m_compactRequested = false;
-            const QVector<QJsonObject> replaced = m_compact.compactHistory(
-                m_messages.mid(1), m_activeRequest, tr("主动压缩（compact 工具）"));
-            // 摘要为阻塞调用，期间可能已被 stop()：放弃后续请求
-            if (!m_running)
-                return;
-            applyCompressedConversation(replaced);
+            auto *req = m_compact.compactHistoryAsync(
+                m_messages.mid(1), m_activeRequest, tr("主动压缩（compact 工具）"), this,
+                [this](const QVector<QJsonObject> &replaced) {
+                    if (!m_running)
+                        return;
+                    applyCompressedConversation(replaced);
+                    // 批尾落盘检查点（随续延平移）：注入与压缩后的最终状态被捕获
+                    persistHistory();
+                    QJsonArray messagesJson;
+                    for (const auto &msg : m_messages)
+                        messagesJson.append(msg);
+                    startChatRequest(messagesJson);
+                });
+            if (req)
+                m_sideRequest = req;
+            return;
         }
 
-        // 批尾落盘检查点：结果注入 / 后台收割 / 主动压缩等本批变更均已生效，此刻历史是一个
+        // 批尾落盘检查点：结果注入 / 后台收割等本批变更均已生效，此刻历史是一个
         // 完整合法的配对状态，长工具轮中途崩溃也能恢复到此处（放在 startChatRequest 前而非
-        // m_toolResultsReady 清空处，可确保注入与压缩后的最终状态被捕获）
+        // m_toolResultsReady 清空处；触发压缩时本检查点随续延在压缩替换后执行，见上）
         persistHistory();
 
         QJsonArray messagesJson;
@@ -2160,9 +2233,10 @@ void AgentLoop::stop()
         m_currentStream = nullptr;
     }
 
-    // 异步化 P1（设计文档 §3.4/§6-7）：取消在途侧链请求（当前为记忆召回）——cancel 后
-    // done 永久静默，run() 续延不再执行、不再发起后续聊天请求。用 qobject_cast 而非
-    // static_cast：本槽为共用槽（§3.4，P3 起压缩侧链同槽异构），转型空即无请求在途跳过；
+    // 异步化 P1/P3（设计文档 §3.4/§6-7）：取消在途侧链请求（召回（P1）与三条压缩链——
+    // prepare 全量段/批尾主动压缩/反应式压缩（P3）共用本槽，同槽异构故用 qobject_cast 而非
+    // static_cast，转型空即无请求在途跳过）——cancel 后 done 永久静默：召回续延不再执行、
+    // 压缩续延不回写历史/不落盘/不重发（P3 验证点：压缩中停止 → 历史不被替换）；
     // 请求已终态（回调已交付、deleteLater 未及处理）时 cancel 经 m_done 门闩天然无操作
     if (auto *side = qobject_cast<QOpenAi::AsyncRequest*>(m_sideRequest.data()))
         side->cancel();

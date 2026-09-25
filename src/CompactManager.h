@@ -7,6 +7,8 @@
 
 #include <functional>
 
+namespace QOpenAi { class AsyncRequest; }
+
 /**
  * CompactManager —— 上下文压缩引擎（对齐 lcc s08 compact_manager.py 的 CompactManager）
  *
@@ -46,10 +48,47 @@ public:
                                         const QString &activeRequest,
                                         const QString &cardSummary) const;
 
-    /** 上下文超限后的反应式压缩：保留最近若干消息为尾段（lcc reactive_compact）。 */
+    /** 上下文超限后的反应式压缩：保留最近若干消息为尾段（lcc reactive_compact）。
+     *  同步版仅作迁移期兼容面（P4 删净），调用方应改走下方异步版。 */
     QVector<QJsonObject> reactiveCompact(const QVector<QJsonObject> &conversation,
                                          const QString &activeRequest,
                                          const QString &cardSummary) const;
+
+    // ---- 异步链（P3，设计文档 §2.3/§3.3）：五条路径中仅"摘要 LLM 调用"一段挂起，
+    //      转写落盘/尾段回退/卡片组装等本地段仍同步执行；prompt 构建与结果应用与
+    //      同步链共用同一组私有方法，两链语义逐字一致。契约（同 P1 loadMemoriesAsync）：
+    //      done 恒恰好调用一次；ctx 为生命周期锚（请求 parent 到 ctx，ctx 析构即链
+    //      作废、done 永久静默）；返回在途 AsyncRequest 供宿主 cancel，本地短路路径
+    //      同步交付后返回 nullptr。摘要失败/超时交付空串，由这些方法内部补
+    //      "(empty summary)" 占位——降级语义与同步版逐字一致，不抛不卡。 ----
+
+    /** prepare 的异步版：前四段本地管线同步跑；仅触发全量压缩时挂起。
+     *  done(changed, conversation)：changed 为最终态与入参不等价（镜像同步宿主
+     *  的 `conversation == original` 判定），conversation 为交付时的最终会话
+     *  （偏离 §3.3 草案：按值经回调交付而非原地引用——挂起跨越 await 后调用方
+     *  栈上引用可能已析构）。 */
+    QOpenAi::AsyncRequest *prepareAsync(QVector<QJsonObject> conversation,
+                                        const QString &activeRequest,
+                                        const QString &autoCompactCardSummary,
+                                        QObject *ctx,
+                                        std::function<void(bool changed,
+                                                           const QVector<QJsonObject> &conversation)> done) const;
+
+    /** compactHistory 的异步版：转写与卡片时序不变（卡片在 replaced 组装后、
+     *  done 交付前发出），仅摘要段挂起。 */
+    QOpenAi::AsyncRequest *compactHistoryAsync(const QVector<QJsonObject> &conversation,
+                                               const QString &activeRequest,
+                                               const QString &cardSummary,
+                                               QObject *ctx,
+                                               std::function<void(const QVector<QJsonObject> &replaced)> done) const;
+
+    /** reactiveCompact 的异步版：空 conversation 短路（零请求，与同步版一致，
+     *  done 同步交付原会话）；retreatToolBatch 配对保护在同步段先行、语义不动。 */
+    QOpenAi::AsyncRequest *reactiveCompactAsync(const QVector<QJsonObject> &conversation,
+                                                const QString &activeRequest,
+                                                const QString &cardSummary,
+                                                QObject *ctx,
+                                                std::function<void(const QVector<QJsonObject> &replaced)> done) const;
 
 private:
     // ---- lcc 六方法在 OpenAI 形态下的等价实现（均原地修改 conversation） ----
@@ -58,6 +97,16 @@ private:
     void microCompact(QVector<QJsonObject> &conversation, qsizetype targetChars) const;
     void fitToolResults(QVector<QJsonObject> &conversation, qsizetype targetChars) const;
     QString summaryInput(const QVector<QJsonObject> &conversation) const;
+    /** 摘要请求体（model / system+user 两条消息 / max_tokens）——同步与异步两链共用，
+     *  保证请求逐字段等价。 */
+    QJsonObject buildSummaryRequest(const QVector<QJsonObject> &conversation) const;
+    /** 摘要 LLM 段的异步版（P3）：走 QOpenAi::AsyncRequest；失败/超时交付空串
+     *  （与同步链的 error 键降级日志同款），"(empty summary)" 占位由上层调用点补齐——
+     *  镜像同步链"占位在 summarizeHistory 末尾"的归属，行为等价。
+     *  同步 summarizeHistory 仅作迁移期兼容面（P4 删净）。 */
+    QOpenAi::AsyncRequest *summarizeHistoryAsync(const QVector<QJsonObject> &conversation,
+                                                 QObject *ctx,
+                                                 std::function<void(const QString &summary)> done) const;
     QString summarizeHistory(const QVector<QJsonObject> &conversation) const;
 
     // ---- 落盘与路径辅助（lcc write_transcript / persisted_output_path / save_output / ...） ----
