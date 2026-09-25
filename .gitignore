@@ -381,3 +381,6 @@ config/
 
 # submodule registration removed; local checkout kept for reference only
 /3rdparty/sqlite_orm/
+
+# ´ò°üÊä³ö
+/dist/
