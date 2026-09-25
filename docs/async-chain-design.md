@@ -116,3 +116,10 @@ stop()（:2036-2085）cancel m_currentStream 后追加 cancel m_sideRequest；m_
 
 ## 7. 工作量
 P0 0.5d / P1 0.5-1d / P2 1d / P3 1-1.5d / P4 0.5d，合计 3.5-4.5 天，净增约 +260 行。无自动测试，验证以构建+手工场景清单。
+
+## 8. 落地状态（落账，2026-09）
+- P1 召回链异步化：已落地（commit 1256d51）。
+- P2 沉淀/整理链异步化（含 runningChanged/memoryChainFinished 信号与页面接线）：已落地（commit 9563901）。
+- P3 压缩三处续延化：已落地（commit dc73367）。
+- P4 清理归零：已落地（本次提交）——blockingRequest / CategoryChat::create / CategoryCompletion::create / blockingCreate 族 / BlockingGate / BlockingSession / setBlockingTimeout 及同步版三方法、applyCompactPipeline、ChatMsgEdit Gate 接线全部删除；grep 全仓无阻塞族残留；禁发送唯一来源为 runningChanged 会话级信号。
+- 实现偏离登记：§3.2 草案三个 Async 方法为 void，实际均返回 `QOpenAi::AsyncRequest *`（宿主句柄记账/取消所需，短路路径返回 nullptr）；consolidateMemoriesAsync 实际签名无 conversation 参数（整理链不消费对话）。

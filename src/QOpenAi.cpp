@@ -7,11 +7,8 @@
 #include <QJsonArray>
 #include <QByteArray>
 #include <QTimer>
-#include <QEventLoop>
 #include <QUrl>
 #include <QDebug>
-#include <QGuiApplication>  // 等待期应用级 override cursor（BlockingSession 用）
-#include <QCursor>          // Qt::CursorShape→QCursor 隐式转换需完整类型（setOverrideCursor 重载决议）
 
 namespace {
 
@@ -25,7 +22,6 @@ public:
     QString token;
     int maxRetries = 0;          // 最大重试次数（仅 5xx / 429），默认 0 不重试
     int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
-    int blockingTimeout = 120000;   // 阻塞式非流式请求总超时（毫秒）：无中间字节可依据，按总量计；<=0 不限时
     bool verbose = false;        // 调试日志开关
 };
 
@@ -58,13 +54,6 @@ QString trimTrailingSlashes(const QString &url)
     return base;
 }
 
-QJsonObject errorJson(const QString &message)
-{
-    QJsonObject obj;
-    obj[QStringLiteral("error")] = message;
-    return obj;
-}
-
 // 由基础 URL（不含端点路径）拼出具体端点
 QString endpointFor(OpenAiClient &c, QOpenAi::ChatStream::Mode mode)
 {
@@ -72,102 +61,6 @@ QString endpointFor(OpenAiClient &c, QOpenAi::ChatStream::Mode mode)
         ? "/completions"
         : "/chat/completions";
     return trimTrailingSlashes(c.url) + QString::fromLatin1(suffix);
-}
-
-// 阻塞式非流式请求（含退避重试与超时）：成功返回响应 JSON，失败返回含 error 字段的对象
-QJsonObject blockingRequest(OpenAiClient &c, const QString &endpoint, const QJsonObject &input)
-{
-    if (c.url.isEmpty() || c.token.isEmpty())
-        return errorJson(QObject::tr("未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。"));
-
-    // 等待期显式化：此后所有路径都在嵌套事件循环里同步等 LLM（含重试退避的 wait.exec），
-    // 用 RAII 守卫统一进出，覆盖本函数全部 return / continue / 异常退出，无需逐点手工恢复。
-    // 特意放在配置缺失早退之后——那条路径根本不进嵌套循环，不应闪现等待态。
-    // 超时/重试/返回语义零变化：守卫只旁路发布状态，不干预请求本身。
-    QOpenAi::BlockingSession waitSession;
-
-    int retriesLeft = c.maxRetries;
-
-    for (int attempt = 1;; ++attempt)
-    {
-        QNetworkRequest req{QUrl(endpoint)};
-        req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-        req.setRawHeader("Authorization", QByteArray("Bearer ") + c.token.toUtf8());
-
-        const QByteArray body = QJsonDocument(input).toJson(QJsonDocument::Compact);
-        if (c.verbose)
-            qDebug() << "QOpenAi [request]" << "attempt=" << attempt
-                     << "url=" << endpoint << "body=" << QString::fromUtf8(body);
-
-        QNetworkReply *reply = c.manager.post(req, body);
-
-        // 用事件循环阻塞等待响应，QTimer 实现超时
-        bool timedOut = false;
-        QEventLoop loop;
-        QTimer timeoutTimer;
-        timeoutTimer.setSingleShot(true);
-        if (c.blockingTimeout > 0)
-        {
-            timeoutTimer.start(c.blockingTimeout);
-            QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&loop, &timedOut] {
-                timedOut = true;
-                loop.quit();
-            });
-        }
-        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        loop.exec();
-
-        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QString errorMsg = reply->errorString();
-
-        if (c.verbose)
-            qDebug() << "QOpenAi [response]" << "attempt=" << attempt
-                     << "status=" << httpStatus
-                     << (timedOut ? QStringLiteral("timeout") : errorMsg);
-
-        if (timedOut)
-        {
-            reply->abort();
-            reply->deleteLater();
-            return errorJson(QObject::tr("请求超时（%1 ms）。").arg(c.blockingTimeout));
-        }
-
-        if (reply->error() != QNetworkReply::NoError)
-        {
-            // 5xx 服务端错误 / 429 限流：指数退避重试
-            if (isRetryableStatus(httpStatus) && retriesLeft > 0)
-            {
-                --retriesLeft;
-                const int retryNumber = c.maxRetries - retriesLeft;
-                const int delayMs = retryDelayMs(retryNumber);
-                if (c.verbose)
-                    qDebug() << "QOpenAi [retry]" << retryNumber << "/" << c.maxRetries
-                             << "after" << delayMs << "ms";
-                reply->deleteLater();
-                QEventLoop wait;
-                QTimer::singleShot(delayMs, &wait, &QEventLoop::quit);
-                wait.exec();
-                continue;
-            }
-
-            reply->deleteLater();
-
-            if (httpStatus >= 400 && httpStatus < 500)
-                return errorJson(QObject::tr("HTTP %1 错误: %2").arg(httpStatus).arg(errorMsg));
-            if (isRetryableStatus(httpStatus))
-                return errorJson(QObject::tr("HTTP %1 错误（重试 %2 次后仍失败）: %3")
-                                     .arg(httpStatus).arg(c.maxRetries).arg(errorMsg));
-            return errorJson(errorMsg);
-        }
-
-        // 成功：解析完整 JSON 并返回
-        const QByteArray data = reply->readAll();
-        reply->deleteLater();
-        const QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (!doc.isObject())
-            return errorJson(QObject::tr("响应 JSON 解析失败: %1").arg(QString::fromUtf8(data.left(200))));
-        return doc.object();
-    }
 }
 
 } // namespace
@@ -561,23 +454,11 @@ ChatStream *CategoryChat::createStream(const QJsonObject &input, QObject *parent
     return stream;
 }
 
-QJsonObject CategoryChat::create(const QJsonObject &input)
-{
-    OpenAiClient &c = client();
-    return blockingRequest(c, endpointFor(c, ChatStream::Mode::Chat), input);
-}
-
 ChatStream *CategoryCompletion::createStream(const QJsonObject &input, QObject *parent)
 {
     auto *stream = new ChatStream(parent);
     stream->startRequest(input, ChatStream::Mode::LegacyCompletion);
     return stream;
-}
-
-QJsonObject CategoryCompletion::create(const QJsonObject &input)
-{
-    OpenAiClient &c = client();
-    return blockingRequest(c, endpointFor(c, ChatStream::Mode::LegacyCompletion), input);
 }
 
 // 聊天入口（/chat/completions）
@@ -633,8 +514,8 @@ void AsyncRequest::start(const QJsonObject &input, int totalTimeoutMs)
     if (totalTimeoutMs > 0)
     {
         connect(m_totalTimer, &QTimer::timeout, this, [this, totalTimeoutMs] {
-            // 总超时哨兵：idle 计时每收字节即重置（:273-276），"慢而不断"的流永不触发
-            // idle 防线，需按总量兜底——语义对齐原阻塞链 blockingTimeout（:107-116）
+            // 总超时哨兵：idle 计时每收字节即重置，"慢而不断"的流永不触发
+            // idle 防线，需按总量兜底——语义对齐迁移前阻塞链的总时限
             fireDone(QString(), tr("请求超时（%1 ms）。").arg(totalTimeoutMs));
         });
         m_totalTimer->start(totalTimeoutMs);
@@ -669,54 +550,6 @@ void AsyncRequest::cancel()
         m_stream->cancel();
     m_handler = nullptr; // 主动取消不通知调用方：done 永久静默（契约见声明注释）
     deleteLater();
-}
-
-// ---- 等待期状态（BlockingGate / BlockingSession，设计缘由见 QOpenAi.h 注释）----
-
-BlockingGate::BlockingGate(QObject *parent)
-    : QObject(parent)
-{
-}
-
-bool BlockingGate::busy() const
-{
-    return m_depth > 0;
-}
-
-BlockingGate *blockingGate()
-{
-    // 函数局部 static：首次使用即构造、进程退出前析构。全仓零线程（有意约定），
-    // 不存在初始化竞争；UI 组件以 this 为 context 连接，随页面析构自动断连防悬窗回调
-    static BlockingGate gate;
-    return &gate;
-}
-
-BlockingSession::BlockingSession()
-{
-    BlockingGate *gate = blockingGate();
-    if (++gate->m_depth == 1)
-    {
-        // 仅最外层（0→1 边界）动全局：先推入应用级 WaitCursor 再广播 busy，
-        // UI 禁用控件的槽执行时视觉"系统正忙"信号已就位。
-        // 重入中间层（1→2…）只加计数——嵌套循环事件派发中触发的同步路径
-        // 属于同一段等待期，不重复推光标/发信号
-        QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-        emit gate->busyChanged(true);
-    }
-}
-
-BlockingSession::~BlockingSession()
-{
-    BlockingGate *gate = blockingGate();
-    if (--gate->m_depth == 0)
-    {
-        // 与构造反序对称：先广播解禁（UI 恢复控件），再弹回光标。
-        // 重入中间层退出（n→n-1，n-1≥1）两者都不动——绝不第一层退出就提前解禁。
-        // override 光标栈的 push/pop 由同一 0↔1 计数边界配对，平衡有保证
-        //（已 grep 确认仓内无其他 setOverrideCursor 调用点干扰该栈）
-        emit gate->busyChanged(false);
-        QGuiApplication::restoreOverrideCursor();
-    }
 }
 
 // ---- 运行时配置 ----
@@ -760,16 +593,6 @@ void setTimeout(int milliseconds)
 int timeout()
 {
     return client().streamIdleTimeout;
-}
-
-void setBlockingTimeout(int milliseconds)
-{
-    client().blockingTimeout = qMax(0, milliseconds);
-}
-
-int blockingTimeout()
-{
-    return client().blockingTimeout;
 }
 
 void setVerbose(bool enabled)

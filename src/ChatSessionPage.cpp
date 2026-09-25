@@ -244,11 +244,11 @@ void ChatSessionPage::wireAgent()
         startAssistantStream(activeRequestText);
     });
 
-    // 本会话输入侧禁用（异步化 P2，设计文档 §3.5b）：runningChanged 覆盖整回合含 P1
+    // 本会话输入侧禁用（异步化 P2 引入，设计文档 §3.5b）：runningChanged 覆盖整回合含 P1
     // 召回异步飞行期——旧输入禁用只在 startAssistantStream/finished 两端切换，召回段
     // （可达 120s）输入可发但必被 run() 卫兵拒绝弹错误提示，现提前到 setRunning(true)
-    // 即禁、终局即放。与 ChatMsgEdit 内 BlockingGate 全局锁并存不冲突：两来源在组件内
-    // OR 合成（Gate 管跨会话阻塞面、本信号管会话回合面，P4 删 Gate 后此处自然独扛）
+    // 即禁、终局即放。P4 起为唯一输入禁用来源（原 ChatMsgEdit 内跨会话全局等待态网关
+    // 随同步链清退一并删除）
     connect(m_agentLoop, &AgentLoop::runningChanged, this, [this](bool running) {
         if (m_inputEdit)
             m_inputEdit->setTurnBusy(running);

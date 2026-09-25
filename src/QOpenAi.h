@@ -55,8 +55,8 @@ private:
 
 // ---- 一次性异步文本请求（异步链迁移 P0，规格 docs/async-chain-design.md §3.1）----
 //
-// 为什么要它：记忆召回/沉淀/整理与压缩摘要等侧链历来走 CategoryChat::create 的
-// 嵌套事件循环阻塞链，GUI 线程被同步等待劫持，才引出 BlockingGate 全局禁发送补丁。
+// 为什么要它：记忆召回/沉淀/整理与压缩摘要等侧链在异步迁移前走嵌套事件循环的
+// 阻塞链，GUI 线程被同步等待劫持。
 // AsyncRequest 复用 ChatStream 的流式组装（自带 5xx/429 退避重试、idle 静默超时、
 // 配置缺失延迟 error、析构 abort reply），只提取 choices[0].message.content 正文，
 // 以 done(content, error) 恰好一次的回调形态交付——网络零新代码，行为语义与阻塞链对齐。
@@ -69,14 +69,14 @@ private:
 //   - cancel() 后 done 永久静默；对象终态后自行 deleteLater，调用方持 QPointer 观察即可；
 //   - parent 即生命周期锚：锚析构 = 请求作废（回调丢弃、ChatStream 析构 abort 在途 reply）。
 //
-// 迁移期定位：P0 零调用方接入（仅构建验证，现有行为零变化）；P1-P3 各侧链逐步改走
-// 本类、与阻塞链共存；P4 删除 blockingRequest/create/BlockingGate 全族后仅存本异步路。
+// 迁移落账：P1 召回链、P2 沉淀/整理链、P3 压缩链已改走本类；阻塞族与其配套的
+// 等待期禁发送网关已于 P4 整体删除（设计文档 docs/async-chain-design.md §4/§5 与文末落账节）。
 class AsyncRequest : public QObject
 {
     Q_OBJECT
 public:
     // 发起一次性异步文本请求。input 为 /chat/completions 请求体（stream 参数由内部接管）。
-    // totalTimeoutMs 总超时（默认 120000，对齐原 blockingTimeout）；<=0 表示不设总时限，
+    // totalTimeoutMs 总超时（默认 120000，沿用迁移前阻塞链的总时限）；<=0 表示不设总时限，
     // 仅依赖 ChatStream 的 idle 静默超时兜底。
     static AsyncRequest *sendText(const QJsonObject &input, QObject *parent,
                                   std::function<void(const QString &content, const QString &error)> done,
@@ -98,66 +98,11 @@ private:
     bool m_done = false;              // 防重入门闩，镜像 ChatStream::Private::done（QOpenAi.cpp:502）语义
 };
 
-// ---- 等待期网关（BlockingGate / BlockingSession）----
-//
-// 为什么需要它：create()/completion().create() 的阻塞式请求内部用嵌套事件循环同步等
-// LLM 响应（记忆召回/沉淀/整合、压缩摘要全走这条链，且都在 GUI 线程——本应用有意零线程）。
-// 嵌套循环期间应用"看似活着"：用户可继续打字/点发送，触发第二条阻塞链与第一条交错，
-// 多会话并发时更乱，且没有任何"系统正忙"的视觉信号。该网关把等待期显式化：
-//   1) 0→1 边界设应用级等待光标、发 busyChanged(true)；1→0 边界反之；
-//   2) UI 层（ChatMsgEdit）监听 busyChanged 禁用发送入口。
-// 多会话共享同一 QOpenAi 客户端单例 ⇒ 任一会话进入等待期即"全局"禁发送——预期行为，
-// 不是缺陷：目的就是禁止第二链交错，唯一解法（异步化）明确超出本期范围。
-class BlockingGate : public QObject
-{
-    Q_OBJECT
-public:
-    // 当前是否处于等待期。UI 组件构造接线时直读一次做初值同步，
-    // 防止 connect 之前等待期已开始而漏禁（双信号方案无法查询状态，故弃用）
-    bool busy() const;
-
-signals:
-    // 状态信号而非 started/finished 双事件：消费方需要的是"现在忙不忙"这个状态，
-    // 双信号迫使每个消费方自维护标志且有配对漂移风险。
-    // 仅在重入计数 0↔1 边界发射：嵌套重入（嵌套循环事件派发中又触发的同步路径）
-    // 的中间层退出不发 false，防止 UI 提前解禁
-    void busyChanged(bool busy);
-
-private:
-    friend class BlockingSession;         // 唯一状态变更路径（RAII 守卫，实现见 QOpenAi.cpp）
-    friend BlockingGate *blockingGate();  // 唯一单例访问点
-    explicit BlockingGate(QObject *parent = nullptr);
-
-    int m_depth = 0; // 重入计数，由 RAII 守卫严格增减对；>0 即 busy
-};
-
-// 等待期网关单例（函数局部 static，生命周期覆盖所有窗口部件）
-BlockingGate *blockingGate();
-
-// RAII 等待期守卫：blockingRequest 进入函数体（嵌套循环段）时构造，
-// 任何退出路径（各早退 return / 正常 return / 异常）由作用域语义自动析构，
-// 保证计数增减严格平衡、无需在每个 return 点手工恢复。
-// 深度 0→1 附带推入应用级等待光标、1→0 弹出——光标与 busy 信号共用同一计数，
-// 视觉等待与发送解禁始终同步。
-class BlockingSession
-{
-public:
-    BlockingSession();
-    ~BlockingSession();
-    BlockingSession(const BlockingSession &) = delete;
-    BlockingSession &operator=(const BlockingSession &) = delete;
-};
-
 class CategoryChat
 {
 public:
     // 发起一次流式聊天请求，返回一个可监听信号的 ChatStream（parent 为其父对象）
     ChatStream *createStream(const QJsonObject &input, QObject *parent);
-
-    // 阻塞式请求。必须在 QNetworkAccessManager 所在线程（通常为主线程）调用，
-    // 内部使用嵌套事件循环，GUI 信号照常派发。
-    // 非流式请求，返回完整响应 JSON；出错时返回包含 "error" 字段的 JSON
-    QJsonObject create(const QJsonObject &input);
 };
 
 class CategoryCompletion
@@ -165,11 +110,6 @@ class CategoryCompletion
 public:
     // 发起一次流式 legacy 补全请求（/completions），返回一个可监听信号的 ChatStream
     ChatStream *createStream(const QJsonObject &input, QObject *parent);
-
-    // 阻塞式请求。必须在 QNetworkAccessManager 所在线程（通常为主线程）调用，
-    // 内部使用嵌套事件循环，GUI 信号照常派发。
-    // 非流式 legacy 补全请求，返回完整响应 JSON；出错时返回包含 "error" 字段的 JSON
-    QJsonObject create(const QJsonObject &input);
 };
 
 // 聊天入口（/chat/completions）
@@ -195,10 +135,6 @@ int maxRetries();
 // 设置 / 获取流式静默超时（毫秒，默认 60000）：每收到数据即重置，长回复不误杀；<=0 表示不限时
 void setTimeout(int milliseconds);
 int timeout();
-
-// 设置 / 获取阻塞式非流式请求总超时（毫秒，默认 120000；<=0 表示不限时）
-void setBlockingTimeout(int milliseconds);
-int blockingTimeout();
 
 // 设置 / 获取调试日志开关（输出请求 URL、请求体、状态码、SSE 帧）
 void setVerbose(bool enabled);

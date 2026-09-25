@@ -18,10 +18,9 @@ public:
     // 当前显示的模型文本
     QString currentModel() const;
 
-    // 本会话回合繁忙态（异步化 P2，设计文档 §3.5b）：宿主页面接 AgentLoop::runningChanged
-    // 注入，覆盖含召回异步飞行期的整回合输入禁用。与 BlockingGate 全局等待态为**两个
-    // 独立来源**，内部 OR 合成后驱动禁用（任一置位即禁），互不覆盖时序；Gate 随 P4
-    // 同步链清退后本来源自然独扛
+    // 本会话回合繁忙态（异步化 P2 引入，设计文档 §3.5b）：宿主页面接 AgentLoop::runningChanged
+    // 注入，覆盖含召回异步飞行期的整回合输入禁用。P4 起为唯一禁用来源（原跨会话
+    // 全局等待态网关随同步链清退一并删除）
     void setTurnBusy(bool busy);
 
 protected:
@@ -33,12 +32,11 @@ signals:
     void modelChanged(const QString &model);
 
 private:
-    // 两禁用来源（Gate 全局 / 本会话回合）OR 合成 → 输入框+发送钮 enabled
+    // 依 m_turnBusy 刷新 输入框+发送钮 enabled
     void applyBusyState();
 
     QTextEdit *m_textEdit = nullptr;
     SendMsgButton *m_sendMsgButton = nullptr;
     FluComboBox *m_modelComboBox = nullptr;
-    bool m_gateBusy = false; // BlockingGate 等待态（跨会话全局，P4 删）
     bool m_turnBusy = false; // 本会话回合态（runningChanged 驱动）
 };

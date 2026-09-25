@@ -187,11 +187,9 @@ private:
     // 子代理统一收口（lcc s06 R1）：级联 cancel → kill 流与进程 → 为 task 合成
     // "(cancelled)" tool_result 直写历史 → 清父队列；stop()/错误链/析构三路复用
     void cancelSubAgent();
-    // 压缩流水线挂接点（lcc s08）：发送请求前对会话（不含 system）跑 prepare() 五级压缩，
-    // 有变化则回写 m_messages（裁决 g：保留 m_messages[0] system）；返回是否发生了改写。
-    // 同步版仅作迁移期兼容面（P3 后 startChatRequest 已改走异步版，P4 删净）
-    bool applyCompactPipeline();
-    // 五级压缩异步挂接点（P3，设计文档 §2.3）：本地段同步跑，仅触发全量压缩时挂起；
+    // 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：发送请求前对会话——不含
+    // system——跑五级压缩，有变化则回写 m_messages，裁决 g 保留 m_messages[0] system）：
+    // 本地段同步跑，仅触发全量压缩时挂起；
     // 续延在回写压缩结果后以最终消息快照交付 next（未改写则原样透传 callerMessages）。
     // 在途句柄挂 m_sideRequest（与召回共用槽）：压缩中 stop → done 永久静默 →
     // next 不执行、历史不被替换（P3 验证点）

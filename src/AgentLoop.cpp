@@ -742,7 +742,7 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
             m_reactiveRetries < 1)
         {
             // 重试预算在发起前消费（原同步段 ++ 位置不动，防重试风暴）；空对话短路时
-            // 预算同样被消费——同步版行为一致（reactiveCompact 空对话原样返回后重发）
+            // 预算同样被消费——与原同步链行为一致（reactiveCompact 空对话原样返回后重发）
             ++m_reactiveRetries;
             // P3 异步化：摘要侧链挂起，本函数立即返回（cancelSubAgent 保持在发起压缩
             // 之前——原相对顺序不动）；续延交付后回写并重发。挂起窗口 m_running 恒 true
@@ -772,30 +772,12 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
     });
 }
 
-// 压缩流水线挂接（lcc s08 prepare）：对不含 system 的会话主体做五级压缩
-// （lcc 的 system 随每次请求单独下发、不在 messages 估算窗口内，此处以 mid(1) 对齐），
-// 有改写则回写历史并返回 true（调用方据此重建请求快照）
-bool AgentLoop::applyCompactPipeline()
-{
-    // 同步版仅作迁移期兼容面（P3 后 startChatRequest 已改走异步版，P4 删净）
-    if (m_messages.isEmpty())
-        return false;
-    QVector<QJsonObject> conversation = m_messages.mid(1);
-    const QVector<QJsonObject> original = conversation;
-    m_compact.prepare(conversation, m_activeRequest, tr("自动压缩（上下文超限）"));
-    // prepare 内的摘要调用阻塞期间用户可能已 stop()：不回写，由调用方的 m_running 卫兵收尾
-    if (!m_running)
-        return false;
-    if (conversation == original)
-        return false;
-    applyCompressedConversation(conversation);
-    return true;
-}
-
-// 五级压缩异步挂接点（P3，设计文档 §2.3）：判定逻辑镜像同步版——本地四段在
+// 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：对不含 system 的会话主体做五级
+// 压缩——lcc 的 system 随每次请求单独下发、不在 messages 估算窗口内，此处以 mid(1) 对齐）：
+// 判定逻辑沿用迁移前同步实现——本地四段在
 // CompactManager::prepareAsync 内同步跑，仅全量压缩（含摘要 LLM 调用）挂起。
 // 压缩中 stop → stop 的 m_sideRequest cancel 使 done 永久静默 → next 不执行、
-// 历史不被替换、不落盘（P3 验证点，对应同步版 :770 卫兵"阻塞摘要返回后不回了就不改写"）。
+// 历史不被替换、不落盘（P3 验证点，对应原同步链的 stop 卫兵"阻塞摘要返回后不回了就不改写"）。
 // 落槽纪律：条件写入 `if (req)`——本地早退路径 done 在 prepareAsync 返回前已同步交付、
 // 回调链可能在栈内继续发起新侧链写槽，外层无条件清空会覆盖新句柄；挂起路径的 done
 // 必在后续事件循环交付（AsyncRequest 永不回调同步触发），与栈尾落槽无竞态。
@@ -976,7 +958,7 @@ void AgentLoop::runNextTool()
         // 挂起窗口 m_running 恒 true：run() 重入被 :555 卫兵拒绝、工具链由 runNextTool
         // 单一驱动 → 同一时刻至多一条前链在途，与召回/反应式压缩共用 m_sideRequest 槽
         // 安全（§6-9 并发论证）。此间 stop → done 被 cancel 永久静默 → persistHistory
-        // 不执行、历史不被替换，停在上一检查点（同步版 :924 卫兵"阻塞摘要返回后不回了
+        // 不执行、历史不被替换，停在上一检查点（原同步链卫兵"阻塞摘要返回后不回了
         // 就不改写"同款语义），回调首行卫兵仅作防御复验
         if (m_compactRequested)
         {

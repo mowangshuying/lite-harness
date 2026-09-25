@@ -677,8 +677,8 @@ QStringList MemoryManager::keywordMemorySelection(const QVector<MemoryRecord> &r
 
 QString MemoryManager::buildRecallPrompt(const QVector<MemoryRecord> &records, const QString &query)
 {
-    // lcc select_relevant_memories :313-322 的提示词构建段（catalog 拼接 + 模板），
-    // 同步/异步两链共用保证逐字一致
+    // lcc select_relevant_memories :313-322 的提示词构建段（catalog 拼接 + 模板，
+    // 逐字移植自迁移前同步链）
     QStringList catalogParts;
     for (qsizetype i = 0; i < records.size(); ++i)
     {
@@ -702,8 +702,8 @@ QString MemoryManager::buildRecallPrompt(const QVector<MemoryRecord> &records, c
 QStringList MemoryManager::parseRecallSelection(const QString &reply,
                                                 const QVector<MemoryRecord> &records)
 {
-    // lcc select_relevant_memories :326-336 的结果处理段：解析 JSON 索引数组，
-    // 同步/异步两链共用保证逐字一致
+    // lcc select_relevant_memories :326-336 的结果处理段：解析 JSON 索引数组
+    // （逐字移植自迁移前同步链）
     QStringList selected;
     const QJsonArray indices = extractJsonArray(reply);
     for (const QJsonValue &value : indices)
@@ -726,7 +726,7 @@ QStringList MemoryManager::parseRecallSelection(const QString &reply,
 
 QString MemoryManager::formatRecalled(const QStringList &selected) const
 {
-    // lcc load_memories :340-355 的读取/截断/序列化段，同步/异步两链共用
+    // lcc load_memories :340-355 的读取/截断/序列化段（逐字移植自迁移前同步链）
     QVector<QJsonObject> loaded;
     qsizetype remaining = kRecallCharLimit;
     for (const QString &filename : selected)
@@ -751,41 +751,24 @@ QString MemoryManager::formatRecalled(const QStringList &selected) const
     return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Indented)).trimmed();
 }
 
-QStringList MemoryManager::selectRelevantMemories(const QVector<QJsonObject> &messages) const
-{
-    // lcc select_relevant_memories（:294-337）：LLM 按目录索引挑选，异常回落关键词打分
-    const QVector<MemoryRecord> records = listMemoryFiles();
-    const QString query = recentUserText(messages, kRecentMaxTurns);
-    if (records.isEmpty() || query.isEmpty())
-        return QStringList();
-
-    bool ok = false;
-    QString error;
-    const QString reply =
-        blockingCreate(buildRecallPrompt(records, query), kRecallMaxTokens, &ok, &error);
-    if (!ok)
-        return keywordMemorySelection(records, query, kRecallMaxItems); // lcc except → 关键词兜底
-    return parseRecallSelection(reply, records);
-}
-
 QOpenAi::AsyncRequest *MemoryManager::loadMemoriesAsync(
     const QVector<QJsonObject> &conversation, QObject *ctx,
     std::function<void(const QString &recalled)> done) const
 {
-    // 召回异步链（P1，设计文档 §2.1/§3.2）：同步链三段拆为「构建 → LLM → 处理」，
-    // LLM 段改走 AsyncRequest；prompt 构建与结果处理复用同步链同一组私有方法，两链语义逐字一致。
+    // 召回异步链（P1，设计文档 §2.1/§3.2）：原同步链三段拆为「构建 → LLM → 处理」，
+    // LLM 段走 AsyncRequest；prompt 构建与结果处理沿用拆分出的同一组私有方法。
     const QVector<MemoryRecord> records = listMemoryFiles();
     const QString query = recentUserText(conversation, kRecentMaxTurns);
     if (records.isEmpty() || query.isEmpty())
     {
-        // 空存储/无近期 user 消息短路（与同步版 select 段一致，零 LLM 调用）：done 同步交付空串
+        // 空存储/无近期 user 消息短路（与原同步链 select 段一致，零 LLM 调用）：done 同步交付空串
         if (done)
             done(QString());
         return nullptr;
     }
 
-    // 请求体与 blockingCreate 逐字段等价（model / 单条 user prompt / max_tokens），
-    // stream 参数与超时（120s 总限，对齐原 blockingTimeout）由 AsyncRequest 内部接管
+    // 请求体沿用原同步链形态（model / 单条 user prompt / max_tokens），
+    // stream 参数与超时（120s 总限，迁移前阻塞链同款）由 AsyncRequest 内部接管
     QJsonObject request;
     request[QStringLiteral("model")] = m_modelSink();
     QJsonObject userMessage;
@@ -800,7 +783,7 @@ QOpenAi::AsyncRequest *MemoryManager::loadMemoriesAsync(
     return QOpenAi::AsyncRequest::sendText(
         request, ctx,
         [this, records, query, done](const QString &content, const QString &error) {
-            // 失败/超时/配置缺失一律内部降级为关键词兜底（同步版 lcc except 路径同款），
+            // 失败/超时/配置缺失一律内部降级为关键词兜底（原同步链 lcc except 路径同款），
             // done 恒收到可用文本（可空串）——上层续延无需再分错误分支（§3.2 契约）
             const QStringList selected =
                 error.isEmpty() ? parseRecallSelection(content, records)
@@ -810,17 +793,10 @@ QOpenAi::AsyncRequest *MemoryManager::loadMemoriesAsync(
         });
 }
 
-QString MemoryManager::loadMemories(const QVector<QJsonObject> &conversation) const
-{
-    // lcc load_memories（:340-355）：空存储时 select 短路 → 零 LLM 调用
-    // 同步版仅作迁移期兼容面（P4 删净），调用方应改走 loadMemoriesAsync
-    return formatRecalled(selectRelevantMemories(conversation));
-}
-
 QString MemoryManager::buildExtractPrompt(const QString &dialogue, const QVector<MemoryRecord> &records)
 {
     // lcc extract_memories :419-426 的 catalog 拼接 + :427-441 提示词构建段（提示词逐字移植，
-    // type 枚举为 ', '.join(MEMORY_TYPES) 的定值展开），同步/异步两链共用保证口径逐字一致
+    // type 枚举为 ', '.join(MEMORY_TYPES) 的定值展开；口径与迁移前同步链逐字一致）
     QStringList catalogParts;
     for (const MemoryRecord &record : records)
         catalogParts.append(QStringLiteral("- %1: %2").arg(record.name, record.description));
@@ -848,8 +824,8 @@ int MemoryManager::processExtractReply(const QString &reply,
                                        QVector<MemoryRecord> existingRecords) const
 {
     // lcc extract_memories :443-474 的结果处理段：JSON 数组校验 → 三重去重 → 写文件 →
-    // 追加本地快照 → 卡片，同步/异步两链共用保证口径逐字一致（existingRecords 按值传入：
-    // 段内追加已写记录 = lcc 将 validated candidate 追加 existing 供后续候选去重的等价）
+    // 追加本地快照 → 卡片（existingRecords 按值传入：段内追加已写记录 = lcc 将 validated
+    // candidate 追加 existing 供后续候选去重的等价）
     QVector<QJsonObject> candidates;
     const QJsonArray items = extractJsonArray(reply);
     for (const QJsonValue &value : items)
@@ -863,7 +839,7 @@ int MemoryManager::processExtractReply(const QString &reply,
 
     int stored = 0;
     QStringList storedNames;
-    QString error; // 写错误出参：writeMemoryFile 消费（原同步链与 blockingCreate 共用变量，拆分后归本段）
+    QString error; // 写错误出参：writeMemoryFile 消费
     for (const QJsonObject &candidate : std::as_const(candidates))
     {
         if (!shouldStoreMemory(candidate, existingRecords))
@@ -899,49 +875,27 @@ int MemoryManager::processExtractReply(const QString &reply,
     return stored;
 }
 
-int MemoryManager::extractMemories(const QVector<QJsonObject> &conversation) const
-{
-    // lcc extract_memories（:399-474）
-    // 同步版仅作迁移期兼容面（P4 删净），调用方应改走 extractMemoriesAsync；
-    // 与异步链逐字段等价（同一组私有方法，仅 LLM 调用段为 blockingCreate）
-    const QString dialogue = dialogueText(conversation);
-    if (dialogue.isEmpty())
-        return 0;
-
-    const QVector<MemoryRecord> existingRecords = listMemoryFiles();
-    bool ok = false;
-    QString error;
-    const QString reply = blockingCreate(buildExtractPrompt(dialogue, existingRecords),
-                                         kExtractMaxTokens, &ok, &error);
-    if (!ok)
-    {
-        qWarning().noquote() << QStringLiteral("[memory] extraction skipped: %1").arg(error);
-        return 0;
-    }
-    return processExtractReply(reply, existingRecords);
-}
-
 QOpenAi::AsyncRequest *MemoryManager::extractMemoriesAsync(
     const QVector<QJsonObject> &conversation, QObject *ctx,
     std::function<void(int stored)> done) const
 {
-    // 提取异步链（P2，设计文档 §2.2/§3.2）：prompt 构建与校验/去重/落盘段复用同步链同一组
-    // 私有方法，仅 LLM 段改走 AsyncRequest（本函数立即返回，续延在主线程事件循环交付）。
+    // 提取异步链（P2，设计文档 §2.2/§3.2）：prompt 构建与校验/去重/落盘段沿用拆分出的
+    // 同一组私有方法，LLM 段走 AsyncRequest（本函数立即返回，续延在主线程事件循环交付）。
     const QString dialogue = dialogueText(conversation);
     if (dialogue.isEmpty())
     {
-        // 空对话短路（与同步版一致，零 LLM 调用）：done 同步交付 0
+        // 空对话短路（与原同步链一致，零 LLM 调用）：done 同步交付 0
         if (done)
             done(0);
         return nullptr;
     }
 
-    // 既有记录快照在发起时读取（时序与同步版一致：LLM 调用前），目录 prompt 与段内三重
+    // 既有记录快照在发起时读取（时序与原同步链一致：LLM 调用前），目录 prompt 与段内三重
     // 去重作用于同一快照；在途期间 .memory/ 被并发追加新记录时退化为漏去重重复写
-    // （与同步链同面的窄竞态窗口，不产生错误数据）
+    // （与原同步链同面的窄竞态窗口，不产生错误数据）
     const QVector<MemoryRecord> existingRecords = listMemoryFiles();
 
-    // 请求体与 blockingCreate 逐字段等价（model / 单条 user prompt / max_tokens），
+    // 请求体沿用原同步链形态（model / 单条 user prompt / max_tokens），
     // stream 参数与超时（120s 总限）由 AsyncRequest 内部接管
     QJsonObject request;
     request[QStringLiteral("model")] = m_modelSink();
@@ -956,7 +910,7 @@ QOpenAi::AsyncRequest *MemoryManager::extractMemoriesAsync(
     return QOpenAi::AsyncRequest::sendText(
         request, ctx,
         [this, existingRecords, done](const QString &content, const QString &error) {
-            // 失败/超时折叠为 done(0)：qWarning 文案与同步版 skipped 降级路径同款，
+            // 失败/超时折叠为 done(0)：qWarning 文案与原同步链 skipped 降级路径同款，
             // 尽力而为语义——不抛不卡不重试（§3.2 契约：done 恒恰好一次、恒可用计数）
             int stored = 0;
             if (error.isEmpty())
@@ -970,9 +924,9 @@ QOpenAi::AsyncRequest *MemoryManager::extractMemoriesAsync(
 
 QString MemoryManager::buildConsolidatePrompt(const QVector<MemoryRecord> &records)
 {
-    // lcc consolidate_memories :486-506 的门槛/尺寸护栏与 catalog + 提示词构建段，
-    // 同步/异步两链共用保证口径逐字一致。空串 = 跳过本链（阈值未达为 lcc 静默早退 0
-    // 同款零日志；超尺寸为 skipped 警告同款），提示词模板恒非空，无歧义。
+    // lcc consolidate_memories :486-506 的门槛/尺寸护栏与 catalog + 提示词构建段。
+    // 空串 = 跳过本链（阈值未达为 lcc 静默早退 0 同款零日志；超尺寸为 skipped 警告同款），
+    // 提示词模板恒非空，无歧义。
     if (records.size() < kConsolidateThreshold)
         return QString();
 
@@ -1004,44 +958,23 @@ QString MemoryManager::buildConsolidatePrompt(const QVector<MemoryRecord> &recor
         .arg(catalog);
 }
 
-int MemoryManager::consolidateMemories() const
-{
-    // lcc consolidate_memories（:478-579）：达阈值 → LLM 重写全存储（快照回滚）
-    // 同步版仅作迁移期兼容面（P4 删净），调用方应改走 consolidateMemoriesAsync；
-    // 与异步链逐字段等价（同一组私有方法，仅 LLM 调用段为 blockingCreate）
-    const QVector<MemoryRecord> records = listMemoryFiles();
-    const QString prompt = buildConsolidatePrompt(records);
-    if (prompt.isEmpty())
-        return 0;
-
-    bool ok = false;
-    QString error;
-    const QString reply = blockingCreate(prompt, kConsolidateMaxTokens, &ok, &error);
-    if (!ok)
-    {
-        qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1").arg(error);
-        return 0;
-    }
-    return applyConsolidateReply(reply, records);
-}
-
 QOpenAi::AsyncRequest *MemoryManager::consolidateMemoriesAsync(
     QObject *ctx, std::function<void(int consolidated)> done) const
 {
     // 合并异步链（P2，设计文档 §2.2/§3.2）：阈值判断/prompt 构建/尺寸护栏在发起段同步
-    // 完成，LLM 段改走 AsyncRequest；快照与破坏性替换段在回调内同步执行——.memory/ 文件
-    // 的读-删-写全程无 await 点，lcc s08 原子性裁决保持。链不消费对话（与同步版对齐）。
+    // 完成，LLM 段走 AsyncRequest；快照与破坏性替换段在回调内同步执行——.memory/ 文件
+    // 的读-删-写全程无 await 点，lcc s08 原子性裁决保持。链不消费对话（与原同步链对齐）。
     const QVector<MemoryRecord> records = listMemoryFiles();
     const QString prompt = buildConsolidatePrompt(records);
     if (prompt.isEmpty())
     {
-        // 未达阈值/超尺寸短路（与同步版早退 0 一致，零 LLM 调用）：done 同步交付 0
+        // 未达阈值/超尺寸短路（与原同步链早退 0 一致，零 LLM 调用）：done 同步交付 0
         if (done)
             done(0);
         return nullptr;
     }
 
-    // 请求体与 blockingCreate 逐字段等价（model / 单条 user prompt / max_tokens）
+    // 请求体沿用原同步链形态（model / 单条 user prompt / max_tokens）
     QJsonObject request;
     request[QStringLiteral("model")] = m_modelSink();
     QJsonObject userMessage;
@@ -1050,13 +983,13 @@ QOpenAi::AsyncRequest *MemoryManager::consolidateMemoriesAsync(
     request[QStringLiteral("messages")] = QJsonArray{ userMessage };
     request[QStringLiteral("max_tokens")] = kConsolidateMaxTokens;
 
-    // ctx 锚与捕获纪律同 extractMemoriesAsync。records 快照在发起时读取（时序与同步版
+    // ctx 锚与捕获纪律同 extractMemoriesAsync。records 快照在发起时读取（时序与原同步链
     // 一致：LLM 调用前）——快照/回滚以发起时的存储清单为准，在途并发写入属链级串行
     // 护栏之外的窄竞态（AgentLoop 记忆链串行化已消除本会话内的交错，见宿主注释）
     return QOpenAi::AsyncRequest::sendText(
         request, ctx,
         [this, records, done](const QString &content, const QString &error) {
-            // 失败/超时折叠为 done(0)：qWarning 文案与同步版 skipped 降级路径同款，
+            // 失败/超时折叠为 done(0)：qWarning 文案与原同步链 skipped 降级路径同款，
             // 不触替换段——LLM 回复缺失时存储原样保留（lcc except 等价）
             int consolidated = 0;
             if (error.isEmpty())
@@ -1072,7 +1005,7 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
                                          const QVector<MemoryRecord> &records) const
 {
     // lcc consolidate_memories :508-575 的结果处理段：JSON 数组校验 → slug 查重 → 快照 →
-    // 破坏性替换（失败回滚）→ 重建索引 → 卡片，同步/异步两链共用保证口径逐字一致
+    // 破坏性替换（失败回滚）→ 重建索引 → 卡片（口径与迁移前同步链逐字一致）
     QVector<QJsonObject> consolidated;
     const QJsonArray items = extractJsonArray(reply);
     for (const QJsonValue &value : items)
@@ -1127,7 +1060,7 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
         return success;
     };
 
-    QString error; // 写错误出参：破坏性替换段与回滚日志消费（原同步链与 blockingCreate 共用变量，拆分后归本段）
+    QString error; // 写错误出参：破坏性替换段与回滚日志消费
     bool applied = deleteAllExceptIndex();
     if (applied)
     {
@@ -1173,41 +1106,6 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
                  .arg(consolidated.size()),
              QStringLiteral("%1 -> %2").arg(records.size()).arg(consolidated.size()));
     return consolidated.size();
-}
-
-QString MemoryManager::blockingCreate(const QString &prompt, int maxTokens, bool *ok,
-                                      QString *error) const
-{
-    // lcc client.messages.create(model, messages=[user], max_tokens) 的 OpenAI 形态等价：
-    // 复用 QOpenAi 同步接口（内部阻塞事件循环——嵌套循环豁免窗口见类头注释与宿主三处调用点）。
-    // 失败判定：error 键（QOpenAi 同步失败契约）/ choices 缺失（lcc 抛异常 → 调用方兜底路径一致）
-    QJsonObject request;
-    request[QStringLiteral("model")] = m_modelSink();
-    QJsonObject userMessage;
-    userMessage[QStringLiteral("role")] = QStringLiteral("user");
-    userMessage[QStringLiteral("content")] = prompt;
-    request[QStringLiteral("messages")] = QJsonArray{ userMessage };
-    request[QStringLiteral("max_tokens")] = maxTokens;
-
-    const QJsonObject response = QOpenAi::chat().create(request);
-    *ok = false;
-    if (response.contains(QStringLiteral("error")))
-    {
-        *error = response.value(QStringLiteral("error")).toString();
-        return QString();
-    }
-    const QJsonArray choices = response.value(QStringLiteral("choices")).toArray();
-    if (choices.isEmpty() || !choices.first().isObject())
-    {
-        *error = QStringLiteral("no choices in response");
-        return QString();
-    }
-    *ok = true;
-    return choices.first().toObject()
-        .value(QStringLiteral("message"))
-        .toObject()
-        .value(QStringLiteral("content"))
-        .toString();
 }
 
 void MemoryManager::emitCard(const QString &summary, const QString &output) const
