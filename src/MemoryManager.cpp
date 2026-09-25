@@ -1,5 +1,6 @@
 #include "MemoryManager.h"
 
+#include "AgentConstants.h"
 #include "QOpenAi.h"
 
 #include <QDebug>
@@ -204,13 +205,14 @@ QString MemoryManager::storeDir() const
     // lcc env.py :17：memoryDirPath = workDirPath / ".memory"；
     // lite 有意偏差：收进宿主会话数据根（sessionDataRoot，含 .lite-harness/sessions/<id>）之下，
     // 不在用户项目根撒目录。sink 已含 .lite-harness 中间层，本处仅拼叶子段 .memory
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".memory"));
+    return QDir(m_workDirSink()).filePath(AgentConst::kMemoryDirName);
 }
 
 QString MemoryManager::indexFilePath() const
 {
     // lcc env.py :18：memoryIndexPath = memoryDirPath / "MEMORY.md"
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".memory/MEMORY.md"));
+    return QDir(m_workDirSink())
+        .filePath(AgentConst::kMemoryDirName + QStringLiteral("/MEMORY.md"));
 }
 
 bool MemoryManager::memoryPathSafe(const QString &filename, bool allowIndex,

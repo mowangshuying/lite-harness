@@ -3,7 +3,8 @@
 // Agent 常量单源头：收敛散落的魔法数/字面量（模型清单、max_tokens、bash 超时、
 // 输出截断上限、中间目录名、glob 有界化参数）。纯 header-only，被 include 即可编译，
 // 无需加入 CMake 源列表。
-// 使用方：AgentLoop.cpp / SubAgent.cpp / BashRunner.cpp / ChatMsgEdit.cpp / CompactManager.cpp。
+// 使用方：AgentLoop.cpp / SubAgent.cpp / BashRunner.cpp / ChatMsgEdit.cpp / CompactManager.cpp /
+// MemoryManager.cpp。
 
 #include <QString>
 #include <QStringList>
@@ -43,6 +44,7 @@ inline const QString kTempDirName = QStringLiteral(".temp"); // prompt 临时目
 inline const QString kTranscriptsDirName = QStringLiteral(".transcripts"); // 压缩转写 JSONL
 inline const QString kToolResultsDirName =
     QStringLiteral(".task_outputs/tool-results"); // 大工具输出卸载（含一级子目录）
+inline const QString kMemoryDirName = QStringLiteral(".memory"); // 记忆存储（MEMORY.md 索引 + slug 记录）
 
 // ---- glob 工具（runGlobIn）有界化参数 ----
 // runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：
