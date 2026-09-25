@@ -9,7 +9,7 @@ class ChatMsgEdit;
 class AgentLoop;
 class PermissionCard;
 class TodoCard;
-class QLabel;
+class WorkDirPathBar;
 
 class ChatSessionPage : public BasePage
 {
@@ -41,12 +41,8 @@ public:
     bool isRunning() const;
     void stop();
 
-    void onThemeChanged() override;
-
 protected:
     void resizeEvent(QResizeEvent *event) override;
-    // 工作目录路径 label 尺寸变化时按新宽度重新中间省略
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit）的创建摆位
@@ -59,13 +55,11 @@ private:
     void startAssistantStream(const QString &userText);
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
-    // 只读工作目录显示：ToolTip 恒为全路径，可见文本按 label 当前宽度中间省略
-    void updateWorkDirDisplay();
 
 private:
     FluVScrollView *m_scrollView = nullptr;
     QWidget *m_inputSection = nullptr;      // 底部同栏容器：只读工作目录条(上) + 输入框(下)，宽上限与 ChatMsgEdit 同为 800
-    QLabel *m_workDirLabel = nullptr;       // 工作目录路径显示（objectName workDirPath，配色见 ChatSessionPage.qss）
+    WorkDirPathBar *m_workDirBar = nullptr; // 只读工作目录条（省略/ToolTip 兜底细节见组件；配色见 ChatSessionPage.qss）
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
     // QPointer：气泡若被异常销毁（如 clearMessages 的 deleteLater 序列）自动置空，

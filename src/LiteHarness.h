@@ -45,6 +45,9 @@ protected:
     // 规避 FluVNavigationIconTextItem::mouseReleaseEvent 不辨按键即发 itemClicked 的翻页 bug
     bool eventFilter(QObject *watched, QEvent *event) override;
 
+    // 退出守卫：仍有会话回合在运行时先确认（详见 cpp 定义处注释）
+    void closeEvent(QCloseEvent *event) override;
+
 protected:
     // 构造体内必然先于任何使用完成赋值，显式置空仅为防御：与下方页面指针成员统一初值纪律，
     // 避免万一早退/异常路径留下未定义指针

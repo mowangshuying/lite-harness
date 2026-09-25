@@ -46,7 +46,7 @@ ToolBlock::ToolBlock(QWidget *parent) : CollapsibleBlock(parent)
     initContent("toolOutput");
 
     // 主题装配必须在子类构造尾：initTheme 内虚派发 refreshIcons 需要
-    // m_arrowLabel 已赋值（基类构造期调虚函数的经典陷阱，勿复制 BasePage 债务）
+    // m_arrowLabel 已赋值（基类构造期调虚函数的经典陷阱）
     initTheme("ToolBlock.qss");
 
     initCollapsed();

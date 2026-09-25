@@ -14,6 +14,8 @@
 #include <FluPMenu.h>
 #include <FluComboBox.h>
 #include "AgentConstants.h" // 模型清单单源（原文件内 static 列表迁入头文件，值不变）
+#include "LayoutConstants.h"
+#include "ThemeAware.h"
 
 // 可选模型清单见 AgentConst::kModelOptions（AgentConstants.h）：字面量列表，
 // 不做注册表/配置等多余抽象；首项为回落默认项
@@ -21,7 +23,7 @@
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
-    setMaximumWidth(800);
+    setMaximumWidth(LayoutConst::kColumnMaxWidth);
     setMaximumHeight(100);
     auto vMainLayout = new QVBoxLayout(this);
     vMainLayout->setContentsMargins(4, 4, 4, 4);
@@ -29,7 +31,7 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     setLayout(vMainLayout);
 
     m_textEdit = new QTextEdit(this);
-    auto delegate = new FluScrollDelegate(m_textEdit);
+    new FluScrollDelegate(m_textEdit); // 仅需 parent 联动滚轮行为，无需持有引用
     m_textEdit->setObjectName("textEdit");
     m_textEdit->setContextMenuPolicy(Qt::CustomContextMenu);
     m_textEdit->installEventFilter(this);
@@ -94,20 +96,14 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     connect(m_modelComboBox, &FluComboBox::currentTextChanged, this,
             [this](const QString &model) { emit modelChanged(model); });
 
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &ChatMsgEdit::onThemeChanged);
-    // FluComboBox 构造未自连 themeChanged（仅其弹层自连），主题切换时需单独重刷控件本体 QSS
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, m_modelComboBox, &FluComboBox::onThemeChanged);
-
-    onThemeChanged();
+    // FluComboBox 构造未自连 themeChanged（仅其弹层自连），主题切换时需单独重刷控件本体 QSS；
+    // 作为 bind 的 extraRefresh 挂入（原对 m_modelComboBox 的独立 connect 一并收敛，
+    // bind 连接以本控件为 context，combo 随父销毁，生命周期等价）
+    ThemeAware::bind("ChatMsgEdit.qss", this, [this] { m_modelComboBox->onThemeChanged(); });
 }
 
 ChatMsgEdit::~ChatMsgEdit()
 {
-}
-
-void ChatMsgEdit::onThemeChanged()
-{
-    FluStyleSheetUtils::setQssByFileName("ChatMsgEdit.qss", this, FluThemeUtils::getUtils()->getTheme());
 }
 
 void ChatMsgEdit::setCurrentModel(const QString &model)

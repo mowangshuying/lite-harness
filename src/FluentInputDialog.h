@@ -36,9 +36,6 @@ public:
     void setText(const QString &text);   // 预填输入框
     QString text() const;                // 当前输入内容（原始值，未 simplified/trim）
 
-public slots:
-    void onThemeChanged();
-
 protected:
     void showEvent(QShowEvent *event) override;     // 首次显示：聚焦输入框并全选预填内容
     void resizeEvent(QResizeEvent *event) override; // 遮罩与卡片随父窗尺寸联动

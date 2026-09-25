@@ -1,5 +1,6 @@
 #include "FluentInputDialog.h"
 
+#include "ThemeAware.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -10,7 +11,6 @@
 #include <FluLineEdit.h>
 #include <FluPushButton.h>
 #include <FluStyleButton.h>
-#include <FluUtils.h> // FluStyleSheetUtils / FluThemeUtils
 #include <FluVSplitLine.h>
 
 // 静态便捷入口：栈上构造 + exec，语义对齐 QInputDialog::getText
@@ -114,13 +114,8 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
         m_windowMask->hide(); // 无父窗退化为无遮罩小窗，卡片由布局撑出窗口尺寸
     }
 
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, &FluentInputDialog::onThemeChanged);
-    onThemeChanged();
-}
-
-void FluentInputDialog::onThemeChanged()
-{
-    FluStyleSheetUtils::setQssByFileName("FluentInputDialog.qss", this, FluThemeUtils::getUtils()->getTheme());
+    // QDialog 无 FluWidget 的主题自动联动，bind 即本对话框唯一的 QSS 首刷 + themeChanged 订阅
+    ThemeAware::bind("FluentInputDialog.qss", this);
 }
 
 void FluentInputDialog::setTitle(const QString &title)

@@ -1,7 +1,6 @@
 #include "PermissionCard.h"
+#include "ThemeAware.h"
 #include "ToolTagKind.h"
-#include <FluUtils.h>
-#include <FluThemeUtils.h>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -129,12 +128,8 @@ PermissionCard::PermissionCard(QWidget *parent) : FluWidget(parent)
     connect(m_denyButton, &QPushButton::clicked, this, [this]() { handleDecision(false); });
     connect(m_allowButton, &QPushButton::clicked, this, [this]() { handleDecision(true); });
 
-    // QSS 主题加载与联动（与 ToolBlock / ThinkingBlock 同一套约定）
-    FluStyleSheetUtils::setQssByFileName("PermissionCard.qss", this,
-                                         FluThemeUtils::getUtils()->getTheme());
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [this](FluTheme theme) {
-        FluStyleSheetUtils::setQssByFileName("PermissionCard.qss", this, theme);
-    });
+    // QSS 主题加载与联动（与 ToolBlock / ThinkingBlock 同一套约定）：收敛到 ThemeAware::bind
+    ThemeAware::bind("PermissionCard.qss", this);
 }
 
 void PermissionCard::setPermissionRequest(const QString &toolName, const QString &summary,

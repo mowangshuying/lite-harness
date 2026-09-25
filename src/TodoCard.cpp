@@ -1,5 +1,6 @@
 #include "TodoCard.h"
 
+#include "ThemeAware.h"
 #include <QEvent>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -74,13 +75,9 @@ TodoCard::TodoCard(QWidget *parent) : FluWidget(parent)
     setMinimumHeight(m_header->height());
     m_header->installEventFilter(this);
 
-    // 主题：箭头图标 + QSS 随主题切换刷新（三态颜色全部由 QSS 属性选择器控制）
-    updateThemeIcons();
-    FluStyleSheetUtils::setQssByFileName("TodoCard.qss", this, FluThemeUtils::getUtils()->getTheme());
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [this](FluTheme theme) {
-        updateThemeIcons();
-        FluStyleSheetUtils::setQssByFileName("TodoCard.qss", this, theme);
-    });
+    // 主题：箭头图标 + QSS 随主题切换刷新（三态颜色全部由 QSS 属性选择器控制）。
+    // QSS 加载/重订阅样板收敛到 ThemeAware::bind，本组件特有的图标刷新作 extraRefresh 挂入
+    ThemeAware::bind("TodoCard.qss", this, [this] { updateThemeIcons(); });
 
     // 初始：无任务即无高度，列表隐藏，等待第一次 setTodos
     m_contentHeight = 0;

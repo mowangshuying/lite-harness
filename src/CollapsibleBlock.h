@@ -20,8 +20,8 @@ class QResizeEvent;
 // 子类差异经虚钩子保留：refreshIcons（主题图标）、liveText（进行态文案）、
 // expandedHeightCap（限高策略）、toggleExpanded（是否记忆用户意愿）、
 // onGeometryApplied（块宽变化后的副效应）。
-// 主题装配为子类构造尾部的显式 initTheme() 调用：基类构造期绝不调用虚函数
-// ——彼时派生成员尚未赋值，首次刷新会访问空指针（BasePage 已负此类债务，勿复制）。
+// 主题装配为子类构造尾部的显式 initTheme() 调用（委托 ThemeAware::bind 完成首刷+订阅）：
+// 基类构造期绝不调用虚函数——彼时派生成员尚未赋值，首次刷新会访问空指针。
 class CollapsibleBlock : public FluWidget
 {
     Q_OBJECT
@@ -57,8 +57,8 @@ protected:
     // 内容区：NoFrame / 外链可开 / 横条恒关 / 竖条按需 / 按控件宽折行，
     // stackUnder 到头部之下；同时安装头部点击过滤与 contentsChanged 延迟测量
     void initContent(const QString &objectName);
-    // 主题装配：立即 refreshIcons + 加载 QSS，再订阅 themeChanged。
-    // 必须在子类构造函数尾部调用（派生成员已全部就绪）
+    // 主题装配：委托 ThemeAware::bind —— 立即加载 QSS 并首刷 refreshIcons，
+    // 再订阅 themeChanged。必须在子类构造函数尾部调用（派生成员已全部就绪）
     void initTheme(const QString &qssFileName);
     // 默认折叠：内容直接隐藏，避免末行文字透过头部半透明 border 渗出
     void initCollapsed();
@@ -106,6 +106,4 @@ private:
     void measureContent();
     void startExpandAnimation();
     int scrollbarExtentWidth() const;
-
-    QString m_qssFileName;  // initTheme 记录的 QSS 文件名，themeChanged 时重载
 };

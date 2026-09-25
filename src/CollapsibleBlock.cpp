@@ -1,4 +1,5 @@
 #include "CollapsibleBlock.h"
+#include "ThemeAware.h"
 
 #include <QEvent>
 #include <QFrame>
@@ -14,8 +15,6 @@
 #include <QStyle>
 #include <QTimer>
 #include <QtMath>
-
-#include <FluUtils.h>
 
 CollapsibleBlock::CollapsibleBlock(QWidget *parent) : FluWidget(parent)
 {
@@ -79,17 +78,10 @@ void CollapsibleBlock::initContent(const QString &objectName)
 
 void CollapsibleBlock::initTheme(const QString &qssFileName)
 {
-    // 由子类构造尾显式调用：此刻派生成员已就绪，refreshIcons 虚派发安全。
-    // 基类构造期 connect+首刷会在成员未构造时执行——BasePage 的既有教训，勿复制。
-    m_qssFileName = qssFileName;
-    refreshIcons();
-    FluStyleSheetUtils::setQssByFileName(qssFileName, this,
-                                         FluThemeUtils::getUtils()->getTheme());
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this,
-            [this, qssFileName](FluTheme theme) {
-        refreshIcons();
-        FluStyleSheetUtils::setQssByFileName(qssFileName, this, theme);
-    });
+    // 由子类构造尾显式调用：此刻派生成员已就绪，extraRefresh（refreshIcons 虚派发）可安全执行；
+    // 基类构造期做同样的事会在成员未构造时访问空指针（BasePage 同类债务已整改，勿复制）。
+    // QSS 首刷/重载、themeChanged 订阅与 polish 样板收敛到 ThemeAware::bind。
+    ThemeAware::bind(qssFileName, this, [this] { refreshIcons(); });
 }
 
 void CollapsibleBlock::initCollapsed()

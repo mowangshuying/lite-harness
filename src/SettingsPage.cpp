@@ -1,4 +1,5 @@
 #include "SettingsPage.h"
+#include "ThemeAware.h"
 #include <FluUtils.h>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -201,10 +202,8 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 
 
     scrollView->getMainLayout()->addWidget(settingsVersionBox, 0, Qt::AlignTop);
-}
 
-void SettingsPage::onThemeChanged()
-{
-    BasePage::onThemeChanged();
-    FluStyleSheetUtils::setQssByFileName("SettingsPage.qss", this, FluThemeUtils::getUtils()->getTheme());
+    // QSS 首刷 + themeChanged 订阅收敛到 ThemeAware::bind。
+    // 修正既有缺陷：原构造不首刷 SettingsPage.qss，须等首次主题切换才生效
+    ThemeAware::bind("SettingsPage.qss", this);
 }

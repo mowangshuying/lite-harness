@@ -28,7 +28,10 @@
 #include <QColor>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QCloseEvent>
+#include <QMessageBox>
 #include "FluentInputDialog.h"
+#include "ThemeAware.h"
 #include <QTimer>   // singleShot(0) 延一拍执行磁盘数据目录递归删除
 #include <QDebug>   // qWarning：目录删除失败仅告警容忍（外部编辑器占用等）
 #include <algorithm> // std::stable_sort（Qt6 已移除 qStableSort）
@@ -127,8 +130,13 @@ void LiteHarness::setupConnections()
     connect(m_newChatPage, &NewChatPage::newChatRequested, this, &LiteHarness::createSession);
 
     /// theme;
+    // FluFrameLessWidget 派生自 FramelessWidget（非 FluWidget），无主题自动联动：
+    // 这里的显式 connect 是主题切换的唯一通路，必须保留；首刷 onThemeChanged() 保证
+    // 启动即按当前主题着色标题栏（initUi 里的黑色前景是主题盲初值）。
+    // 标题栏着色非 QSS 可表达（chromePalette API），保留在本槽；窗口 QSS 样板收敛到 ThemeAware::bind
     onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
+    ThemeAware::bind("LiteHarness.qss", this);
 }
 
 void LiteHarness::createSession(const QString &text)
@@ -457,5 +465,35 @@ void LiteHarness::onThemeChanged()
     m_titleBar->closeButton()->setActiveForegroundColor(foreground);
     m_titleBar->maximizeButton()->setActiveForegroundColor(foreground);
     m_titleBar->show();
-    FluStyleSheetUtils::setQssByFileName("LiteHarness.qss", this, FluThemeUtils::getUtils()->getTheme());
+}
+
+// 退出守卫：AgentLoop 回合含流式请求与工具子进程，直接关窗会丢失未完成回合
+// （历史仅持久化已落盘部分）。有运行中会话时先确认；确认退出则逐个 stop()
+// （各自收敛网络请求/子进程）后照常走基类关闭链；取消则 ignore 事件。
+// 与 deleteSession 的“删前停”逻辑相互独立，此处不改其行为。
+void LiteHarness::closeEvent(QCloseEvent *event)
+{
+    QList<ChatSessionPage *> running;
+    for (ChatSessionPage *page : m_sessions)
+    {
+        if (page && page->isRunning())
+            running.append(page);
+    }
+
+    if (!running.isEmpty())
+    {
+        const auto ret = QMessageBox::question(
+            this, tr("退出确认"),
+            tr("任务仍在运行，退出将丢失未完成回合。确定退出吗？"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret != QMessageBox::Yes)
+        {
+            event->ignore();
+            return;
+        }
+        for (ChatSessionPage *page : running)
+            page->stop();
+    }
+
+    FluFrameLessWidget::closeEvent(event);
 }
