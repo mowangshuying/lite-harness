@@ -10,6 +10,7 @@
 #include <QEasingCurve>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QTextDocument>
 #include <QStyle>
@@ -65,15 +66,33 @@ void CollapsibleBlock::initContent(const QString &objectName)
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_content->setLineWrapMode(QTextEdit::WidgetWidth);
-    m_content->stackUnder(m_header);   // 对齐 FluExpander.cpp:22：头部绘制在内容之上
-
-    setMinimumHeight(m_header->height());
-
-    m_header->installEventFilter(this);
+    attachContentArea(m_content);
 
     // 内容写入后延迟测量完整高度（等文档内部布局完成）
     connect(m_content->document(), &QTextDocument::contentsChanged,
             this, &CollapsibleBlock::scheduleMeasure);
+}
+
+QScrollArea *CollapsibleBlock::initScrollContent(const QString &objectName)
+{
+    // 列表形态内容区（TodoCard）：QScrollArea 承载子类自建的行容器，
+    // 自身不做文档测量——自然高度由子类覆写 measureContent 按行几何公式计算；
+    // 与文本形态共用同一套滑动几何/动画骨架（定位统一操作 m_contentArea）。
+    auto *scroll = new QScrollArea(this);
+    scroll->setObjectName(objectName);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    attachContentArea(scroll);
+    return scroll;
+}
+
+void CollapsibleBlock::attachContentArea(QWidget *area)
+{
+    area->stackUnder(m_header);   // 对齐 FluExpander.cpp:22：头部绘制在内容之上
+    m_contentArea = area;
+    setMinimumHeight(m_header->height());
+    m_header->installEventFilter(this);
 }
 
 void CollapsibleBlock::initTheme(const QString &qssFileName)
@@ -88,7 +107,14 @@ void CollapsibleBlock::initCollapsed()
 {
     m_expanded = false;
     m_contentHeight = 0;
-    m_content->hide();
+    m_contentArea->hide();
+}
+
+QString CollapsibleBlock::liveText() const
+{
+    // 无进行态的子类（TodoCard）不覆写：轮播定时器只在 startLiveTimer 之后取此文案，
+    // 默认空串不会被任何路径写入标题
+    return QString();
 }
 
 int CollapsibleBlock::expandedHeightCap() const
@@ -123,15 +149,8 @@ void CollapsibleBlock::stopLiveTimer()
         m_liveTimer->stop();
 }
 
-void CollapsibleBlock::setExpanded(bool expanded)
+QPropertyAnimation *CollapsibleBlock::ensureHeightAnimation()
 {
-    if (m_expanded == expanded)
-        return;
-    m_expanded = expanded;
-
-    // 展开期禁止 resizeEvent 触发重测，避免动画终点随测量结果跳变
-    m_animating = true;
-
     if (m_anim == nullptr)
     {
         // 与 FluExpander 一致：驱动 contentHeight 属性，300ms OutCubic
@@ -142,6 +161,31 @@ void CollapsibleBlock::setExpanded(bool expanded)
             m_animating = false;
         });
     }
+    return m_anim;
+}
+
+void CollapsibleBlock::startHeightAnimation(int target)
+{
+    m_animating = true;
+    QPropertyAnimation *anim = ensureHeightAnimation();
+    anim->stop();   // 动画中途重定向：从当前中途高度续起，不跳变
+    anim->setStartValue(m_contentHeight);
+    anim->setEndValue(target);
+    anim->start();
+}
+
+void CollapsibleBlock::setExpanded(bool expanded)
+{
+    if (m_expanded == expanded)
+        return;
+    m_expanded = expanded;
+
+    // 展开期禁止 resizeEvent 触发重测，避免动画终点随测量结果跳变
+    m_animating = true;
+
+    // 先停旧动画并按旧测量值预置区间：快速连点时从半程高度即停，
+    // 下一帧 startExpandAnimation 重测后再以准确终点重启
+    ensureHeightAnimation();
     m_anim->stop();
     m_anim->setStartValue(m_contentHeight);
     m_anim->setEndValue(m_expanded ? m_fullContentHeight : 0);
@@ -163,7 +207,7 @@ void CollapsibleBlock::setContentHeight(int h)
 
     // 完全收起时隐藏内容：头部 border 为半透明 rgba，
     // 内容末行底边恰与头部底缘重合，透过去会漏出一线文字
-    m_content->setVisible(m_expanded || h > 0);
+    m_contentArea->setVisible(m_expanded || h > 0);
 
     // 自身：布局管理的控件，靠 minimumHeight 驱动布局，同时同步 resize 立即生效
     resize(width(), m_header->height() + h);
@@ -206,8 +250,8 @@ void CollapsibleBlock::resizeEvent(QResizeEvent *event)
     // 即 contentHeight 增大时内容从头部背后向下滑出，缩小时无可见区变化导致的重排
     m_header->resize(event->size().width(), kHeaderHeight);
     m_header->move(0, 0);
-    m_content->resize(event->size().width(), m_fullContentHeight);
-    m_content->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
+    m_contentArea->resize(event->size().width(), m_fullContentHeight);
+    m_contentArea->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
 
     // 块宽变化后子类副效应（ToolBlock：关键参数省略宽度随块宽重算）
     onGeometryApplied();

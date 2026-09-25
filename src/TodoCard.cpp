@@ -1,16 +1,10 @@
 #include "TodoCard.h"
 
-#include "ThemeAware.h"
-#include <QEvent>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
-#include <QMouseEvent>
-#include <QPropertyAnimation>
-#include <QEasingCurve>
-#include <QResizeEvent>
 #include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -23,31 +17,19 @@ static constexpr int kRowHeight = 26;
 static constexpr int kListVerticalMargin = 4;
 static constexpr int kListSpacing = 2;
 
-TodoCard::TodoCard(QWidget *parent) : FluWidget(parent)
+TodoCard::TodoCard(QWidget *parent) : CollapsibleBlock(parent)
 {
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
     // ---- 标题栏：[任务清单] …… [done/total] [▼]，与 ToolBlock 头部同款实色底与圆角 ----
-    m_header = new QWidget(this);
-    m_header->setObjectName("todoHeader");
-    m_header->setFixedHeight(32);
-    m_header->setCursor(Qt::PointingHandCursor);
+    auto *headerLayout = initHeader("todoHeader", 12, 0, 10, 0);
 
-    auto *headerLayout = new QHBoxLayout(m_header);
-    headerLayout->setContentsMargins(12, 0, 10, 0);
-    headerLayout->setSpacing(8);
-
-    m_titleLabel = new QLabel(m_header);
-    m_titleLabel->setObjectName("todoTitle");
+    m_titleLabel = createTitleLabel("todoTitle");
     m_titleLabel->setText(tr("任务清单"));
 
+    // 计数标签为本类独有件，不进基类装配管线
     m_countLabel = new QLabel(m_header);
     m_countLabel->setObjectName("todoCount");
 
-    m_arrowLabel = new QLabel(m_header);
-    m_arrowLabel->setObjectName("todoArrow");
-    m_arrowLabel->setFixedSize(16, 16);
-    m_arrowLabel->setAlignment(Qt::AlignCenter);
+    m_arrowLabel = createGlyphLabel("todoArrow");
 
     headerLayout->addWidget(m_titleLabel);
     headerLayout->addStretch(1);
@@ -55,14 +37,8 @@ TodoCard::TodoCard(QWidget *parent) : FluWidget(parent)
     headerLayout->addWidget(m_arrowLabel);
 
     // ---- 列表区：QScrollArea 承载行容器，超上限内部滚动 ----
-    // 与 ThinkingBlock/ToolBlock 同源：无外层布局参与、纯手动几何；
-    // stackUnder 到头部之下，展开时从头部背后滑出（头部不透明底色遮挡）。
-    m_scroll = new QScrollArea(this);
-    m_scroll->setObjectName("todoScroll");
-    m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_scroll->stackUnder(m_header);
+    // 基类装配：NoFrame / 横条恒关 / 竖条按需 + stackUnder 头部之下 + 点击过滤 + 最小高度
+    m_scroll = initScrollContent("todoScroll");
 
     m_list = new QWidget(m_scroll);
     m_list->setObjectName("todoList");
@@ -72,16 +48,17 @@ TodoCard::TodoCard(QWidget *parent) : FluWidget(parent)
     m_scroll->setWidget(m_list);
     m_scroll->setWidgetResizable(true); // 行容器随视口取宽，自然高度超出视口时纵向滚动
 
-    setMinimumHeight(m_header->height());
-    m_header->installEventFilter(this);
+    // 限高走基类默认策略（expandedHeightCap 返回此值），单源引用常量
+    m_maxExpandedHeight = kMaxListHeight;
 
-    // 主题：箭头图标 + QSS 随主题切换刷新（三态颜色全部由 QSS 属性选择器控制）。
-    // QSS 加载/重订阅样板收敛到 ThemeAware::bind，本组件特有的图标刷新作 extraRefresh 挂入
-    ThemeAware::bind("TodoCard.qss", this, [this] { updateThemeIcons(); });
+    // 主题装配：基类 initTheme 委托 ThemeAware::bind —— QSS 首刷 + refreshIcons 首刷
+    // （构造尾调用，虚派发安全）+ themeChanged 订阅；三态颜色全部由 QSS 属性选择器控制
+    initTheme("TodoCard.qss");
 
-    // 初始：无任务即无高度，列表隐藏，等待第一次 setTodos
-    m_contentHeight = 0;
-    m_scroll->hide();
+    // 初始态与 Thinking/Tool（initCollapsed）不同：状态面板默认展开是 lcc 面板的核心信息；
+    // 但无任务即无高度——内容区隐藏，等待第一次 setTodos
+    m_expanded = true;
+    m_contentArea->hide();
 }
 
 void TodoCard::setTodos(const QJsonArray &todos)
@@ -174,124 +151,47 @@ void TodoCard::refreshRowTexts()
         row.textLabel->setText(elidedFor(row, avail));
 }
 
-void TodoCard::setExpanded(bool expanded)
+void TodoCard::refreshIcons()
 {
-    if (m_expanded == expanded)
-        return;
-    m_expanded = expanded;
-    updateThemeIcons(); // 刷新箭头方向
-    scheduleMeasure();   // 下一帧测量并按展开态启动滑出/收回动画
-    emit expandedChanged(m_expanded);
+    const FluTheme theme = FluThemeUtils::getUtils()->getTheme();
+    m_arrowLabel->setPixmap(FluIconUtils::getFluentIconPixmap(
+        m_expanded ? FluAwesomeType::ChevronUp : FluAwesomeType::ChevronDown, theme, 14, 14));
 }
 
 void TodoCard::scheduleMeasure()
 {
-    QTimer::singleShot(0, this, &TodoCard::syncHeight);
+    // 不复用基类实现的动画守卫：该守卫防的是流式 token 风暴下"动画中途重测覆盖
+    // 终点回弹"；本类测量即重定向动画（measureContent 直接 startHeightAnimation），
+    // 动画中途来新数据若被守卫拦下，终点仍按旧行数计算，行会被裁剪。
+    // 触发源均为低频用户事件（setTodos/块宽变化），无风暴风险。
+    // 不能以 &CollapsibleBlock::measureContent 取基类 protected 成员（C2248），
+    // 用 lambda 经 this 虚派发落到本类 measureContent
+    QTimer::singleShot(0, this, [this] { measureContent(); });
 }
 
-// 依据当前展开态把内容高度平滑跟到新值（数量变化时的"就地刷新"动效仅此一处，克制）
-void TodoCard::syncHeight()
+void TodoCard::measureContent()
 {
-    measureContent();
+    // 列表自然高度纯由行数决定（单行等高，无需文档测量）；封顶后滚动条占据的宽度
+    // 由 QScrollArea 自行处理，行省略宽经 onGeometryApplied 随视口刷新
+    const int n = m_rows.size();
+    const int naturalHeight = n == 0
+                                  ? 0
+                                  : kListVerticalMargin * 2 + n * kRowHeight + (n - 1) * kListSpacing;
+    m_fullContentHeight = qMin(naturalHeight, expandedHeightCap());
 
+    // 依据当前展开态把内容高度平滑跟到新值（数量变化时的"就地刷新"动效仅此一处，克制）；
+    // 目标与当前可见高度一致则无需起动画
     const int target = m_expanded ? m_fullContentHeight : 0;
     if (m_contentHeight == target)
     {
         updateGeometry();
         return;
     }
-
-    m_animating = true;
-    if (m_anim == nullptr)
-    {
-        // 与 ThinkingBlock / ToolBlock 一致：驱动 contentHeight，300ms OutCubic
-        m_anim = new QPropertyAnimation(this, "contentHeight", this);
-        m_anim->setDuration(300);
-        m_anim->setEasingCurve(QEasingCurve::OutCubic);
-        connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
-            m_animating = false;
-        });
-    }
-    m_anim->stop();
-    m_anim->setStartValue(m_contentHeight);
-    m_anim->setEndValue(target);
-    m_anim->start();
+    startHeightAnimation(target);
 }
 
-// 列表自然高度纯由行数决定（单行等高，无需文档测量）；封顶后滚动条占据的宽度
-// 由 QScrollArea 自行处理，行省略宽在 resizeEvent 中按视口宽刷新
-void TodoCard::measureContent()
+void TodoCard::onGeometryApplied()
 {
-    const int n = m_rows.size();
-    const int naturalHeight = n == 0
-                                  ? 0
-                                  : kListVerticalMargin * 2 + n * kRowHeight + (n - 1) * kListSpacing;
-    m_fullContentHeight = qMin(naturalHeight, kMaxListHeight);
-}
-
-// 动画属性写入点：与 ToolBlock::setContentHeight 同一机制
-void TodoCard::setContentHeight(int h)
-{
-    if (m_contentHeight == h)
-        return;
-    const int dy = h - m_contentHeight;
-    m_contentHeight = h;
-
-    // 完全收起时隐藏列表：头部 border 为半透明 rgba，
-    // 列表末行底边恰与头部底缘重合，透过去会漏出一线文字
-    m_scroll->setVisible(m_expanded || h > 0);
-
-    // 自身：布局管理的控件，靠 minimumHeight 驱动布局，同时同步 resize 立即生效
-    resize(width(), m_header->height() + h);
-    setMinimumHeight(m_header->height() + h);
-
-    // 同步向上遍历父链逐帧 resize：ancestors 在同一帧内跟随高度变化，
-    // 避免布局延迟生效造成的逐帧抖动；到窗口或滚动区 viewport 为止
-    QWidget *p = parentWidget();
-    while (p && p != window())
-    {
-        p->resize(p->width(), p->height() + dy);
-        if (p->objectName() == QStringLiteral("qt_scrollarea_viewport"))
-            break;
-        p = p->parentWidget();
-    }
-    emit sizeChanged();
-}
-
-bool TodoCard::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_header && event->type() == QEvent::MouseButtonRelease)
-    {
-        auto *me = static_cast<QMouseEvent *>(event);
-        if (me->button() == Qt::LeftButton && m_header->rect().contains(me->position().toPoint()))
-        {
-            setExpanded(!m_expanded);
-            return true;
-        }
-    }
-    return FluWidget::eventFilter(watched, event);
-}
-
-void TodoCard::resizeEvent(QResizeEvent *event)
-{
-    FluWidget::resizeEvent(event);
-
-    // 手动几何定位（与 ToolBlock 同一公式）：
-    // 头部铺满宽度固定在顶部；列表满尺寸，顶部锚定在 32 + contentHeight - full，
-    // 即 contentHeight 增大时列表从头部背后向下滑出
-    constexpr int kHeaderHeight = 32;
-    m_header->resize(event->size().width(), kHeaderHeight);
-    m_header->move(0, 0);
-    m_scroll->resize(event->size().width(), m_fullContentHeight);
-    m_scroll->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
-
     // 行文本省略宽随视口变化（高度不随宽度变，无需重测/重排）
     refreshRowTexts();
-}
-
-void TodoCard::updateThemeIcons()
-{
-    const FluTheme theme = FluThemeUtils::getUtils()->getTheme();
-    m_arrowLabel->setPixmap(FluIconUtils::getFluentIconPixmap(
-        m_expanded ? FluAwesomeType::ChevronUp : FluAwesomeType::ChevronDown, theme, 14, 14));
 }
