@@ -10,6 +10,8 @@
 #include <QEventLoop>
 #include <QUrl>
 #include <QDebug>
+#include <QGuiApplication>  // 等待期应用级 override cursor（BlockingSession 用）
+#include <QCursor>          // Qt::CursorShape→QCursor 隐式转换需完整类型（setOverrideCursor 重载决议）
 
 namespace {
 
@@ -77,6 +79,12 @@ QJsonObject blockingRequest(OpenAiClient &c, const QString &endpoint, const QJso
 {
     if (c.url.isEmpty() || c.token.isEmpty())
         return errorJson(QObject::tr("未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。"));
+
+    // 等待期显式化：此后所有路径都在嵌套事件循环里同步等 LLM（含重试退避的 wait.exec），
+    // 用 RAII 守卫统一进出，覆盖本函数全部 return / continue / 异常退出，无需逐点手工恢复。
+    // 特意放在配置缺失早退之后——那条路径根本不进嵌套循环，不应闪现等待态。
+    // 超时/重试/返回语义零变化：守卫只旁路发布状态，不干预请求本身。
+    QOpenAi::BlockingSession waitSession;
 
     int retriesLeft = c.maxRetries;
 
@@ -584,6 +592,54 @@ CategoryCompletion &completion()
 {
     static CategoryCompletion c;
     return c;
+}
+
+// ---- 等待期状态（BlockingGate / BlockingSession，设计缘由见 QOpenAi.h 注释）----
+
+BlockingGate::BlockingGate(QObject *parent)
+    : QObject(parent)
+{
+}
+
+bool BlockingGate::busy() const
+{
+    return m_depth > 0;
+}
+
+BlockingGate *blockingGate()
+{
+    // 函数局部 static：首次使用即构造、进程退出前析构。全仓零线程（有意约定），
+    // 不存在初始化竞争；UI 组件以 this 为 context 连接，随页面析构自动断连防悬窗回调
+    static BlockingGate gate;
+    return &gate;
+}
+
+BlockingSession::BlockingSession()
+{
+    BlockingGate *gate = blockingGate();
+    if (++gate->m_depth == 1)
+    {
+        // 仅最外层（0→1 边界）动全局：先推入应用级 WaitCursor 再广播 busy，
+        // UI 禁用控件的槽执行时视觉"系统正忙"信号已就位。
+        // 重入中间层（1→2…）只加计数——嵌套循环事件派发中触发的同步路径
+        // 属于同一段等待期，不重复推光标/发信号
+        QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+        emit gate->busyChanged(true);
+    }
+}
+
+BlockingSession::~BlockingSession()
+{
+    BlockingGate *gate = blockingGate();
+    if (--gate->m_depth == 0)
+    {
+        // 与构造反序对称：先广播解禁（UI 恢复控件），再弹回光标。
+        // 重入中间层退出（n→n-1，n-1≥1）两者都不动——绝不第一层退出就提前解禁。
+        // override 光标栈的 push/pop 由同一 0↔1 计数边界配对，平衡有保证
+        //（已 grep 确认仓内无其他 setOverrideCursor 调用点干扰该栈）
+        emit gate->busyChanged(false);
+        QGuiApplication::restoreOverrideCursor();
+    }
 }
 
 // ---- 运行时配置 ----

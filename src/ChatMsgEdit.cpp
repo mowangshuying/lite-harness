@@ -16,6 +16,7 @@
 #include "AgentConstants.h" // 模型清单单源（原文件内 static 列表迁入头文件，值不变）
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
+#include "QOpenAi.h" // 等待期网关：阻塞链进行中禁用发送入口（设计见 QOpenAi.h BlockingGate）
 
 // 可选模型清单见 AgentConst::kModelOptions（AgentConstants.h）：字面量列表，
 // 不做注册表/配置等多余抽象；首项为回落默认项
@@ -100,6 +101,25 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 作为 bind 的 extraRefresh 挂入（原对 m_modelComboBox 的独立 connect 一并收敛，
     // bind 连接以本控件为 context，combo 随父销毁，生命周期等价）
     ThemeAware::bind("ChatMsgEdit.qss", this, [this] { m_modelComboBox->onThemeChanged(); });
+
+    // ---- 阻塞链等待期：禁用发送入口（网关设计缘由见 QOpenAi.h BlockingGate 注释）----
+    // 消费收敛在本组件单点：NewChatPage / ChatSessionPage 共用 ChatMsgEdit，两页发送入口
+    // 自动随等待态联动，无需宿主各自接线。多会话共享同一 QOpenAi 客户端单例 ⇒ 任一会话
+    // 进入等待期（记忆召回/沉淀/整合、压缩摘要，最长至阻塞超时上限）即全窗口禁发送——
+    // 预期行为而非缺陷：嵌套循环都在 GUI 线程，目的就是禁止第二条链与第一条交错。
+    // 输入框随按钮一并禁用：打不了字是最直白的"系统正忙"信号；Enter 发送经由 textEdit
+    // 的 eventFilter 派发，控件禁用后键事件不再送达，该路径天然关闭，无需另设守卫。
+    // 模型下拉不禁用：改选只写后端成员、不发起请求，无交错风险。
+    auto *gate = QOpenAi::blockingGate();
+    auto applyBusy = [this](bool busy) {
+        m_textEdit->setEnabled(!busy);
+        m_sendMsgButton->setEnabled(!busy);
+    };
+    // 构造期直读一次现状做初值同步：防止本组件 connect 之前等待期已开始而漏禁
+    applyBusy(gate->busy());
+    // this 作为 context 必需：gate 是进程生命周期单例、比任何页面活得久，
+    // 必须挂本控件自动断连，防已销毁会话的悬窗回调
+    connect(gate, &QOpenAi::BlockingGate::busyChanged, this, applyBusy);
 }
 
 ChatMsgEdit::~ChatMsgEdit()
