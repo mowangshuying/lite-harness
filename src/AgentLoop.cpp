@@ -558,7 +558,7 @@ void AgentLoop::run(const QString &userMessage)
         return;
     }
 
-    m_running = true;
+    setRunning(true); // 【红线】同步置位，先于本函数一切异步发起（见下方 P1 契约注释）
     m_toolIterations = 0;
     // lcc s05：rounds_since_todo 为 loop() 的局部变量——每轮用户提问（run）从零起步
     m_roundsSinceTodo = 0;
@@ -668,7 +668,7 @@ void AgentLoop::startChatRequest(const QJsonArray &messages)
                 {
                     // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
                     m_cron.finalizeInFlightDelivery(false);
-                    m_running = false;
+                    setRunning(false);
                     persistHistory(); // 轮次上限失败终局也落盘（已累积历史不丢）
 emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
                     return;
@@ -680,24 +680,30 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
                 return;
             }
 
-            // 记忆沉淀（lcc s09 loop.py :113-117：仅自然结束分支触发——force 续跑分支与撞
-            // kMaxToolIterations 上限分支均不提取，lcc 语义不修正）：提取 → 有新增则合并。
-            // 两条链均为阻塞调用（嵌套循环豁免窗口同 s08 裁决 f，此处已无活动流）；
-            // 期间 stop() 进入则不再发 finished（stop 已自行收尾），记忆卡片若已发出
-            // 与 s08 压缩卡片同族（登记偏差）。mid(1) 排除 system 与 lcc 会话主体对齐。
-            // 阻塞开始前先通知 UI：正文就地定稿 markdown + 挂记忆进度 live 卡
-            emit memoryPhaseStarted();
-            const int stored = m_memory.extractMemories(m_messages.mid(1));
-            if (m_running && stored >= 1)
-                m_memory.consolidateMemories();
-            if (!m_running)
-                return;
-
+            // 回合成功终局（异步化 P2 重排，设计文档 §2.2/§6-10）：旧序为
+            // memoryPhaseStarted → [extract 阻塞≤120s → consolidate 阻塞≤120s] →（stop
+            // 竞态则 return 吞掉 finished）→ finalize → m_running=false → persistHistory →
+            // finished；新序把记忆沉淀从终局关键路径摘除——finalize → setRunning(false) →
+            // persistHistory → finished → memoryPhaseStarted → 异步链尾巴。
+            // persistHistory 先于记忆链是 §6-10 有意决策：history.json 与 .memory/ 为独立
+            // 文件域，中途崩溃最坏丢本轮记忆沉淀、不丢历史（旧序同样存在该窗口的更差形态：
+            // 阻塞期间崩溃则历史与 finished 一起丢）。finished 不再被 2×120s 阻塞窗口延迟，
+            // 旧代码"阻塞后复验 m_running 不通过则 return"的吞 finished 竞态随之消亡。
+            // Stop 钩子在上方 force 分支触发并已 return，位置与语义与旧版逐字不变。
             // lcc 31a99d1：回合成功终局——确认在途 cron 批（at-least-once 收口）
             m_cron.finalizeInFlightDelivery(true);
-            m_running = false;
+            setRunning(false);
             persistHistory(); // 回合终局落盘（emit 前，确保 UI 侧后续动作可见）
             emit finished(fullMsg.value(QStringLiteral("content")).toString());
+
+            // 记忆沉淀（lcc s09 loop.py :113-117：仅自然结束分支触发——force 续跑分支与撞
+            // kMaxToolIterations 上限分支均不提取，lcc 语义不修正；轮次上限/流错误/stop
+            // 三类终局同样不触发，与旧版一致）。mid(1) 排除 system 与 lcc 会话主体对齐。
+            // memoryPhaseStarted 与 finished 同栈紧随：UI 据 §3.5a 保留气泡占位、把正文
+            // 就地定稿并挂记忆进度 live 卡；随后异步链启动（fire-and-forget，结果卡经
+            // 既有 toolOutputReady("memory") 通道落位，链尾不阻塞本回调返回）
+            emit memoryPhaseStarted();
+            startMemoryChain();
             return;
         }
 
@@ -706,7 +712,7 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
         {
             // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
             m_cron.finalizeInFlightDelivery(false);
-            m_running = false;
+            setRunning(false);
             persistHistory(); // 轮次上限失败终局也落盘
             emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
             return;
@@ -744,7 +750,7 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
         }
         // lcc 31a99d1：流错误失败终局——在途 cron 批回队（反应式压缩重发分支非终局，不处理）
         m_cron.finalizeInFlightDelivery(false);
-        m_running = false;
+        setRunning(false);
         persistHistory(); // 流错误终局落盘
         emit error(msg);
     });
@@ -780,6 +786,74 @@ void AgentLoop::applyCompressedConversation(const QVector<QJsonObject> &conversa
     m_messages.clear();
     m_messages.append(systemMessage);
     m_messages.append(conversation);
+}
+
+void AgentLoop::setRunning(bool running)
+{
+    // m_running 单点收口（异步化 P2，设计文档 §3.4）：翻转与 runningChanged 发射同点，
+    // 防六处终局漏发。同值不发射（run() 卫兵拒绝/重复 stop 等路径不打扰订阅者）。
+    // 红线纪律在调用点：run() 的 setRunning(true) 必须同步先于一切异步发起
+    //（tryDeliverCron 同栈回读 m_running 的 lcc s12 R3 契约）；信号经直连在调用栈内
+    // 送达 UI，订阅者不得借 runningChanged(false) 栈内启动新回合（此刻 cron finalize/
+    // persistHistory 可能尚未完成）。本函数不驱动 cron：tryDeliverCron 回读的是成员值，
+    // 与信号发射时序无关
+    if (m_running == running)
+        return;
+    m_running = running;
+    emit runningChanged(running);
+}
+
+void AgentLoop::startMemoryChain()
+{
+    // 记忆沉淀链（异步化 P2，设计文档 §2.2）：extract →（stored>=1 时）consolidate →
+    // finishMemoryChain，同会话严格串行——消除 extract 追加写与 consolidate 全库重写
+    // 跨 LLM 等待的交错窗口（旧同步链天然串行，异步化后必须以链保序）；跨会话各有
+    // 独立 AgentLoop 与 .memory/ 根，天然隔离。
+    // 与新一轮召回（m_sideRequest）并发可接受（§2.2 末段论证）：召回对 .memory/ 只读，
+    // extract 只追加新文件、consolidate 的重写段无 await 点，最坏窗口是召回读到整理前
+    // 版本（陈旧容忍，无数据破坏），与旧阻塞时代"上一轮 consolidate 前开始的本轮召回"
+    // 同面。
+    if (m_memoryChainActive)
+    {
+        m_memoryChainPending = true; // 单槽补跑（丢弃/续跑条件见成员注释）
+        return;
+    }
+    m_memoryChainActive = true;
+
+    // ctx=this 生命周期锚（§6-3）：宿主析构则链随父子关系作废、done 永久静默，与
+    // stop() 不 cancel 本链的 fire-and-forget 语义并存（§6-7，理由见 stop() 注释）。
+    // m_memoryRequest 仅作句柄记账与析构期作废锚点
+    m_memoryRequest = m_memory.extractMemoriesAsync(
+        m_messages.mid(1), this, [this](int stored) {
+            // 有新增才合并（lcc s09 语义；consolidate 自带阈值护栏，stored==0 时显式
+            // 短路省一次全目录扫描）。复验纪律不适用本链：链属后台尾巴，跨新回合照常
+            // 跑完——新回合的沉淀请求已按 active 折叠进 pending，串行保证不破
+            if (stored >= 1)
+            {
+                m_memoryRequest = m_memory.consolidateMemoriesAsync(
+                    this, [this](int /*consolidated*/) { finishMemoryChain(); });
+                return;
+            }
+            finishMemoryChain();
+        });
+}
+
+void AgentLoop::finishMemoryChain()
+{
+    m_memoryChainActive = false;
+    m_memoryRequest = nullptr; // 在途对象由 AsyncRequest 终态自 deleteLater，此处仅收句柄
+    emit memoryChainFinished();
+
+    if (!m_memoryChainPending)
+        return;
+    m_memoryChainPending = false;
+    if (m_running)
+        return; // 新回合在飞：丢弃补跑（尽力而为）——该回合终局自然再启整链，对话主体
+                // 已覆盖旧 pending 的沉淀来源；m_running 恒 false 的 stop()/错误终局
+                // 不重启链，属 lcc"仅自然结束分支沉淀"语义的既定豁免
+    // 排程续跑而非直调：防 memoryChainFinished 订阅者栈内重入，也防同步短路链
+    //（done 同步交付）在本回调栈内递归
+    QTimer::singleShot(0, this, [this]() { startMemoryChain(); });
 }
 
 void AgentLoop::continueWithToolResults(const QJsonObject &assistantMessage)
@@ -2094,10 +2168,16 @@ void AgentLoop::stop()
         side->cancel();
     m_sideRequest = nullptr;
 
+    // 记忆沉淀链不随 stop 取消（异步化 P2，设计文档 §6-7 语义分裂决策）：前链（召回）
+    // 是"本回合还没开始"的门槛，停则回合作废；记忆链是 finished 之后的 fire-and-forget
+    // 尾巴，与用户停止意图无关，且 consolidate 的快照-删-写段跨 LLM 等待之后仍需完整
+    // 执行——cancel 落在写段之前只会白丢沉淀成果（尽力而为语义下无补偿路径）。故本函数
+    // 对 m_memoryRequest 既不 cancel 也不清空（链在途则由 done/析构自行收口）
+
     // lcc 31a99d1：用户停止 = 回合失败终局——在途 cron 批回队待下个空闲 tick 重投
     m_cron.finalizeInFlightDelivery(false);
 
-    m_running = false;
+    setRunning(false);
     persistHistory(); // 用户停止终局落盘（已累积历史不丢）
     emit error(tr("已停止。"));
 }

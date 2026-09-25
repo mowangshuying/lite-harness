@@ -118,16 +118,14 @@ void ChatSessionPage::wireAgent()
         // 若出现残留待决卡片，落为"已拒绝"留痕（不再转呼 resolvePermission，交给后端收口）
         if (m_permissionCard && !m_permissionCard->isResolved())
             m_permissionCard->resolveDenySilently();
-        // 流式气泡已存在：收尾渲染后复用该气泡，不另起新气泡
-        if (m_currentBubble)
-        {
-            m_currentBubble->finishStreaming();
-            m_currentBubble = nullptr;
-        }
-        else
-        {
+        // 记忆相位气泡保留（异步化 P2，设计文档 §3.5a）：P2 新终局序下 finished 与
+        // memoryPhaseStarted 同栈相邻发射，有流式气泡时此处**不**收尾定稿、不清槽位——
+        // 定稿与挂 live 进度卡由紧随其后的 memoryPhaseStarted 处理段承接（并记录保留
+        // 引用），气泡生命周期移交 memoryChainFinished 收口。消除旧序"finished 先清槽 →
+        // 记忆链在途期间结果卡到达无气泡可挂 → 落独立噪声气泡兜底"的路径；
+        // 无气泡（如回合中途 clearMessages 后终局）仍走独立气泡兜底不丢回复
+        if (!m_currentBubble)
             addMessage(MessageBubbleWidget::Role::Assistant, reply);
-        }
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
         // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
@@ -171,15 +169,32 @@ void ChatSessionPage::wireAgent()
                                .arg(ToolBlock::toolTitleText(toolName), toolName, summary, output));
             });
 
-    // 记忆沉淀阶段开始（仅自然结束分支，阻塞提取/合并前发射）：正文就地定稿
-    // markdown 并在气泡时间线挂「记忆整理中...」live 进度卡；提取结果卡
-    // （toolOutputReady toolName="memory"）到达后就地切换为终态留痕
+    // 记忆沉淀相位开始（仅自然结束分支，P2 起为异步链启动前、与 finished 同栈相邻发射）：
+    // 正文就地定稿 markdown 并在气泡时间线挂「记忆整理中…」live 进度卡；提取/合并结果卡
+    // （toolOutputReady toolName="memory"）到达后就地切换为终态留痕。
+    // 记录保留引用（§3.5a）：链在途期间该气泡不被 finished 清槽。多轮交叠语义：新回合
+    // startAssistantStream 有「先收尾旧气泡」兜底，本引用被新相位覆盖时旧气泡已定稿、
+    // QPointer 不悬空；结果卡跨窗落进新回合气泡属 §6-5 接受的边缘错位（窗口极窄：
+    // 需用户在 ≤LLM 尾链期内开启新回合且旧链恰在覆盖后才发结果卡）
     connect(m_agentLoop, &AgentLoop::memoryPhaseStarted, this, [this]() {
+        m_memoryBubble = m_currentBubble;
         if (m_currentBubble)
         {
             m_currentBubble->appendMemoryProgress();
             QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
         }
+    });
+
+    // 记忆链收口（P2）：补做被 finished 让渡的气泡定稿（MessageBubbleWidget::
+    // finishStreaming 幂等——live 进度卡未转结果卡时收壳删除、文本段重复归档安全），
+    // 随后释放保留引用；若新回合已抢占槽位则只收自己的账，不动 m_currentBubble
+    connect(m_agentLoop, &AgentLoop::memoryChainFinished, this, [this]() {
+        if (!m_memoryBubble)
+            return;
+        m_memoryBubble->finishStreaming();
+        if (m_currentBubble == m_memoryBubble)
+            m_currentBubble = nullptr;
+        m_memoryBubble = nullptr;
     });
 
     // 权限确认：工具即将执行但需用户裁决，后端队列暂停直至 resolvePermission。
@@ -227,6 +242,16 @@ void ChatSessionPage::wireAgent()
             return;
         addMessage(MessageBubbleWidget::Role::User, displayText);
         startAssistantStream(activeRequestText);
+    });
+
+    // 本会话输入侧禁用（异步化 P2，设计文档 §3.5b）：runningChanged 覆盖整回合含 P1
+    // 召回异步飞行期——旧输入禁用只在 startAssistantStream/finished 两端切换，召回段
+    // （可达 120s）输入可发但必被 run() 卫兵拒绝弹错误提示，现提前到 setRunning(true)
+    // 即禁、终局即放。与 ChatMsgEdit 内 BlockingGate 全局锁并存不冲突：两来源在组件内
+    // OR 合成（Gate 管跨会话阻塞面、本信号管会话回合面，P4 删 Gate 后此处自然独扛）
+    connect(m_agentLoop, &AgentLoop::runningChanged, this, [this](bool running) {
+        if (m_inputEdit)
+            m_inputEdit->setTurnBusy(running);
     });
 }
 

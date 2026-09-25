@@ -24,9 +24,10 @@ namespace QOpenAi { class AsyncRequest; }
  *
  * 与宿主（AgentLoop）的耦合仿 CompactManager：构造函数注入 workDir/model 回调（目录随
  * setWorkDir 动态跟随），卡片经 CardSink 回传（宿主复用三参 toolOutputReady，"memory" 名义），
- * 零新增公共信号。提取/合并内部为阻塞式 LLM 调用，宿主须在其"无活动流/权限挂起/
- * 子代理"的窗口调用并事后复验运行标志（lcc s08 裁决 f 同款豁免）；召回已异步化
- * （P1，loadMemoriesAsync 走 QOpenAi::AsyncRequest），同步 loadMemories 仅迁移期兼容保留。
+ * 零新增公共信号。召回（P1）与提取/合并（P2）均已异步化：三条链走
+ * QOpenAi::AsyncRequest，宿主无需再守"无活动流/权限挂起/子代理"的阻塞窗口；
+ * 同步 loadMemories/extractMemories/consolidateMemories 仅迁移期兼容保留（P4 删净），
+ * 内部仍为阻塞式 LLM 调用（嵌套事件循环，lcc s08 裁决 f 同款豁免）。
  *
  * 无 PyYAML 依赖：frontmatter 采用极简解析（仅支持单行平铺标量），见 .cpp 偏差注释。
  */
@@ -59,12 +60,36 @@ public:
                                              std::function<void(const QString &recalled)> done) const;
 
     /** 提取（lcc extract_memories）：从最近对话提取持久记忆并落盘，返回写入条数；
-     *  任何失败（LLM/落盘）走 lcc 的 skipped 降级路径，返回 0。 */
+     *  任何失败（LLM/落盘）走 lcc 的 skipped 降级路径，返回 0。
+     *  同步版仅作迁移期兼容面（P4 删净），调用方应改走 extractMemoriesAsync。 */
     int extractMemories(const QVector<QJsonObject> &conversation) const;
 
+    /** 提取异步版（P2，设计文档 §2.2/§3.2）：语义与同步版逐字一致，仅 LLM 调用段改走
+     *  QOpenAi::AsyncRequest（本函数立即返回，续延在主线程事件循环交付）。prompt 构建与
+     *  校验/去重/落盘段复用同步链同一组私有方法，两链口径逐字一致。
+     *  done 恒恰好调用一次且恒收到可用计数：请求失败/超时折叠为 done(0)（同步版 skipped
+     *  降级路径同款 qWarning 日志，尽力而为语义——不抛不卡不重试）。ctx 为生命周期锚：
+     *  请求 parent 到 ctx、回调以 ctx 为 context，ctx 析构即链作废、done 永久静默。
+     *  偏离 §3.2 草案（返回 void）：与 loadMemoriesAsync 同范式返回在途 AsyncRequest 供
+     *  宿主记账句柄（§3.4 m_memoryRequest）；空对话走短路（零 LLM 调用、done 同步完成后
+     *  返回 nullptr）。对对话仅只读：调用方在途期间自由变更/清空。 */
+    QOpenAi::AsyncRequest *extractMemoriesAsync(const QVector<QJsonObject> &conversation,
+                                                QObject *ctx,
+                                                std::function<void(int stored)> done) const;
+
     /** 合并（lcc consolidate_memories）：记录数 >= 阈值时以 LLM 重写整个存储（快照回滚），
-     *  返回合并后条数；未达阈值或失败返回 0。 */
+     *  返回合并后条数；未达阈值或失败返回 0。
+     *  同步版仅作迁移期兼容面（P4 删净），调用方应改走 consolidateMemoriesAsync。 */
     int consolidateMemories() const;
+
+    /** 合并异步版（P2，设计文档 §2.2/§3.2）：语义与同步版逐字一致，仅 LLM 调用段改走
+     *  QOpenAi::AsyncRequest。阈值判断/prompt 构建（含超尺寸护栏）在发起段同步完成，
+     *  快照/破坏性替换/回滚段在回调内同步执行（.memory/ 文件的读-删-写全程无 await 点，
+     *  原子性与同步版等价）。链不消费对话，故签名无 conversation 参数（偏离 §3.2 草案，
+     *  与同步版对齐）。未达阈值/超尺寸/失败/超时均折叠为 done(0)（降级日志与同步版同款）。
+     *  done 恒恰好调用一次；ctx 锚与返回句柄语义同 extractMemoriesAsync。 */
+    QOpenAi::AsyncRequest *consolidateMemoriesAsync(QObject *ctx,
+                                                    std::function<void(int consolidated)> done) const;
 
     /** 读取 MEMORY.md 索引文本（lcc read_memory_index）：不存在返回空串 */
     QString readMemoryIndex() const;
@@ -118,6 +143,12 @@ private:
     static QString buildRecallPrompt(const QVector<MemoryRecord> &records, const QString &query);
     static QStringList parseRecallSelection(const QString &reply, const QVector<MemoryRecord> &records);
     QString formatRecalled(const QStringList &selected) const;
+    // ---- 提取链/合并链三段拆分（P2 异步化）：构建 prompt / 处理 LLM 回复，
+    //      同步与异步两条链共用同一实现，保证两链的提示词与落盘口径逐字一致 ----
+    static QString buildExtractPrompt(const QString &dialogue, const QVector<MemoryRecord> &records);
+    int processExtractReply(const QString &reply, QVector<MemoryRecord> existingRecords) const;
+    static QString buildConsolidatePrompt(const QVector<MemoryRecord> &records);
+    int applyConsolidateReply(const QString &reply, const QVector<MemoryRecord> &records) const;
 
     // ---- 阻塞式摘要/选择调用（lcc client.messages.create 的 OpenAI 形态等价） ----
     QString blockingCreate(const QString &prompt, int maxTokens, bool *ok, QString *error) const;

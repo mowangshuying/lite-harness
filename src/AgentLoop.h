@@ -89,16 +89,24 @@ signals:
     // （含清为空清单）后发射，携带本次输入清单的快照 [{content, status}, ...]（不再持久化，
     // 由模型按计划逐轮重发全量清单）；校验失败与权限询问中不发射
     void todoUpdated(const QJsonArray &todos);
-    // 记忆沉淀阶段开始（仅自然结束分支）：正文流已毕、即将进入阻塞的记忆提取/合并，
-    // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡，避免长文本停留纯文本态、
-    // 阻塞期间无任何进度指示
+    // 记忆沉淀阶段开始（仅自然结束分支，异步化 P2）：finished 同栈随后发射，提取/合并链
+    // 已改为 QOpenAi::AsyncRequest 异步执行（startMemoryChain，不再阻塞事件循环），
+    // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡、保留气泡引用供结果卡就地切换
     void memoryPhaseStarted();
+    // 记忆沉淀链终态（异步化 P2，设计文档 §3.4）：提取→（stored>=1 时）合并整链结束，
+    // 无论成败降级均以 done(0) 收口。UI 据此收尾 live 进度卡并释放保留的气泡引用
+    void memoryChainFinished();
     // 定时任务送达（lcc s12）：cron tick 到点且处于空闲边界，交付两条文本——
     // displayText 带 "[Scheduled] " 前缀供 UI 展示，activeRequestText 为无原文前缀拼接的活跃请求
     //（lcc deliver 双路：history 存前缀版、_run_turn 用原文 join）
     void scheduledUserMessage(const QString &displayText, const QString &activeRequestText);
     // 循环结束，最终回复
     void finished(const QString &replyText);
+    // 运行态变化（异步化 P2，设计文档 §3.4）：与 m_running 的每次实际翻转同点发射
+    //（setRunning 单点收口，同值不发射）。true＝回合开始（含 P1 召回异步飞行期），
+    // false＝四类终局（自然/轮次上限/流错误/stop）已收口。UI 订阅本信号驱动输入侧
+    // 禁用，覆盖面大于 finished（记忆链尾巴期间仍为 false，输入不禁——链只写 .memory/）
+    void runningChanged(bool running);
     // 错误
     void error(const QString &errorMessage);
 
@@ -221,6 +229,21 @@ private:
     // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 六段结构（含 lcc 7e33a8e temp 段）的 lite 等价）
     void rebuildSystemPromptMessage();
 
+    // 记忆沉淀链启动（异步化 P2，设计文档 §2.2/§3.4）：单槽队列——链空闲则立即发起
+    // extractMemoriesAsync，在途则置 m_memoryChainPending（至多补一次，尽力而为语义）；
+    // 链 = extract →（stored>=1 时）consolidate → finishMemoryChain，同会话严格串行
+    void startMemoryChain();
+    // 记忆沉淀链收口（P2）：清 active/句柄 → emit memoryChainFinished → 消费 pending
+    //（!m_running 时 singleShot 续跑；m_running 置位则丢弃，新回合终局自然再启）
+    void finishMemoryChain();
+
+    // m_running 唯一写入口（异步化 P2，设计文档 §3.4）：状态机收口 + 同点 emit
+    // runningChanged，防漏发。红线：run() 内的 setRunning(true) 必须保持同步置位、
+    // 先于一切异步发起（tryDeliverCron 回读契约，lcc s12 R3），任何 await 点不得插在本
+    // 函数与调用点之间；信号消费方（UI）不得在 runningChanged(false) 栈内启动新回合
+    //（此刻 cron finalize/落盘尚未完成，见终局重排注释）
+    void setRunning(bool running);
+
     // 将 m_messages（除 [0] 系统消息）落盘到会话数据根/history.json；无 ID 或历史为空则 no-op。
     // 顺带在索引已登记该会话时刷新 lastActiveMs（不新建条目，登记由 LiteHarness 负责）
     void persistHistory();
@@ -256,13 +279,25 @@ private:
     QString m_sessionDataId;         // 会话数据目录短 ID（构造注入）；空=回退全局 .lite-harness。置于 init-list 末位：子对象声明序无关（其注入 lambda 均为 [this] 惰性读取 sessionDataRoot），真正不变量=成员 init 早于构造体内 m_cron.start() 的 durable 装载
     QVector<Skill> m_skills;         // 技能表（lcc s07）：构造与 setWorkDir 时扫描重建，仅主线程访问
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
-    bool m_running = false;          // 防并发（尽量只主线程）
+    bool m_running = false;          // 防并发（尽量只主线程）；P2 起写入一律经 setRunning（runningChanged 同点发射）
     QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
     // 侧链在途请求句柄（异步化 P1，设计文档 §3.4）：m_running 为 true 期间至多一条前链
     // （当前为记忆召回，P3 起压缩侧链共用本槽）。对象归属纪律同 m_currentStream：
     // parent 到 this 随析构自动作废（回调丢弃、在途 reply abort），QPointer 防终态后悬挂；
     // stop() 负责 cancel（AsyncRequest m_done 门闩保证终态后 cancel 为无操作）
     QPointer<QObject> m_sideRequest;
+    // 记忆沉淀链在途请求句柄（异步化 P2，设计文档 §3.4）：与 m_sideRequest 分槽——召回属
+    // 前链（m_running 为 true，stop() cancel），记忆链属后台尾巴（m_running 已 false，
+    // stop() 不 cancel：fire-and-forget，理由见 stop() 内语义分裂注释）。对象归属纪律
+    // 同 m_sideRequest：parent 到 this 随析构自动作废，QPointer 防链终态后悬挂
+    QPointer<QObject> m_memoryRequest;
+    // 记忆链单槽队列（P2，§3.4）：extract→(stored>=1?consolidate:结束) 同会话严格串行，
+    // 消除 extract 追加写与 consolidate 重写跨 LLM 等待的交错窗口（跨会话各有独立
+    // AgentLoop/存储根，天然隔离）。链在途时新一轮再请求沉淀只留一格 pending：链收口后
+    // !m_running 立即续跑（补沉淀本轮增量）、m_running 则丢弃（尽力而为——新回合终局自然
+    // 再启整链，旧 pending 数据已含于新回合对话）
+    bool m_memoryChainActive = false;
+    bool m_memoryChainPending = false;
     int m_toolIterations = 0;        // 工具调用轮次计数
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息

@@ -111,15 +111,17 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 的 eventFilter 派发，控件禁用后键事件不再送达，该路径天然关闭，无需另设守卫。
     // 模型下拉不禁用：改选只写后端成员、不发起请求，无交错风险。
     auto *gate = QOpenAi::blockingGate();
-    auto applyBusy = [this](bool busy) {
-        m_textEdit->setEnabled(!busy);
-        m_sendMsgButton->setEnabled(!busy);
-    };
     // 构造期直读一次现状做初值同步：防止本组件 connect 之前等待期已开始而漏禁
-    applyBusy(gate->busy());
+    m_gateBusy = gate->busy();
+    applyBusyState();
     // this 作为 context 必需：gate 是进程生命周期单例、比任何页面活得久，
-    // 必须挂本控件自动断连，防已销毁会话的悬窗回调
-    connect(gate, &QOpenAi::BlockingGate::busyChanged, this, applyBusy);
+    // 必须挂本控件自动断连，防已销毁会话的悬窗回调。
+    // P2 起回调只记录来源值再合成（原 applyBusy 直改 enabled 的形态在双来源下会
+    // 互相覆盖：Gate 释放瞬间把仍在飞的回合输入误放开）
+    connect(gate, &QOpenAi::BlockingGate::busyChanged, this, [this](bool busy) {
+        m_gateBusy = busy;
+        applyBusyState();
+    });
 }
 
 ChatMsgEdit::~ChatMsgEdit()
@@ -141,6 +143,25 @@ void ChatMsgEdit::setCurrentModel(const QString &model)
 QString ChatMsgEdit::currentModel() const
 {
     return m_modelComboBox->currentText();
+}
+
+void ChatMsgEdit::setTurnBusy(bool busy)
+{
+    // 本会话回合态来源（宿主页面接 runningChanged 直连注入）；同值早退防噪声刷新
+    if (m_turnBusy == busy)
+        return;
+    m_turnBusy = busy;
+    applyBusyState();
+}
+
+void ChatMsgEdit::applyBusyState()
+{
+    // 两禁用来源 OR 合成：Gate 全局等待（跨会话，P4 删）∪ 本会话回合在飞（含召回期）。
+    // 禁用面与旧 Gate 单源一致：输入框+发送钮；Enter 发送走 textEdit 键事件，控件禁用
+    // 后天然关闭；模型下拉不禁（改选只写成员不发起请求）
+    const bool busy = m_gateBusy || m_turnBusy;
+    m_textEdit->setEnabled(!busy);
+    m_sendMsgButton->setEnabled(!busy);
 }
 
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)

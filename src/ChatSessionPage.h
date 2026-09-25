@@ -65,6 +65,11 @@ private:
     // QPointer：气泡若被异常销毁（如 clearMessages 的 deleteLater 序列）自动置空，
     // 与 m_permissionCard/m_todoCard 同一初值纪律；流式槽位的显式清空语义保留（finishStreaming 不销毁气泡）
     QPointer<MessageBubbleWidget> m_currentBubble;
+    // 记忆相位保留的气泡引用（异步化 P2，设计文档 §3.5a）：memoryPhaseStarted 时记下
+    // 当前气泡、finished 处理中不清空槽位，供记忆结果卡（toolOutputReady "memory"）
+    // 与 live 进度卡挂原时间线；memoryChainFinished 收尾定稿后释放。QPointer 纪律同
+    // m_currentBubble（clearMessages 等异常销毁自动置空）
+    QPointer<MessageBubbleWidget> m_memoryBubble;
     QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
     QPointer<TodoCard> m_todoCard;                    // 会话流常驻任务清单卡（首次 todoUpdated 挂载，此后就地刷新；clearMessages 销毁后置空）
 };
