@@ -35,9 +35,14 @@ WorkDirPathBar::WorkDirPathBar(QWidget *parent) : QWidget(parent)
 
 void WorkDirPathBar::enableBrowse()
 {
+    // 幂等守卫（第六轮审计 C8）：本接口公开可重复调用，无守卫会向行布局增殖多个
+    // 「浏览」按钮并重复透传 browseRequested
+    if (m_browseButton)
+        return;
     // 用原生 QToolButton 而非 FluPushButton：后者自带 QSS 会盖掉页面级弱化样式
     // （继承 NewChatPage 原结论）
     auto browse = new QToolButton(this);
+    m_browseButton = browse;
     browse->setObjectName("workDirBrowse");
     browse->setText(tr("浏览"));
     browse->setAutoRaise(true);

@@ -329,8 +329,13 @@ void CollapsibleBlock::startExpandAnimation()
 {
     // 此时布局已稳定，先按最终宽度测量，再按当前状态决定终点无缝启动
     measureContent();
-    if (m_anim && m_anim->state() == QPropertyAnimation::Stopped)
+    // 第六轮审计 S2：原卫兵要求 state()==Stopped 才重启——快速连点时本帧单-shot
+    // 触发处动画仍在跑（上一帧的启动未被取消），跳过重启会让 m_animating 等旧动画
+    // finished 才复位、且终点停留在旧测量高度（展开动作被吞）。改为与
+    // startHeightAnimation 同款重定向：stop 后从当前中途高度续起到最新终点
+    if (m_anim)
     {
+        m_anim->stop();
         m_anim->setStartValue(m_contentHeight);
         m_anim->setEndValue(m_expanded ? m_fullContentHeight : 0);
         m_anim->start();

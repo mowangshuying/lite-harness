@@ -27,7 +27,7 @@ public:
     void setPath(const QString &path);
     QString path() const { return m_path; }
 
-    /// 追加「浏览」按钮（只应调用一次），点击经 browseRequested() 透传
+    /// 追加「浏览」按钮（幂等：重复调用直接忽略），点击经 browseRequested() 透传
     void enableBrowse();
 
 signals:
@@ -43,5 +43,6 @@ private:
 
     QLabel *m_caption = nullptr;
     QLabel *m_pathLabel = nullptr;
+    QWidget *m_browseButton = nullptr; // enableBrowse 建的按钮（非空即已启用，作重复调用守卫）
     QString m_path; // 全路径；可见文本是它的省略快照
 };

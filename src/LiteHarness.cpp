@@ -80,7 +80,6 @@ void LiteHarness::initUi()
     }
 
     m_navView = new FluVNavigationView;
-    // m_navView->setViewWidth(200);
     m_sLayout = new FluStackedLayout;
     m_contentLayout->addWidget(m_navView);
     m_contentLayout->addLayout(m_sLayout);
@@ -174,7 +173,7 @@ void LiteHarness::createSession(const QString &text)
         SessionStore::rootDirFor(QDir::currentPath()),
         sessionDataId, title, m_newChatPage->currentModel(), newWorkDir);
 
-    auto sessionsItem = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup);
+    auto sessionsItem = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup));
     auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, NavKey::SessionsGroup);
     if (childItem == nullptr)
         return;
@@ -214,7 +213,7 @@ void LiteHarness::restoreSessions()
              < b.value(QStringLiteral("createdMs")).toDouble();
     });
 
-    auto sessionsItem = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup);
+    auto sessionsItem = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup));
     for (const QJsonObject &e : std::as_const(entries))
     {
         const QString dataId = e.value(QStringLiteral("dataId")).toString();
@@ -372,7 +371,7 @@ void LiteHarness::renameSession(const QString &key)
     // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确
     if (m_navView->isLong())
     {
-        if (auto *grp = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup))
+        if (auto *grp = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup)))
             grp->adjustItemHeight(childItem);
     }
     // 仅更新索引标题（model/workDir 传空即不覆盖），刷新 lastActiveMs；
@@ -403,7 +402,7 @@ void LiteHarness::deleteSession(const QString &key)
     // 若正显示被删页，先切回新建会话页，避免堆叠布局 currentWidget 悬空
     if (m_sLayout->currentWidget() == page)
     {
-        if (auto *newChat = (FluVNavigationIconTextItem *)m_navView->getItemByKey(NavKey::NewChatPage))
+        if (auto *newChat = static_cast<FluVNavigationIconTextItem *>(m_navView->getItemByKey(NavKey::NewChatPage)))
             newChat->onItemClicked(); // 触发 itemClicked→onItemClicked→keyChanged，堆叠切至 NewChatPage
     }
 
@@ -411,7 +410,7 @@ void LiteHarness::deleteSession(const QString &key)
     const QString dataRoot = page->sessionDataRoot();
 
     // 从分组摘除导航子项（deleteLater 在 removeChildItem 内完成）
-    if (auto *grp = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup))
+    if (auto *grp = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup)))
         grp->removeChildItem(key);
     m_sLayout->removeWidget(key, page); // 仅移出堆叠，不销毁（page 的注销登记在下一步统一执行）
     page->deleteLater();                // 当前页已切走，安全回收会话页及其子控件

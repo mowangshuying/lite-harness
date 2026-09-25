@@ -1,4 +1,5 @@
 #include "MessageBubbleWidget.h"
+#include "LayoutConstants.h"
 #include "ThinkingBlock.h"
 #include "ToolBlock.h"
 #include <QFrame>
@@ -19,7 +20,6 @@
 #include <functional>
 #include <FluAction.h>
 #include <FluPMenu.h>
-// #include <FluScrollDelegate.h>
 
 // Actual row width available to a bubble: parent widget (the scroll area's
 // context widget, kept in sync with the viewport width by setWidgetResizable)
@@ -27,21 +27,16 @@
 // has no parent yet or the parent has no width.
 static int availableContentWidth(const QWidget *bubble)
 {
-    const QWidget* pw = bubble->parentWidget();
-    const QWidget *ppw = bubble->parentWidget()->parentWidget();
-    if (!pw || !ppw)
+    const QWidget *pw = bubble->parentWidget();
+    if (!pw)
         return 0;
-    
+    const QWidget *ppw = pw->parentWidget();
+    if (!ppw)
+        return 0;
+
     int w = ppw->width();
     if (w <= 0)
         return 0;
-
-
-    //if (const QLayout *pl = pw->layout())
-    //{
-    //    const QMargins m = pl->contentsMargins();
-    //    w -= (m.left() + m.right());
-    //}
 
     if (ppw->layout())
     {
@@ -556,7 +551,7 @@ void MessageBubbleWidget::updateSize()
             parentWidget()->installEventFilter(this);
 
         int availW = availableContentWidth(this);
-        availW *= 0.75;
+        availW *= LayoutConst::kMsgColWidthFactor;
         if (availW <= 0)
         {
             m_updatingSize = false;
@@ -593,10 +588,7 @@ void MessageBubbleWidget::updateSize()
     }
     else
     {
-        // int vpWidth = m_content->viewport()->width();
-
         int availW = availableContentWidth(this);
-        // availW *= 0.75;
         if (availW <= 0)
         {
             // Viewport not yet realized — retry on next event loop tick

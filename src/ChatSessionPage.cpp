@@ -123,7 +123,7 @@ void ChatSessionPage::wireAgent()
         // 定稿与挂 live 进度卡由紧随其后的 memoryPhaseStarted 处理段承接（并记录保留
         // 引用），气泡生命周期移交 memoryChainFinished 收口。消除旧序"finished 先清槽 →
         // 记忆链在途期间结果卡到达无气泡可挂 → 落独立噪声气泡兜底"的路径；
-        // 无气泡（如回合中途 clearMessages 后终局）仍走独立气泡兜底不丢回复
+        // 无气泡（如前序 error 链已清槽位）仍走独立气泡兜底不丢回复
         if (!m_currentBubble)
             addMessage(MessageBubbleWidget::Role::Assistant, reply);
     });
@@ -233,7 +233,7 @@ void ChatSessionPage::wireAgent()
         if (!m_todoCard)
         {
             auto *card = new TodoCard(this);
-            // QPointer：clearMessages 销毁或异常删除后自动置空，下次信号到达再自动重挂
+            // QPointer：卡片异常销毁后自动置空，下次信号到达再自动重挂
             m_todoCard = card;
             m_scrollView->getMainLayout()->addWidget(card);
         }
@@ -289,7 +289,7 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
 {
     // 兜底：上一轮未收到 finished 时收尾清场。m_currentBubble 已为 QPointer，
     // 下一行即赋新气泡，原此处的手工置空为死写入（被立即覆盖），随类型迁移一并去除；
-    // 其余置空点（finished/error/closeReplayBubble/clearMessages）承担「关闭流式槽位」
+    // 其余置空点（finished/error/closeReplayBubble）承担「关闭流式槽位」
     // 或「deleteLater 等待期立即隔离」语义，非冗余，保留
     if (m_currentBubble)
         m_currentBubble->finishStreaming();
@@ -422,28 +422,6 @@ void ChatSessionPage::scrollToBottom()
         vlayout->activate();
     auto scrollBar = m_scrollView->verticalScrollBar();
     scrollBar->setValue(scrollBar->maximum());
-}
-
-void ChatSessionPage::clearMessages()
-{
-    m_currentBubble = nullptr;
-    m_memoryBubble = nullptr; // 显式清引用表明意图（审查 M1）：清屏后在途记忆链结果卡被 toolOutputReady 记忆闸静默丢弃
-    // 先停后端：stop() 的待决分支按拒绝回填且**不续跑队列**——若只调 resolvePermission(false)
-    // 会同步续跑，同轮第二个待询问工具可能当场重建权限卡，随即被下面的 teardown 删掉，
-    // 后端再次挂起且无卡可裁决（Gate1 MAJOR-2）。收口后再删控件。
-    // lcc s12：stop() 不杀 cron 运行时，清史也不停调度器——durable 任务跨会话存活（勿在此停表）
-    m_agentLoop->stop();
-    if (m_permissionCard && !m_permissionCard->isResolved())
-        m_permissionCard->resolveDenySilently();
-    m_permissionCard = nullptr;
-    m_todoCard = nullptr; // 常驻任务卡随下方销毁循环一并移除（QPointer 本会自动置空，显式清引用表明意图）
-    auto mainLayout = m_scrollView->getMainLayout();
-    while (auto item = mainLayout->takeAt(0))
-    {
-        if (auto widget = item->widget())
-            widget->deleteLater();
-        delete item;
-    }
 }
 
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
