@@ -18,7 +18,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 ### Agent 核心链
 
 - **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。
-- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta/textDelta/messageFinished）+ blocking `create()`（嵌套事件循环，仍在主线程）。运行时配置来自环境变量 `QOpenAiBaseUrl` / `QOpenAiToken`（`initByEnv()` 于主窗口构造调用），模型名 `MODEL_ID`，缺省 `AgentConst::kDefaultModel`。
+- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta/textDelta/messageFinished）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自环境变量 `QOpenAiBaseUrl` / `QOpenAiToken`（`initByEnv()` 于主窗口构造调用），模型名 `MODEL_ID`，缺省 `AgentConst::kDefaultModel`。
 - **TaskStore** — 任务图存储（lcc s10 移植）：每任务一个 `<会话根>/.task/task_<hex8>.json`，每次操作直读磁盘；6 个 run_* handler + 14 内核方法，失败一律折叠为工具输出字符串。
 - **SubAgent** — `task` 工具子代理（lcc s06）：全新上下文、黑盒只回最终文本、回合预算 50；仅开放 read/write/edit/glob + bash 异步。
 - **BashRunner** — bash 执行单源（危险检测 / 截断 / 超时终态 / QProcess 启动），AgentLoop 前后端与 SubAgent 共用。
