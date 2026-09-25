@@ -498,12 +498,12 @@ void AsyncRequest::start(const QJsonObject &input, int totalTimeoutMs)
 {
     // 复用 ChatStream 而非另起非流式分支（设计文档 §3.1 决策）：侧链只消费正文，
     // 重试 / idle 超时 / 配置缺失延迟 error / 析构 abort 全部现成。
-    // 配置缺失的 error 经 singleShot(0) 延迟一拍发射（QOpenAi.cpp :242-245），
+    // 配置缺失的 error 经 ChatStream::startRequest 内 singleShot(0) 延迟一拍发射，
     // 下方 connect 在事件循环返回前同步完成，该路径必被 error 分支接住、不崩不发。
     m_stream = chat().createStream(input, this);
     // context 一律取 this：终态后对象 deleteLater，连接随析构自动断开，无悬挂回调
     connect(m_stream, &ChatStream::messageFinished, this, [this](const QJsonObject &msg) {
-        // 只提取正文：ChatStream 收尾时已将累积 delta 组装进 message.content（:505）；
+        // 只提取正文：ChatStream::finishStream 收尾时已将累积 delta 组装进 message.content；
         // reasoning_content / tool_calls 丢弃——本类契约即纯文本
         fireDone(msg.value(QStringLiteral("content")).toString(), QString());
     });

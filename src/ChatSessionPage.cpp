@@ -163,6 +163,11 @@ void ChatSessionPage::wireAgent()
                     QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
                     return;
                 }
+                // 记忆结果卡特殊闸（审查 M1）：清屏/双回合交叠时 m_memoryBubble 已空，
+                // 在途记忆链的结果卡若走下方兜底会在清空后的视图里造孤儿气泡——记忆数据
+                // 已落盘（.memory/），此卡纯 UI 留痕，相位丢失时静默丢弃即可
+                if (toolName == QLatin1String("memory") && !m_memoryBubble)
+                    return;
                 // 边界情况（无流式气泡，如信号在回合外到达）：独立气泡兜底，避免信息静默丢失
                 addMessage(MessageBubbleWidget::Role::Assistant,
                            tr("%1 %2:\n```\n%3\n```\n\n输出:\n```\n%4\n```")
@@ -188,6 +193,9 @@ void ChatSessionPage::wireAgent()
     // 记忆链收口（P2）：补做被 finished 让渡的气泡定稿（MessageBubbleWidget::
     // finishStreaming 幂等——live 进度卡未转结果卡时收壳删除、文本段重复归档安全），
     // 随后释放保留引用；若新回合已抢占槽位则只收自己的账，不动 m_currentBubble
+    // 已知限制（审查 L1，挂账观察）：pending 链经 AgentLoop singleShot(0) 重启时不重发
+    // memoryPhaseStarted，其结果卡被上方 M1 闸静默丢弃（数据仍落盘）；极端交叠下旧链尾
+    // 的 finished 可能提前定稿新相位气泡。修它需给两信号加世代参数，收益不配成本
     connect(m_agentLoop, &AgentLoop::memoryChainFinished, this, [this]() {
         if (!m_memoryBubble)
             return;
@@ -419,6 +427,7 @@ void ChatSessionPage::scrollToBottom()
 void ChatSessionPage::clearMessages()
 {
     m_currentBubble = nullptr;
+    m_memoryBubble = nullptr; // 显式清引用表明意图（审查 M1）：清屏后在途记忆链结果卡被 toolOutputReady 记忆闸静默丢弃
     // 先停后端：stop() 的待决分支按拒绝回填且**不续跑队列**——若只调 resolvePermission(false)
     // 会同步续跑，同轮第二个待询问工具可能当场重建权限卡，随即被下面的 teardown 删掉，
     // 后端再次挂起且无卡可裁决（Gate1 MAJOR-2）。收口后再删控件。

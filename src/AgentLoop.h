@@ -322,7 +322,7 @@ private:
     int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc MAX_REACTIVE_RETRIES=1，每次 run 归零）
     QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
     // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用三参 toolOutputReady（"memory"）
-    MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，阻塞式，构造时注入回调）
+    MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，异步回调式，构造时注入回调）
     QString m_relevantMemories;          // 本轮召回的记录文本（system prompt 尾段；run() 时刷新）
     // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然
     // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由

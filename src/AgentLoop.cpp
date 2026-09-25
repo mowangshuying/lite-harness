@@ -720,7 +720,7 @@ emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").ar
             m_cron.finalizeInFlightDelivery(false);
             setRunning(false);
             persistHistory(); // 轮次上限失败终局也落盘
-            emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
+                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(kMaxToolIterations));
             return;
         }
 

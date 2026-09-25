@@ -122,4 +122,5 @@ P0 0.5d / P1 0.5-1d / P2 1d / P3 1-1.5d / P4 0.5d，合计 3.5-4.5 天，净增�
 - P2 沉淀/整理链异步化（含 runningChanged/memoryChainFinished 信号与页面接线）：已落地（commit 9563901）。
 - P3 压缩三处续延化：已落地（commit dc73367）。
 - P4 清理归零：已落地（本次提交）——blockingRequest / CategoryChat::create / CategoryCompletion::create / blockingCreate 族 / BlockingGate / BlockingSession / setBlockingTimeout 及同步版三方法、applyCompactPipeline、ChatMsgEdit Gate 接线全部删除；grep 全仓无阻塞族残留；禁发送唯一来源为 runningChanged 会话级信号。
-- 实现偏离登记：§3.2 草案三个 Async 方法为 void，实际均返回 `QOpenAi::AsyncRequest *`（宿主句柄记账/取消所需，短路路径返回 nullptr）；consolidateMemoriesAsync 实际签名无 conversation 参数（整理链不消费对话）。
+- 实现偏离登记：§3.2 草案三个 Async 方法为 void，实际均返回 `QOpenAi::AsyncRequest *`（宿主句柄记账/取消所需，短路路径返回 nullptr）；consolidateMemoriesAsync 实际签名无 conversation 参数（整理链不消费对话）；§3.3 草案 prepareAsync 原地引用收 conversation，实际按值传入、done 按值交付最终 conversation（挂起跨 await 后调用方栈引用有悬挂风险，按值更安全）。三处均为实现优于草案的修正（审查 L5 补记）。
+- 审查后修复（独立审查结论 0 Critical/0 High/1 Medium/5 Low）：M1 记忆结果卡加相位闸——`toolOutputReady("memory")` 在 m_memoryBubble 为空（清屏/交叠丢相位）时静默丢弃，不再生成孤儿兜底气泡（数据已落盘，纯 UI 留痕）；L1 双回合交叠窄窗口（pending 链不重发 memoryPhaseStarted、旧链 finished 抢先定稿新气泡）登记为已知限制，修它需给信号加世代参数，收益不配成本；L2-L4 陈旧注释/缩进/行号引用修正。
