@@ -135,7 +135,7 @@ void LiteHarness::setupConnections()
     // 启动即按当前主题着色标题栏（initUi 里的黑色前景是主题盲初值）。
     // 标题栏着色非 QSS 可表达（chromePalette API），保留在本槽；窗口 QSS 样板收敛到 ThemeAware::bind
     onThemeChanged();
-    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [=](FluTheme theme) { onThemeChanged(); });
+    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [this](FluTheme) { onThemeChanged(); });
     ThemeAware::bind("LiteHarness.qss", this);
 }
 

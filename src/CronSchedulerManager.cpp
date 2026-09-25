@@ -462,20 +462,19 @@ void CronSchedulerManager::acknowledgeCronJobs(const QList<CronJob> &fired)
         for (const Change &change : changes)
             m_jobs.insert(change.before.id, change.before);
         for (const Change &change : changes)
-        {
-            bool queued = false;
-            for (const CronJob &entry : m_queue)
-            {
-                if (entry.id == change.before.id)
-                {
-                    queued = true;
-                    break;
-                }
-            }
-            if (!queued)
-                m_queue.append(change.before);
-        }
+            enqueueUnique(change.before);
     }
+}
+
+void CronSchedulerManager::enqueueUnique(const CronJob &job)
+{
+    // 先到先得：同 id 已在队即跳过（重复入队会导致同任务双交付），否则追加队尾
+    for (const CronJob &entry : m_queue)
+    {
+        if (entry.id == job.id)
+            return;
+    }
+    m_queue.append(job);
 }
 
 void CronSchedulerManager::restoreCronJobs(const QList<CronJob> &fired)
@@ -623,19 +622,7 @@ void CronSchedulerManager::loadDurableJobs()
         // lcc 原样：无剪枝——pending 的一次性任务照常入队重投（at-least-once）；
         // 规格书"装载即剪枝"与参照文件相悖，按"参照文件为准"裁决不剪枝（登记偏差）
         if (job.pendingDelivery)
-        {
-            bool queued = false;
-            for (const CronJob &entry : m_queue)
-            {
-                if (entry.id == job.id)
-                {
-                    queued = true;
-                    break;
-                }
-            }
-            if (!queued)
-                m_queue.append(job);
-        }
+            enqueueUnique(job);
         ++loaded;
     }
 

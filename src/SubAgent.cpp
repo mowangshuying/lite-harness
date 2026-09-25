@@ -2,14 +2,14 @@
 
 #include "QOpenAi.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
-#include "AgentConstants.h" // 模型清单/max_tokens/bash 超时与截断上限单源
+#include "AgentConstants.h" // 模型清单/max_tokens 单源（bash 超时与截断已随执行链收敛到 BashRunner）
+#include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与主循环单源共用
 
 #include <QDebug>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QSet>
 #include <QSignalBlocker>
-#include <QTimer>
 
 #include <memory>
 #include <utility>
@@ -309,60 +309,38 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
     const QString command = args.value(QStringLiteral("command")).toString();
 
     // bash 内部危险黑名单（lcc fddb23e G4 单源：与权限门 DENY_LIST 共用宿主 bashDenyList；
-    // 清单与文案与主循环逐字一致，经宿主静态口共用）
-    for (const QString &danger : AgentLoop::bashDenyList()) // lcc fddb23e 单源列表（G4）
+    // 清单与文案与主循环逐字一致，判定/文案实现亦单源于 BashRunner::dangerWarning）
+    const QString danger = BashRunner::dangerWarning(command, AgentLoop::bashDenyList());
+    if (!danger.isEmpty())
     {
-        if (command.contains(danger, Qt::CaseInsensitive))
-        {
-            const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
-            m_host->triggerPostToolUseHooks(toolCall, output);
-            onToolFinished(toolCall, output);
-            return;
-        }
+        m_host->triggerPostToolUseHooks(toolCall, danger);
+        onToolFinished(toolCall, danger);
+        return;
     }
 
-    // 异步执行（QProcess 为 this 子对象，析构自动清理）
-    auto *process = new QProcess(this);
-    process->setProcessChannelMode(QProcess::MergedChannels);
-    process->setWorkingDirectory(m_workDir);
-    m_activeProcesses.append(process);
-
-    // 120 秒超时（与主循环一致；shared_ptr 标志随两回调捕获，无裸 new/delete——MINOR-2）
+    // 超时标志（shared_ptr 随回调捕获，无裸 new/delete——MINOR-2）；进程创建/登记/
+    // 挂超时/cmd.exe 启动与主循环共用 BashRunner::start（原整函数级复制收敛），
+    // "先 connect 后 start"时序由 arm 回调保证。差异仅两处留在下方回调：
+    // m_cancelled 短路（取消后静默丢弃输出）与黑盒收口（onToolFinished 不带工具名参数）
     auto timedOut = std::make_shared<bool>(false);
-    QTimer::singleShot(AgentConst::kBashTimeoutMs, process, [process, timedOut]() {
-        *timedOut = true;
-        process->kill();
-    });
+    BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
+                      [this, toolCall, timedOut](QProcess *process) {
+        connect(process, &QProcess::finished, this,
+                [this, process, toolCall, timedOut](int, QProcess::ExitStatus) {
+            m_activeProcesses.removeAll(process);
+            if (m_cancelled)
+            {
+                process->deleteLater();
+                return;
+            }
 
-    connect(process, &QProcess::finished, this,
-            [this, process, toolCall, timedOut](int, QProcess::ExitStatus) {
-        m_activeProcesses.removeAll(process);
-        if (m_cancelled)
-        {
+            const QString output = BashRunner::finalizeOutput(process, *timedOut);
             process->deleteLater();
-            return;
-        }
 
-        QString output;
-        if (*timedOut)
-        {
-            output = AgentConst::kBashTimeoutError;
-        }
-        else
-        {
-            output = QString::fromLocal8Bit(process->readAllStandardOutput());
-            if (output.length() > AgentConst::kOutputCharLimit)
-                output = output.left(AgentConst::kOutputCharLimit); // 截断（与主循环一致）
-            if (output.isEmpty())
-                output = QStringLiteral("(no output)");
-        }
-        process->deleteLater();
-
-        m_host->triggerPostToolUseHooks(toolCall, output);
-        onToolFinished(toolCall, output);
+            m_host->triggerPostToolUseHooks(toolCall, output);
+            onToolFinished(toolCall, output);
+        });
     });
-
-    process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
 }
 
 void SubAgent::finish(const QString &result)

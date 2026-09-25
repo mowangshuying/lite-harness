@@ -1,8 +1,9 @@
 #pragma once
 
 // Agent 常量单源头：收敛散落的魔法数/字面量（模型清单、max_tokens、bash 超时、
-// 输出截断上限）。纯 header-only，被 include 即可编译，无需加入 CMake 源列表。
-// 使用方：AgentLoop.cpp / SubAgent.cpp / ChatMsgEdit.cpp。
+// 输出截断上限、中间目录名、glob 有界化参数）。纯 header-only，被 include 即可编译，
+// 无需加入 CMake 源列表。
+// 使用方：AgentLoop.cpp / SubAgent.cpp / BashRunner.cpp / ChatMsgEdit.cpp / CompactManager.cpp。
 
 #include <QString>
 #include <QStringList>
@@ -31,5 +32,34 @@ inline const QString kBashTimeoutError =
 
 // 工具输出字符截断上限（bash 前台/后台、read_file 共用；lcc [:50000] 语义）
 constexpr qsizetype kOutputCharLimit = 50000;
+
+// ---- 会话数据根下的中间目录名（叶子段）单源 ----
+// 根路径统一由 AgentLoop::sessionDataRoot()（含 .lite-harness 中间层/会话段）或各引擎
+// 注入的 workDirSink 提供，此处只收敛最后拼接的叶子段，防止 AgentLoop/CompactManager
+// 多份拼法漂移。**拼法逐字符不可改动——涉及既有落盘数据的读取兼容**（历史会话的
+// .task/.transcripts 等按旧名写盘，任何改名等价于数据丢失）。
+inline const QString kTaskDirName = QStringLiteral(".task"); // 任务图（一任务一 JSON）
+inline const QString kTempDirName = QStringLiteral(".temp"); // prompt 临时目录（system prompt 引导语指向）
+inline const QString kTranscriptsDirName = QStringLiteral(".transcripts"); // 压缩转写 JSONL
+inline const QString kToolResultsDirName =
+    QStringLiteral(".task_outputs/tool-results"); // 大工具输出卸载（含一级子目录）
+
+// ---- glob 工具（runGlobIn）有界化参数 ----
+// runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：
+// 原 QDirIterator 无上限且进入 .git/build 等巨型目录，大仓库直接冻结 UI。
+// 剪枝目录名（大小写不敏感整目录跳过；覆盖 VCS/构建产物/依赖/缓存/虚拟环境常见巨头）：
+inline const QStringList kGlobPruneDirNames = {
+    QStringLiteral(".git"),          QStringLiteral("build"),
+    QStringLiteral("node_modules"),  QStringLiteral("out"),
+    QStringLiteral("x64"),           QStringLiteral(".vs"),
+    QStringLiteral("__pycache__"),   QStringLiteral(".venv"),
+    QStringLiteral("venv")};
+
+// 遍历条目硬上限（目录+文件合计计数，超限停止遍历并在结果尾部附截断提示）
+constexpr qsizetype kGlobScanEntryLimit = 20000;
+
+// 命中收集硬上限（匹配且过 safePathIn 的文件数；须大于展示条数 200，
+// 否则上限先于展示窗口生效、"more matches omitted" 提示失去意义）
+constexpr qsizetype kGlobCollectLimit = 2000;
 
 } // namespace AgentConst

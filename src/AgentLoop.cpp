@@ -3,12 +3,12 @@
 #include "QOpenAi.h"
 #include "SubAgent.h" // startSubAgentTask/cancelSubAgent/resolvePermission 需要完整类型
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植，全仓唯一事实源）
-#include "AgentConstants.h" // 模型/超时/截断常量单源（替代散落字面量）
+#include "AgentConstants.h" // 模型/超时/截断常量与中间目录名单源（替代散落字面量）
+#include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与子代理单源共用
 
 #include <QJsonDocument>
 #include <QProcess>
 #include <QDir>
-#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
@@ -46,8 +46,9 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
                          const QString &skillCatalog,
                          const QString &memoryIndex, const QString &memoryText)
 {
-    // 临时目录（lcc 7e33a8e prompt_temp；lite 有意偏差收进会话数据根下的 .temp，见顶部注释）
-    const QString tempDir = tempRoot + QStringLiteral("/.temp");
+    // 临时目录（lcc 7e33a8e prompt_temp；lite 有意偏差收进会话数据根下的 .temp，见顶部注释；
+    // 目录名单源 AgentConst::kTempDirName，拼接结果与原字面量 "/.temp" 逐字符相同）
+    const QString tempDir = tempRoot + QLatin1Char('/') + AgentConst::kTempDirName;
     // head 段：仅 %1（workDir）参与 arg() 替换
     const QString head = QStringLiteral(
                              "You are a coding agent at %1. Use tools to solve tasks. "
@@ -1342,8 +1343,8 @@ void AgentLoop::registerBuiltinHooks()
     });
 
     // PostToolUse #2: large_output —— 超长输出提醒（lcc 阈值 100000 字符）。
-    // 注：本实现中 bash/read_file 输出在 handler 内已先行截断到 50000，钩子实际难以触发，
-    // 与 lcc 现状一致（lcc 的 run_bash 同样先 [:50000]），保留以对齐结构
+    // 注：本实现中 bash/read_file 输出在 handler 内已先行截断到 AgentConst::kOutputCharLimit，
+    // 钩子实际难以触发，与 lcc 现状一致（lcc 的 run_bash 同样先行截断），保留以对齐结构
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
         if (output.size() > 100000)
             qDebug().noquote() << QStringLiteral("[hook] Large output from %1: %2 chars")
@@ -1419,112 +1420,84 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // s01 内部黑名单与 s03 deny 列表双层防御保留；该输出按 handler 产出对待
     // （对齐 lcc run_bash 的返回文案），同样触发 PostToolUse。
     // 后台模式跳过（lcc 黑名单在前台 run_bash 内、后台分支绕过；且配对已由占位闭合，
-    // 此处绝不可再走 onToolFinished）
+    // 此处绝不可再走 onToolFinished）。判定与文案单源于 BashRunner（与子代理共用）
     if (!background)
     {
-        for (const auto &danger : bashDenyListImpl()) // lcc fddb23e 单源列表（G4）
+        const QString danger = BashRunner::dangerWarning(command, bashDenyListImpl()); // lcc fddb23e 单源列表（G4）
+        if (!danger.isEmpty())
         {
-            if (command.contains(danger, Qt::CaseInsensitive))
-            {
-                const QString output = QStringLiteral("Error: Dangerous command blocked: %1").arg(command);
-                triggerPostToolUseHooks(toolCall, output);
-                onToolFinished(toolCall, ToolNames::BASH, command, output);
-                return;
-            }
+            triggerPostToolUseHooks(toolCall, danger);
+            onToolFinished(toolCall, ToolNames::BASH, command, danger);
+            return;
         }
     }
 
-    // 异步执行（QProcess 为 this 子对象，析构自动清理）
-    auto *process = new QProcess(this);
-    process->setProcessChannelMode(QProcess::MergedChannels);
-    process->setWorkingDirectory(m_workDir);
-    m_activeProcesses.append(process);
-
-    // 120 秒超时：kill 后 finished 信号触发，靠标志区分“超时被杀” vs “正常结束”。
+    // 120 秒超时：kill 后 finished 信号触发，靠标志区分"超时被杀" vs "正常结束"。
     // shared_ptr 捕获（MINOR-2 修复）：若进程从未启动/不发 finished，超时闭包与
     // 标志随最后一个捕获者释放，不再裸 new/delete 泄漏
     auto timedOut = std::make_shared<bool>(false);
-    QTimer::singleShot(AgentConst::kBashTimeoutMs, process, [process, timedOut]() {
-        *timedOut = true;
-        process->kill();
-    });
 
+    // 建进程/登记/挂超时/cmd.exe 启动整段与子代理共用 BashRunner::start（原三处逐字复制）；
+    // 差异（输出汇、钩子时序、取消语义）全部留在下方回调里。"先 connect 后 start"的
+    // 原时序由 BashRunner::start 内部的 arm 钩子（start 前调用）保证
     if (background)
     {
         // 后台收口（lcc run() 的转译）：不 onToolFinished、不触发钩子，仅记账。
         // Qt 在 FailedToStart 的 errorOccurred 之后仍会发 finished，recorded 门闩保证恰好记一次
         auto recorded = std::make_shared<bool>(false);
 
-        connect(process, &QProcess::errorOccurred, this,
-                [this, process, taskId, recorded](QProcess::ProcessError error) {
-            if (error != QProcess::FailedToStart || *recorded)
-                return;
-            *recorded = true;
-            // lcc run() 的 except 分支文案形态：Error: {异常}: {消息} → Qt 无异常，取 errorString
-            m_backgroundTasks.recordResult(
-                taskId, QStringLiteral("Error: %1").arg(process->errorString()), -1, false);
-        });
-
-        connect(process, &QProcess::finished, this,
-                [this, process, taskId, timedOut, recorded](int exitCode, QProcess::ExitStatus) {
-            m_activeProcesses.removeAll(process);
-            if (!*recorded)
-            {
+        BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
+                          [this, taskId, timedOut, recorded](QProcess *process) {
+            connect(process, &QProcess::errorOccurred, this,
+                    [this, process, taskId, recorded](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart || *recorded)
+                    return;
                 *recorded = true;
-                QString output;
-                if (*timedOut)
+                // lcc run() 的 except 分支文案形态：Error: {异常}: {消息} → Qt 无异常，取 errorString
+                m_backgroundTasks.recordResult(
+                    taskId, QStringLiteral("Error: %1").arg(process->errorString()), -1, false);
+            });
+
+            connect(process, &QProcess::finished, this,
+                    [this, process, taskId, timedOut, recorded](int exitCode, QProcess::ExitStatus) {
+                m_activeProcesses.removeAll(process);
+                if (!*recorded)
                 {
-                    output = AgentConst::kBashTimeoutError;
+                    *recorded = true;
+                    m_backgroundTasks.recordResult(
+                        taskId, BashRunner::finalizeOutput(process, *timedOut), exitCode, *timedOut);
                 }
-                else
-                {
-                    output = QString::fromLocal8Bit(process->readAllStandardOutput());
-                    if (output.length() > AgentConst::kOutputCharLimit)
-                        output = output.left(AgentConst::kOutputCharLimit); // 截断
-                    if (output.isEmpty())
-                        output = QStringLiteral("(no output)");
-                }
-                m_backgroundTasks.recordResult(taskId, output, exitCode, *timedOut);
-            }
-            process->deleteLater();
+                process->deleteLater();
+            });
         });
 
-        process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
         // lcc 在 Popen 成功后打印；QProcess 启动是异步的，无法同步检测启动失败——
         // 登记后乐观打印，失败随后经 errorOccurred 补记（已知偏差）
         qDebug().noquote() << QStringLiteral("[bg] started %1 %2").arg(taskId, command.left(60));
         return;
     }
 
-    connect(process, &QProcess::finished, this,
-            [this, process, toolCall, command, timedOut](int exitCode, QProcess::ExitStatus) {
-        m_activeProcesses.removeAll(process);
+    BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
+                      [this, toolCall, command, timedOut](QProcess *process) {
+        connect(process, &QProcess::finished, this,
+                [this, process, toolCall, command, timedOut](int exitCode, QProcess::ExitStatus) {
+            m_activeProcesses.removeAll(process);
 
-        QString output;
-        if (*timedOut)
-        {
-            output = AgentConst::kBashTimeoutError;
-        }
-        else
-        {
-            output = QString::fromLocal8Bit(process->readAllStandardOutput());
-            if (output.length() > AgentConst::kOutputCharLimit)
-                output = output.left(AgentConst::kOutputCharLimit); // 截断
-            if (output.isEmpty())
-                output = QStringLiteral("(no output)");
+            // finalizeOutput：超时→Timeout 文案（不读缓冲）；否则截断+空兜底（与后台/子代理同口径）
+            const QString base = BashRunner::finalizeOutput(process, *timedOut);
             // 前台对齐 lcc s11 run_bash 重构（共用 run_bash_process + format_bash_result）：
             // 非零退出码前缀 "Error: command exited with status N:"；超时仍用现有 Timeout 文案
-            output = BackgroundTasksManager::formatBashResult(output, exitCode, false);
-        }
-        process->deleteLater();
+            const QString output =
+                *timedOut ? base
+                          : BackgroundTasksManager::formatBashResult(base, exitCode, false);
+            process->deleteLater();
 
-        // PostToolUse 钩子（lcc s04）：bash handler 产出后、回填前触发
-        triggerPostToolUseHooks(toolCall, output);
+            // PostToolUse 钩子（lcc s04）：bash handler 产出后、回填前触发
+            triggerPostToolUseHooks(toolCall, output);
 
-        onToolFinished(toolCall, ToolNames::BASH, command, output);
+            onToolFinished(toolCall, ToolNames::BASH, command, output);
+        });
     });
-
-    process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
 }
 
 // 收割后台任务通知并注入会话（lcc loop.py inject_background_results 的 OpenAI 形态转译：
@@ -1620,12 +1593,8 @@ QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args
         lines.append(QStringLiteral("... (%1 more lines)").arg(more));
     }
 
-    QString output = lines.join(QLatin1Char('\n'));
-    if (output.length() > AgentConst::kOutputCharLimit)
-        output = output.left(AgentConst::kOutputCharLimit); // 截断
-    if (output.isEmpty())
-        output = QStringLiteral("(no output)");
-    return output;
+    // 截断与空输出兜底与 bash 同口径（lcc [:50000] + 空则默认文案），单源于 BashRunner
+    return BashRunner::truncateOutput(lines.join(QLatin1Char('\n')));
 }
 
 QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &args)
@@ -1704,33 +1673,71 @@ QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
     if (!re.isValid())
         return QStringLiteral("Error:%1").arg(re.errorString());
 
-    // 以工作区为根递归遍历，按相对路径匹配；结果过滤 safePathIn 逃逸项（如符号链接指向外部）
+    // 以工作区为根递归遍历，按相对路径匹配；结果过滤 safePathIn 逃逸项（如符号链接指向外部）。
+    // 有界化改造（GUI 线程同步遍历，全仓零线程约定不改线程模型）：原 QDirIterator(Subdirectories)
+    // 无条目上限且会进入 .git/build 等巨型目录，大仓库直接冻结 UI。现按显式目录队列 BFS：
+    // 剪枝 kGlobPruneDirNames 命中的整目录、遍历条目与收集命中各设硬上限，超限即停止并附提示。
+    // 取舍登记：上限触发时收集集是"遍历序前 N 条命中"，最终展示（排序+前 200）不再保证是
+    // 全集中字典序前 200；未触限时集合与结果序和原实现完全一致（BFS/DFS 序差被末尾 sort 抹平）。
     QStringList collected;
     QSet<QString> seen;
-    QDirIterator it(workDir, QDir::AllEntries | QDir::NoDotAndDotDot,
-                    QDirIterator::Subdirectories);
-    while (it.hasNext())
+    qsizetype scanned = 0; // 已遍历条目数（目录+文件合计，与原 iterator 逐项产出粒度一致）
+    bool truncated = false;
+
+    QStringList dirQueue; // 显式待遍历目录队列（头指针消费、尾部追加子目录——BFS）
+    dirQueue.append(workDir);
+    for (qsizetype head = 0; head < dirQueue.size() && !truncated; ++head)
     {
-        const QString rel = QDir(workDir).relativeFilePath(it.next());
-        if (!re.match(rel).hasMatch())
-            continue;
-        QString err;
-        if (safePathIn(workDir, rel, &err).isEmpty())
-            continue;
-        if (!seen.contains(rel))
+        const QDir dir(dirQueue.at(head));
+        // AllEntries|NoDotAndDotDot：目录+文件同表返回，含隐藏项——与原 QDirIterator 纳入口径一致
+        const QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        for (const QFileInfo &info : entries)
         {
-            seen.insert(rel);
-            collected.append(rel);
+            if (++scanned > AgentConst::kGlobScanEntryLimit)
+            {
+                truncated = true;
+                break;
+            }
+            if (info.isDir())
+            {
+                // 剪枝：VCS/构建/依赖/缓存目录整棵跳过（Windows 文件系统大小写不敏感，比较同样不敏感）
+                if (!AgentConst::kGlobPruneDirNames.contains(info.fileName(), Qt::CaseInsensitive))
+                    dirQueue.append(info.absoluteFilePath());
+                continue;
+            }
+            const QString rel = QDir(workDir).relativeFilePath(info.absoluteFilePath());
+            if (!re.match(rel).hasMatch())
+                continue;
+            QString err;
+            if (safePathIn(workDir, rel, &err).isEmpty())
+                continue;
+            if (!seen.contains(rel))
+            {
+                seen.insert(rel);
+                collected.append(rel);
+                if (collected.size() >= AgentConst::kGlobCollectLimit)
+                {
+                    truncated = true;
+                    break;
+                }
+            }
         }
     }
 
+    QStringList shown;
     if (collected.isEmpty())
-        return QStringLiteral("(no matches)");
-
-    collected.sort();
-    QStringList shown = collected.mid(0, 200); // 输出前 200 条
-    if (collected.size() > 200)
-        shown.append(QStringLiteral("...(more matches omitted; narrow the pattern)"));
+    {
+        shown.append(QStringLiteral("(no matches)"));
+    }
+    else
+    {
+        collected.sort();
+        shown = collected.mid(0, 200); // 输出前 200 条
+        if (collected.size() > 200)
+            shown.append(QStringLiteral("...(more matches omitted; narrow the pattern)"));
+    }
+    if (truncated)
+        shown.append(QStringLiteral("...(truncated: scan limits reached; narrow the pattern)"));
     return shown.join(QLatin1Char('\n'));
 }
 
@@ -2048,7 +2055,8 @@ QString AgentLoop::taskRootDir() const
     // lcc env.py:19 taskDirPath = workDirPath / ".task"（第四隐藏目录）；
     // lite 有意偏差：收进 .lite-harness 中间目录（会话隔离后为 sessions/<id>/），不在用户项目根撒目录。
     // .lite-harness 中间层由 sessionDataRoot 统一提供，本处仅拼叶子段 .task
-    return QDir(sessionDataRoot()).filePath(QStringLiteral(".task"));
+    // （目录名单源于 AgentConst::kTaskDirName，与 CompactManager 等拼接方共用）
+    return QDir(sessionDataRoot()).filePath(AgentConst::kTaskDirName);
 }
 
 bool AgentLoop::taskFilePath(const QString &taskId, QString *path, QString *error) const
@@ -2059,7 +2067,7 @@ bool AgentLoop::taskFilePath(const QString &taskId, QString *path, QString *erro
     // lcc _root :28-34 目录逃逸防御：lite 中会话根为归一化绝对路径、".task" 为固定段，
     // 该检查恒通过——防御死路径按 lcc 保留（状态文件 s10 裁决）
     const QString dataRoot = QDir::cleanPath(sessionDataRoot());
-    if (root != dataRoot + QLatin1Char('/') + QStringLiteral(".task")) {
+    if (root != dataRoot + QLatin1Char('/') + AgentConst::kTaskDirName) {
         if (error)
             *error = QStringLiteral("TaskManager escapes the workspace");
         return false;

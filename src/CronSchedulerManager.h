@@ -126,6 +126,12 @@ private:
     // 到期入队（lcc _enqueue_due_job）：置 pendingDelivery/lastFired，durable 落盘失败回滚两字段
     // 返回 false（不入队）；成功入队返回 true
     bool enqueueDueJob(const QString &id, const QString &marker);
+    // 队列去重入队（acknowledge 回滚与 durable 装载两处曾逐字复制同一段查重-append）：
+    // 队列中已有同 id 则跳过（先到先得，保列表序），否则追加。
+    // 取舍：保留线性查重不做 QSet 加速——队列长度以台账任务数为上界（个位～十位量级），
+    // 且维护成员级 id 集合需在 6 处入队/出队/清空点同步不变量，收益不抵失配风险；
+    // restoreCronJobs 的批量分支自建行内 QSet（一次建集多次查），不经本方法。
+    void enqueueUnique(const CronJob &job);
     // 分配任务 id（lcc _new_cron_id）：≤100 次去重尝试；失败返回空串并经 *error 给
     // "could not allocate a cron job id"
     QString newCronId(QString *error);

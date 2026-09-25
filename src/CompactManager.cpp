@@ -1,5 +1,6 @@
 #include "CompactManager.h"
 
+#include "AgentConstants.h" // 会话数据根下中间目录名单源（拼法涉既有落盘兼容，禁止字面量漂移）
 #include "QOpenAi.h"
 
 #include <QDebug>
@@ -97,13 +98,13 @@ void CompactManager::setCardSink(CardSink sink)
 QString CompactManager::transcriptDir() const
 {
     // lite 有意偏差：运行时目录收进宿主会话数据根（sink，含 .lite-harness/sessions/<id>）之下；
-    // sink 已含 .lite-harness 中间层，本处仅拼叶子段 .transcripts
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".transcripts"));
+    // sink 已含 .lite-harness 中间层，本处仅拼叶子段 .transcripts（名单源 AgentConst，逐字符不可变）
+    return QDir(m_workDirSink()).filePath(AgentConst::kTranscriptsDirName);
 }
 
 QString CompactManager::toolResultsDir() const
 {
-    return QDir(m_workDirSink()).filePath(QStringLiteral(".task_outputs/tool-results"));
+    return QDir(m_workDirSink()).filePath(AgentConst::kToolResultsDirName);
 }
 
 // ---- OpenAI 形态谓词与估算 ----------------------------------------------------
