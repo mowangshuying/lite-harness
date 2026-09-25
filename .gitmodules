@@ -1,9 +1,6 @@
 [submodule "3rdparty/FluentUI"]
 	path = 3rdparty/FluentUI
 	url = https://github.com/mowangshuying/FluentUI
-[submodule "3rdparty/sqlite_orm"]
-	path = 3rdparty/sqlite_orm
-	url = https://github.com/fnc12/sqlite_orm.git
 [submodule "3rdparty/lcc"]
 	path = 3rdparty/lcc
 	url = https://github.com/mowangshuying/lcc.git

@@ -378,3 +378,6 @@ config/
 
 # agent scratch tooling (debug/edit scripts, logs)
 /.tools/
+
+# submodule registration removed; local checkout kept for reference only
+/3rdparty/sqlite_orm/
