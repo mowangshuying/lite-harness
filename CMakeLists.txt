@@ -85,3 +85,38 @@ target_link_libraries(${TGT} PRIVATE
     FluentUI::Utils
     Qt6::Network
 )
+
+# ---- windeployqt 部署（可选目标，不进 ALL，手动触发：cmake --build build --config Release --target deploy）----
+# -DLITE_DEPLOY=OFF 整体跳过。windeployqt 定位三级：${CMAKE_PREFIX_PATH}/bin（configure 传 -D 时生效）
+# → Qt6::qmake 导入目标所在 bin（本仓 build 缓存无 CMAKE_PREFIX_PATH 条目，find_package 缓存的
+# Qt6_DIR 同样可推导出 Qt 安装目录，此级为可靠主力）→ find_program 兜底。找不到则只告警不建目标。
+# 不传 --compiled：windeployqt 6.9 已移除该选项（实测 "Unknown option 'compiled'."，exit 1）。
+option(LITE_DEPLOY "Create an optional 'deploy' target running windeployqt on the executable" ON)
+if (LITE_DEPLOY)
+	set(WINDEPLOYQT_EXE "")
+	foreach(prefix ${CMAKE_PREFIX_PATH})
+		if (EXISTS "${prefix}/bin/windeployqt.exe")
+			set(WINDEPLOYQT_EXE "${prefix}/bin/windeployqt.exe")
+			break()
+		endif()
+	endforeach()
+	if (NOT WINDEPLOYQT_EXE AND TARGET Qt6::qmake)
+		get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+		cmake_path(GET _qmake_exe PARENT_PATH _qt_bin_dir)
+		if (EXISTS "${_qt_bin_dir}/windeployqt.exe")
+			set(WINDEPLOYQT_EXE "${_qt_bin_dir}/windeployqt.exe")
+		endif()
+	endif()
+	if (NOT WINDEPLOYQT_EXE)
+		find_program(WINDEPLOYQT_EXE NAMES windeployqt windeployqt.exe)
+	endif()
+	if (WINDEPLOYQT_EXE)
+		# DEPENDS 保证 exe 已构建；$<TARGET_FILE> 随 --config 解析到对应配置的输出
+		add_custom_target(deploy
+			COMMAND "${WINDEPLOYQT_EXE}" --no-translations --no-compiler-runtime $<TARGET_FILE:${TGT}>
+			DEPENDS ${TGT}
+			COMMENT "windeployqt -> $<TARGET_FILE:${TGT}>")
+	else()
+		message(WARNING "windeployqt not found; 'deploy' target is not available")
+	endif()
+endif()
