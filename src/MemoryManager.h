@@ -8,6 +8,8 @@
 
 #include <functional>
 
+namespace QOpenAi { class AsyncRequest; }
+
 /**
  * MemoryManager —— 持久记忆系统（对齐 lcc s09 memory_manager.py 的 MemoryManager）
  *
@@ -22,8 +24,9 @@
  *
  * 与宿主（AgentLoop）的耦合仿 CompactManager：构造函数注入 workDir/model 回调（目录随
  * setWorkDir 动态跟随），卡片经 CardSink 回传（宿主复用三参 toolOutputReady，"memory" 名义），
- * 零新增公共信号。提取/合并/召回内部均为阻塞式 LLM 调用，宿主须在其"无活动流/权限挂起/
- * 子代理"的窗口调用并事后复验运行标志（lcc s08 裁决 f 同款豁免）。
+ * 零新增公共信号。提取/合并内部为阻塞式 LLM 调用，宿主须在其"无活动流/权限挂起/
+ * 子代理"的窗口调用并事后复验运行标志（lcc s08 裁决 f 同款豁免）；召回已异步化
+ * （P1，loadMemoriesAsync 走 QOpenAi::AsyncRequest），同步 loadMemories 仅迁移期兼容保留。
  *
  * 无 PyYAML 依赖：frontmatter 采用极简解析（仅支持单行平铺标量），见 .cpp 偏差注释。
  */
@@ -41,6 +44,19 @@ public:
     /** 召回（lcc load_memories）：选相关记录、按 RECALL_CHAR_LIMIT 截断拼接；空存储零 LLM 调用。
      *  返回 [{source, content}] 的 JSON 文本（无命中返回空串），供 system prompt 尾段。 */
     QString loadMemories(const QVector<QJsonObject> &conversation) const;
+
+    /** 召回异步版（P1，设计文档 §3.2）：语义与同步版逐字一致，仅 LLM 选择段改走
+     *  QOpenAi::AsyncRequest（本函数立即返回，续延在回调线程＝主线程事件循环交付）。
+     *  done 恒恰好调用一次且恒收到可用文本（可空串）：请求失败/超时内部降级为关键词
+     *  打分兜底（同步版 lcc except 路径同款），不抛不卡。ctx 为生命周期锚：请求 parent
+     *  到 ctx、内部连接以 ctx 为 context——ctx 析构即链作废、done 永久静默（宿主契约：
+     *  ctx 存活期间 done 必达一次）。
+     *  返回在途 AsyncRequest 供宿主 cancel（§3.4 m_sideRequest 形态）；空存储/无近期
+     *  user 消息走短路（零 LLM 调用、done 同步完成后返回 nullptr）。
+     *  同步版暂保留服务未迁移调用方，P4 统一删除。 */
+    QOpenAi::AsyncRequest *loadMemoriesAsync(const QVector<QJsonObject> &conversation,
+                                             QObject *ctx,
+                                             std::function<void(const QString &recalled)> done) const;
 
     /** 提取（lcc extract_memories）：从最近对话提取持久记忆并落盘，返回写入条数；
      *  任何失败（LLM/落盘）走 lcc 的 skipped 降级路径，返回 0。 */
@@ -97,6 +113,11 @@ private:
     static QStringList keywordMemorySelection(const QVector<MemoryRecord> &records,
                                               const QString &query, int maxItems);
     QStringList selectRelevantMemories(const QVector<QJsonObject> &messages) const;
+    // ---- 召回链三段拆分（P1 异步化）：构建 prompt / 解析 LLM 选择 / 拼接注入文本，
+    //      同步与异步两条链共用同一实现，保证两链的提示词与解析口径逐字一致 ----
+    static QString buildRecallPrompt(const QVector<MemoryRecord> &records, const QString &query);
+    static QStringList parseRecallSelection(const QString &reply, const QVector<MemoryRecord> &records);
+    QString formatRecalled(const QStringList &selected) const;
 
     // ---- 阻塞式摘要/选择调用（lcc client.messages.create 的 OpenAI 形态等价） ----
     QString blockingCreate(const QString &prompt, int maxTokens, bool *ok, QString *error) const;

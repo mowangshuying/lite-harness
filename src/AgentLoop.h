@@ -258,6 +258,11 @@ private:
     QVector<QJsonObject> m_messages; // 对话历史（仅主线程访问，无需 mutex）
     bool m_running = false;          // 防并发（尽量只主线程）
     QPointer<QObject> m_currentStream = nullptr; // 当前 ChatStream（弱引用）
+    // 侧链在途请求句柄（异步化 P1，设计文档 §3.4）：m_running 为 true 期间至多一条前链
+    // （当前为记忆召回，P3 起压缩侧链共用本槽）。对象归属纪律同 m_currentStream：
+    // parent 到 this 随析构自动作废（回调丢弃、在途 reply abort），QPointer 防终态后悬挂；
+    // stop() 负责 cancel（AsyncRequest m_done 门闩保证终态后 cancel 为无操作）
+    QPointer<QObject> m_sideRequest;
     int m_toolIterations = 0;        // 工具调用轮次计数
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息

@@ -584,18 +584,28 @@ void AgentLoop::run(const QString &userMessage)
 
     // 记忆召回（lcc s09 loop.py :71-72：每轮提问在 while 前 load_memories → 重建 system
     // prompt；空存储时选择段短路，零 LLM 调用）。mid(1) 排除 system，与 lcc 会话主体
-    // 语义对齐。嵌套事件循环豁免（仿 s08 裁决 f）：此刻尚无活动流/权限挂起/子代理，
-    // 但召回内阻塞请求期间 stop() 可经嵌套循环进入，故返回后复验 m_running
-    m_relevantMemories = m_memory.loadMemories(m_messages.mid(1));
-    if (!m_running)
-        return;
-    rebuildSystemPromptMessage();
-
-    // 快照历史并发起流式请求（事件驱动，不创建工作线程）
-    QJsonArray messagesJson;
-    for (const auto &msg : m_messages)
-        messagesJson.append(msg);
-    startChatRequest(messagesJson);
+    // 语义对齐。异步化 P1（设计文档 §2.1）：召回链改走 AsyncRequest，下方续延是唯一
+    // 发起路径；断网/超时/配置缺失在 MemoryManager 内部统一降级为关键词兜底或空注入
+    // （§3.2 契约：done 恒收到可用文本），照常开聊、不抛不卡。
+    // 【红线契约 §6-1】m_running=true 必须保持同步置于本函数任何异步发起之前（位置见
+    // 函数头部，不得移动或延迟）：tryDeliverCron 同栈直连 scheduledUserMessage 后回读
+    // m_running 判定接管成败，依赖 run() 返回前标志已置位——召回飞行中不算回合结束。
+    // 召回飞行中 m_running 恒为 true，cron 的 !m_running 卫兵此窗口拒发交付（到期批次
+    // 留队待下个空闲 tick 重投，at-least-once 语义不变——此为期望行为）。
+    m_sideRequest = m_memory.loadMemoriesAsync(
+        m_messages.mid(1), this, [this](const QString &recalled) {
+            // 卫兵（平移自同步时代"召回返回后复验 m_running"模式，§6-7）：stop() 已
+            // cancel 本请求、done 正常永不触发，此处为防御复验，勿当作主防线删除
+            if (!m_running)
+                return;
+            m_relevantMemories = recalled;
+            rebuildSystemPromptMessage();
+            // 快照历史并发起流式请求（事件驱动，不创建工作线程）
+            QJsonArray messagesJson;
+            for (const auto &msg : m_messages)
+                messagesJson.append(msg);
+            startChatRequest(messagesJson);
+        });
 }
 
 void AgentLoop::startChatRequest(const QJsonArray &messages)
@@ -2075,6 +2085,14 @@ void AgentLoop::stop()
         m_currentStream->deleteLater();
         m_currentStream = nullptr;
     }
+
+    // 异步化 P1（设计文档 §3.4/§6-7）：取消在途侧链请求（当前为记忆召回）——cancel 后
+    // done 永久静默，run() 续延不再执行、不再发起后续聊天请求。用 qobject_cast 而非
+    // static_cast：本槽为共用槽（§3.4，P3 起压缩侧链同槽异构），转型空即无请求在途跳过；
+    // 请求已终态（回调已交付、deleteLater 未及处理）时 cancel 经 m_done 门闩天然无操作
+    if (auto *side = qobject_cast<QOpenAi::AsyncRequest*>(m_sideRequest.data()))
+        side->cancel();
+    m_sideRequest = nullptr;
 
     // lcc 31a99d1：用户停止 = 回合失败终局——在途 cron 批回队待下个空闲 tick 重投
     m_cron.finalizeInFlightDelivery(false);

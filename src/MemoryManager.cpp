@@ -675,14 +675,10 @@ QStringList MemoryManager::keywordMemorySelection(const QVector<MemoryRecord> &r
     return files;
 }
 
-QStringList MemoryManager::selectRelevantMemories(const QVector<QJsonObject> &messages) const
+QString MemoryManager::buildRecallPrompt(const QVector<MemoryRecord> &records, const QString &query)
 {
-    // lcc select_relevant_memories（:294-337）：LLM 按目录索引挑选，异常回落关键词打分
-    const QVector<MemoryRecord> records = listMemoryFiles();
-    const QString query = recentUserText(messages, kRecentMaxTurns);
-    if (records.isEmpty() || query.isEmpty())
-        return QStringList();
-
+    // lcc select_relevant_memories :313-322 的提示词构建段（catalog 拼接 + 模板），
+    // 同步/异步两链共用保证逐字一致
     QStringList catalogParts;
     for (qsizetype i = 0; i < records.size(); ++i)
     {
@@ -695,19 +691,19 @@ QStringList MemoryManager::selectRelevantMemories(const QVector<QJsonObject> &me
     const QString catalog = catalogParts.join(QLatin1Char('\n'));
 
     // 提示词逐字移植 lcc :317-322
-    const QString prompt = QStringLiteral(
-                               "Select memory records that are relevant to the current user request. "
-                               "Return only a JSON array of catalog indices, such as [0, 2]. "
-                               "Return [] when none are relevant.\n\n"
-                               "Current request:\n%1\n\nMemory catalog:\n%2")
-                               .arg(query, catalog.left(kRecallCatalogChars));
+    return QStringLiteral(
+               "Select memory records that are relevant to the current user request. "
+               "Return only a JSON array of catalog indices, such as [0, 2]. "
+               "Return [] when none are relevant.\n\n"
+               "Current request:\n%1\n\nMemory catalog:\n%2")
+        .arg(query, catalog.left(kRecallCatalogChars));
+}
 
-    bool ok = false;
-    QString error;
-    const QString reply = blockingCreate(prompt, kRecallMaxTokens, &ok, &error);
-    if (!ok)
-        return keywordMemorySelection(records, query, kRecallMaxItems); // lcc except → 关键词兜底
-
+QStringList MemoryManager::parseRecallSelection(const QString &reply,
+                                                const QVector<MemoryRecord> &records)
+{
+    // lcc select_relevant_memories :326-336 的结果处理段：解析 JSON 索引数组，
+    // 同步/异步两链共用保证逐字一致
     QStringList selected;
     const QJsonArray indices = extractJsonArray(reply);
     for (const QJsonValue &value : indices)
@@ -728,12 +724,11 @@ QStringList MemoryManager::selectRelevantMemories(const QVector<QJsonObject> &me
     return selected;
 }
 
-QString MemoryManager::loadMemories(const QVector<QJsonObject> &conversation) const
+QString MemoryManager::formatRecalled(const QStringList &selected) const
 {
-    // lcc load_memories（:340-355）：空存储时 select 短路 → 零 LLM 调用
+    // lcc load_memories :340-355 的读取/截断/序列化段，同步/异步两链共用
     QVector<QJsonObject> loaded;
     qsizetype remaining = kRecallCharLimit;
-    const QStringList selected = selectRelevantMemories(conversation);
     for (const QString &filename : selected)
     {
         const QString content = readMemoryFile(filename);
@@ -754,6 +749,72 @@ QString MemoryManager::loadMemories(const QVector<QJsonObject> &conversation) co
     for (const QJsonObject &entry : std::as_const(loaded))
         array.append(entry);
     return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Indented)).trimmed();
+}
+
+QStringList MemoryManager::selectRelevantMemories(const QVector<QJsonObject> &messages) const
+{
+    // lcc select_relevant_memories（:294-337）：LLM 按目录索引挑选，异常回落关键词打分
+    const QVector<MemoryRecord> records = listMemoryFiles();
+    const QString query = recentUserText(messages, kRecentMaxTurns);
+    if (records.isEmpty() || query.isEmpty())
+        return QStringList();
+
+    bool ok = false;
+    QString error;
+    const QString reply =
+        blockingCreate(buildRecallPrompt(records, query), kRecallMaxTokens, &ok, &error);
+    if (!ok)
+        return keywordMemorySelection(records, query, kRecallMaxItems); // lcc except → 关键词兜底
+    return parseRecallSelection(reply, records);
+}
+
+QOpenAi::AsyncRequest *MemoryManager::loadMemoriesAsync(
+    const QVector<QJsonObject> &conversation, QObject *ctx,
+    std::function<void(const QString &recalled)> done) const
+{
+    // 召回异步链（P1，设计文档 §2.1/§3.2）：同步链三段拆为「构建 → LLM → 处理」，
+    // LLM 段改走 AsyncRequest；prompt 构建与结果处理复用同步链同一组私有方法，两链语义逐字一致。
+    const QVector<MemoryRecord> records = listMemoryFiles();
+    const QString query = recentUserText(conversation, kRecentMaxTurns);
+    if (records.isEmpty() || query.isEmpty())
+    {
+        // 空存储/无近期 user 消息短路（与同步版 select 段一致，零 LLM 调用）：done 同步交付空串
+        if (done)
+            done(QString());
+        return nullptr;
+    }
+
+    // 请求体与 blockingCreate 逐字段等价（model / 单条 user prompt / max_tokens），
+    // stream 参数与超时（120s 总限，对齐原 blockingTimeout）由 AsyncRequest 内部接管
+    QJsonObject request;
+    request[QStringLiteral("model")] = m_modelSink();
+    QJsonObject userMessage;
+    userMessage[QStringLiteral("role")] = QStringLiteral("user");
+    userMessage[QStringLiteral("content")] = buildRecallPrompt(records, query);
+    request[QStringLiteral("messages")] = QJsonArray{ userMessage };
+    request[QStringLiteral("max_tokens")] = kRecallMaxTokens;
+
+    // ctx 为生命周期锚（§3.1/§6-3）：请求 parent 到 ctx，ctx 析构则回调随对象一并作废，
+    // 本回调只在事件循环中执行（AsyncRequest 各终态路径），不会与宿主成员析构竞态；
+    // this（MemoryManager，非 QObject）作为宿主成员与 ctx 同生共死，捕获安全
+    return QOpenAi::AsyncRequest::sendText(
+        request, ctx,
+        [this, records, query, done](const QString &content, const QString &error) {
+            // 失败/超时/配置缺失一律内部降级为关键词兜底（同步版 lcc except 路径同款），
+            // done 恒收到可用文本（可空串）——上层续延无需再分错误分支（§3.2 契约）
+            const QStringList selected =
+                error.isEmpty() ? parseRecallSelection(content, records)
+                                : keywordMemorySelection(records, query, kRecallMaxItems);
+            if (done)
+                done(formatRecalled(selected));
+        });
+}
+
+QString MemoryManager::loadMemories(const QVector<QJsonObject> &conversation) const
+{
+    // lcc load_memories（:340-355）：空存储时 select 短路 → 零 LLM 调用
+    // 同步版仅作迁移期兼容面（P4 删净），调用方应改走 loadMemoriesAsync
+    return formatRecalled(selectRelevantMemories(conversation));
 }
 
 int MemoryManager::extractMemories(const QVector<QJsonObject> &conversation) const
