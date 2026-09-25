@@ -3,10 +3,9 @@
 #include <FLuFrameLessWidget.h>
 #include <FluStackedLayout.h>
 #include <FluVNavigationView.h>
-#include <QHash>
+#include "SessionRegistry.h"
 
 class NewChatPage;
-class ChatSessionPage;
 
 class LiteHarness : public FluFrameLessWidget
 {
@@ -54,14 +53,7 @@ protected:
     FluStackedLayout *m_sLayout = nullptr;
     FluVNavigationView *m_navView = nullptr;
     NewChatPage *m_newChatPage = nullptr;
-    int m_sessionCount = 0;
-    QHash<QString, ChatSessionPage *> m_sessions;
-    // 导航/堆叠 key（Session_*）→ 会话数据短 ID：删除/重命名据 key 定位 index.json 条目
-    QHash<QString, QString> m_keyToDataId;
-    // 导航子项控件（仅本体）→ 其 key：renameSession 反查 / deleteSession 清理专用
-    // （右键过滤不再直查此表，改用 m_ctxWatchedToKey，防止登记歧义）
-    QHash<QWidget *, QString> m_childWidgetToKey;
-    // 已装右键过滤器的全部控件（会话子项本体 + 其所有后代）→ key：
-    // 命中即沿父链解析归属会话；子项删除/重建时同步清理，防悬空指针误命中
-    QHash<QWidget *, QString> m_ctxWatchedToKey;
+    // 会话映射数据（key↔页面/数据ID、导航子项、右键受控控件）全部收进注册表；
+    // 主窗口不再直持任何会话表，所有权与删除时序不变（注册表只持观察指针）
+    SessionRegistry m_registry;
 };

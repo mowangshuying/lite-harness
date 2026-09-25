@@ -141,8 +141,7 @@ void LiteHarness::setupConnections()
 
 void LiteHarness::createSession(const QString &text)
 {
-    const int sessionId = ++m_sessionCount;
-    const QString key = QString(NavKey::SessionKeyFmt).arg(sessionId);
+    const QString key = m_registry.nextSessionKey();
 
     auto title = text.simplified();
     if (title.length() > 12)
@@ -162,9 +161,8 @@ void LiteHarness::createSession(const QString &text)
     // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
     sessionPage->setModel(m_newChatPage->currentModel());
     sessionPage->startConversation(text);
-    m_sessions.insert(key, sessionPage);
-    // 记录 key→dataId，供右键删除/重命名定位 index.json 条目（子项控件→key 于建子项后再登记）
-    m_keyToDataId.insert(key, sessionDataId);
+    // 登记 key→页面/数据ID（数据ID 供右键删除/重命名定位 index.json 条目；子项控件→key 于建子项后再登记）
+    m_registry.insert(key, sessionPage, sessionDataId);
     m_sLayout->addWidget(key, sessionPage);
 
     // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
@@ -183,7 +181,7 @@ void LiteHarness::createSession(const QString &text)
     // 登记子项本体→key（重命名/删除反查专用），并递归给子项及其全部后代装右键过滤器
     // （行区域被 m_wrapWidget1/图标/标签/箭头占满，Qt 只投递最深接收者，装主体收不到）
     hookContextMenu(childItem);
-    m_childWidgetToKey.insert(childItem, key);
+    m_registry.mapChildItem(key, childItem);
 
     // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
     // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
@@ -223,8 +221,8 @@ void LiteHarness::restoreSessions()
         if (dataId.isEmpty())
             continue;
         // 导航 key 用 "Session_" + 十六进制 dataId：hex 永不等于新会话的十进制自增，避免键冲突
-        const QString key = QString(NavKey::SessionPrefix) + dataId;
-        if (m_sessions.contains(key))
+        const QString key = SessionRegistry::keyForDataId(dataId);
+        if (m_registry.contains(key))
             continue;
 
         // 恢复时沿用条目记录的工作目录；目录已不存在则静默回退进程当前目录，
@@ -236,8 +234,8 @@ void LiteHarness::restoreSessions()
 
         auto page = new ChatSessionPage(dataId, finalWork);
         page->restoreFromDisk(); // 无 history.json 则为空会话页
-        m_sessions.insert(key, page);
-        m_keyToDataId.insert(key, dataId); // 恢复会话同样登记 key→dataId，使其可被右键删除/重命名
+        // 恢复会话同样登记页面与 key→dataId，使其可被右键删除/重命名
+        m_registry.insert(key, page, dataId);
         m_sLayout->addWidget(key, page);
 
         const QString title = e.value(QStringLiteral("title")).toString();
@@ -246,7 +244,7 @@ void LiteHarness::restoreSessions()
             continue;
         // 恢复的子项同样登记本体 + 递归装右键过滤器（同 createSession）
         hookContextMenu(childItem);
-        m_childWidgetToKey.insert(childItem, key);
+        m_registry.mapChildItem(key, childItem);
         // 同 createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
         sessionsItem->setItemWidth(sessionsItem->width());
         // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
@@ -275,7 +273,7 @@ void LiteHarness::hookContextMenu(QWidget *childItem)
     for (QWidget *w : std::as_const(targets))
     {
         w->installEventFilter(this);
-        m_ctxWatchedToKey.insert(w, item->getKey());
+        m_registry.watchWidget(item->getKey(), w);
     }
 }
 
@@ -284,7 +282,7 @@ FluVNavigationIconTextItem *LiteHarness::resolveSessionItem(QWidget *w) const
     // 沿父子链向上找首个登记在册的会话子项本体（后代命中 → 归位到本体）
     for (QWidget *p = w; p; p = p->parentWidget())
     {
-        if (m_ctxWatchedToKey.contains(p))
+        if (m_registry.isWatched(p))
             return qobject_cast<FluVNavigationIconTextItem *>(p);
     }
     return nullptr;
@@ -297,7 +295,7 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
     // 菜单弹出时机必须在「释放之后延一拍」：若在 press 内直接 exec，右键物理未抬起、
     // 平台随后派发的上下文菜单消息会使刚弹出的模态菜单瞬间被关闭（表现为右键无反应）。
     auto *widget = qobject_cast<QWidget *>(watched);
-    if (!widget || !m_ctxWatchedToKey.contains(widget))
+    if (!widget || !m_registry.isWatched(widget))
         return FluFrameLessWidget::eventFilter(watched, event);
 
     const QEvent::Type type = event->type();
@@ -323,7 +321,7 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
         const QPoint gp = me->globalPosition().toPoint();
         QTimer::singleShot(0, this, [this, item, gp]() {
             // 延拍期间子项可能已被删除（如切页/删会话），查表复核
-            if (m_ctxWatchedToKey.contains(item))
+            if (m_registry.isWatched(item))
                 showSessionMenu(item, gp);
         });
     }
@@ -332,7 +330,7 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
 
 void LiteHarness::showSessionMenu(QWidget *childItem, const QPoint &globalPos)
 {
-    const QString key = m_childWidgetToKey.value(childItem);
+    const QString key = m_registry.keyForChildItem(childItem);
     if (key.isEmpty())
         return;
     auto menu = new FluRoundMenu(this);
@@ -352,22 +350,14 @@ void LiteHarness::showSessionMenu(QWidget *childItem, const QPoint &globalPos)
 
 void LiteHarness::renameSession(const QString &key)
 {
-    if (!m_sessions.contains(key))
+    if (!m_registry.contains(key))
         return;
-    const QString dataId = m_keyToDataId.value(key);
+    const QString dataId = m_registry.dataId(key);
     if (dataId.isEmpty())
         return;
 
-    // 据 key 找回导航子项（QPointer 自动置空已删项）
-    FluVNavigationIconTextItem *childItem = nullptr;
-    for (auto it = m_childWidgetToKey.begin(); it != m_childWidgetToKey.end(); ++it)
-    {
-        if (it.value() != key)
-            continue;
-        if (auto *w = qobject_cast<FluVNavigationIconTextItem *>(it.key()))
-            childItem = w;
-        break;
-    }
+    // 据 key 找回导航子项（注册表持观察指针，子项已销毁时自然为空）
+    auto *childItem = qobject_cast<FluVNavigationIconTextItem *>(m_registry.childItem(key));
     if (!childItem)
         return;
 
@@ -394,10 +384,10 @@ void LiteHarness::renameSession(const QString &key)
 
 void LiteHarness::deleteSession(const QString &key)
 {
-    if (!m_sessions.contains(key))
+    if (!m_registry.contains(key))
         return;
-    ChatSessionPage *page = m_sessions.value(key);
-    const QString dataId = m_keyToDataId.value(key);
+    ChatSessionPage *page = m_registry.page(key);
+    const QString dataId = m_registry.dataId(key);
     if (!page)
         return;
 
@@ -423,17 +413,12 @@ void LiteHarness::deleteSession(const QString &key)
     // 从分组摘除导航子项（deleteLater 在 removeChildItem 内完成）
     if (auto *grp = (NavItem *)m_navView->getItemByKey(NavKey::SessionsGroup))
         grp->removeChildItem(key);
-    m_sLayout->removeWidget(key, page); // 仅移出堆叠，不销毁（page 仍由 m_sessions 持有）
+    m_sLayout->removeWidget(key, page); // 仅移出堆叠，不销毁（page 的注销登记在下一步统一执行）
     page->deleteLater();                // 当前页已切走，安全回收会话页及其子控件
 
-    // 清理登记：子项本体→key、本体及后代过滤器表→key、page、key→dataId
+    // 注销登记：页面/数据ID/子项本体→key/受控控件表→key 一并摘除（与原四表清理同位置同时序）。
     // （过滤器表若不清理，已 delete 控件的悬空地址可能被新控件复用导致误命中）
-    for (auto it = m_childWidgetToKey.begin(); it != m_childWidgetToKey.end();)
-        it = (it.value() == key) ? m_childWidgetToKey.erase(it) : std::next(it);
-    for (auto it = m_ctxWatchedToKey.begin(); it != m_ctxWatchedToKey.end();)
-        it = (it.value() == key) ? m_ctxWatchedToKey.erase(it) : std::next(it);
-    m_sessions.remove(key);
-    m_keyToDataId.remove(key);
+    m_registry.unregister(key);
 
     // 移出 index.json 条目（根路径经 SessionStore::rootDirFor 单源派生）
     SessionStore::removeEntry(
@@ -473,10 +458,11 @@ void LiteHarness::onThemeChanged()
 // 与 deleteSession 的“删前停”逻辑相互独立，此处不改其行为。
 void LiteHarness::closeEvent(QCloseEvent *event)
 {
+    // alivePages 已滤除悬挂观察指针（等价原 page&& 守卫），守卫逻辑本身不动
     QList<ChatSessionPage *> running;
-    for (ChatSessionPage *page : m_sessions)
+    for (ChatSessionPage *page : m_registry.alivePages())
     {
-        if (page && page->isRunning())
+        if (page->isRunning())
             running.append(page);
     }
 
