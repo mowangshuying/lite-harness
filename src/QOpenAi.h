@@ -3,6 +3,10 @@
 #include <QObject>
 #include <QJsonObject>
 
+#include <functional>
+
+class QTimer;
+
 namespace QOpenAi {
 
 class ChatStream : public QObject
@@ -47,6 +51,51 @@ private:
 private:
     class Private;
     Private *d;
+};
+
+// ---- 一次性异步文本请求（异步链迁移 P0，规格 docs/async-chain-design.md §3.1）----
+//
+// 为什么要它：记忆召回/沉淀/整理与压缩摘要等侧链历来走 CategoryChat::create 的
+// 嵌套事件循环阻塞链，GUI 线程被同步等待劫持，才引出 BlockingGate 全局禁发送补丁。
+// AsyncRequest 复用 ChatStream 的流式组装（自带 5xx/429 退避重试、idle 静默超时、
+// 配置缺失延迟 error、析构 abort reply），只提取 choices[0].message.content 正文，
+// 以 done(content, error) 恰好一次的回调形态交付——网络零新代码，行为语义与阻塞链对齐。
+//
+// 契约：
+//   - done 恰好调用一次：messageFinished / error / 总超时三条终态路径共用 m_done
+//     门闩，首到终态生效、后到路径吞掉（error 与 finished 竞态防线）；
+//   - error 为空串 = 成功；超时、网络错误、配置缺失一律折叠为 error 字符串，
+//     不抛异常不弹窗，调用方降级路径接住（与"工具侧失败折叠为输出字符串"约定一致）；
+//   - cancel() 后 done 永久静默；对象终态后自行 deleteLater，调用方持 QPointer 观察即可；
+//   - parent 即生命周期锚：锚析构 = 请求作废（回调丢弃、ChatStream 析构 abort 在途 reply）。
+//
+// 迁移期定位：P0 零调用方接入（仅构建验证，现有行为零变化）；P1-P3 各侧链逐步改走
+// 本类、与阻塞链共存；P4 删除 blockingRequest/create/BlockingGate 全族后仅存本异步路。
+class AsyncRequest : public QObject
+{
+    Q_OBJECT
+public:
+    // 发起一次性异步文本请求。input 为 /chat/completions 请求体（stream 参数由内部接管）。
+    // totalTimeoutMs 总超时（默认 120000，对齐原 blockingTimeout）；<=0 表示不设总时限，
+    // 仅依赖 ChatStream 的 idle 静默超时兜底。
+    static AsyncRequest *sendText(const QJsonObject &input, QObject *parent,
+                                  std::function<void(const QString &content, const QString &error)> done,
+                                  int totalTimeoutMs = 120000);
+
+    // 主动取消：调用后 done 永不触发，对象 deleteLater 自清理
+    void cancel();
+
+private:
+    explicit AsyncRequest(QObject *parent);
+
+    void start(const QJsonObject &input, int totalTimeoutMs);
+    // 终态唯一出口：m_done 首到门闩 → 停表/取消流 → 交付回调 → deleteLater 自清理
+    void fireDone(const QString &content, const QString &error);
+
+    ChatStream *m_stream = nullptr;   // 子对象：流式组装执行者
+    QTimer *m_totalTimer = nullptr;   // 子对象：总超时哨兵（idle 会因持续收字节重置，杀不死"慢而不断"的流，需总量防线）
+    std::function<void(const QString &, const QString &)> m_handler; // sendText 移交的回调
+    bool m_done = false;              // 防重入门闩，镜像 ChatStream::Private::done（QOpenAi.cpp:502）语义
 };
 
 // ---- 等待期网关（BlockingGate / BlockingSession）----

@@ -594,6 +594,83 @@ CategoryCompletion &completion()
     return c;
 }
 
+// ---- 一次性异步文本请求（契约与设计缘由见 QOpenAi.h 的 AsyncRequest 声明注释）----
+
+AsyncRequest::AsyncRequest(QObject *parent)
+    : QObject(parent)
+{
+    m_totalTimer = new QTimer(this);
+    m_totalTimer->setSingleShot(true);
+}
+
+AsyncRequest *AsyncRequest::sendText(const QJsonObject &input, QObject *parent,
+                                     std::function<void(const QString &, const QString &)> done,
+                                     int totalTimeoutMs)
+{
+    auto *req = new AsyncRequest(parent);
+    req->m_handler = std::move(done);
+    req->start(input, totalTimeoutMs);
+    return req;
+}
+
+void AsyncRequest::start(const QJsonObject &input, int totalTimeoutMs)
+{
+    // 复用 ChatStream 而非另起非流式分支（设计文档 §3.1 决策）：侧链只消费正文，
+    // 重试 / idle 超时 / 配置缺失延迟 error / 析构 abort 全部现成。
+    // 配置缺失的 error 经 singleShot(0) 延迟一拍发射（QOpenAi.cpp :242-245），
+    // 下方 connect 在事件循环返回前同步完成，该路径必被 error 分支接住、不崩不发。
+    m_stream = chat().createStream(input, this);
+    // context 一律取 this：终态后对象 deleteLater，连接随析构自动断开，无悬挂回调
+    connect(m_stream, &ChatStream::messageFinished, this, [this](const QJsonObject &msg) {
+        // 只提取正文：ChatStream 收尾时已将累积 delta 组装进 message.content（:505）；
+        // reasoning_content / tool_calls 丢弃——本类契约即纯文本
+        fireDone(msg.value(QStringLiteral("content")).toString(), QString());
+    });
+    connect(m_stream, &ChatStream::error, this, [this](const QString &message) {
+        // 网络错误 / idle 超时 / 4xx / 重试用尽 / 配置缺失统一折叠为 error 串
+        fireDone(QString(), message);
+    });
+    if (totalTimeoutMs > 0)
+    {
+        connect(m_totalTimer, &QTimer::timeout, this, [this, totalTimeoutMs] {
+            // 总超时哨兵：idle 计时每收字节即重置（:273-276），"慢而不断"的流永不触发
+            // idle 防线，需按总量兜底——语义对齐原阻塞链 blockingTimeout（:107-116）
+            fireDone(QString(), tr("请求超时（%1 ms）。").arg(totalTimeoutMs));
+        });
+        m_totalTimer->start(totalTimeoutMs);
+    }
+}
+
+void AsyncRequest::fireDone(const QString &content, const QString &error)
+{
+    if (m_done)
+        return; // 首到终态生效：error / messageFinished / 总超时竞态互斥（风险清单 §6-2）
+    m_done = true;
+    m_totalTimer->stop();
+    if (m_stream)
+        m_stream->cancel(); // ChatStream 置位 done、abort reply，此后不再有任何信号
+
+    // 回调先移交为栈上局部量再交付：下方 handler 调用内若同步析构本对象
+    // （如回调里销毁 parent），成员已全部脱手、仅局部量与事件队列安全存续
+    std::function<void(const QString &, const QString &)> handler = std::move(m_handler);
+    m_handler = nullptr;
+    deleteLater(); // 终态自清理。Qt 保证对象析构时丢弃待决 deleteLater 事件，无二次删除
+    if (handler)
+        handler(content, error);
+}
+
+void AsyncRequest::cancel()
+{
+    if (m_done)
+        return; // 已终态/已取消：deleteLater 已在队列中，无需重复调度
+    m_done = true;
+    m_totalTimer->stop();
+    if (m_stream)
+        m_stream->cancel();
+    m_handler = nullptr; // 主动取消不通知调用方：done 永久静默（契约见声明注释）
+    deleteLater();
+}
+
 // ---- 等待期状态（BlockingGate / BlockingSession，设计缘由见 QOpenAi.h 注释）----
 
 BlockingGate::BlockingGate(QObject *parent)
