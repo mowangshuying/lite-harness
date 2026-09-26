@@ -126,9 +126,10 @@ QTextBrowser *MessageBubbleWidget::makeTextView()
             QObject::connect(action, &QAction::triggered, menu, handler);
         };
 
-        addAction(FluAwesomeType::Copy, tr("Copy"), QKeySequence::Copy,
+        // i18n 第八轮：源文本统一为中文（每次弹出重建，无需 LanguageChange 处理）
+        addAction(FluAwesomeType::Copy, tr("复制"), QKeySequence::Copy,
                   view->textCursor().hasSelection(), [view]() { view->copy(); });
-        addAction(FluAwesomeType::SelectAll, tr("Select All"), QKeySequence::SelectAll,
+        addAction(FluAwesomeType::SelectAll, tr("全选"), QKeySequence::SelectAll,
                   !view->toPlainText().isEmpty(), [view]() { view->selectAll(); });
 
         menu->exec(view->mapToGlobal(pos));

@@ -49,18 +49,19 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
             QObject::connect(action, &QAction::triggered, menu, handler);
         };
 
-        addEditAction(FluAwesomeType::Undo, tr("Undo"), QKeySequence::Undo,
+        // i18n 第八轮：右键菜单源文本统一为中文（每次弹出重建，无需 LanguageChange 处理）
+        addEditAction(FluAwesomeType::Undo, tr("撤销"), QKeySequence::Undo,
                       m_textEdit->document()->isUndoAvailable(), [this]() { m_textEdit->undo(); });
-        addEditAction(FluAwesomeType::Redo, tr("Redo"), QKeySequence::Redo,
+        addEditAction(FluAwesomeType::Redo, tr("重做"), QKeySequence::Redo,
                       m_textEdit->document()->isRedoAvailable(), [this]() { m_textEdit->redo(); });
         menu->addSeparator();
-        addEditAction(FluAwesomeType::Cut, tr("Cut"), QKeySequence::Cut,
+        addEditAction(FluAwesomeType::Cut, tr("剪切"), QKeySequence::Cut,
                       m_textEdit->textCursor().hasSelection(), [this]() { m_textEdit->cut(); });
-        addEditAction(FluAwesomeType::Copy, tr("Copy"), QKeySequence::Copy,
+        addEditAction(FluAwesomeType::Copy, tr("复制"), QKeySequence::Copy,
                       m_textEdit->textCursor().hasSelection(), [this]() { m_textEdit->copy(); });
-        addEditAction(FluAwesomeType::Paste, tr("Paste"), QKeySequence::Paste,
+        addEditAction(FluAwesomeType::Paste, tr("粘贴"), QKeySequence::Paste,
                       QApplication::clipboard()->mimeData()->hasText(), [this]() { m_textEdit->paste(); });
-        addEditAction(FluAwesomeType::SelectAll, tr("Select All"), QKeySequence::SelectAll,
+        addEditAction(FluAwesomeType::SelectAll, tr("全选"), QKeySequence::SelectAll,
                       !m_textEdit->toPlainText().isEmpty(), [this]() { m_textEdit->selectAll(); });
 
         menu->exec(m_textEdit->mapToGlobal(pos));

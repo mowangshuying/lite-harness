@@ -1,5 +1,6 @@
 #include "TodoCard.h"
 
+#include <QEvent>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -59,6 +60,14 @@ TodoCard::TodoCard(QWidget *parent) : CollapsibleBlock(parent)
     // 但无任务即无高度——内容区隐藏，等待第一次 setTodos
     m_expanded = true;
     m_contentArea->hide();
+}
+
+void TodoCard::changeEvent(QEvent *event)
+{
+    // i18n 第八轮：常驻卡片标题重译（Qt 按控件逐个投递 LanguageChange）
+    if (event->type() == QEvent::LanguageChange)
+        m_titleLabel->setText(tr("任务清单"));
+    CollapsibleBlock::changeEvent(event);
 }
 
 void TodoCard::setTodos(const QJsonArray &todos)

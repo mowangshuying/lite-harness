@@ -93,19 +93,20 @@ void LiteHarness::initNavView()
 {
     m_navView->hideSearchItem();
 
-    auto newChatItem =  m_navView->insertIconTextItem(FluAwesomeType::Pencil, "New Chat", NavKey::NewChatPage);
+    // i18n 第八轮：导航三项改为中文源 + tr()，存成员指针供 LanguageChange 重译
+    m_newChatItem = m_navView->insertIconTextItem(FluAwesomeType::Pencil, tr("新建对话"), NavKey::NewChatPage);
     m_newChatPage = new NewChatPage;
     m_sLayout->addWidget(NavKey::NewChatPage, m_newChatPage);
 
     // Sessions 分组改用 NavItem（FluVNavigationIconTextItem 最小派生）：额外具备 removeChildItem，
     // 供会话删除时摘除对应导航子项。构造参数与 insertIconTextItem(3 参) 内部所建者一致（itemType=IconText），
     // 仍经 addItemToMidLayout 注册进导航（setParentView + 布局成员），getItemByKey(NavKey::SessionsGroup) 照常命中。
-    auto sessionsItem = new NavItem(FluAwesomeType::List, "Sessions", NavKey::SessionsGroup);
-    m_navView->addItemToMidLayout(sessionsItem);
+    m_sessionsItem = new NavItem(FluAwesomeType::List, tr("会话"), NavKey::SessionsGroup);
+    m_navView->addItemToMidLayout(m_sessionsItem);
 
-    auto settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("Setting"), this);
-    settingsItem->setKey(NavKey::SettingsPage);
-    m_navView->addItemToBottomLayout(settingsItem);
+    m_settingsItem = new FluVNavigationSettingsItem(FluAwesomeType::Settings, tr("设置"), this);
+    m_settingsItem->setKey(NavKey::SettingsPage);
+    m_navView->addItemToBottomLayout(m_settingsItem);
 
     auto settingsPage = new SettingsPage;
     m_sLayout->addWidget(NavKey::SettingsPage, settingsPage);
@@ -115,7 +116,7 @@ void LiteHarness::initNavView()
 
     /// clicked
     // emit m_navView->keyChanged(NavKey::NewChatPage);
-    newChatItem->itemClicked();
+    m_newChatItem->itemClicked();
 }
 
 void LiteHarness::setupConnections()
@@ -481,4 +482,25 @@ void LiteHarness::closeEvent(QCloseEvent *event)
     }
 
     FluFrameLessWidget::closeEvent(event);
+}
+
+// i18n 第八轮：语言切换走「重启生效」链路（主窗口构造前 translator 已装好，本钩子
+// 正常不命中）；保留为「运行中广播」的兜底通道——Qt 在 QTranslator 安装/移除时向
+// 全部 widget 发送 QEvent::LanguageChange，若未来演进为免重启切换，导航文本即时重译
+void LiteHarness::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::LanguageChange)
+        retranslateUi();
+    FluFrameLessWidget::changeEvent(event);
+}
+
+void LiteHarness::retranslateUi()
+{
+    // 导航三项 label 文本重取 tr()（item 常驻，仅文本需重译；key 不变）
+    if (m_newChatItem && m_newChatItem->getLabel())
+        m_newChatItem->getLabel()->setText(tr("新建对话"));
+    if (m_sessionsItem && m_sessionsItem->getLabel())
+        m_sessionsItem->getLabel()->setText(tr("会话"));
+    if (m_settingsItem && m_settingsItem->getLabel())
+        m_settingsItem->getLabel()->setText(tr("设置"));
 }

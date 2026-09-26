@@ -69,6 +69,18 @@ bool WorkDirPathBar::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
+void WorkDirPathBar::changeEvent(QEvent *event)
+{
+    // i18n 第八轮：题注/浏览钮为常驻文案，LanguageChange 时重取 tr()；
+    // 路径值是数据非文案、省略文本随 setPath/resize 重算，不在此处理
+    if (event->type() == QEvent::LanguageChange) {
+        m_caption->setText(tr("工作目录"));
+        if (m_browseButton)
+            m_browseButton->setText(tr("浏览"));
+    }
+    QWidget::changeEvent(event);
+}
+
 void WorkDirPathBar::refreshDisplay()
 {
     m_pathLabel->setToolTip(m_path); // 全路径经 ToolTip 兜底

@@ -4,6 +4,8 @@
 
 class ChatMsgEdit;
 class WorkDirPathBar;
+class QLabel;
+class QEvent;
 
 class NewChatPage : public BasePage
 {
@@ -25,8 +27,13 @@ protected:
     // 维护输入区栏宽（min(800, 可用宽) 并水平居中，纯布局 stretch 无法表达该语义）
     void resizeEvent(QResizeEvent *event) override;
 
+    // i18n 第八轮：常驻页面，LanguageChange 时重译欢迎语（工作目录条文本由
+    // WorkDirPathBar 自身的 changeEvent 处理，Qt 按控件逐个投递、父级无需转发）
+    void changeEvent(QEvent *event) override;
+
 private:
     ChatMsgEdit *m_chatMsgEdit = nullptr;
     QWidget *m_inputDock = nullptr;       // 工作目录路径条 + 输入框的同栏容器（英雄页视觉中心）
     WorkDirPathBar *m_workDirBar = nullptr; // 只读路径展示 + 浏览入口（省略/配色细节见组件注释）
+    QLabel *m_welcomeLabel = nullptr;     // 英雄区问候语（重译面）
 };

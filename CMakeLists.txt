@@ -19,8 +19,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # 组件裁剪：本工程实际仅使用 Widgets / Svg(FluentUI 需要) / Network(LLM 请求)
 # Charts、Core5Compat 由 FluentUI 子构建自行 find_package，根处无需重复申请；Xml 无任何引用
 # 已删除注释掉的 Qt5 探测行（历史死代码）
-find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Network)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network)
+# LinguistTools（i18n 第八轮）：提供 Qt6::lupdate/lrelease 导入目标，供下方 qt_add_translations
+find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Svg Network LinguistTools)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network LinguistTools)
 
 # MSVC IDE 调试环境：将 Qt bin 目录注入 VS 调试器 PATH，保证 F5 调试可加载 DLL
 # 已删除中间变量的 message(STATUS) 噪音输出，仅保留最终结果提示
@@ -79,6 +80,18 @@ qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss_rel})
 
 ### icon
 qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
+
+### i18n（第八轮：中文源文本 + Qt Linguist 链路，重启生效）
+# qt_add_translations 内部（Qt6LinguistToolsMacros.cmake 实证）：lrelease 把 .ts 编为
+# <bin_dir>/lite-harness_en_US.qm（ALL 目标，随主构建生成），并经
+# qt_add_resources(PREFIX "/i18n" BASE <bin_dir>) 内嵌 → 运行时路径
+# :/i18n/lite-harness_en_US.qm（I18n.cpp 写死此路径，两侧同源核实）。
+# .ts 由手动运行 lupdate 维护（不进构建，避免工具链环境差异造成无意义 diff）。
+qt_add_translations(${TGT} TS_FILES i18n/lite-harness_en_US.ts NO_GENERATE_PLURALS_TS_FILE)
+# Qt 官方中文 qm 随库分发（标准对话框 QFileDialog/QMessageBox 等落中文）：
+# 资源别名 = PREFIX "/" + 相对路径 → :/i18n/qtbase_zh_CN.qm。
+# FluentUI 的 Controls.zh-CN.qm 由其静态库自带资源提供（同 /i18n/ 路径），不重复拷贝。
+qt_add_resources(${TGT} "i18n" PREFIX "/" FILES "./i18n/qtbase_zh_CN.qm")
 
 target_link_libraries(${TGT} PRIVATE 
     FluentUI::Controls

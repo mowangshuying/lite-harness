@@ -84,7 +84,7 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
             // 待决权限按拒绝放行队列（防死锁收口，含旧卡留痕，见 dismissPendingPermission）
             dismissPendingPermission();
             addMessage(MessageBubbleWidget::Role::Assistant,
-                       QStringLiteral("*Error:* Agent 仍在运行中，请等待完成后再发送"));
+                       tr("*Error:* Agent 仍在运行中，请等待完成后再发送"));
             return;
         }
         addMessage(MessageBubbleWidget::Role::User, text);
@@ -137,7 +137,8 @@ void ChatSessionPage::wireAgent()
             m_currentBubble->finishStreaming();
             m_currentBubble = nullptr;
         }
-        addMessage(MessageBubbleWidget::Role::Assistant, QString("*Error:* %1").arg(err));
+        // 模板整体入 tr：英文译文恒等保留 "*Error:* %1"（Error 为气泡渲染约定的 markdown 前缀）
+        addMessage(MessageBubbleWidget::Role::Assistant, tr("*Error:* %1").arg(err));
     });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
         if (m_currentBubble)

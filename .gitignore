@@ -384,3 +384,5 @@ config/
 
 # 打包输出
 /dist/
+# FluentUI configure 副作用产物目录（非源码）
+/cmake/

@@ -4,6 +4,8 @@
 #include <QWidget>
 
 class QLabel;
+class QEvent;
+class QToolButton;
 
 /// 只读工作目录展示条：「工作目录  <中间省略的全路径>」
 /// （caption QLabel#workDirCaption + 路径 QLabel#workDirPath）。
@@ -38,11 +40,14 @@ protected:
     // QLabel Resize 事件：栏宽被页面 resizeEvent 钳制时 label 被动变宽窄，需重算中间省略
     bool eventFilter(QObject *watched, QEvent *event) override;
 
+    // i18n 第八轮：常驻组件，LanguageChange 时重译「工作目录」题注与「浏览」钮
+    void changeEvent(QEvent *event) override;
+
 private:
     void refreshDisplay();
 
     QLabel *m_caption = nullptr;
     QLabel *m_pathLabel = nullptr;
-    QWidget *m_browseButton = nullptr; // enableBrowse 建的按钮（非空即已启用，作重复调用守卫）
+    QToolButton *m_browseButton = nullptr; // enableBrowse 建的按钮（非空即已启用，作重复调用守卫）
     QString m_path; // 全路径；可见文本是它的省略快照
 };

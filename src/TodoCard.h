@@ -38,6 +38,10 @@ protected:
     void refreshIcons() override;   // 箭头方向（ChevronUp/Down 随主题取色）
     // 无进行态：不覆写 liveText（基类默认空串，轮播定时器永不被启动）
 
+    // i18n 第八轮：标题「任务清单」为常驻文案，LanguageChange 时重取 tr()；
+    // 计数与行文本是数据非文案，不重译
+    void changeEvent(QEvent *event) override;
+
     // 列表自然高度 = 行数 * 行高 + 间距 + 上下边距（封顶），平滑跟到新展开态
     void measureContent() override;
     // 去掉基类的动画期测量守卫：本类测量即重定向动画（理由见 cpp）

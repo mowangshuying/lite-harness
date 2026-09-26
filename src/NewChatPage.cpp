@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QSettings>
 #include <QDir>
+#include <QEvent>
 #include <QResizeEvent>
 #include "ChatMsgEdit.h"
 #include "LayoutConstants.h"
@@ -30,9 +31,9 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     iconLabel->setPixmap(pixmap.scaled(45, 45));
     heroLayout->addWidget(iconLabel, 0, Qt::AlignHCenter);
 
-    auto welcomeLabel = new QLabel(tr("开始新对话"), this);
-    welcomeLabel->setObjectName("welcomeLabel"); // 颜色/字号见 stylesheet/<theme>/NewChatPage.qss
-    heroLayout->addWidget(welcomeLabel, 0, Qt::AlignHCenter);
+    m_welcomeLabel = new QLabel(tr("开始新对话"), this);
+    m_welcomeLabel->setObjectName("welcomeLabel"); // 颜色/字号见 stylesheet/<theme>/NewChatPage.qss
+    heroLayout->addWidget(m_welcomeLabel, 0, Qt::AlignHCenter);
 
     // —— 输入区（视觉中心，略低于页心）：工作目录路径条在上、ChatMsgEdit 在下，同栏同宽 ——
     // 栏宽由 resizeEvent 钳制为 min(800, 可用宽) 并居中；栏内子控件铺满栏宽，无需再单独居中
@@ -91,6 +92,15 @@ void NewChatPage::resizeEvent(QResizeEvent *event)
     if (m_inputDock)
         m_inputDock->setFixedWidth(qMin(LayoutConst::kColumnMaxWidth,
                                         width() - 2 * LayoutConst::kSideMargin));
+}
+
+void NewChatPage::changeEvent(QEvent *event)
+{
+    // i18n 第八轮：欢迎语为常驻文案，LanguageChange（applyLanguage 重装 translator
+    // 触发广播）时重取 tr()；当前链路启动前已装载，本钩子兜底同进程演进场景
+    if (event->type() == QEvent::LanguageChange && m_welcomeLabel)
+        m_welcomeLabel->setText(tr("开始新对话"));
+    BasePage::changeEvent(event);
 }
 
 QString NewChatPage::currentModel() const

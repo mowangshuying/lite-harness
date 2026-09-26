@@ -1,13 +1,15 @@
 #include "SettingsPage.h"
+#include "I18n.h"
 #include "ThemeAware.h"
 #include <FluUtils.h>
+#include <FluMessageBox.h>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QEvent>
 #include <QSettings>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <FluVScrollView.h>
-#include <FluSettingsSelectBox.h>
 #include <FluLabel.h>
 #include <FluSettingsVersionBox.h>
 #include <FluPushButton.h>
@@ -16,7 +18,7 @@ namespace {
 
 // 默认工作目录：QSettings 用法，组织/应用名已在 App.cpp 全局设定（LiteHarness/LiteHarness），
 // 默认构造命中与旧显式双参构造相同的注册表键；与主题/语言配置互不影响
-// （themeChanged、setLanguage 走 FluentUI 自身机制，非此处）。
+// （语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
 const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 
 QString readDefaultWorkDir()
@@ -37,69 +39,70 @@ QString workDirDisplayText(const QString &stored)
     return stored.isEmpty() ? QObject::tr("未设置（使用进程当前目录）") : stored;
 }
 
-// 默认工作目录设置卡：复用 FluSettingsSelectBox 外观（图标+标题+说明），
-// 隐藏其右侧下拉框，替换为「路径值 + 修改 + 清除」操作行。不新增 Q_OBJECT（
-// 基类已 moc；本类仅构造期一次性装配，无需自身信号）。
-class WorkDirSettingCard : public FluSettingsSelectBox
-{
-public:
-    explicit WorkDirSettingCard(QWidget *parent = nullptr)
-        : FluSettingsSelectBox(parent)
-    {
-        setTitleInfo(tr("默认工作目录"), tr("新建会话将继承该工作目录。"));
-        setIcon(FluAwesomeType::Folder);
-        getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
-
-        m_valueLabel = new QLabel(this);
-        m_valueLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
-        m_valueLabel->setMaximumWidth(320);
-        m_valueLabel->setMinimumWidth(0);
-        m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        auto *modifyButton = new FluPushButton(tr("修改"), this);
-        modifyButton->setFixedSize(64, 30);
-        auto *clearButton = new FluPushButton(tr("清除"), this);
-        clearButton->setFixedSize(64, 30);
-
-        auto *row = new QHBoxLayout;
-        row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(8);
-        row->addWidget(m_valueLabel);
-        row->addWidget(modifyButton);
-        row->addWidget(clearButton);
-        m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
-
-        updateValue();
-
-        connect(modifyButton, &QPushButton::clicked, this, [this]() {
-            const QString current = readDefaultWorkDir();
-            const QString startDir = (!current.isEmpty() && QFileInfo(current).isDir())
-                                         ? current
-                                         : QDir::currentPath();
-            const QString dir = QFileDialog::getExistingDirectory(
-                this, tr("选择默认工作目录"), startDir);
-            if (dir.isEmpty())
-                return; // 取消：保持原值
-            writeDefaultWorkDir(dir);
-            updateValue();
-        });
-        connect(clearButton, &QPushButton::clicked, this, [this]() {
-            writeDefaultWorkDir(QString());
-            updateValue();
-        });
-    }
-
-private:
-    void updateValue()
-    {
-        const QString stored = readDefaultWorkDir();
-        m_valueLabel->setText(workDirDisplayText(stored));
-        m_valueLabel->setToolTip(stored);
-    }
-
-    QLabel *m_valueLabel = nullptr;
-};
-
 } // namespace
+
+// 默认工作目录设置卡：复用 FluSettingsSelectBox 外观（图标+标题+说明），
+// 隐藏其右侧下拉框，替换为「路径值 + 修改 + 清除」操作行。
+// 类声明在 SettingsPage.h（Q_OBJECT 上下文对齐译词条，注释见彼处）。
+WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("默认工作目录"), tr("新建会话将继承该工作目录。"));
+    setIcon(FluAwesomeType::Folder);
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new QLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+    m_clearButton = new FluPushButton(tr("清除"), this);
+    m_clearButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    row->addWidget(m_clearButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() {
+        const QString current = readDefaultWorkDir();
+        const QString startDir = (!current.isEmpty() && QFileInfo(current).isDir())
+                                     ? current
+                                     : QDir::currentPath();
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("选择默认工作目录"), startDir);
+        if (dir.isEmpty())
+            return; // 取消：保持原值
+        writeDefaultWorkDir(dir);
+        updateValue();
+    });
+    connect(m_clearButton, &QPushButton::clicked, this, [this]() {
+        writeDefaultWorkDir(QString());
+        updateValue();
+    });
+}
+
+void WorkDirSettingCard::retranslate()
+{
+    setTitleInfo(tr("默认工作目录"), tr("新建会话将继承该工作目录。"));
+    m_modifyButton->setText(tr("修改"));
+    m_clearButton->setText(tr("清除"));
+    updateValue();
+}
+
+void WorkDirSettingCard::updateValue()
+{
+    const QString stored = readDefaultWorkDir();
+    m_valueLabel->setText(workDirDisplayText(stored));
+    m_valueLabel->setToolTip(stored);
+}
 
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
@@ -113,21 +116,21 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     vMainLayout->addWidget(scrollView, 1);
 
     /// apperance&behavior;
-    auto appearanceAndBehaviorLabel = new FluLabel;
-    appearanceAndBehaviorLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
-    appearanceAndBehaviorLabel->setText(tr("Appearance & Behavior"));
-    scrollView->getMainLayout()->addWidget(appearanceAndBehaviorLabel, 0, Qt::AlignTop);
+    m_appearanceLabel = new FluLabel;
+    m_appearanceLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_appearanceLabel->setText(tr("外观与行为"));
+    scrollView->getMainLayout()->addWidget(m_appearanceLabel, 0, Qt::AlignTop);
 
 
     /// app Theme;
-    auto appThemeBox = new FluSettingsSelectBox;
-    appThemeBox->setTitleInfo(tr("App theme"), tr("Select which app theme to display."));
-    appThemeBox->setIcon(FluAwesomeType::Color);
-    appThemeBox->getComboBox()->addItem(tr("Light"));
-    appThemeBox->getComboBox()->addItem(tr("Dark"));
-    appThemeBox->getComboBox()->addItem(tr("AtomOneDark"));
-    appThemeBox->getComboBox()->setCurrentIndex((int)FluThemeUtils::getUtils()->getTheme());
-    connect(appThemeBox->getComboBox(), &FluComboBox::currentIndexChanged, [=](int index) {
+    m_appThemeBox = new FluSettingsSelectBox;
+    m_appThemeBox->setTitleInfo(tr("应用主题"), tr("选择应用显示的主题。"));
+    m_appThemeBox->setIcon(FluAwesomeType::Color);
+    m_appThemeBox->getComboBox()->addItem(tr("浅色"));
+    m_appThemeBox->getComboBox()->addItem(tr("深色"));
+    m_appThemeBox->getComboBox()->addItem(tr("AtomOneDark")); // 主题专名，各语言恒等
+    m_appThemeBox->getComboBox()->setCurrentIndex((int)FluThemeUtils::getUtils()->getTheme());
+    connect(m_appThemeBox->getComboBox(), &FluComboBox::currentIndexChanged, [=](int index) {
         if (index == (int)FluThemeUtils::getUtils()->getTheme())
             return;
 
@@ -139,71 +142,106 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
             FluThemeUtils::getUtils()->setTheme(FluTheme::AtomOneDark);
     });
 
-    scrollView->getMainLayout()->addWidget(appThemeBox, 0, Qt::AlignTop);
+    scrollView->getMainLayout()->addWidget(m_appThemeBox, 0, Qt::AlignTop);
 
-    /// language;
-    auto languageSelectBox = new FluSettingsSelectBox;
-    languageSelectBox->setTitleInfo(tr("Language"), tr("Select which language to display."));
-    languageSelectBox->setIcon(FluAwesomeType::Globe);
-    languageSelectBox->getComboBox()->addItem(tr("en-US"));
-    languageSelectBox->getComboBox()->addItem(tr("zh-CN"));
+    /// language;（i18n 第八轮：接线改走 I18n 权威存储，原 FluConfigUtils 直写
+    /// CWD 相对 config.ini 且无任何消费方，切换完全无效——本控件此前只是假开关）
+    m_languageBox = new FluSettingsSelectBox;
+    m_languageBox->setTitleInfo(tr("语言"), tr("选择界面显示的语言。"));
+    m_languageBox->setIcon(FluAwesomeType::Globe);
+    // 语言选项用自名（endonym）且不进 tr()：任何界面语言下均须以本族语呈现，
+    // 用户才认得出要切过去的是什么
+    m_languageBox->getComboBox()->addItem(QStringLiteral("English"));
+    m_languageBox->getComboBox()->addItem(QStringLiteral("简体中文"));
+    // 初值同步先于 connect：构造期 setCurrentIndex 不会误触发下方切换流程
+    m_languageBox->getComboBox()->setCurrentIndex(I18n::language() == QStringLiteral("en-US") ? 0 : 1);
 
-    if (FluConfigUtils::getUtils()->getLanguage() == "en-US")
-        languageSelectBox->getComboBox()->setCurrentIndex(0);
-    else if (FluConfigUtils::getUtils()->getLanguage() == "zh-CN")
-        languageSelectBox->getComboBox()->setCurrentIndex(1);
-
-    connect(languageSelectBox->getComboBox(), &FluComboBox::currentIndexChanged, [=](int index) {
-        if (index == 0)
-            FluConfigUtils::getUtils()->setLanguage("en-US");
-        else if (index == 1)
-            FluConfigUtils::getUtils()->setLanguage("zh-CN");
+    connect(m_languageBox->getComboBox(), &FluComboBox::currentIndexChanged, this, [this](int index) {
+        const QString lang = (index == 0) ? QStringLiteral("en-US") : QStringLiteral("zh-CN");
+        if (lang == I18n::language())
+            return; // 回选当前值不动作
+        I18n::setLanguage(lang);
+        // FluentUI 控件文案构造期定死，无运行中重译 → 重启生效（裁决见 I18n.h）
+        FluMessageBox box(tr("语言设置"), tr("语言切换将在重启后生效。是否立即重启？"), this);
+        if (box.exec() == QDialog::Accepted)
+            I18n::requestRestart(this); // 内部先走主窗口退出守卫；取消则仅存设置不重启
     });
 
-    scrollView->getMainLayout()->addWidget(languageSelectBox, 0, Qt::AlignTop);
+    scrollView->getMainLayout()->addWidget(m_languageBox, 0, Qt::AlignTop);
 
 
     /// work directory;
-    auto workDirLabel = new FluLabel;
-    workDirLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
-    workDirLabel->setText(tr("工作目录"));
-    scrollView->getMainLayout()->addWidget(workDirLabel, 0, Qt::AlignTop);
+    m_workDirLabel = new FluLabel;
+    m_workDirLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_workDirLabel->setText(tr("工作目录"));
+    scrollView->getMainLayout()->addWidget(m_workDirLabel, 0, Qt::AlignTop);
 
-    auto workDirCard = new WorkDirSettingCard;
-    scrollView->getMainLayout()->addWidget(workDirCard, 0, Qt::AlignTop);
+    m_workDirCard = new WorkDirSettingCard;
+    scrollView->getMainLayout()->addWidget(m_workDirCard, 0, Qt::AlignTop);
 
 
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
     /// about
-    auto aboutLabel = new FluLabel;
-    aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
-    aboutLabel->setText(tr("About"));
-    scrollView->getMainLayout()->addWidget(aboutLabel, 0, Qt::AlignTop);
+    m_aboutLabel = new FluLabel;
+    m_aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_aboutLabel->setText(tr("关于"));
+    scrollView->getMainLayout()->addWidget(m_aboutLabel, 0, Qt::AlignTop);
 
     /// version;
-    // auto settingsVersionBox = new FluSettingsSelectBox;
-    auto settingsVersionBox = new FluSettingsVersionBox;
-    settingsVersionBox->getTitleLabel()->setText(tr("lite-harness"));
-    settingsVersionBox->getInfoLabel()->setText(tr("@2026 lite harness. All rights reserved."));
-    settingsVersionBox->getVersionLabel()->setText(tr("0.0.1"));
+    m_versionBox = new FluSettingsVersionBox;
+    m_versionBox->getTitleLabel()->setText(tr("lite-harness")); // 品牌名，豁免翻译（维持原样）
+    m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
+    m_versionBox->getVersionLabel()->setText(tr("0.0.1")); // 版本号，豁免翻译（维持原样，纠版本数另案）
 
     QIcon appIcon = QIcon(":/res/LiteHarness.ico");
-    settingsVersionBox->getIconLabel()->setPixmap(appIcon.pixmap(QSize(45, 45)));
+    m_versionBox->getIconLabel()->setPixmap(appIcon.pixmap(QSize(45, 45)));
 
-    auto infoLabel = new FluLabel;
-    infoLabel->setWordWrap(true);
-    infoLabel->setLabelStyle(FluLabelStyle::BodyTextBlockStyle);
-    infoLabel->setText(
-        tr("LiteHarness is a lightweight C++ harness application, designed to fill the gap of harness implementations in the C++ ecosystem. "
-           "It serves as a hands-on learning project that demonstrates, step by step, how to build a harness from the ground up using Qt and modern C++."));
-    settingsVersionBox->addWidget(infoLabel);
+    m_infoLabel = new FluLabel;
+    m_infoLabel->setWordWrap(true);
+    m_infoLabel->setLabelStyle(FluLabelStyle::BodyTextBlockStyle);
+    m_infoLabel->setText(
+        tr("LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。"
+           "它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。"));
+    m_versionBox->addWidget(m_infoLabel);
 
 
-    scrollView->getMainLayout()->addWidget(settingsVersionBox, 0, Qt::AlignTop);
+    scrollView->getMainLayout()->addWidget(m_versionBox, 0, Qt::AlignTop);
 
     // QSS 首刷 + themeChanged 订阅收敛到 ThemeAware::bind。
     // 修正既有缺陷：原构造不首刷 SettingsPage.qss，须等首次主题切换才生效
     ThemeAware::bind("SettingsPage.qss", this);
+}
+
+void SettingsPage::changeEvent(QEvent *event)
+{
+    // i18n 第八轮：当前链路 translator 在启动前装载（构造期即目标语言），本钩子
+    // 兜底同进程 LanguageChange 广播场景（applyLanguage 重装 translator 触发）
+    if (event->type() == QEvent::LanguageChange)
+        retranslateUi();
+    BasePage::changeEvent(event);
+}
+
+void SettingsPage::retranslateUi()
+{
+    m_appearanceLabel->setText(tr("外观与行为"));
+
+    m_appThemeBox->setTitleInfo(tr("应用主题"), tr("选择应用显示的主题。"));
+    m_appThemeBox->getComboBox()->setItemText(0, tr("浅色"));
+    m_appThemeBox->getComboBox()->setItemText(1, tr("深色"));
+    m_appThemeBox->getComboBox()->setItemText(2, tr("AtomOneDark"));
+
+    m_languageBox->setTitleInfo(tr("语言"), tr("选择界面显示的语言。"));
+    // combo 项为自名（构造注释），语言变化不重译
+
+    m_workDirLabel->setText(tr("工作目录"));
+    if (m_workDirCard)
+        m_workDirCard->retranslate();
+
+    m_aboutLabel->setText(tr("关于"));
+    m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
+    m_infoLabel->setText(
+        tr("LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。"
+           "它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。"));
 }

@@ -334,7 +334,7 @@ void ChatStream::finishStream()
     if (c.verbose)
     {
         const QString note = hasError
-            ? tr("error=%1").arg(d->reply->errorString())
+            ? tr("错误：%1").arg(d->reply->errorString())
             : QStringLiteral("ok");
         qDebug() << "QOpenAi [response]" << "status=" << httpStatus << note;
     }

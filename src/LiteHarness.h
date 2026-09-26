@@ -6,6 +6,9 @@
 #include "SessionRegistry.h"
 
 class NewChatPage;
+class NavItem;
+class FluVNavigationSettingsItem;
+class FluVNavigationIconTextItem;
 
 class LiteHarness : public FluFrameLessWidget
 {
@@ -47,12 +50,24 @@ protected:
     // 退出守卫：仍有会话回合在运行时先确认（详见 cpp 定义处注释）
     void closeEvent(QCloseEvent *event) override;
 
+    // i18n 第八轮：QTranslator 重装触发 Qt 向全 widget 树广播 LanguageChange，
+    // 常驻导航三项文本在此重取 tr()（重启后启动即装好 translator，本钩子主要兜
+    // 未来"免重启切换"演进；当前链路重启动作在 SettingsPage 发起）
+    void changeEvent(QEvent *event) override;
+
+private:
+    void retranslateUi();
+
 protected:
     // 构造体内必然先于任何使用完成赋值，显式置空仅为防御：与下方页面指针成员统一初值纪律，
     // 避免万一早退/异常路径留下未定义指针
     FluStackedLayout *m_sLayout = nullptr;
     FluVNavigationView *m_navView = nullptr;
     NewChatPage *m_newChatPage = nullptr;
+    // 导航三项常驻引用（i18n 第八轮）：LanguageChange 时经 getLabel()->setText 重译
+    FluVNavigationIconTextItem *m_newChatItem = nullptr;
+    NavItem *m_sessionsItem = nullptr;
+    FluVNavigationSettingsItem *m_settingsItem = nullptr;
     // 会话映射数据（key↔页面/数据ID、导航子项、右键受控控件）全部收进注册表；
     // 主窗口不再直持任何会话表，所有权与删除时序不变（注册表只持观察指针）
     SessionRegistry m_registry;

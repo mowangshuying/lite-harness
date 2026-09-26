@@ -869,7 +869,8 @@ int MemoryManager::processExtractReply(const QString &reply,
     if (stored > 0)
     {
         // lcc print(f"\n\033[33m[Memory: stored {stored} records]\033[0m") → GUI 卡片（去 ANSI）
-        emitCard(QStringLiteral("[memory] stored %1 records").arg(stored),
+        // MemoryManager 非 QObject，显式借 QObject::tr（与文件内 QObject::tr 占位文案同款）
+        emitCard(QObject::tr("已存储 %1 条记忆").arg(stored),
                  storedNames.join(QLatin1Char('\n')));
     }
     return stored;
@@ -1101,7 +1102,7 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
     }
 
     // lcc :572-575 两段 f-string 拼合的打印 → GUI 卡片（去 ANSI）
-    emitCard(QStringLiteral("[memory] consolidated %1 to %2 records")
+    emitCard(QObject::tr("已整理记忆：%1 → %2 条")
                  .arg(records.size())
                  .arg(consolidated.size()),
              QStringLiteral("%1 -> %2").arg(records.size()).arg(consolidated.size()));
