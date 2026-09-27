@@ -16,3 +16,11 @@ FluVNavigationView {
 #widget3 {
     background-color: rgb(40, 40, 40);
 }
+
+/* 导航列顶边 1px 实线：与内容页卡片边框（BasePage.qss 同主题 border 色）对齐，
+   使导航/内容区在标题栏下方形成清晰分界。挂在 nav 本体（PE_Widget 走样式表
+   绘制通道，border 与 background 同受控件自身表规则控制）；Qt 样式表 box model
+   会把 contentsRect 下移 1px，#widget1 等子容器不会盖住这条线。 */
+FluVNavigationView {
+    border-top: 1px solid rgb(56, 56, 56);
+}
