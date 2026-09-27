@@ -8,7 +8,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **Prefix:** `CMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64`
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
 - **输出路径:** `build/bin/lite-harness.exe`（CMake VERSION 0.1.0）
-- **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils
+- **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
 - **无测试、无 CI、无 lint 配置** — 通过构建和运行验证
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
@@ -60,6 +60,15 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - 三套主题 `light` / `dark` / `atomOneDark`；QSS 位于 `stylesheet/<theme>/<Widget>.qss`，打包为 `:/stylesheet/`（调试期回退 `../stylesheet/`，解析逻辑在 FluentUI 的 FluStyleSheetUtils）。
 - 组件接主题：构造函数**末尾**调用 `ThemeAware::bind("X.qss", widget, extraRefresh)`；widget 作为连接 context 自动随析构断开；extraRefresh 处理 SVG 重着色等组件特有步骤。
 - **新增带 QSS 的组件:** 放置 `src/*.cpp/.h` 与三主题目录下同名 `.qss`，构造尾 bind 即可 — GLOB 自动拾取，**不改 CMakeLists.txt**。
+
+## 国际化（i18n）
+
+- **中文为源语言:** UI 文案一律 `tr("中文")`；英文译文在 `i18n/lite-harness_en_US.ts`。构建经 `qt_add_translations` 跑 lrelease 生成 qm 并内嵌资源（运行时路径 `:/i18n/lite-harness_en_US.qm`，与 CMake 两侧同源写死在 I18n.cpp）。Qt 标准按钮中文靠内嵌的 `i18n/qtbase_zh_CN.qm`；FluentUI 自带控件译文由其静态库资源提供（`:/i18n/Controls.zh-CN.qm`）。
+- **I18n.h/.cpp 单源:** `language()` 读注册表 QSettings 键 `language`（缺省 `zh-CN`，与 defaultWorkDir 同源——**不用** FluConfigUtils 的 CWD 相对 config.ini）；`applyLanguage()` 全量装卸 translator，**必须在任何窗口构造前调用**（App.cpp，构造期 tr() 定稿）；`setLanguage()` 写注册表并同步 FluConfigUtils 取值；`requestRestart()` 走 gallery 惯例 `exit(931)` + `startDetached` 自重启——main() 对 rc==931 只透传，严禁二次拉起（双启缺陷）。
+- **切换=重启生效:** FluentUI 控件无运行中重译能力（无 languageChanged 信号）。仅跨切换常驻的组件经 `changeEvent(QEvent::LanguageChange)` 重译（LiteHarness 导航三项 / SettingsPage / NewChatPage / WorkDirPathBar / TodoCard 标题）；弹出即重建的菜单/对话框/卡片天然取当次语言。已渲染历史气泡滞留旧语言（接受）。
+- **新增/修改 UI 字符串:** 照常写中文 `tr()`；手动跑 lupdate 生成的 target（`lite-harness_lupdate`）刷新 .ts，补英文译文再构建；漏译条目运行时回退中文源。
+- **禁翻区:** 发往 LLM 的 C 类串（system prompt、压缩摘要指令、`AgentLoop` 落盘进历史的合成文本如 `(恢复：工具结果不可用)`）与品牌名/版本号等数字豁免条目不进翻译。
+- **版本号单源:** CMake `project VERSION` → `LITE_VERSION` 宏 → App.cpp `setApplicationVersion` → 设置页标签取运行时值，不许散落硬编码。
 
 ## 关键约定
 
