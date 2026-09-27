@@ -32,11 +32,28 @@
 #include <QMessageBox>
 #include "FluentInputDialog.h"
 #include "ThemeAware.h"
+#include <FluScrollBar.h>        // 导航列内浮动滚动条（底色对齐追加块的目标控件）
+#include <FluStyleSheetUtils.h>  // getStyleSheetDir/getQssByFileName：按 dir/theme/文件名 读追加块原文
 #include <QTimer>   // singleShot(0) 延一拍执行磁盘数据目录递归删除
 #include <QDebug>   // qWarning：目录删除失败仅告警容忍（外部编辑器占用等）
 #include <algorithm> // std::stable_sort（Qt6 已移除 qStableSort）
 
 FRAMELESSHELPER_USE_NAMESPACE
+
+namespace
+{
+// 幂等地把 QSS 片段追加进控件「自身样式表」尾部：先按标记截去上一次的同款片段再追加，
+// 保证我方规则恒为全表最末（同表 + 同特异性 + 后序 ⇒ 对 FluentUI 原生规则必胜），
+// 且主题切换重放不会让样式表无限增长。marker 必须出现在 chunk 首行。
+void appendOwnSheetOverride(QWidget *w, const char *marker, const QString &chunk)
+{
+    QString cur = w->styleSheet();
+    const int idx = cur.indexOf(QLatin1String(marker));
+    if (idx >= 0)
+        cur.truncate(idx);
+    w->setStyleSheet(cur + chunk);
+}
+} // namespace
 
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
@@ -136,7 +153,16 @@ void LiteHarness::setupConnections()
     // 标题栏着色非 QSS 可表达（chromePalette API），保留在本槽；窗口 QSS 样板收敛到 ThemeAware::bind
     onThemeChanged();
     connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [this](FluTheme) { onThemeChanged(); });
-    ThemeAware::bind("LiteHarness.qss", this);
+    // extraRefresh = 导航底色对齐追加块（窗口级 QSS 压不过 FluentUI 控件自身表，见 applyNavAlignOverrides 注释）。
+    // 时序双保险：
+    //  - bind 首次 apply 时同步执行一次——此刻各控件构造期自加载的自身表已就位，直接追加，首帧即正确底色；
+    //  - 每次 apply（含 themeChanged）再排一个 singleShot(0)——FluThemeUtils::setTheme 把「emit themeChanged +
+    //    代理批处理 flush（用纯文件内容重写控件自身表）」打包在同一个 queued lambda 里，本回调在该 lambda
+    //    执行中排队，必然落在 flush 之后重放追加，抵消代理重写、且晚于 nav/滚动条各自的连接（构造更早）。
+    ThemeAware::bind("LiteHarness.qss", this, [this] {
+        applyNavAlignOverrides();
+        QTimer::singleShot(0, this, [this] { applyNavAlignOverrides(); });
+    });
 }
 
 void LiteHarness::createSession(const QString &text)
@@ -450,6 +476,39 @@ void LiteHarness::onThemeChanged()
     m_titleBar->closeButton()->setActiveForegroundColor(foreground);
     m_titleBar->maximizeButton()->setActiveForegroundColor(foreground);
     m_titleBar->show();
+}
+
+// 把导航列/滚动条底色覆盖块追加到 FluentUI 控件「自身样式表」尾部。
+// 为何窗口级 QSS 不行（9e7fcf2 像素实证）：FluentUI 各控件把主题 QSS 经
+// setStyleSheet 挂在自身，Qt 级联中越靠近控件的表越优先，祖先（窗口）表无论
+// 特异性多高都压不过——导航带实测恒为原生 243/32/33,37,43 而非基准色。
+// 自身表内追加则同表同特异性、后序必胜；qproperty 规则（滚动条 trunk）亦住自身表，同理。
+void LiteHarness::applyNavAlignOverrides()
+{
+    if (!m_navView)
+        return;
+
+    // 路径与 FluentUI 控件自加载完全同源：dir(=:/stylesheet/) + 小写主题名 + 文件名
+    const QString dir = FluStyleSheetUtils::getUtils()->getStyleSheetDir();
+    const QString theme = FluThemeUtils::getThemeName();
+    constexpr const char *kMarker = "/*lh-nav-align*/";
+
+    // 1) 导航本体与 widget1/2/3（追加块见 stylesheet/<theme>/LiteHarnessNavAlign.qss）
+    const QString navChunk =
+        FluStyleSheetUtils::getQssByFileName(dir + theme + "/LiteHarnessNavAlign.qss");
+    if (!navChunk.isEmpty())
+        appendOwnSheetOverride(m_navView, kMarker, navChunk);
+
+    // 2) 导航列内浮动滚动条 trunk（构造即存在、随导航常驻，findChildren 一次全覆盖；
+    //    仅 nav 子树，聊天页等其他滚动条不受影响）
+    const QString barChunk =
+        FluStyleSheetUtils::getQssByFileName(dir + theme + "/LiteHarnessScrollBarAlign.qss");
+    if (!barChunk.isEmpty())
+    {
+        const auto bars = m_navView->findChildren<FluScrollBar *>();
+        for (FluScrollBar *bar : bars)
+            appendOwnSheetOverride(bar, kMarker, barChunk);
+    }
 }
 
 // 退出守卫：AgentLoop 回合含流式请求与工具子进程，直接关窗会丢失未完成回合

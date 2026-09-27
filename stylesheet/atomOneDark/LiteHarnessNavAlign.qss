@@ -1,0 +1,18 @@
+/*lh-nav-align*/
+/* 追加到 FluVNavigationView「控件自身样式表」尾部的底色对齐块。
+   机制：FluentUI 把本控件主题 QSS 经 setStyleSheet 挂在控件自身，Qt 级联中
+   离控件越近的表越优先、且优先于祖先（窗口）级表——9e7fcf2 的窗口级复合
+   选择器已被实测证明压不过（导航带仍为 FluentUI 原色 33,37,43）。
+   故改走自身表追加：与本表 FluentUI 原生规则同表同特异性、位置在后 ⇒ 必胜。
+   追加时机由 LiteHarness::applyNavAlignOverrides 在代理重写之后重放（见其注释）。 */
+FluVNavigationView {
+    background-color: rgb(40, 44, 52);
+}
+
+/* widget1/widget2/widget3 = 导航顶部容器/中部滚动区/底部容器（FluVNavigationView.cpp 内部 objectName），
+   原生底色与本表本体同值，一并归一到内容页基准 */
+#widget1,
+#widget2,
+#widget3 {
+    background-color: rgb(40, 44, 52);
+}

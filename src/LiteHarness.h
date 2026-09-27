@@ -58,6 +58,11 @@ protected:
 private:
     void retranslateUi();
 
+    // 导航列/浮动滚动条底色对齐：把覆盖块追加进 FluentUI 控件「自身样式表」尾部。
+    // 窗口级 QSS 复合选择器压不过控件自身表（近表优先，9e7fcf2 像素实证），
+    // 详见 LiteHarness.cpp 定义处与 stylesheet/<theme>/LiteHarnessNavAlign.qss 注释。
+    void applyNavAlignOverrides();
+
 protected:
     // 构造体内必然先于任何使用完成赋值，显式置空仅为防御：与下方页面指针成员统一初值纪律，
     // 避免万一早退/异常路径留下未定义指针

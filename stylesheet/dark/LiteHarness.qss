@@ -1,35 +1,18 @@
-/* 导航列与页面内容区背景统一为内容页基准色 rgb(40,40,40)（原导航/标题栏/画布为 rgb(32,32,32)）。
-   导航取色源在 FluentUI 自带 FluVNavigationView.qss（本体与 #widget1/#widget2/#widget3），
-   禁改第三方文件——本仓经窗口级 QSS 用更高优先级选择器覆盖：Qt 级联先比特异性再比层序，
-   「类型+ID 复合」恒胜其「单类型/单 ID」规则，故覆盖生效且不触碰 FluentUI 资产。
-   标题栏取色本就写在本文件（非 FluentUI 内部），随导航列一并归一。 */
+/* 窗口本体底色 = 内容页基准 rgb(40,40,40)。本规则打在窗口自身表（ThemeAware 把本文件
+   setStyleSheet 到 LiteHarness 本体，且 FluFrameLessWidget 已开 WA_StyledBackground），实测有效。
+   —— 第九轮复盘（运行时像素实证）：本文件旧版的 `LiteHarness FluVNavigationView …`、
+   `LiteHarness #titleBar{background}` 等窗口级复合选择器无效：
+   1) FluentUI 把主题 QSS setStyleSheet 到控件「自身表」，Qt 级联近表优先，祖先（窗口）级
+      表无论特异性多高都压不过（导航带实测恒为 FluentUI 原色 32,32,32）；
+      导航/滚动条底色改走「自身表追加块」LiteHarnessNavAlign.qss / LiteHarnessScrollBarAlign.qss，
+      由 LiteHarness::applyNavAlignOverrides 在主题代理重写后追加到控件自身表尾部（同表后序必胜）。
+   2) 标题栏 StandardTitleBar::paintEvent 用 chromePalette 色 fillRect 手绘、不走 QSS，
+      background 规则为死代码；本仓 onThemeChanged 已置其背景透明，标题栏像素 = 窗口底透出（实测已正确）。
+   titleBar 的 color: white 保留——其经 QSS 继承链供给标题栏子控件（FluentUI 无近表竞争），删之恐影响按钮取色。 */
 LiteHarness {
     background-color: rgb(40, 40, 40);
 }
 
 LiteHarness #titleBar {
     color: white;
-    background-color: rgb(40, 40, 40);
-}
-
-/* —— 导航列背景对齐（覆盖 FluentUI 取色；hover/选中为 rgba 前景，浮于新底色上不受影响） —— */
-LiteHarness FluVNavigationView {
-    background-color: rgb(40, 40, 40);
-}
-
-LiteHarness FluVNavigationView #widget1,
-LiteHarness FluVNavigationView #widget2,
-LiteHarness FluVNavigationView #widget3 {
-    background-color: rgb(40, 40, 40);
-}
-
-/* 搜索项现隐藏，防收起/展开态漏色一并覆盖 */
-LiteHarness FluVNavigationView FluVNavigationSearchItem {
-    background-color: rgb(40, 40, 40);
-}
-
-/* 导航内浮动滚动条（FluScrollBar）槽底色对齐导航列：FluentUI 原生 trunk 为 rgb(44,44,44)，
-   在新导航底色上会露 4 阶亮条，故 scoped 覆盖到页面基准色（仅导航子树，聊天页滚动条不动） */
-LiteHarness FluVNavigationView FluScrollBar {
-    qproperty-trunkBackgroundColor: rgb(40, 40, 40);
 }

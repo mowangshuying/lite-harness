@@ -1,0 +1,9 @@
+/*lh-nav-align*/
+/* 追加到导航列内浮动滚动条 FluScrollBar「自身表」尾部的槽底色对齐块：
+   FluScrollBarTrunk::paintEvent 直接读 trunkBackgroundColor 属性 fillRect，
+   该 qproperty 规则同样住在控件自身表里，窗口级 qproperty 覆盖不到（同 nav 的近表优先）。
+   FluentUI 原生 trunk 为 rgb(44,44,44)，在新导航底色 40,40,40 上会露 4 阶亮条，归一之
+   （仅覆盖 trunk，handle 悬停色保留原生）。 */
+FluScrollBar {
+    qproperty-trunkBackgroundColor: rgb(40, 40, 40);
+}
