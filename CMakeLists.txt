@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-# 版本号与 tag v0.1.0 对齐（原 0.0.1 与实际发布版本脱节）
+# 版本号与基线 tag s00 对齐（s00 前身即 v0.1.0；原 0.0.1 与实际发布版本脱节）
 project(lite-harness VERSION 0.1.0)
 
 set(CMAKE_AUTOUIC ON)
