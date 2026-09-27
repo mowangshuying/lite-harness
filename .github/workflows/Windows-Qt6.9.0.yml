@@ -1,0 +1,74 @@
+# 结构参考 3rdparty/FluentUI/.github/workflows/Windows-Qt6.9.0.yml（蓝本），按本仓实际裁剪：
+# - 本仓无测试/lint，CI 验收 = 干净环境全量 configure + build 成功（AGENTS.md 声明的验证方式）
+# - Windows-only / MSVC 2022 x64 / Qt 6.9.0 单点，不铺版本矩阵
+name: Windows-Qt6.9.0
+on:
+  push:
+    paths:
+      - 'CMakeLists.txt'
+      - 'LiteHarness.rc'
+      - 'cmake/**'
+      - 'src/**'
+      - 'stylesheet/**'
+      - 'res/**'
+      - 'i18n/**'
+      - '3rdparty/**'
+      - '.github/workflows/Windows-Qt6.9.0.yml'
+  pull_request:
+    paths:
+      - 'CMakeLists.txt'
+      - 'LiteHarness.rc'
+      - 'cmake/**'
+      - 'src/**'
+      - 'stylesheet/**'
+      - 'res/**'
+      - 'i18n/**'
+      - '3rdparty/**'
+      - '.github/workflows/Windows-Qt6.9.0.yml'
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-2022]
+        include:
+          - qt_ver: 6.9.0
+            qt_arch: win64_msvc2022_64
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # 仅 init FluentUI 单路径、不用 submodules: recursive（与蓝本差异的取舍）：
+      # .gitmodules 里的 3rdparty/lcc 仅为移植规格参考、从不进构建图，recursive 会白白
+      # 拉取无关大仓；FluentUI 自身无嵌套子模块（其目录内无 .gitmodules，已核实），
+      # 非递归安全。--depth 1 只取钉住的 commit，加速检出。
+      - name: Init FluentUI submodule
+        run: git submodule update --init --depth 1 3rdparty/FluentUI
+
+      # 与蓝本同款 jurplel/install-qt-action@v4。modules 需求为 configure 取证的闭包：
+      # Widgets/Svg/Network/PrintSupport/Concurrent/GuiPrivate/LinguistTools 随 desktop
+      # 基础安装提供（蓝本 REQUIRED Svg 亦未列 qtsvg，即证默认含）；唯二额外 addon 是
+      # FluentUI 根 CMakeLists REQUIRED 的 Charts（qtcharts）与 Core5Compat（qt5compat）。
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt_ver }}
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+          modules: 'qt5compat qtcharts'
+
+      # 蓝本硬编码 D:\a\FluentUI\Qt\<ver>\<arch> 前缀路径；本仓改经 qmake -query 定位
+      # （install-qt-action 会把 Qt bin 加入 PATH），不依赖 runner 盘符/目录布局，并以
+      # lrelease 存在性做前置断言（qt_add_translations 构建期必需）。
+      - name: Msvc configure & build
+        shell: pwsh
+        run: |
+          $prefix = (qmake -query QT_INSTALL_PREFIX).Trim()
+          if (-not $prefix) { throw 'qmake -query QT_INSTALL_PREFIX returned empty' }
+          if (-not (Test-Path (Join-Path $prefix 'bin\lrelease.exe'))) { throw "lrelease not found under $prefix (LinguistTools missing?)" }
+          Write-Output "Qt prefix: $prefix (version $((qmake -query QT_VERSION).Trim()))"
+          cmake -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_PREFIX_PATH=$prefix"
+          cmake --build build --config Debug --target lite-harness --parallel
+          Get-Item build\bin\lite-harness.exe
