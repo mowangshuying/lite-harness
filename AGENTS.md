@@ -62,7 +62,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - 三套主题 `light` / `dark` / `atomOneDark`；QSS 位于 `stylesheet/<theme>/<Widget>.qss`，打包为 `:/stylesheet/`（调试期回退 `../stylesheet/`，解析逻辑在 FluentUI 的 FluStyleSheetUtils）。
 - 组件接主题：构造函数**末尾**调用 `ThemeAware::bind("X.qss", widget, extraRefresh)`；widget 作为连接 context 自动随析构断开；extraRefresh 处理 SVG 重着色等组件特有步骤。
 - **新增带 QSS 的组件:** 放置 `src/*.cpp/.h` 与三主题目录下同名 `.qss`，构造尾 bind 即可 — GLOB 自动拾取，**不改 CMakeLists.txt**。
-- **覆盖 FluentUI 自带取色** 不改第三方源码的做法：在本仓 `LiteHarness.qss` 用窗口级复合选择器（如 `LiteHarness FluVNavigationView #widget1`，特异性高于 FluentUI 自身单类型/单 ID 规则）压过其内置样式；导航列/标题栏底色即此法与内容页对齐（三主题基准：light 249,249,249 / dark 40,40,40 / atomOneDark 40,44,52）。
+- **覆盖 FluentUI 自带取色** 不改第三方源码的做法：**窗口级复合选择器无效**（像素实证——FluentUI 各控件把主题 QSS `setStyleSheet` 挂自身，Qt 级联近表优先，特异性再高压不过）。正确机制是**往控件自身样式表幂等追加覆盖规则**：`LiteHarness.cpp` 的 `appendOwnSheetOverride`（marker 注释截旧再追加防增长）+ `applyNavAlignOverrides()`（经 FluStyleSheetUtils 同源路径读本仓每主题 `LiteHarnessNavAlign.qss` / `LiteHarnessScrollBarAlign.qss`，后者用 `qproperty-trunkBackgroundColor` 改 FluScrollBar 滚动条槽色——其 paintEvent 直读该属性）；接线在 `ThemeAware::bind` 的 extraRefresh：首刷同步一次保首帧 + `singleShot(0)` 重放一次（FluThemeUtils::setTheme 把 themeChanged 与代理批处理重写控件表打包进同一 queued lambda，须排其后抵消）。导航列/内容页底色对齐即此法（三主题基准：light 249,249,249 / dark 40,40,40 / atomOneDark 40,44,52）。标题栏 StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置其背景透明透出窗口本体色。
 
 ## 国际化（i18n）
 
