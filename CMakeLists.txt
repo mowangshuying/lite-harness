@@ -90,8 +90,13 @@ qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
 # <bin_dir>/lite-harness_en_US.qm（ALL 目标，随主构建生成），并经
 # qt_add_resources(PREFIX "/i18n" BASE <bin_dir>) 内嵌 → 运行时路径
 # :/i18n/lite-harness_en_US.qm（I18n.cpp 写死此路径，两侧同源核实）。
-# .ts 由手动运行 lupdate 维护（不进构建，避免工具链环境差异造成无意义 diff）。
-qt_add_translations(${TGT} TS_FILES i18n/lite-harness_en_US.ts NO_GENERATE_PLURALS_TS_FILE)
+# .ts 由手动运行 lupdate 维护，**勿用生成的 lite-harness_lupdate 目标**（实证：
+# qt_add_translations 无 SOURCE_TARGETS 时延迟收集全部源目标，会把 FluentUI 子工程
+# 源码一并扫入 —— 曾灌入 1776 条外部串）。手跑命令须显式限定 src 目录。
+# lite-harness_zh_CN.ts 为中文源语言的镜像目录（译文与源文同文）：本身无翻译功能
+# （源即中文，运行时任何缺失都回退源文），价值在于 Linguist 审计统一清单 + 与
+# en_US 目录结构对称。lupdate 手跑命令须带 -source-language zh_CN -target-language zh_CN。
+qt_add_translations(${TGT} TS_FILES i18n/lite-harness_en_US.ts;i18n/lite-harness_zh_CN.ts NO_GENERATE_PLURALS_TS_FILE)
 # Qt 官方中文 qm 随库分发（标准对话框 QFileDialog/QMessageBox 等落中文）：
 # 资源别名 = PREFIX "/" + 相对路径 → :/i18n/qtbase_zh_CN.qm。
 # FluentUI 的 Controls.zh-CN.qm 由其静态库自带资源提供（同 /i18n/ 路径），不重复拷贝。

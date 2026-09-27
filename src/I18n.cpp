@@ -70,8 +70,14 @@ void applyLanguage(const QString &lang)
         // 阶段二填译文前 unfinished 条目回退中文源文本，属预期。
         installTranslator(QStringLiteral(":/i18n/lite-harness_en_US.qm"));
     } else {
-        // zh-CN：装 Qt 官方中文 qm 使标准对话框（QFileDialog/QMessageBox 等按钮）
-        // 落中文——qtbase_zh_CN.qm 已拷入库并经 qt_add_resources 内嵌；
+        // zh-CN：自产中文镜像目录（lite-harness_zh_CN.ts 译文与源文逐字同文）。
+        // 语义是「同文镜像」而非翻译：正常路径下查中得中、等价于零成本命中；其真实
+        // 价值在 Linguist 审计（zh/en 双目录对称、UI 串清单单一权威）。无锁定风险：
+        // 源文改动后若 zh 目录漏跑 lupdate，qm 里旧键查找直接失配 → Qt 回退显示
+        // 新源文本身（中文），与装载前行为一致，绝不会把界面锁在陈旧中文上。
+        installTranslator(QStringLiteral(":/i18n/lite-harness_zh_CN.qm"));
+        // Qt 官方中文 qm 使标准对话框（QFileDialog/QMessageBox 等按钮）落中文——
+        // qtbase_zh_CN.qm 已拷入库并经 qt_add_resources 内嵌；
         // Controls.zh-CN.qm 由 FluentUI 静态库自带资源提供（:/i18n/ 同路径），
         // 直接复用官方中文，无需拷贝。
         installTranslator(QStringLiteral(":/i18n/qtbase_zh_CN.qm"));
