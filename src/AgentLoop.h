@@ -11,6 +11,7 @@
 
 #include <functional>
 
+#include "AgentConstants.h" // m_maxToolIterations 成员初值取轮次上限默认常量（第十二轮）
 #include "BackgroundTasksManager.h"
 #include "CompactManager.h"
 #include "CronSchedulerManager.h"
@@ -309,6 +310,10 @@ private:
     bool m_memoryChainActive = false;
     bool m_memoryChainPending = false;
     int m_toolIterations = 0;        // 工具调用轮次计数
+    // 回合入口快照的轮次上限（第十二轮可设置项）：run() 每次读取一次，回合内判定与
+    // 报错文案统一用本值——与压缩上限入口单取同型纪律，防回合进行中设置页改值导致
+    // 前后判定分叉
+    int m_maxToolIterations = AgentConst::kMaxToolIterationsDefault;
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息
     QList<QProcess *> m_activeProcesses; // 正在运行的 QProcess，stop()/析构时 kill

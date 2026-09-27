@@ -12,7 +12,10 @@
 
 QString PermissionCard::translateReason(const QString &reason)
 {
-    // 后端契约为固定英文短句；未知 reason 原样展示，避免信息丢失
+    // 后端契约为固定英文短句；未知 reason 原样展示，避免信息丢失。
+    // 【同步纪律（第十一轮 F7）】AgentLoop::checkPermissionRules 的每个英文 reason
+    // 返回点新增时必须在此登记对应中文词条，否则未知英文串原样泄漏上屏（EN UI 下
+    // 恰好可读，zh UI 下即成翻译缺口）
     if (reason == QLatin1String("Writing outside workspace"))
         return tr("正在尝试访问工作区之外的路径");
     if (reason == QLatin1String("Potentially destructive command"))

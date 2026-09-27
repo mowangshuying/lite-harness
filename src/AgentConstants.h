@@ -24,8 +24,29 @@ inline const QString kDefaultModel = kModelOptions.first();
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
 constexpr int kMaxTokens = 8000;
 
-// 工具调用轮次上限（防止模型反复请求工具形成死循环；自 AgentLoop.cpp 匿名 ns 收敛）
-constexpr int kMaxToolIterations = 300;
+// ---- 工具调用轮次上限（第十二轮：改为可设置项） ----
+// 防止模型反复请求工具形成死循环（原 kMaxToolIterations=300，自 AgentLoop.cpp 匿名 ns
+// 收敛）。用户可在设置页调整，落注册表 QSettings（键 maxToolIterations）。校验界
+// [10,1000]：下界防误设 0/过小值导致回合刚起步即被掐死，上界是失控防线的天花板——
+// 再大也只是放大死循环损失，无正当用途。
+constexpr int kMaxToolIterationsDefault = 500; // 未设置时的默认上限（用户裁决值）
+constexpr int kMaxToolIterationsMin = 10;      // 校验下界
+constexpr int kMaxToolIterationsMax = 1000;    // 校验上界
+inline const QString kMaxToolIterationsKey = QStringLiteral("maxToolIterations");
+
+// 轮次上限单点取值：注册表读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// AgentLoop（回合入口快照）共用同一实现，避免多处读盘/校验口径分叉；缺失、
+// 非整数、越界（含手工篡改注册表）一律回退默认值。QSettings 默认构造命中
+// org/app=LiteHarness（App.cpp 全局设定）；调用频率为回合级/交互级，读盘成本可忽略。
+inline int maxToolIterationsValue()
+{
+    QSettings settings;
+    bool ok = false;
+    const qlonglong stored = settings.value(kMaxToolIterationsKey).toLongLong(&ok);
+    if (!ok || stored < kMaxToolIterationsMin || stored > kMaxToolIterationsMax)
+        return kMaxToolIterationsDefault;
+    return static_cast<int>(stored);
+}
 
 // PostToolUse large_output 提醒阈值（字符数，lcc 语义独立于 kOutputCharLimit 截断上限：
 // 截断发生在 BashRunner/工具侧，此处是"未截断的超长输出"给模型的额外提醒门槛）

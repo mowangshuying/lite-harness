@@ -17,7 +17,9 @@
 namespace {
 
 // 子代理轮次预算（lcc s06 MAX_SUBAGENT_TURNS）：每次发起请求消耗一轮
-// （lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）
+// （lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）。
+// 第十二轮注：主循环轮次上限已可设置（maxToolIterations，默认 500），子代理预算
+// 是独立固定值、不随主循环设置联动——lcc 语义保留，用户裁决字面也未涉子代理
 constexpr int kMaxSubagentTurns = 50;
 
 // 子代理工具白名单（lcc s06 subTools）：主循环 7 工具定义中的前 5 个，

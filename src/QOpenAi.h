@@ -95,7 +95,7 @@ private:
     ChatStream *m_stream = nullptr;   // 子对象：流式组装执行者
     QTimer *m_totalTimer = nullptr;   // 子对象：总超时哨兵（idle 会因持续收字节重置，杀不死"慢而不断"的流，需总量防线）
     std::function<void(const QString &, const QString &)> m_handler; // sendText 移交的回调
-    bool m_done = false;              // 防重入门闩，镜像 ChatStream::Private::done（QOpenAi.cpp:502）语义
+    bool m_done = false;              // 防重入门闩，镜像 ChatStream::Private::done 的首到门闩语义
 };
 
 class CategoryChat

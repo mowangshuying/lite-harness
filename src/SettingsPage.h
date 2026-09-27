@@ -53,6 +53,27 @@ private:
     FluPushButton* m_modifyButton = nullptr;
 };
 
+// 单轮最大调用次数设置卡（第十二轮）：与 ContextLimitSettingCard 同款结构——
+// 数值展示 + 「修改」弹 FluentInputDialog 输入，校验 [kMaxToolIterationsMin,
+// kMaxToolIterationsMax] 拒绝非法值，写注册表后立即回显。
+// 生效语义：AgentLoop 每回合 run() 入口现取设置值，下一回合生效，无需重启。
+// Q_OBJECT 理由同上两卡（tr 上下文与 lupdate 提取对齐）。
+class MaxRoundsSettingCard : public FluSettingsSelectBox
+{
+    Q_OBJECT
+public:
+    explicit MaxRoundsSettingCard(QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void updateValue();
+    void promptEdit();
+
+    QLabel* m_valueLabel = nullptr;
+    FluPushButton* m_modifyButton = nullptr;
+};
+
 class SettingsPage : public BasePage
 {
     Q_OBJECT
@@ -75,6 +96,8 @@ private:
     WorkDirSettingCard* m_workDirCard = nullptr;
     FluLabel* m_contextLabel = nullptr;
     ContextLimitSettingCard* m_contextCard = nullptr;
+    FluLabel* m_maxRoundsLabel = nullptr;
+    MaxRoundsSettingCard* m_maxRoundsCard = nullptr;
     FluLabel* m_aboutLabel = nullptr;
     FluSettingsVersionBox* m_versionBox = nullptr;
     FluLabel* m_infoLabel = nullptr;

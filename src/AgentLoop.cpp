@@ -474,7 +474,9 @@ bool AgentLoop::loadSavedHistory(QString *error)
             QJsonObject synth;
             synth[QStringLiteral("role")] = QStringLiteral("tool");
             synth[QStringLiteral("tool_call_id")] = id;
-            synth[QStringLiteral("content")] = tr("(恢复：工具结果不可用)");
+            // C 类禁翻区（第十一轮 F3a）：本串落盘 history.json 并回灌 LLM 上下文，
+            // 若走 tr() 英文界面下会把译文污染进模型输入——一律恒中文源，不进翻译
+            synth[QStringLiteral("content")] = QStringLiteral("(恢复：工具结果不可用)");
             rebuilt.append(synth);
             presentToolIds.insert(id);
         }
@@ -557,6 +559,10 @@ void AgentLoop::run(const QString &userMessage)
 
     setRunning(true); // 【红线】同步置位，先于本函数一切异步发起（见下方 P1 契约注释）
     m_toolIterations = 0;
+    // 轮次上限入口快照（第十二轮）：每回合读一次设置值，本回合内所有判定与报错文案
+    // 统一用 m_maxToolIterations——与压缩上限 prepareAsync 入口单取同型纪律，
+    // 防回合进行中设置页改值造成同一回合前半/后半用不同上限的撕裂
+    m_maxToolIterations = AgentConst::maxToolIterationsValue();
     // lcc s05：rounds_since_todo 为 loop() 的局部变量——每轮用户提问（run）从零起步
     m_roundsSinceTodo = 0;
     // lcc s08：compact_requested / reactive_retries 同为 loop() 局部——每轮用户提问归零；
@@ -589,7 +595,12 @@ void AgentLoop::run(const QString &userMessage)
     // m_running 判定接管成败，依赖 run() 返回前标志已置位——召回飞行中不算回合结束。
     // 召回飞行中 m_running 恒为 true，cron 的 !m_running 卫兵此窗口拒发交付（到期批次
     // 留队待下个空闲 tick 重投，at-least-once 语义不变——此为期望行为）。
-    m_sideRequest = m_memory.loadMemoriesAsync(
+    // 落槽纪律（第十一轮 F2，与本文件压缩挂接点同款条件落槽范式）：条件写入 `if (req)`——
+    // 记忆为空/无查询文本时 loadMemoriesAsync 栈内同步调 done 并返回 nullptr，
+    // 续延链可能在栈内经 startChatRequest→压缩触发把在途句柄写入 m_sideRequest，
+    // 外层无条件落槽会用 nullptr 覆盖它，令 stop() 失去 cancel 手柄（F2 缺陷链）。
+    // 挂起路径的 done 必在后续事件循环交付（AsyncRequest 永不回调同步触发），无竞态
+    auto *req = m_memory.loadMemoriesAsync(
         m_messages.mid(1), this, [this](const QString &recalled) {
             // 卫兵（平移自同步时代"召回返回后复验 m_running"模式，§6-7）：stop() 已
             // cancel 本请求、done 正常永不触发，此处为防御复验，勿当作主防线删除
@@ -603,6 +614,8 @@ void AgentLoop::run(const QString &userMessage)
                 messagesJson.append(msg);
             startChatRequest(messagesJson);
         });
+    if (req)
+        m_sideRequest = req;
 }
 
 void AgentLoop::startChatRequest(const QJsonArray &messages)
@@ -662,8 +675,8 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             m_messages.append(fullMsg);
 
             // Stop 钩子（lcc s04 引入，s06 起为"续跑"语义）：返回非空则作为一条 user
-            // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，kMaxToolIterations=300
-            // 兜底，不加额外计数上限）。内置 summary 钩子恒返回空串，故默认行为与 s04 一致
+            // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，m_maxToolIterations
+            // 回合快照兜底，不加额外计数上限）。内置 summary 钩子恒返回空串，故默认行为与 s04 一致
             // 直接收尾。lcc 原文误拼 "conent"，此处按正确键名 "content" 写入
             const QString force = triggerStopHooks();
             if (!force.isEmpty())
@@ -673,13 +686,13 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                 injected[QStringLiteral("content")] = force;
                 m_messages.append(injected);
 
-                if (++m_toolIterations > AgentConst::kMaxToolIterations)
+                if (++m_toolIterations > m_maxToolIterations)
                 {
                     // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
                     m_cron.finalizeInFlightDelivery(false);
                     setRunning(false);
                     persistHistory(); // 轮次上限失败终局也落盘（已累积历史不丢）
-                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(AgentConst::kMaxToolIterations));
+                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(m_maxToolIterations));
                     return;
                 }
                 QJsonArray messagesJson;
@@ -706,7 +719,7 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             emit finished(fullMsg.value(QStringLiteral("content")).toString());
 
             // 记忆沉淀（lcc s09 loop.py :113-117：仅自然结束分支触发——force 续跑分支与撞
-            // kMaxToolIterations 上限分支均不提取，lcc 语义不修正；轮次上限/流错误/stop
+            // m_maxToolIterations 上限分支均不提取，lcc 语义不修正；轮次上限/流错误/stop
             // 三类终局同样不触发，与旧版一致）。mid(1) 排除 system 与 lcc 会话主体对齐。
             // memoryPhaseStarted 与 finished 同栈紧随：UI 据 §3.5a 保留气泡占位、把正文
             // 就地定稿并挂记忆进度 live 卡；随后异步链启动（fire-and-forget，结果卡经
@@ -716,14 +729,14 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             return;
         }
 
-        // 有工具调用 -> 防死循环计数
-        if (++m_toolIterations > AgentConst::kMaxToolIterations)
+        // 有工具调用 -> 防死循环计数（上限取回合快照，见 run() 入口注释）
+        if (++m_toolIterations > m_maxToolIterations)
         {
             // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
             m_cron.finalizeInFlightDelivery(false);
             setRunning(false);
             persistHistory(); // 轮次上限失败终局也落盘
-            emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(AgentConst::kMaxToolIterations));
+            emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(m_maxToolIterations));
             return;
         }
 
@@ -1172,7 +1185,7 @@ QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &t
     {
         QString err;
         if (safePathIn(workDir, args.value(QStringLiteral("path")).toString(), &err).isEmpty())
-            return QStringLiteral("Writing outside workspace");
+            return QStringLiteral("Writing outside workspace"); // 新增此类 reason 须同步 PermissionCard::tr 映射表（F7）
         return QString();
     }
 
@@ -1182,7 +1195,7 @@ QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &t
         const QString command = args.value(QStringLiteral("command")).toString();
         if (containsDestructiveCommand(command) || command.contains(QStringLiteral("rm "))
             || command.contains(QStringLiteral("> /etc/")) || command.contains(QStringLiteral("chmod 777")))
-            return QStringLiteral("Potentially destructive command");
+            return QStringLiteral("Potentially destructive command"); // 同上：须同步 PermissionCard reason 映射表（F7）
     }
 
     // 其余工具（glob 等）无询问规则
@@ -1808,7 +1821,7 @@ QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
     {
         collected.sort();
         shown = collected.mid(0, AgentConst::kGlobDisplayLimit); // 输出前 kGlobDisplayLimit 条
-        if (collected.size() > 200)
+        if (collected.size() > AgentConst::kGlobDisplayLimit)
             shown.append(QStringLiteral("...(more matches omitted; narrow the pattern)"));
     }
     if (truncated)
@@ -2060,8 +2073,8 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
         return QStringLiteral("Error:todos must be a list");
 
     const QJsonArray todos = todosValue.toArray();
-    if (todos.size() > 20)
-        return QStringLiteral("Error:Max 20 todos allowed");
+    if (todos.size() > AgentConst::kTodoMaxItems)
+        return QStringLiteral("Error:Max %1 todos allowed").arg(AgentConst::kTodoMaxItems);
 
     QVector<TodoItem> validated;
     int inProgressCount = 0;

@@ -185,6 +185,82 @@ void ContextLimitSettingCard::promptEdit()
     updateValue();
 }
 
+// 单轮最大调用次数设置卡（第十二轮）：ContextLimitSettingCard 同款结构。
+// 展示/回写均经 AgentConst::maxToolIterationsValue() 单点取值（未设置/非法自动
+// 回退默认 500），与 AgentLoop 回合入口快照同源不分叉；写注册表后下一回合生效。
+// 数值域 [10,1000] 无需千分位，直接裸整数展示。
+MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("单轮最大调用次数"), tr("限制单个回合内工具调用的最大轮数。"));
+    setIcon(FluAwesomeType::Calculator); // 计数语义（todo 卡同款图标族，轮次即计数）
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new FluLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText);
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+}
+
+void MaxRoundsSettingCard::retranslate()
+{
+    setTitleInfo(tr("单轮最大调用次数"), tr("限制单个回合内工具调用的最大轮数。"));
+    m_modifyButton->setText(tr("修改"));
+    updateValue();
+}
+
+void MaxRoundsSettingCard::updateValue()
+{
+    m_valueLabel->setText(QString::number(AgentConst::maxToolIterationsValue()));
+}
+
+void MaxRoundsSettingCard::promptEdit()
+{
+    const QString rangeHint =
+        tr("范围 %1 ~ %2（轮）。")
+            .arg(AgentConst::kMaxToolIterationsMin)
+            .arg(AgentConst::kMaxToolIterationsMax);
+    // FluentInputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值
+    const auto [input, accepted] = FluentInputDialog::getInputText(
+        window(), tr("设置最大轮次"), rangeHint,
+        QString::number(AgentConst::maxToolIterationsValue()));
+    if (!accepted)
+        return; // 取消：保持原值
+    // toLongLong 对非数字判 ok=false；越界拒写（AgentLoop 侧兜底回退默认，
+    // 但设置页不写脏值）
+    const QString cleaned = input.trimmed();
+    bool ok = false;
+    const qlonglong parsed = cleaned.toLongLong(&ok);
+    if (!ok || parsed < AgentConst::kMaxToolIterationsMin ||
+        parsed > AgentConst::kMaxToolIterationsMax)
+    {
+        FluMessageBox(tr("无效数值"),
+                      tr("请输入 %1 ~ %2 之间的整数。")
+                          .arg(AgentConst::kMaxToolIterationsMin)
+                          .arg(AgentConst::kMaxToolIterationsMax),
+                      window())
+            .exec();
+        return;
+    }
+    QSettings settings;
+    settings.setValue(AgentConst::kMaxToolIterationsKey, parsed);
+    updateValue();
+}
+
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
@@ -211,7 +287,8 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     m_appThemeBox->getComboBox()->addItem(tr("深色"));
     m_appThemeBox->getComboBox()->addItem(tr("AtomOneDark")); // 主题专名，各语言恒等
     m_appThemeBox->getComboBox()->setCurrentIndex((int)FluThemeUtils::getUtils()->getTheme());
-    connect(m_appThemeBox->getComboBox(), &FluComboBox::currentIndexChanged, [=](int index) {
+    // context=this（第十一轮 F5）：随页面析构自动断开，全仓 lambda connect 唯一缺省处
+    connect(m_appThemeBox->getComboBox(), &FluComboBox::currentIndexChanged, this, [=](int index) {
         if (index == (int)FluThemeUtils::getUtils()->getTheme())
             return;
 
@@ -280,6 +357,19 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
+    /// max rounds（第十二轮：主循环单回合工具调用轮次上限可设置，下一回合生效）
+    m_maxRoundsLabel = new FluLabel;
+    m_maxRoundsLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_maxRoundsLabel->setText(tr("最大轮次"));
+    scrollView->getMainLayout()->addWidget(m_maxRoundsLabel, 0, Qt::AlignTop);
+
+    m_maxRoundsCard = new MaxRoundsSettingCard;
+    scrollView->getMainLayout()->addWidget(m_maxRoundsCard, 0, Qt::AlignTop);
+
+
+    //// add spacing
+    scrollView->getMainLayout()->addSpacing(20);
+
     /// about
     m_aboutLabel = new FluLabel;
     m_aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -342,6 +432,10 @@ void SettingsPage::retranslateUi()
     m_contextLabel->setText(tr("上下文"));
     if (m_contextCard)
         m_contextCard->retranslate();
+
+    m_maxRoundsLabel->setText(tr("最大轮次"));
+    if (m_maxRoundsCard)
+        m_maxRoundsCard->retranslate();
 
     m_aboutLabel->setText(tr("关于"));
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
