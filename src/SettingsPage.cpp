@@ -51,7 +51,7 @@ WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
     setIcon(FluAwesomeType::Folder);
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new QLabel(this);
+    m_valueLabel = new FluLabel(this);
     m_valueLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
     m_valueLabel->setMaximumWidth(320);
     m_valueLabel->setMinimumWidth(0);
@@ -169,6 +169,9 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 
     scrollView->getMainLayout()->addWidget(m_languageBox, 0, Qt::AlignTop);
 
+
+    /// add spacing;
+    scrollView->getMainLayout()->addSpacing(20);
 
     /// work directory;
     m_workDirLabel = new FluLabel;
