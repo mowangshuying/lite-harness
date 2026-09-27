@@ -1,7 +1,33 @@
+/* 导航列与页面内容区背景统一为内容页基准色 rgb(249,249,249)（原导航/标题栏/画布为 rgb(243,243,243)）。
+   导航取色源在 FluentUI 自带 FluVNavigationView.qss（本体与 #widget1/#widget2/#widget3），
+   禁改第三方文件——本仓经窗口级 QSS 用更高优先级选择器覆盖：Qt 级联先比特异性再比层序，
+   「类型+ID 复合」恒胜其「单类型/单 ID」规则，故覆盖生效且不触碰 FluentUI 资产。
+   标题栏取色本就写在本文件（非 FluentUI 内部），随导航列一并归一。 */
 LiteHarness {
-    background-color: rgb(243, 243, 243);
+    background-color: rgb(249, 249, 249);
 }
 
 LiteHarness #titleBar {
-    background-color: rgb(243, 243, 243);
+    background-color: rgb(249, 249, 249);
+}
+
+/* —— 导航列背景对齐（覆盖 FluentUI 取色；hover/选中为 rgba 前景，浮于新底色上不受影响） —— */
+LiteHarness FluVNavigationView {
+    background-color: rgb(249, 249, 249);
+}
+
+LiteHarness FluVNavigationView #widget1,
+LiteHarness FluVNavigationView #widget2,
+LiteHarness FluVNavigationView #widget3 {
+    background-color: rgb(249, 249, 249);
+}
+
+/* 搜索项现隐藏，防收起/展开态漏色一并覆盖 */
+LiteHarness FluVNavigationView FluVNavigationSearchItem {
+    background-color: rgb(249, 249, 249);
+}
+
+/* 导航内浮动滚动条（FluScrollBar）槽底色对齐导航列；light 原生即同值，声明保证三主题对称 */
+LiteHarness FluVNavigationView FluScrollBar {
+    qproperty-trunkBackgroundColor: rgb(249, 249, 249);
 }
