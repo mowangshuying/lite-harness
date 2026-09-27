@@ -32,6 +32,27 @@ private:
     FluPushButton* m_clearButton = nullptr;
 };
 
+// 上下文上限设置卡（第九轮）：数值展示 + 「修改」弹 FluentInputDialog 输入，
+// 校验 [kContextCharLimitMin, kContextCharLimitMax] 拒绝非法值，写注册表后立即回显。
+// 生效语义：CompactManager 每次管线现取设置值，下一回合生效，无需重启。
+// 与 WorkDirSettingCard 同理：置于头文件带 Q_OBJECT，保证 tr() 运行期上下文
+// 与 lupdate 提取上下文一致，否则译文永不命中。
+class ContextLimitSettingCard : public FluSettingsSelectBox
+{
+    Q_OBJECT
+public:
+    explicit ContextLimitSettingCard(QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void updateValue();
+    void promptEdit();
+
+    QLabel* m_valueLabel = nullptr;
+    FluPushButton* m_modifyButton = nullptr;
+};
+
 class SettingsPage : public BasePage
 {
     Q_OBJECT
@@ -52,6 +73,8 @@ private:
     FluSettingsSelectBox* m_languageBox = nullptr;
     FluLabel* m_workDirLabel = nullptr;
     WorkDirSettingCard* m_workDirCard = nullptr;
+    FluLabel* m_contextLabel = nullptr;
+    ContextLimitSettingCard* m_contextCard = nullptr;
     FluLabel* m_aboutLabel = nullptr;
     FluSettingsVersionBox* m_versionBox = nullptr;
     FluLabel* m_infoLabel = nullptr;

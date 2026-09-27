@@ -4,8 +4,9 @@
 // 输出截断上限、中间目录名、glob 有界化参数）。纯 header-only，被 include 即可编译，
 // 无需加入 CMake 源列表。
 // 使用方：AgentLoop.cpp / SubAgent.cpp / BashRunner.cpp / ChatMsgEdit.cpp / CompactManager.cpp /
-// MemoryManager.cpp。
+// MemoryManager.cpp / SettingsPage.cpp（上下文上限设置卡）。
 
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 #include <QtGlobal> // qsizetype
@@ -47,6 +48,30 @@ inline const QString kBashTimeoutError =
 
 // 工具输出字符截断上限（bash 前台/后台、read_file 共用；lcc [:50000] 语义）
 constexpr qsizetype kOutputCharLimit = 50000;
+
+// ---- 上下文压缩主上限（第九轮：改为可设置项） ----
+// 原 CompactManager 文件级常量 kContextCharLimit=50000 现为本默认值；用户可在设置页
+// 调整，落注册表 QSettings（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
+// （batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S——比例与原 lcc 常量在 50000
+// 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）。
+constexpr qsizetype kContextCharLimitDefault = 200000; // 未设置时的主上限（用户裁决值）
+constexpr qsizetype kContextCharLimitMin = 10000;      // 校验下界
+constexpr qsizetype kContextCharLimitMax = 5000000;    // 校验上界
+inline const QString kContextCharLimitKey = QStringLiteral("contextCharLimit");
+
+// 主上限单点取值：注册表读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// CompactManager（管线消费）共用同一实现，避免多处读盘/校验口径分叉；缺失、
+// 非整数、越界（含手工篡改注册表）一律回退默认值。QSettings 默认构造命中
+// org/app=LiteHarness（App.cpp 全局设定）；调用频率为管线级/交互级，读盘成本可忽略。
+inline qsizetype contextCharLimitValue()
+{
+    QSettings settings;
+    bool ok = false;
+    const qlonglong stored = settings.value(kContextCharLimitKey).toLongLong(&ok);
+    if (!ok || stored < kContextCharLimitMin || stored > kContextCharLimitMax)
+        return kContextCharLimitDefault;
+    return static_cast<qsizetype>(stored);
+}
 
 // ---- 会话数据根下的中间目录名（叶子段）单源 ----
 // 根路径统一由 AgentLoop::sessionDataRoot()（含 .lite-harness 中间层/会话段）或各引擎

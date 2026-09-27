@@ -18,10 +18,19 @@
 // lcc s08 compact_manager.py 的常量（逐字对齐取值）
 namespace {
 
-constexpr qsizetype kContextCharLimit = 50000;       // CONTEXT_CHAR_LIMIT
-constexpr qsizetype kBatchCharLimit = 200000;        // TOOL_RESULT_BATCH_CHAR_LIMIT
-constexpr qsizetype kLargeResultCharLimit = 30000;   // LARGE_RESULT_CHAR_LIMIT
-constexpr qsizetype kSummaryInputCharLimit = 80000;  // SUMMARY_INPUT_CHAR_LIMIT
+// 第九轮：四个字符阈值不再是文件级常量，而是「可设置主上限 S + 等比派生」——
+// S 单点取值走 AgentConst::contextCharLimitValue()（注册表 + 校验 + 默认回退，
+// 与设置页共用实现防口径分叉；每次管线/消费点现取，改设置后下一回合即生效）。
+// 派生比例以表达式写死防漂移，与原 lcc 常量在 S=50000 基准下逐一对齐：
+//   batch   = 4S   （原 kBatchCharLimit 200000）
+//   large   = 0.6S （原 kLargeResultCharLimit 30000）
+//   summary = 1.6S （原 kSummaryInputCharLimit 80000）
+//   压缩目标 = 0.8S（原 prepare 内联 50000*8/10，见 prepareAsync）
+inline qsizetype contextCharLimit() { return AgentConst::contextCharLimitValue(); }
+inline qsizetype batchCharLimit() { return contextCharLimit() * 4; }
+inline qsizetype largeResultCharLimit() { return contextCharLimit() * 6 / 10; }
+inline qsizetype summaryInputCharLimit() { return contextCharLimit() * 16 / 10; }
+
 constexpr qsizetype kKeepRecentResults = 3;          // KEEP_RECENT_RESULTS
 constexpr qsizetype kKeepRecentMessages = 5;         // KEEP_RECENT_MESSAGES（reactive 尾段）
 constexpr qsizetype kSnipMaxMessages = 50;           // snip_compact max_messages
@@ -258,10 +267,10 @@ QString CompactManager::persistedPreview(const QString &toolUseId, const QString
         .arg(path, preview);
 }
 
-// lcc persist_large_output：<=30000 直通，否则落盘 + 2000 字符预览（Format A）
+// lcc persist_large_output：<=30000（0.6S）直通，否则落盘 + 2000 字符预览（Format A）
 QString CompactManager::persistLargeOutput(const QString &toolUseId, const QString &output) const
 {
-    if (output.size() <= kLargeResultCharLimit)
+    if (output.size() <= largeResultCharLimit())
         return output;
     return persistedPreview(toolUseId, output, kBudgetPreviewChars);
 }
@@ -286,7 +295,8 @@ bool CompactManager::isArchiveMarker(const QJsonObject &message) const
 
 // ---- 六方法（OpenAI 形态等价实现，均原地修改 conversation） ---------------------
 
-// lcc tool_result_budget：末条"结果批"内，总量超 200000 时把 >30000 的单条结果落盘换成预览。
+// lcc tool_result_budget：末条"结果批"内，总量超批量上限（4S）时把超单条大结果上限
+// （0.6S）的单条结果落盘换成预览。
 // R-1 映射：lcc 检查末条 user 消息的 tool_result block 列表 ≡ 我们末尾连续 role=="tool" 消息段，
 // block 长度 ≡ 单条消息 content 字符串长度。falsy 陷阱修正：显式 <=0 判定（docs/code 冲突以代码为准）。
 void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation) const
@@ -313,7 +323,7 @@ void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation) const
     QList<qsizetype> indices;
     for (qsizetype i = start; i < end; ++i)
         indices.append(i);
-    const qsizetype limit = kBatchCharLimit; // 默认值显式化（lcc max_chars or 200000）
+    const qsizetype limit = batchCharLimit(); // lcc max_chars or 200000（=4S，随主上限缩放）
     qsizetype total = totalOf(indices);
     std::sort(indices.begin(), indices.end(),
               [&contentOf](qsizetype a, qsizetype b) { return contentOf(a).size() > contentOf(b).size(); });
@@ -321,7 +331,7 @@ void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation) const
         if (total <= limit)
             break;
         const QString output = contentOf(index);
-        if (output.size() <= kLargeResultCharLimit)
+        if (output.size() <= largeResultCharLimit())
             continue;
         const QString id = conversation.at(index)
                                .value(QStringLiteral("tool_call_id"))
@@ -433,7 +443,8 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
     }
 }
 
-// lcc summary_input：整体 JSON；超 80000 时保头 20000 + 尾 60000，中间省略标记
+// lcc summary_input：整体 JSON；超摘要输入上限（1.6S）时保头 1/4 + 尾 3/4，中间省略标记
+// （lcc 定值 20000/60000 即该比例的 80000 基准特例，随上限等比缩放）
 QString CompactManager::summaryInput(const QVector<QJsonObject> &conversation) const
 {
     QJsonArray array;
@@ -441,9 +452,10 @@ QString CompactManager::summaryInput(const QVector<QJsonObject> &conversation) c
         array.append(message);
     const QString dumped =
         QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)).trimmed();
-    if (dumped.size() <= kSummaryInputCharLimit)
+    const qsizetype limit = summaryInputCharLimit();
+    if (dumped.size() <= limit)
         return dumped;
-    return dumped.left(20000) + middleOmitMarker() + dumped.right(60000);
+    return dumped.left(limit / 4) + middleOmitMarker() + dumped.right(limit * 3 / 4);
 }
 
 // 摘要请求体：system（反注入三句）+ user（summaryInput）+ model/max_tokens。
@@ -602,8 +614,10 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
         });
 }
 
-// lcc prepare：预算 → 截断归档 →（仍超 50000）micro →（仍超）fit →（仍超）全量压缩。
-// target = int(50000*0.8) = 40000，与 lcc 一致。
+// lcc prepare：预算 → 截断归档 →（仍超主上限 S）micro →（仍超）fit →（仍超）全量压缩。
+// target = S*8/10（lcc 原式 int(50000*0.8)，随设置值缩放）。
+// 第九轮：主上限在管线入口取一次（contextCharLimit()），整条管线内一致，
+// 防中途设置变化导致同一管线前后口径分裂。
 // prepare 的异步版（P3，设计文档 §2.3）：前四段本地管线同步跑（逐字平移原同步链），
 // 仅触发全量压缩时经 compactHistoryAsync 挂起。conversation 按值入参（偏离 §3.3
 // 草案的原地引用：挂起跨越 await 后调用方栈上引用可能已析构，改由 done 按值交付
@@ -616,19 +630,21 @@ CompactManager::prepareAsync(QVector<QJsonObject> conversation, const QString &a
                                                 const QVector<QJsonObject> &conversation)> done) const
 {
     const QVector<QJsonObject> original = conversation;
+    // 管线入口取一次当前主上限，四条判定共用（管线执行中途改设置不影响本次判定一致性）
+    const qsizetype limit = contextCharLimit();
     toolResultBudget(conversation);
     snipCompact(conversation);
-    if (estimateChars(conversation) <= kContextCharLimit)
+    if (estimateChars(conversation) <= limit)
     {
         if (done)
             done(conversation != original, conversation);
         return nullptr;
     }
-    const qsizetype targetChars = kContextCharLimit * 8 / 10;
+    const qsizetype targetChars = limit * 8 / 10;
     microCompact(conversation, targetChars);
-    if (estimateChars(conversation) > kContextCharLimit)
+    if (estimateChars(conversation) > limit)
         fitToolResults(conversation, targetChars);
-    if (estimateChars(conversation) <= kContextCharLimit)
+    if (estimateChars(conversation) <= limit)
     {
         if (done)
             done(conversation != original, conversation);

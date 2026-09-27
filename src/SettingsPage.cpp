@@ -1,4 +1,6 @@
 #include "SettingsPage.h"
+#include "AgentConstants.h"
+#include "FluentInputDialog.h"
 #include "I18n.h"
 #include "ThemeAware.h"
 #include <FluUtils.h>
@@ -6,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
+#include <QLocale>
 #include <QSettings>
 #include <QFileInfo>
 #include <QFileDialog>
@@ -104,6 +107,84 @@ void WorkDirSettingCard::updateValue()
     m_valueLabel->setToolTip(stored);
 }
 
+// 上下文上限设置卡（第九轮）：同款 FluSettingsSelectBox 外观（图标+标题+说明），
+// 隐藏下拉框换「数值 + 修改」操作行。展示/回写均经 AgentConst::contextCharLimitValue()
+// 单点取值（未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
+// 写注册表后 CompactManager 下一回合管线现取即生效，无需重启。
+ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("上下文上限（字符）"), tr("会话上下文超过该字符数时自动压缩。"));
+    setIcon(FluAwesomeType::Trim); // 裁减语义
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new FluLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText);
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+}
+
+void ContextLimitSettingCard::retranslate()
+{
+    setTitleInfo(tr("上下文上限（字符）"), tr("会话上下文超过该字符数时自动压缩。"));
+    m_modifyButton->setText(tr("修改"));
+    updateValue();
+}
+
+void ContextLimitSettingCard::updateValue()
+{
+    // 千分位展示（c-locale 固定逗号分组，不随界面语言变）；编辑预填用裸数字防解析歧义
+    m_valueLabel->setText(QLocale(QLocale::c()).toString(AgentConst::contextCharLimitValue()));
+}
+
+void ContextLimitSettingCard::promptEdit()
+{
+    const QString rangeHint =
+        tr("范围 %1 ~ %2（字符）。")
+            .arg(AgentConst::kContextCharLimitMin)
+            .arg(AgentConst::kContextCharLimitMax);
+    // FluentInputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值（裸数字）
+    const auto [input, accepted] = FluentInputDialog::getInputText(
+        window(), tr("设置上下文上限"), rangeHint,
+        QString::number(AgentConst::contextCharLimitValue()));
+    if (!accepted)
+        return; // 取消：保持原值
+    // 容忍千分位输入（与展示格式对称）；toLongLong 对残留非数字判 ok=false
+    QString cleaned = input.trimmed();
+    cleaned.remove(QLatin1Char(','));
+    bool ok = false;
+    const qlonglong parsed = cleaned.toLongLong(&ok);
+    if (!ok || parsed < AgentConst::kContextCharLimitMin ||
+        parsed > AgentConst::kContextCharLimitMax)
+    {
+        // 非法值拒绝并提示，不落盘（CompactManager 侧兜底回退默认，但设置页不写脏值）
+        FluMessageBox(tr("无效数值"),
+                      tr("请输入 %1 ~ %2 之间的整数。")
+                          .arg(AgentConst::kContextCharLimitMin)
+                          .arg(AgentConst::kContextCharLimitMax),
+                      window())
+            .exec();
+        return;
+    }
+    QSettings settings;
+    settings.setValue(AgentConst::kContextCharLimitKey, parsed);
+    updateValue();
+}
+
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
@@ -186,6 +267,19 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
+    /// context（第九轮：上下文压缩主上限可设置，随设置即时生效于压缩管线）
+    m_contextLabel = new FluLabel;
+    m_contextLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_contextLabel->setText(tr("上下文"));
+    scrollView->getMainLayout()->addWidget(m_contextLabel, 0, Qt::AlignTop);
+
+    m_contextCard = new ContextLimitSettingCard;
+    scrollView->getMainLayout()->addWidget(m_contextCard, 0, Qt::AlignTop);
+
+
+    //// add spacing
+    scrollView->getMainLayout()->addSpacing(20);
+
     /// about
     m_aboutLabel = new FluLabel;
     m_aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -244,6 +338,10 @@ void SettingsPage::retranslateUi()
     m_workDirLabel->setText(tr("工作目录"));
     if (m_workDirCard)
         m_workDirCard->retranslate();
+
+    m_contextLabel->setText(tr("上下文"));
+    if (m_contextCard)
+        m_contextCard->retranslate();
 
     m_aboutLabel->setText(tr("关于"));
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));

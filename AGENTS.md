@@ -26,7 +26,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **BashRunner** — bash 执行单源（危险检测 / 截断 / 超时终态 / QProcess 启动），AgentLoop 前后端与 SubAgent 共用。
 - **BackgroundTasksManager** — 后台 bash 任务台账（lcc s11）：`run_in_background` 严格布尔判定，宿主驱动 QProcess，结果以 `<task_notification>` 注入下一回合。
 - **CronSchedulerManager** — cron 定时任务（lcc s12）：5 段表达式校验/匹配，`<会话根>/scheduled_tasks.json` 持久账本，QTimer 1s 轮询替代线程，at-least-once 两段投递。
-- **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。
+- **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。主字符上限可设置（见「数据与路径」），其余阈值按 4S/0.6S/1.6S/0.8S 等比派生。
 - **MemoryManager** — 记忆（lcc s09）：`<会话根>/.memory/`（MEMORY.md 索引 + slug.md 记录）；沉淀（会话自然结束）、召回（LLM 选择 + 关键词兜底 → system prompt 尾部）、整理（阈值重写带快照回滚）。
 
 ### 会话层
@@ -36,7 +36,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ### 单源常量 / 纯头
 
-- **AgentConstants.h** — 模型清单、kMaxTokens、bash 超时/错误文案、输出截断、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results` — 拼法涉数据兼容，不可改）。
+- **AgentConstants.h** — 模型清单、kMaxTokens、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results` — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被注册表覆盖，非硬约束）。
 - **LayoutConstants.h** — 消息列宽/边距（NewChatPage/ChatSessionPage/ChatMsgEdit 同列对齐）。
 - **NavItem.h** — 导航键常量（NavKey）+ NavItem（带 removeChildItem）。**ToolNames.h** — 18 工具名。**ToolTagKind.h** — 工具→样式标签（write/run/search/read/plan/delegate/other），经动态属性喂给 QSS 选择器。
 
@@ -44,7 +44,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **LiteHarness** — 主窗口（FluFrameLessWidget）：FluVNavigationView + FluStackedLayout，会话新建/恢复（按索引升序）/重命名/删除，关闭时运行守卫。
 - **ChatSessionPage** — 每会话一页：AgentLoop + 滚动消息流 + 输入框 + 只读路径条；历史回放与就地刷新。
-- **NewChatPage / SettingsPage / BasePage** — 发起页、设置页（QSettings `defaultWorkDir`）、页面基类。
+- **NewChatPage / SettingsPage / BasePage** — 发起页、设置页（QSettings `defaultWorkDir`、`contextCharLimit`）、页面基类。
 - **MessageBubbleWidget** — 气泡流式渲染（打字机），首次工具/思考事件后重建为时间线。
 - **CollapsibleBlock** — 折叠动画基类（32px 头部 + 300ms OutCubic contentHeight 动画），子类 ThinkingBlock / ToolBlock / TodoCard。基类构造禁调虚函数，子类构造尾再 bind 主题。
 - **ThemeAware** — 「加载 QSS + 订阅 themeChanged + 重载」样板单源（约 12 处旧复制已收敛）。
@@ -55,6 +55,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - 所有会话数据落在 **`<workDir>/.lite-harness/`**（`SessionStore::rootDirFor`）——是会话工作目录下的相对根，**不是**用户主目录。
 - 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json 等）；`skills/` 始终跨会话共享。
 - QSettings：org/app 均为 `LiteHarness`（App.cpp 设定）→ 注册表 `HKCU\Software\LiteHarness\LiteHarness`。
+- 上下文压缩上限可设置（注册表键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认），派生阈值随主上限等比缩放（batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S）；设置页写值后压缩管线下一回合即生效，无需重启。
 - **零线程原则:** 全仓库主线程事件驱动，轮询/异步一律 QTimer + QProcess 信号，不起线程。
 
 ## 主题 / QSS

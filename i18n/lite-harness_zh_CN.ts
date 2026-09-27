@@ -123,6 +123,47 @@
     </message>
 </context>
 <context>
+    <name>ContextLimitSettingCard</name>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="117"/>
+        <location filename="../src/SettingsPage.cpp" line="143"/>
+        <source>上下文上限（字符）</source>
+        <translation>上下文上限（字符）</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="117"/>
+        <location filename="../src/SettingsPage.cpp" line="143"/>
+        <source>会话上下文超过该字符数时自动压缩。</source>
+        <translation>会话上下文超过该字符数时自动压缩。</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="126"/>
+        <location filename="../src/SettingsPage.cpp" line="144"/>
+        <source>修改</source>
+        <translation>修改</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="157"/>
+        <source>范围 %1 ~ %2（字符）。</source>
+        <translation>范围 %1 ~ %2（字符）。</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="162"/>
+        <source>设置上下文上限</source>
+        <translation>设置上下文上限</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="175"/>
+        <source>无效数值</source>
+        <translation>无效数值</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="176"/>
+        <source>请输入 %1 ~ %2 之间的整数。</source>
+        <translation>请输入 %1 ~ %2 之间的整数。</translation>
+    </message>
+</context>
+<context>
     <name>FluentInputDialog</name>
     <message>
         <location filename="../src/FluentInputDialog.cpp" line="84"/>
@@ -138,61 +179,61 @@
 <context>
     <name>LiteHarness</name>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="97"/>
-        <location filename="../src/LiteHarness.cpp" line="501"/>
+        <location filename="../src/LiteHarness.cpp" line="114"/>
+        <location filename="../src/LiteHarness.cpp" line="560"/>
         <source>新建对话</source>
         <translation>新建对话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="104"/>
-        <location filename="../src/LiteHarness.cpp" line="503"/>
+        <location filename="../src/LiteHarness.cpp" line="121"/>
+        <location filename="../src/LiteHarness.cpp" line="562"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="107"/>
-        <location filename="../src/LiteHarness.cpp" line="505"/>
+        <location filename="../src/LiteHarness.cpp" line="124"/>
+        <location filename="../src/LiteHarness.cpp" line="564"/>
         <source>设置</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="150"/>
+        <location filename="../src/LiteHarness.cpp" line="176"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="337"/>
+        <location filename="../src/LiteHarness.cpp" line="363"/>
         <source>重命名</source>
         <translation>重命名</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="338"/>
-        <location filename="../src/LiteHarness.cpp" line="394"/>
+        <location filename="../src/LiteHarness.cpp" line="364"/>
+        <location filename="../src/LiteHarness.cpp" line="420"/>
         <source>删除会话</source>
         <translation>删除会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="366"/>
+        <location filename="../src/LiteHarness.cpp" line="392"/>
         <source>重命名会话</source>
         <translation>重命名会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="366"/>
+        <location filename="../src/LiteHarness.cpp" line="392"/>
         <source>名称</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="395"/>
+        <location filename="../src/LiteHarness.cpp" line="421"/>
         <source>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</source>
         <translation>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="472"/>
+        <location filename="../src/LiteHarness.cpp" line="531"/>
         <source>退出确认</source>
         <translation>退出确认</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="473"/>
+        <location filename="../src/LiteHarness.cpp" line="532"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>任务仍在运行，退出将丢失未完成回合。确定退出吗？</translation>
     </message>
@@ -306,7 +347,7 @@
         <translation>已整理记忆：%1 → %2 条</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="39"/>
+        <location filename="../src/SettingsPage.cpp" line="42"/>
         <source>未设置（使用进程当前目录）</source>
         <translation>未设置（使用进程当前目录）</translation>
     </message>
@@ -355,89 +396,95 @@
 <context>
     <name>SettingsPage</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="121"/>
-        <location filename="../src/SettingsPage.cpp" line="231"/>
+        <location filename="../src/SettingsPage.cpp" line="202"/>
+        <location filename="../src/SettingsPage.cpp" line="328"/>
         <source>外观与行为</source>
         <translation>外观与行为</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="127"/>
-        <location filename="../src/SettingsPage.cpp" line="233"/>
+        <location filename="../src/SettingsPage.cpp" line="208"/>
+        <location filename="../src/SettingsPage.cpp" line="330"/>
         <source>应用主题</source>
         <translation>应用主题</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="127"/>
-        <location filename="../src/SettingsPage.cpp" line="233"/>
+        <location filename="../src/SettingsPage.cpp" line="208"/>
+        <location filename="../src/SettingsPage.cpp" line="330"/>
         <source>选择应用显示的主题。</source>
         <translation>选择应用显示的主题。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="129"/>
-        <location filename="../src/SettingsPage.cpp" line="234"/>
+        <location filename="../src/SettingsPage.cpp" line="210"/>
+        <location filename="../src/SettingsPage.cpp" line="331"/>
         <source>浅色</source>
         <translation>浅色</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="130"/>
-        <location filename="../src/SettingsPage.cpp" line="235"/>
+        <location filename="../src/SettingsPage.cpp" line="211"/>
+        <location filename="../src/SettingsPage.cpp" line="332"/>
         <source>深色</source>
         <translation>深色</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="131"/>
-        <location filename="../src/SettingsPage.cpp" line="236"/>
+        <location filename="../src/SettingsPage.cpp" line="212"/>
+        <location filename="../src/SettingsPage.cpp" line="333"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="150"/>
-        <location filename="../src/SettingsPage.cpp" line="238"/>
+        <location filename="../src/SettingsPage.cpp" line="231"/>
+        <location filename="../src/SettingsPage.cpp" line="335"/>
         <source>语言</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="150"/>
-        <location filename="../src/SettingsPage.cpp" line="238"/>
+        <location filename="../src/SettingsPage.cpp" line="231"/>
+        <location filename="../src/SettingsPage.cpp" line="335"/>
         <source>选择界面显示的语言。</source>
         <translation>选择界面显示的语言。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="165"/>
+        <location filename="../src/SettingsPage.cpp" line="246"/>
         <source>语言设置</source>
         <translation>语言设置</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="165"/>
+        <location filename="../src/SettingsPage.cpp" line="246"/>
         <source>语言切换将在重启后生效。是否立即重启？</source>
         <translation>语言切换将在重启后生效。是否立即重启？</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="176"/>
-        <location filename="../src/SettingsPage.cpp" line="241"/>
+        <location filename="../src/SettingsPage.cpp" line="260"/>
+        <location filename="../src/SettingsPage.cpp" line="338"/>
         <source>工作目录</source>
         <translation>工作目录</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="189"/>
-        <location filename="../src/SettingsPage.cpp" line="245"/>
+        <location filename="../src/SettingsPage.cpp" line="273"/>
+        <location filename="../src/SettingsPage.cpp" line="342"/>
+        <source>上下文</source>
+        <translation>上下文</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="286"/>
+        <location filename="../src/SettingsPage.cpp" line="346"/>
         <source>关于</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="194"/>
+        <location filename="../src/SettingsPage.cpp" line="291"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="195"/>
-        <location filename="../src/SettingsPage.cpp" line="246"/>
+        <location filename="../src/SettingsPage.cpp" line="292"/>
+        <location filename="../src/SettingsPage.cpp" line="347"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. 保留所有权利。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="208"/>
-        <location filename="../src/SettingsPage.cpp" line="248"/>
+        <location filename="../src/SettingsPage.cpp" line="305"/>
+        <location filename="../src/SettingsPage.cpp" line="349"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</translation>
     </message>
@@ -597,31 +644,31 @@
 <context>
     <name>WorkDirSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="50"/>
-        <location filename="../src/SettingsPage.cpp" line="94"/>
+        <location filename="../src/SettingsPage.cpp" line="53"/>
+        <location filename="../src/SettingsPage.cpp" line="97"/>
         <source>默认工作目录</source>
         <translation>默认工作目录</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="50"/>
-        <location filename="../src/SettingsPage.cpp" line="94"/>
+        <location filename="../src/SettingsPage.cpp" line="53"/>
+        <location filename="../src/SettingsPage.cpp" line="97"/>
         <source>新建会话将继承该工作目录。</source>
         <translation>新建会话将继承该工作目录。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="59"/>
-        <location filename="../src/SettingsPage.cpp" line="95"/>
+        <location filename="../src/SettingsPage.cpp" line="62"/>
+        <location filename="../src/SettingsPage.cpp" line="98"/>
         <source>修改</source>
         <translation>修改</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="61"/>
-        <location filename="../src/SettingsPage.cpp" line="96"/>
+        <location filename="../src/SettingsPage.cpp" line="64"/>
+        <location filename="../src/SettingsPage.cpp" line="99"/>
         <source>清除</source>
         <translation>清除</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="80"/>
+        <location filename="../src/SettingsPage.cpp" line="83"/>
         <source>选择默认工作目录</source>
         <translation>选择默认工作目录</translation>
     </message>
