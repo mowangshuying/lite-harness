@@ -14,7 +14,7 @@
 - **cron 定时任务**：5 段表达式、JSON 持久账本、at-least-once 投递
 - **后台 bash**：`run_in_background` 异步执行，结果以通知注入后续回合
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
-- **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文与 qtbase/FluentUI 翻译均内嵌单 exe
+- **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
 - **模型选择**：下拉切换（清单见 `AgentConstants.h`），API 经环境变量配置
 
 ## 运行时配置（环境变量）
@@ -46,7 +46,7 @@ cmake --build build --config Release
 | --- | --- |
 | `src/` | 全部 C++ 源码：Agent 核心（AgentLoop / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler…）+ FluentUI 页面与控件 |
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
-| `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `qtbase_zh_CN.qm`（Qt 标准按钮中文），构建期 lrelease 内嵌 |
+| `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |
 | `3rdparty/FluentUI` | UI 框架子模块（构建必需） |
 | `3rdparty/lcc` | 移植规格参考仓库子模块（不参与构建） |
 | `res/` | 应用图标与 Windows 资源脚本 |

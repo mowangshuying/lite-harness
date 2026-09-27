@@ -97,10 +97,9 @@ qt_add_resources(${TGT} "res" PREFIX "/" FILES ${res})
 # （源即中文，运行时任何缺失都回退源文），价值在于 Linguist 审计统一清单 + 与
 # en_US 目录结构对称。lupdate 手跑命令须带 -source-language zh_CN -target-language zh_CN。
 qt_add_translations(${TGT} TS_FILES i18n/lite-harness_en_US.ts;i18n/lite-harness_zh_CN.ts NO_GENERATE_PLURALS_TS_FILE)
-# Qt 官方中文 qm 随库分发（标准对话框 QFileDialog/QMessageBox 等落中文）：
-# 资源别名 = PREFIX "/" + 相对路径 → :/i18n/qtbase_zh_CN.qm。
-# FluentUI 的 Controls.zh-CN.qm 由其静态库自带资源提供（同 /i18n/ 路径），不重复拷贝。
-qt_add_resources(${TGT} "i18n" PREFIX "/" FILES "./i18n/qtbase_zh_CN.qm")
+# qtbase 官方中文 qm 已按裁决摘除（免 136KB 二进制入库）：Qt 标准对话框
+# （QFileDialog/QMessageBox 等）按钮回退英文，属已知取舍。
+# FluentUI 的 Controls.zh-CN.qm 由其静态库自带资源提供（同 /i18n/ 路径），中文不受影响。
 
 target_link_libraries(${TGT} PRIVATE 
     FluentUI::Controls
