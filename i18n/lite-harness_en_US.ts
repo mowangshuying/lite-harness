@@ -436,11 +436,6 @@ Output:
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="196"/>
-        <source>0.0.1</source>
-        <translation>0.0.1</translation>
-    </message>
-    <message>
         <location filename="../src/SettingsPage.cpp" line="205"/>
         <location filename="../src/SettingsPage.cpp" line="245"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>

@@ -75,6 +75,10 @@ target_include_directories(${TGT} PRIVATE
 # 不加 /WX：第三方/存量警告不致中断构建
 target_compile_options(${TGT} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 
+# 版本单单源：CMake project VERSION → LITE_VERSION 宏 → 运行时 setApplicationVersion
+# → 设置页版本标签（原 tr("0.0.1") 硬编码与 CMake 0.1.0 脱节，另案修并入此）
+target_compile_definitions(${TGT} PRIVATE LITE_VERSION="${PROJECT_VERSION}")
+
 ### qss
 qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss_rel})
 

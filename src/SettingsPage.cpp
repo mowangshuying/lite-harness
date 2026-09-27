@@ -193,7 +193,10 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     m_versionBox = new FluSettingsVersionBox;
     m_versionBox->getTitleLabel()->setText(tr("lite-harness")); // 品牌名，豁免翻译（维持原样）
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
-    m_versionBox->getVersionLabel()->setText(tr("0.0.1")); // 版本号，豁免翻译（维持原样，纠版本数另案）
+    // 版本号 = 运行时 applicationVersion（CMake project VERSION 单源，经
+    // App.cpp setApplicationVersion 注入），数字豁免翻译；原硬编码
+    // "0.0.1" 与 CMake 0.1.0 脱节，本案修结
+    m_versionBox->getVersionLabel()->setText(QCoreApplication::applicationVersion());
 
     QIcon appIcon = QIcon(":/res/LiteHarness.ico");
     m_versionBox->getIconLabel()->setPixmap(appIcon.pixmap(QSize(45, 45)));
