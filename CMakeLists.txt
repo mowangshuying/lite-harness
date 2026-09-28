@@ -141,3 +141,51 @@ if (LITE_DEPLOY)
 		message(WARNING "windeployqt not found; 'deploy' target is not available")
 	endif()
 endif()
+
+# ---- CPack packaging (Route A: install + Qt deploy script + ZIP) ----
+# Pipeline: cpack -G ZIP -B build stages into an internal tree by running the
+# generated cmake_install.cmake (defaults to Release for multi-config VS), then
+# archives it. All app data (QSS/i18n/icon) is resource-embedded and every
+# dependency (FluentUI & friends) is a static lib, so the package is just
+# lite-harness.exe + Qt runtime + VC runtime, produced by the official
+# qt_generate_deploy_app_script (windeployqt under the hood, keeps the VC
+# compiler runtime on by default unlike our in-place 'deploy' target above).
+# Pattern mirrors 3rdparty/FluentUI gallery packaging already vendored here.
+option(LITE_PACKAGE "Generate CPack ZIP packaging for lite-harness" ON)
+if (LITE_PACKAGE)
+	# bin/ layout matches QtDeploySupport defaults (windeployqt deploys the Qt
+	# DLLs and qt.conf next to the exe under bin/, plugins/translations at the
+	# stage root, resolved from qt.conf at runtime).
+	install(TARGETS ${TGT} RUNTIME DESTINATION bin)
+
+	# Deploys Qt DLLs/plugins next to the staged exe at install (staging) time.
+	qt_generate_deploy_app_script(
+		TARGET ${TGT}
+		OUTPUT_SCRIPT lite_harness_deploy_script
+		NO_UNSUPPORTED_PLATFORM_ERROR)
+	install(SCRIPT ${lite_harness_deploy_script})
+
+	# The FluentUI sub-project registers its own install rules in the same tree
+	# (Gallery exe + a duplicated Qt runtime under bin/, third-party
+	# include/lib/share leftovers from cmark/ads/qmsetup). CMake includes child
+	# cmake_install.cmake files before this directory's own rules, so this
+	# root-level remove-code reliably runs last and strips them from the stage.
+	install(CODE [[
+		foreach(_junk include lib share res stylesheet code config i18n)
+			file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/${_junk}")
+		endforeach()
+		file(GLOB _stage_exes "${CMAKE_INSTALL_PREFIX}/bin/*.exe")
+		foreach(_exe IN LISTS _stage_exes)
+			if(NOT _exe MATCHES "lite-harness\\.exe$")
+				file(REMOVE "${_exe}")
+			endif()
+		endforeach()
+	]])
+
+	set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
+	set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+	set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-win64")
+	set(CPACK_GENERATOR "ZIP")
+	set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+	include(CPack)
+endif()
