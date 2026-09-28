@@ -24,6 +24,11 @@ inline const QString kDefaultModel = kModelOptions.first();
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
 constexpr int kMaxTokens = 8000;
 
+// 推理强度档位（OpenAI 兼容端点 reasoning_effort）：端点按档位分配思考预算，
+// 对齐 opencode 的 xhigh 观感（长思考、少工具轮）。端点不认此字段时行为回退
+// 为服务端默认，无副作用。
+inline const QString kReasoningEffort = QStringLiteral("xhigh");
+
 // ---- 工具调用轮次上限（第十二轮：改为可设置项） ----
 // 防止模型反复请求工具形成死循环（原 kMaxToolIterations=300，自 AgentLoop.cpp 匿名 ns
 // 收敛）。用户可在设置页调整，落注册表 QSettings（键 maxToolIterations）。校验界
