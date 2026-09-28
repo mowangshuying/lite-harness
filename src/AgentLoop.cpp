@@ -38,6 +38,11 @@ namespace {
 // %2 = 技能目录文本（skillsCatalog）。arg() 单次替换语义保持：tempDir 由运行时拼接 tempRoot 得到
 // 且理论上可能含 '%'，故不走 arg 通道——模板拆成 head/tail 两段 QStringLiteral 各自单次 arg()，
 // tempDir 作为字面量在两段之间以 '+' 拼接；'+' 不解释 '%'，任何替换值中的 '%' 均不会被二次展开。
+// 编排规则段（"Work in rounds..." 五条 bullet）为 lite 自有增补、非 lcc 原文——有意破 verbatim
+// parity：实测同端点同模型下工具轮数偏高（默认低强度思考的补证），此段压轮数——一轮内并发发独立
+// 调用（AgentLoop 一批多调用仅计 1 轮）/先谋后动免逐步试探/宽域探索外包 task 子代理/失败不原样
+// 重试（呼应失败折叠回喂诱发重试的推手）。位置在 temp 纪律句后、Skills 段前；纯静态英文文本，
+// 不走 arg() 通道，%1..%4 单次替换语义与段间 \n\n 换行纪律不变；禁翻区 QStringLiteral 不包 tr()。
 QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
                          const QString &skillCatalog,
                          const QString &memoryIndex, const QString &memoryText)
@@ -54,6 +59,16 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
     // tail 段：仅 %2/%3/%4 参与 arg() 替换（多参 arg() 按升序映射到最小可用编号，仍为单次替换语义）
     const QString tail = QStringLiteral(
                              ". Never create throwaway files in the project root.\n\n"
+                             "Work in rounds; plan each round before acting.\n"
+                             "- Issue all independent tool calls together in one round; "
+                             "sequence only when a result gates the next call.\n"
+                             "- Decide the full approach first; avoid step-by-step "
+                             "trial-and-error probing.\n"
+                             "- Outsource broad codebase exploration to the task sub-agent; "
+                             "keep this loop for decisions and integration.\n"
+                             "- After a failed call, never retry it unchanged: diagnose from "
+                             "the output, change the approach, or report the blocker."
+                             "\n\n"
                              "Skills available:\n%2\n\n"
                              "Use load_skill to read the full instructions when a skill applies."
                              "\n\n"
