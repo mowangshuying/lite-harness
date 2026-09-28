@@ -1545,7 +1545,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // 标志随最后一个捕获者释放，不再裸 new/delete 泄漏
     auto timedOut = std::make_shared<bool>(false);
 
-    // 建进程/登记/挂超时/cmd.exe 启动整段与子代理共用 BashRunner::start（原三处逐字复制）；
+    // 建进程/登记/挂超时/PowerShell 启动整段与子代理共用 BashRunner::start（原三处逐字复制）；
     // 差异（输出汇、钩子时序、取消语义）全部留在下方回调里。"先 connect 后 start"的
     // 原时序由 BashRunner::start 内部的 arm 钩子（start 前调用）保证
     if (background)
@@ -2329,9 +2329,15 @@ QJsonArray AgentLoop::createToolsDefinition()
     };
 
     QJsonArray tools;
-    // bash（lcc s11）：新增可选 run_in_background boolean（required 仍只有 command、描述不动，
-    // 与 lcc schema 增量一致）；子代理侧经 SubAgent filterSubTools 删除该参数（双重禁令之 schema 层）
-    tools.append(makeTool(ToolNames::BASH, QStringLiteral("Run a shell command."),
+    // bash（lcc s11）：新增可选 run_in_background boolean（required 仍只有 command）；
+    // 子代理侧经 SubAgent filterSubTools 删除该参数（双重禁令之 schema 层）。
+    // 描述已破 lcc 逐字平价（lite 有意偏差）：宿主壳切 PowerShell 5.1 后如实声明语法族，
+    // 与 BashRunner::start 的 powershell.exe 启动同源，防模型写 bash 风格命令失败重试
+    tools.append(makeTool(ToolNames::BASH,
+                          QStringLiteral("Run a Windows PowerShell command (powershell.exe "
+                                         "-NoProfile -NonInteractive -Command). Use PowerShell 5.1 "
+                                         "syntax, not bash/sh: chain with ; not && where semantics "
+                                         "differ, no /dev/null redirections."),
                           { {QStringLiteral("command"), QStringLiteral("string")},
                             {QStringLiteral("run_in_background"), QStringLiteral("boolean")} },
                           {QStringLiteral("command")}));

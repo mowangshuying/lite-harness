@@ -321,7 +321,7 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
     }
 
     // 超时标志（shared_ptr 随回调捕获，无裸 new/delete——MINOR-2）；进程创建/登记/
-    // 挂超时/cmd.exe 启动与主循环共用 BashRunner::start（原整函数级复制收敛），
+    // 挂超时/PowerShell 启动与主循环共用 BashRunner::start（原整函数级复制收敛），
     // "先 connect 后 start"时序由 arm 回调保证。差异仅两处留在下方回调：
     // m_cancelled 短路（取消后静默丢弃输出）与黑盒收口（onToolFinished 不带工具名参数）
     auto timedOut = std::make_shared<bool>(false);

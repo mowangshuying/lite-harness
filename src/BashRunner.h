@@ -33,7 +33,8 @@ QString truncateOutput(QString text);
 // readAllStandardOutput → fromLocal8Bit → truncateOutput。
 QString finalizeOutput(QProcess *process, bool timedOut);
 
-// 创建并异步启动 cmd.exe /c <command>（原三处逐行相同的启动段单源）：
+// 创建并异步启动 powershell.exe -NoProfile -NonInteractive -Command <command>
+// （原三处逐行相同的启动段单源；宿主壳原为 cmd.exe /c，已切 PowerShell 5.1）：
 //   new QProcess(parent)（父子归属随宿主销毁）→ MergedChannels（stderr 并入 stdout，
 //   lcc stderr=STDOUT 等价）→ setWorkingDirectory(workDir) → 登记进 *activeList
 //   供宿主 stop()/cancel()/析构统一 kill → singleShot(kBashTimeoutMs, process, ...)

@@ -53,7 +53,12 @@ QProcess *start(const QString &command, const QString &workDir, QObject *parent,
     });
 
     arm(process); // 调用方先 connect finished/errorOccurred（保持原"连接早于启动"时序）
-    process->start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), command});
+    // 宿主壳 = Windows PowerShell 5.1（本仓仅 Windows）：-NoProfile 跳配置文件防启动干扰、
+    // -NonInteractive 禁交互提示挂死；command 经 QProcess 按 Windows argv 规则整段传参，
+    // PS 收到原文再按脚本解析——bash 风格命令失败重试的根因修复，与工具描述声明同源
+    process->start(QStringLiteral("powershell.exe"),
+                   {QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
+                    QStringLiteral("-Command"), command});
     return process;
 }
 
