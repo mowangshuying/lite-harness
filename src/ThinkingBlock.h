@@ -22,6 +22,11 @@ public:
     void setThinkingContent(const QString &thinkingText);
     void setThinkingDuration(int seconds);
 
+    // Static terminal form for session replay: history.json persists no thinking
+    // duration, so the title shows a neutral "done" string instead of a fake
+    // seconds sentence. No live timer, block keeps the collapsed default.
+    void finishWithoutDuration();
+
     // ---- 流式进行态（思考生成期间占位展示）----
     // startLive：头部切换为「思考中」（圆点轮播），未被打扰时自动展开，
     //   展开可见高度压缩为单行文本，钉底滚动只显示最新一行思考内容；

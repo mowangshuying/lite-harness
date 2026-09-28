@@ -298,6 +298,40 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
     scheduleStreamResize();
 }
 
+void MessageBubbleWidget::appendHistoryThinkingText(const QString &text)
+{
+    // Only assistant bubbles carry a thinking timeline; user bubbles ignore defensively
+    if (m_role != Assistant || text.isEmpty())
+        return;
+
+    rebuildAsTimeline();
+
+    // Unlike the live appendThinkingText path, do NOT freeze the current text
+    // segment here. Replay renders this round's body into the still-live main
+    // view (m_content) right after the thinking block, which is exactly the
+    // proven pre-fix replay text path; freezing would hide m_content and push
+    // the body into a freshly created segment view that replay's synchronous,
+    // timer-stopped measurement never sized — the source of the vanished body.
+    //
+    // Arrival-order discipline still matches live: the first thinking round is
+    // pinned at timeline index 0 (above the main body view), later rounds
+    // append at the current timeline end (after the previous round's tool
+    // blocks, since appendToolExecution already froze/hid m_content so the next
+    // body opens a fresh segment appended after this block). m_liveThinking
+    // tracks round identity only — m_thinkingRunning stays false so
+    // stopThinkingInterval never fires here.
+    auto *block = new ThinkingBlock(this);
+    block->setThinkingContent(text);
+    block->finishWithoutDuration();
+    if (!m_liveThinking)
+        m_timeline->insertWidget(0, block);
+    else
+        m_timeline->addWidget(block);
+    m_liveThinking = block;
+
+    scheduleSizeUpdate();
+}
+
 void MessageBubbleWidget::appendText(const QString &delta)
 {
     if (!m_streaming || delta.isEmpty())

@@ -48,6 +48,13 @@ void ThinkingBlock::setThinkingDuration(int seconds)
     m_titleLabel->setText(durationText());
 }
 
+void ThinkingBlock::finishWithoutDuration()
+{
+    // Neutral terminal title without a duration claim; collapsed state is the
+    // constructor default (initCollapsed), user expansion shows full content
+    m_titleLabel->setText(tr("已完成思考"));
+}
+
 // ---- 流式进行态 ----
 
 void ThinkingBlock::startLive()

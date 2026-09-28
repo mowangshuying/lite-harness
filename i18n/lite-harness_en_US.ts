@@ -534,22 +534,27 @@ Output:
 <context>
     <name>ThinkingBlock</name>
     <message>
-        <location filename="../src/ThinkingBlock.cpp" line="100"/>
+        <location filename="../src/ThinkingBlock.cpp" line="55"/>
+        <source>已完成思考</source>
+        <translation>Thinking complete</translation>
+    </message>
+    <message>
+        <location filename="../src/ThinkingBlock.cpp" line="107"/>
         <source>思考中</source>
         <translation>Thinking</translation>
     </message>
     <message>
-        <location filename="../src/ThinkingBlock.cpp" line="131"/>
+        <location filename="../src/ThinkingBlock.cpp" line="138"/>
         <source>思考了 &lt; 1 秒</source>
         <translation>Thought for &lt; 1 second</translation>
     </message>
     <message>
-        <location filename="../src/ThinkingBlock.cpp" line="133"/>
+        <location filename="../src/ThinkingBlock.cpp" line="140"/>
         <source>思考了 %1 秒</source>
         <translation>Thought for %1 seconds</translation>
     </message>
     <message>
-        <location filename="../src/ThinkingBlock.cpp" line="134"/>
+        <location filename="../src/ThinkingBlock.cpp" line="141"/>
         <source>思考了 %1 分 %2 秒</source>
         <translation>Thought for %1m %2s</translation>
     </message>

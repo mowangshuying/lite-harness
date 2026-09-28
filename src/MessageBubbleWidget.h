@@ -42,6 +42,14 @@ public:
     // 之前，后续工具块/正文另起新段出现在其后。气泡不依赖卡片具体类型，仅接管几何
     void appendPermissionCard(QWidget *card);
 
+    // Replay-only: insert a terminal (static) thinking block. history.json
+    // carries no thinking duration, so this shows content only — no startLive,
+    // no timer, neutral no-duration title. The round's body text is NOT
+    // frozen into a new segment: it keeps rendering into the live main view
+    // below this block (first round pins to timeline index 0, later rounds
+    // append at the timeline end, matching live arrival order).
+    void appendHistoryThinkingText(const QString &text);
+
     // 正文定稿：冻结当前流式段并一次性渲染 markdown，气泡保持打开（幂等）。
     // 记忆沉淀开始前调用（AgentLoop::memoryPhaseStarted），避免长文本在阻塞
     // 提取期间停留纯文本态；finishStreaming 复用同一套定稿逻辑

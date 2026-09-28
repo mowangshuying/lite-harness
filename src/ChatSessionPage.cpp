@@ -325,8 +325,8 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
 {
     // messages 为剔除 system 的会话主体（AgentLoop::messages() 已跳过下标 0）。
     // user 走 setContent；assistant 段（含其后的 tool 结果）合入同一条流式气泡，
-    // 依「正文 → 工具块」到达顺序镜像实时渲染。简化偏差：assistant 正文一次性成段
-    // 输出后再接工具块（实时为交替），且 reasoning_content 不重放（恢复态不显思考块）。
+    // 依「思考 → 正文 → 工具块」到达顺序镜像实时渲染。简化偏差：assistant 正文一次性成段
+    // 输出后再接工具块（实时为交替）；思考块仅重放内容（时长不入库，无时长终态标题）。
     QHash<QString, QPair<QString, QString>> pendingToolCalls; // tool_call_id -> {工具名, 参数 JSON 串}
     for (const QJsonObject &msg : messages)
     {
@@ -350,6 +350,11 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
                 m_currentBubble->startStreaming();
                 m_scrollView->getMainLayout()->addWidget(m_currentBubble);
                 scrollToBottom();
+                // Replay the thinking block before the body text (content-only,
+                // no duration is persisted with history)
+                const QString reasoning = msg.value(QStringLiteral("reasoning_content")).toString();
+                if (!reasoning.isEmpty())
+                    m_currentBubble->appendHistoryThinkingText(reasoning);
                 const QString content = msg.value(QStringLiteral("content")).toString();
                 if (!content.isEmpty())
                     m_currentBubble->appendText(content);
@@ -365,6 +370,11 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
                     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
                     scrollToBottom();
                 }
+                // Replay the thinking block before the body text (same as the
+                // live per-round order: thinking → text → tool blocks)
+                const QString reasoning = msg.value(QStringLiteral("reasoning_content")).toString();
+                if (!reasoning.isEmpty())
+                    m_currentBubble->appendHistoryThinkingText(reasoning);
                 const QString content = msg.value(QStringLiteral("content")).toString();
                 if (!content.isEmpty())
                     m_currentBubble->appendText(content);
