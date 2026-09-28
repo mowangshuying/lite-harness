@@ -29,6 +29,11 @@ constexpr int kMaxTokens = 8000;
 // 为服务端默认，无副作用。
 inline const QString kReasoningEffort = QStringLiteral("xhigh");
 
+// 采样参数（对齐 opencode 配置 temperature 0.1 / topP 0.75）：低温让工具调用决策
+// 更确定、少随机性绕路；端点不认这些字段时回退服务端默认，无副作用。
+constexpr double kTemperature = 0.1;
+constexpr double kTopP = 0.75;
+
 // ---- 工具调用轮次上限（第十二轮：改为可设置项） ----
 // 防止模型反复请求工具形成死循环（原 kMaxToolIterations=300，自 AgentLoop.cpp 匿名 ns
 // 收敛）。用户可在设置页调整，落注册表 QSettings（键 maxToolIterations）。校验界

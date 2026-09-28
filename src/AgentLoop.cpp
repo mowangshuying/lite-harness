@@ -662,6 +662,9 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     request[QStringLiteral("enable_thinking")] = true;
     // 推理强度档位：对齐 opencode xhigh 观感（长思考、少工具轮）；端点不认则回退服务端默认
     request[QStringLiteral("reasoning_effort")] = AgentConst::kReasoningEffort;
+    // 采样参数：对齐 opencode（低温决策更稳）；端点不认则回退服务端默认
+    request[QStringLiteral("temperature")] = AgentConst::kTemperature;
+    request[QStringLiteral("top_p")] = AgentConst::kTopP;
     // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致，取自单源常量）
     request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
     // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
