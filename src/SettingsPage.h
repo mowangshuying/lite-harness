@@ -10,7 +10,7 @@ class FluSettingsVersionBox;
 class QEvent;
 class QLabel;
 
-// 默认工作目录设置卡（实现在 SettingsPage.cpp，复用其匿名命名空间的 QSettings 助手）。
+// 默认工作目录设置卡（实现在 SettingsPage.cpp，复用其匿名命名空间的 settings.ini 读写助手）。
 // i18n 第八轮：必须置于头文件并带 Q_OBJECT——若无 Q_OBJECT，成员里的 tr() 会静态绑定到
 // 最近祖先的宏生成 tr，运行期翻译上下文变成基类 "FluSettingsSelectBox"，而 lupdate 按
 // 词法类名提取为 "WorkDirSettingCard"，两者错位导致词条永不命中。
@@ -33,7 +33,7 @@ private:
 };
 
 // 上下文上限设置卡（第九轮）：数值展示 + 「修改」弹 FluentInputDialog 输入，
-// 校验 [kContextCharLimitMin, kContextCharLimitMax] 拒绝非法值，写注册表后立即回显。
+// 校验 [kContextCharLimitMin, kContextCharLimitMax] 拒绝非法值，写 settings.ini 后立即回显。
 // 生效语义：CompactManager 每次管线现取设置值，下一回合生效，无需重启。
 // 与 WorkDirSettingCard 同理：置于头文件带 Q_OBJECT，保证 tr() 运行期上下文
 // 与 lupdate 提取上下文一致，否则译文永不命中。
@@ -55,7 +55,7 @@ private:
 
 // 单轮最大调用次数设置卡（第十二轮）：与 ContextLimitSettingCard 同款结构——
 // 数值展示 + 「修改」弹 FluentInputDialog 输入，校验 [kMaxToolIterationsMin,
-// kMaxToolIterationsMax] 拒绝非法值，写注册表后立即回显。
+// kMaxToolIterationsMax] 拒绝非法值，写 settings.ini 后立即回显。
 // 生效语义：AgentLoop 每回合 run() 入口现取设置值，下一回合生效，无需重启。
 // Q_OBJECT 理由同上两卡（tr 上下文与 lupdate 提取对齐）。
 class MaxRoundsSettingCard : public FluSettingsSelectBox

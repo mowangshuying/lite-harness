@@ -6,14 +6,14 @@
 // 使用方：AgentLoop.cpp / SubAgent.cpp / BashRunner.cpp / ChatMsgEdit.cpp / CompactManager.cpp /
 // MemoryManager.cpp / SettingsPage.cpp（上下文上限设置卡）。
 
-#include <QSettings>
 #include <QString>
 #include <QStringList>
 #include <QtGlobal> // qsizetype
+#include "AppSettings.h"
 
 namespace AgentConst {
 
-// 可选模型清单（原 ChatMsgEdit.cpp 静态字面量迁入）：不做注册表/配置等多余抽象；
+// 可选模型清单（原 ChatMsgEdit.cpp 静态字面量迁入）：不做配置文件等多余抽象；
 // 首项为回落默认项（AgentLoop::model() 不在列表内时下拉显示并选中它）
 inline const QStringList kModelOptions = {QStringLiteral("qwen3.8-flash"),
                                          QStringLiteral("qwen3.8-max")};
@@ -36,7 +36,7 @@ constexpr double kTopP = 0.75;
 
 // ---- 工具调用轮次上限（第十二轮：改为可设置项） ----
 // 防止模型反复请求工具形成死循环（原 kMaxToolIterations=300，自 AgentLoop.cpp 匿名 ns
-// 收敛）。用户可在设置页调整，落注册表 QSettings（键 maxToolIterations）。校验界
+// 收敛）。用户可在设置页调整，落 settings.ini 配置文件（键 maxToolIterations）。校验界
 // [10,1000]：下界防误设 0/过小值导致回合刚起步即被掐死，上界是失控防线的天花板——
 // 再大也只是放大死循环损失，无正当用途。
 constexpr int kMaxToolIterationsDefault = 500; // 未设置时的默认上限（用户裁决值）
@@ -44,13 +44,13 @@ constexpr int kMaxToolIterationsMin = 10;      // 校验下界
 constexpr int kMaxToolIterationsMax = 1000;    // 校验上界
 inline const QString kMaxToolIterationsKey = QStringLiteral("maxToolIterations");
 
-// 轮次上限单点取值：注册表读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// 轮次上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // AgentLoop（回合入口快照）共用同一实现，避免多处读盘/校验口径分叉；缺失、
-// 非整数、越界（含手工篡改注册表）一律回退默认值。QSettings 默认构造命中
-// org/app=LiteHarness（App.cpp 全局设定）；调用频率为回合级/交互级，读盘成本可忽略。
+// 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
+// （exe 同目录 settings.ini）；调用频率为回合级/交互级，读盘成本可忽略。
 inline int maxToolIterationsValue()
 {
-    QSettings settings;
+    QSettings settings = AppSettings::ini();
     bool ok = false;
     const qlonglong stored = settings.value(kMaxToolIterationsKey).toLongLong(&ok);
     if (!ok || stored < kMaxToolIterationsMin || stored > kMaxToolIterationsMax)
@@ -64,6 +64,11 @@ constexpr qsizetype kLargeOutputThreshold = 100000;
 
 // todo_write 清单项数上限（schema maxItems，超限交模型重试）
 constexpr int kTodoMaxItems = 20;
+
+// task 子代理实时进度行的在卡条数上限（UI 侧裁剪）：超限丢弃最旧行、保留最新窗口，
+// 日志顶部标注省略条数。子代理预算 50 轮 × 每轮多工具时日志可远超单卡承载，
+// 60 行足够回看近况且限高滚动区不膨胀（进度行由 ToolBlock 消费）
+constexpr int kSubagentProgressMaxLines = 60;
 
 // glob 工具结果展示条数（超出部分折叠为 "more matches omitted" 提示；
 // 受 kGlobCollectLimit 收集上限约束，见上方注释的相对关系）
@@ -80,9 +85,21 @@ inline const QString kBashTimeoutError =
 // 工具输出字符截断上限（bash 前台/后台、read_file 共用；lcc [:50000] 语义）
 constexpr qsizetype kOutputCharLimit = 50000;
 
+// read_file 读入字节上限（挂起审计防御加固：约 4×kOutputCharLimit 的字节口径）：
+// runReadFileIn 原为同步 readAll，LLM 指到数百 MB 文件时主线程冻结秒级（零线程纪律下
+// 只能限量读）。超限只读开头 kReadFileMaxBytes 字节并在返回文本尾部附截断说明；
+// 展示层截断仍由 kOutputCharLimit 负责，本上限只界定"读进内存的字节量"。
+constexpr qint64 kReadFileMaxBytes = 200000;
+
+// ChatStream 总时长哨兵（毫秒，挂起审计防御加固：对齐同文件 AsyncRequest 的总量防线）：
+// idle 静默超时每收字节即重置，杀不死"慢而不断"的流——上游持续发字节（间隔 < idle 窗口）
+// 却永不发 [DONE]/finish_reason 时，主链回合永不终结。总量上限按主链长回复场景取 30 分钟；
+// <=0 表示不设总时限。
+constexpr int kStreamTotalTimeoutMs = 1800000;
+
 // ---- 上下文压缩主上限（第九轮：改为可设置项） ----
 // 原 CompactManager 文件级常量 kContextCharLimit=50000 现为本默认值；用户可在设置页
-// 调整，落注册表 QSettings（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
+// 调整，落 settings.ini 配置文件（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
 // （batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S——比例与原 lcc 常量在 50000
 // 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）。
 constexpr qsizetype kContextCharLimitDefault = 200000; // 未设置时的主上限（用户裁决值）
@@ -90,13 +107,13 @@ constexpr qsizetype kContextCharLimitMin = 10000;      // 校验下界
 constexpr qsizetype kContextCharLimitMax = 5000000;    // 校验上界
 inline const QString kContextCharLimitKey = QStringLiteral("contextCharLimit");
 
-// 主上限单点取值：注册表读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// 主上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // CompactManager（管线消费）共用同一实现，避免多处读盘/校验口径分叉；缺失、
-// 非整数、越界（含手工篡改注册表）一律回退默认值。QSettings 默认构造命中
-// org/app=LiteHarness（App.cpp 全局设定）；调用频率为管线级/交互级，读盘成本可忽略。
+// 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
+// （exe 同目录 settings.ini）；调用频率为管线级/交互级，读盘成本可忽略。
 inline qsizetype contextCharLimitValue()
 {
-    QSettings settings;
+    QSettings settings = AppSettings::ini();
     bool ok = false;
     const qlonglong stored = settings.value(kContextCharLimitKey).toLongLong(&ok);
     if (!ok || stored < kContextCharLimitMin || stored > kContextCharLimitMax)

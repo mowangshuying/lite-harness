@@ -7,14 +7,14 @@ class QWidget;
 /// i18n 第八轮（阶段一）：中英文切换基础设施。
 /// 架构裁决：源文本统一中文 + Qt Linguist 翻译链路 + 重启生效
 /// （FluentUI 控件文案构造期定死，官方 gallery 以 exit code 931 + 自重启处理语言切换）。
-/// 语言权威存储 = 注册表 QSettings（org/app=LiteHarness，键 "language"）；
+/// 语言权威存储 = exe 同目录 settings.ini 配置文件（AppSettings 单源，键 "language"）；
 /// FluentUI 的 setLanguage 只写 CWD 相对的 config.ini 且不发任何信号，仅作镜像同步。
 namespace I18n {
 
 /// 读取已存语言："zh-CN" / "en-US"，缺省 "zh-CN"（源文本即中文，无 translator 也正确渲染）
 QString language();
 
-/// 写入注册表并镜像同步 FluConfigUtils::setLanguage（保持 FluentUI 内部读值一致）
+/// 写入 settings.ini 配置文件并镜像同步 FluConfigUtils::setLanguage（保持 FluentUI 内部读值一致）
 void setLanguage(const QString &lang);
 
 /// 装载 translator：先删旧再装新 QTranslator 对象——重装是 Qt 向全 widget 树

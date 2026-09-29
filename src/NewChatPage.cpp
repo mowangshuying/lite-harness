@@ -4,10 +4,11 @@
 #include <QVBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QSettings>
 #include <QDir>
 #include <QEvent>
 #include <QResizeEvent>
+#include <QShowEvent>
+#include "AppSettings.h"
 #include "ChatMsgEdit.h"
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
@@ -54,13 +55,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     dockLayout->addWidget(m_chatMsgEdit);
 
     // 初值：设置页默认工作目录（存在且为目录时）优先，否则进程当前目录
-    {
-        QSettings settings; // 组织/应用名已在 App.cpp 全局设定，默认构造命中同一注册表键
-        const QString stored = settings.value(QStringLiteral("defaultWorkDir")).toString();
-        m_workDirBar->setPath(!stored.isEmpty() && QFileInfo(stored).isDir()
-                                  ? stored
-                                  : QDir::currentPath());
-    }
+    applyStoredWorkDir();
 
     connect(m_workDirBar, &WorkDirPathBar::browseRequested, this, [this]() {
         const QString dir = QFileDialog::getExistingDirectory(
@@ -68,6 +63,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
         if (dir.isEmpty())
             return;                                   // 取消选择：保持原目录
         m_workDirBar->setPath(dir);                   // 临时改选，不落盘（持久化入口在设置页）
+        m_workDirTouched = true;                      // 本会话内尊重手动改选，showEvent 不再覆盖
     });
 
     connect(m_chatMsgEdit, &ChatMsgEdit::sendMessage, this, &NewChatPage::newChatRequested);
@@ -101,6 +97,25 @@ void NewChatPage::changeEvent(QEvent *event)
     if (event->type() == QEvent::LanguageChange && m_welcomeLabel)
         m_welcomeLabel->setText(tr("开始新对话"));
     BasePage::changeEvent(event);
+}
+
+void NewChatPage::showEvent(QShowEvent *event)
+{
+    BasePage::showEvent(event);
+    // 每次进入发起页重读 settings.ini 的默认工作目录：设置页保存后无需重启即生效；
+    // 用户本会话内经「浏览」手动改选过则尊重其选择，不再覆盖。
+    // （首次显示会紧随构造多读一次，值同源、无害）
+    if (!m_workDirTouched)
+        applyStoredWorkDir();
+}
+
+void NewChatPage::applyStoredWorkDir()
+{
+    // 读 settings.ini 默认工作目录（存在且为目录时）优先，否则进程当前目录
+    const QString stored = AppSettings::ini().value(QStringLiteral("defaultWorkDir")).toString();
+    m_workDirBar->setPath(!stored.isEmpty() && QFileInfo(stored).isDir()
+                              ? stored
+                              : QDir::currentPath());
 }
 
 QString NewChatPage::currentModel() const

@@ -19,7 +19,7 @@
 namespace {
 
 // 第九轮：四个字符阈值不再是文件级常量，而是「可设置主上限 S + 等比派生」——
-// S 单点取值走 AgentConst::contextCharLimitValue()（注册表 + 校验 + 默认回退，
+// S 单点取值走 AgentConst::contextCharLimitValue()（settings.ini + 校验 + 默认回退，
 // 与设置页共用实现防口径分叉；每次管线/消费点现取，改设置后下一回合即生效）。
 // 派生比例以表达式写死防漂移，与原 lcc 常量在 S=50000 基准下逐一对齐：
 //   batch   = 4S   （原 kBatchCharLimit 200000）

@@ -9,7 +9,7 @@
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QLocale>
-#include <QSettings>
+#include "AppSettings.h"
 #include <QFileInfo>
 #include <QFileDialog>
 #include <FluVScrollView.h>
@@ -19,21 +19,18 @@
 
 namespace {
 
-// 默认工作目录：QSettings 用法，组织/应用名已在 App.cpp 全局设定（LiteHarness/LiteHarness），
-// 默认构造命中与旧显式双参构造相同的注册表键；与主题/语言配置互不影响
-// （语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
+// 默认工作目录：settings.ini 配置文件（AppSettings 单源，exe 同目录）；
+// 与主题/语言配置互不影响（语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
 const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 
 QString readDefaultWorkDir()
 {
-    QSettings settings;
-    return settings.value(kDefaultWorkDirKey).toString();
+    return AppSettings::ini().value(kDefaultWorkDirKey).toString();
 }
 
 void writeDefaultWorkDir(const QString &value)
 {
-    QSettings settings;
-    settings.setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
+    AppSettings::ini().setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 
 // 未设置时的占位提示（浅色卡片右侧值区展示）
@@ -110,7 +107,7 @@ void WorkDirSettingCard::updateValue()
 // 上下文上限设置卡（第九轮）：同款 FluSettingsSelectBox 外观（图标+标题+说明），
 // 隐藏下拉框换「数值 + 修改」操作行。展示/回写均经 AgentConst::contextCharLimitValue()
 // 单点取值（未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
-// 写注册表后 CompactManager 下一回合管线现取即生效，无需重启。
+// 写 settings.ini 后 CompactManager 下一回合管线现取即生效，无需重启。
 ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
     : FluSettingsSelectBox(parent)
 {
@@ -180,14 +177,13 @@ void ContextLimitSettingCard::promptEdit()
             .exec();
         return;
     }
-    QSettings settings;
-    settings.setValue(AgentConst::kContextCharLimitKey, parsed);
+    AppSettings::ini().setValue(AgentConst::kContextCharLimitKey, parsed);
     updateValue();
 }
 
 // 单轮最大调用次数设置卡（第十二轮）：ContextLimitSettingCard 同款结构。
 // 展示/回写均经 AgentConst::maxToolIterationsValue() 单点取值（未设置/非法自动
-// 回退默认 500），与 AgentLoop 回合入口快照同源不分叉；写注册表后下一回合生效。
+// 回退默认 500），与 AgentLoop 回合入口快照同源不分叉；写 settings.ini 后下一回合生效。
 // 数值域 [10,1000] 无需千分位，直接裸整数展示。
 MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
     : FluSettingsSelectBox(parent)
@@ -256,8 +252,7 @@ void MaxRoundsSettingCard::promptEdit()
             .exec();
         return;
     }
-    QSettings settings;
-    settings.setValue(AgentConst::kMaxToolIterationsKey, parsed);
+    AppSettings::ini().setValue(AgentConst::kMaxToolIterationsKey, parsed);
     updateValue();
 }
 

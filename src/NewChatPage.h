@@ -6,6 +6,7 @@ class ChatMsgEdit;
 class WorkDirPathBar;
 class QLabel;
 class QEvent;
+class QShowEvent;
 
 class NewChatPage : public BasePage
 {
@@ -31,9 +32,17 @@ protected:
     // WorkDirPathBar 自身的 changeEvent 处理，Qt 按控件逐个投递、父级无需转发）
     void changeEvent(QEvent *event) override;
 
+    // 每次进入发起页重读 settings.ini 的默认工作目录，使设置页保存即时生效、无需重启
+    void showEvent(QShowEvent *event) override;
+
 private:
+    // 读 settings.ini 默认工作目录并写入路径条（空/非法回退进程当前目录）；
+    // 构造与 showEvent 共用
+    void applyStoredWorkDir();
+
     ChatMsgEdit *m_chatMsgEdit = nullptr;
     QWidget *m_inputDock = nullptr;       // 工作目录路径条 + 输入框的同栏容器（英雄页视觉中心）
     WorkDirPathBar *m_workDirBar = nullptr; // 只读路径展示 + 浏览入口（省略/配色细节见组件注释）
     QLabel *m_welcomeLabel = nullptr;     // 英雄区问候语（重译面）
+    bool m_workDirTouched = false;        // 用户经浏览钮临时改选后不再被外部配置覆盖本页面会话
 };

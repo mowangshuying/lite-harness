@@ -4,7 +4,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QProcess>
-#include <QSettings>
+#include "AppSettings.h"
 #include <QTranslator>
 #include <QWidget>
 
@@ -43,14 +43,14 @@ namespace I18n {
 
 QString language()
 {
-    // 默认构造 QSettings：org/app 已在 App.cpp 全局设定（LiteHarness/LiteHarness）
-    const QString stored = QSettings().value(QStringLiteral("language")).toString();
+    // 语言权威存储 = exe 同目录 settings.ini（键 "language"），非法/缺省回退 zh-CN
+    const QString stored = AppSettings::ini().value(QStringLiteral("language")).toString();
     return stored == kLangEn ? kLangEn : kLangZh; // 非法/缺省一律回退 zh-CN
 }
 
 void setLanguage(const QString &lang)
 {
-    QSettings().setValue(QStringLiteral("language"), lang);
+    AppSettings::ini().setValue(QStringLiteral("language"), lang);
     // 镜像同步 FluentUI 内部读值。其存储为 CWD 相对的 ../config/config.ini（分发场景
     // 可能漂移），故仅作一致性同步、不作权威来源；且该写入不发任何信号。
     FluConfigUtils::getUtils()->setLanguage(lang);
