@@ -1,9 +1,12 @@
 /* atomOneDark —— SessionSidebar 会话侧边栏 */
 
 #SessionSidebar {
-    background: rgb(36, 40, 48);
-    border: 1px solid rgb(56, 60, 68);
-    border-radius: 8px;
+    /* 底色与左侧导航列对齐（LiteHarnessNavAlign.qss 基准） */
+    background: rgb(40, 44, 52);
+    border: none;
+    /* 左/顶边框线与左侧导航列边框同源取色 */
+    border-left: 1px solid rgb(56, 60, 68);
+    border-top: 1px solid rgb(56, 60, 68);
 }
 
 /* ---- 面板头部 ---- */

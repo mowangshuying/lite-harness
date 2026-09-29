@@ -293,6 +293,8 @@ int bodyTextAvail(int bodyWidth, int sidebarWidth) {
 
 SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     setObjectName(QStringLiteral("SessionSidebar"));
+    // 自定义 QWidget 子类默认不渲染 QSS 盒模型（背景/边框），必须显式开启
+    setAttribute(Qt::WA_StyledBackground, true);
     setFixedWidth(LayoutConst::kSidebarWidth);
 
     auto* root = new QVBoxLayout(this);
