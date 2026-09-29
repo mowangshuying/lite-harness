@@ -84,3 +84,21 @@ ToolBlock {
     font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
 }
+
+/* 成败字形位（B1，ToolBlock::applyOutcome 打 outcome 动态属性）：
+   状态色只上此处字形，不染工具名标签（类别色与状态色分层，兑现 ToolTagKind 注释承诺）。
+   ✓ 绿 = 成功终态；✕ 红 = 失败/被拒；■ 灰 = 中断无结果 */
+QLabel#toolOutcome {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 13px;
+    font-weight: bold;
+}
+QLabel#toolOutcome[outcome="ok"] {
+    color: rgb(108, 203, 91);
+}
+QLabel#toolOutcome[outcome="fail"] {
+    color: rgb(251, 100, 80);
+}
+QLabel#toolOutcome[outcome="stopped"] {
+    color: rgb(136, 136, 136);
+}

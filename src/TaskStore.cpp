@@ -596,7 +596,7 @@ QString TaskStore::runCreateTask(const QJsonObject &args) const
     Task task;
     QString error;
     if (!createTask(subject, description, &task, &error))
-        return error; // lcc 裸抛 → lite 原样文案直返（不加 'Error:' 前缀，登记裁决）
+        return QStringLiteral("Error: ") + error; // lcc 裸抛 → lite 折叠为错误文本；'Error: ' 前缀对齐全仓失败文案族（B1 成败判定单源）
     qDebug().noquote() << QStringLiteral("[task] create %1").arg(task.subject); // lcc run_create_task print
     return QStringLiteral("Created %1: %2").arg(task.id, task.subject);
 }
@@ -606,13 +606,14 @@ QString TaskStore::runUpdateTask(const QJsonObject &args) const
     const QString taskId = args.value(QStringLiteral("task_id")).toString();
     const QJsonValue addValue = args.value(QStringLiteral("addBlockedBy"));
     if (!addValue.isArray()) {
-        // lcc :95 在 load 之前的 isinstance(list) 检查，文案逐字；缺参 → 同文案（族一致）
-        return QStringLiteral("addBlockedBy must be a list of task IDs");
+        // lcc :95 在 load 之前的 isinstance(list) 检查，文案在 lcc 原文基础上加 'Error: ' 前缀
+        //（B1 成败判定单源）；缺参 → 同文案（族一致）
+        return QStringLiteral("Error: addBlockedBy must be a list of task IDs");
     }
     Task updated;
     QString error;
     if (!updateTaskDependencies(taskId, addValue.toArray(), &updated, &error))
-        return error;
+        return QStringLiteral("Error: ") + error;
     QString dependencies = updated.blockedBy.join(QStringLiteral(", "));
     if (dependencies.isEmpty())
         dependencies = QStringLiteral("(none)");
@@ -625,7 +626,7 @@ QString TaskStore::runListTasks() const
     QVector<Task> tasks;
     QString error;
     if (!listTasks(&tasks, &error))
-        return error;
+        return QStringLiteral("Error: ") + error;
     if (tasks.isEmpty())
         return QStringLiteral("No tasks. Use create_task to add some.");
     QStringList lines;
@@ -658,7 +659,7 @@ QString TaskStore::runGetTask(const QJsonObject &args) const
     Task task;
     QString error;
     if (!loadTask(taskId, &task, &error))
-        return error;
+        return QStringLiteral("Error: ") + error;
     return taskToJsonText(task); // lcc get_task：json.dumps(asdict, indent=2) 透传
 }
 
@@ -668,7 +669,7 @@ QString TaskStore::runClaimTask(const QJsonObject &args) const
     QString result;
     QString error;
     if (!claimTask(taskId, QStringLiteral("agent"), &result, &error)) // owner 硬编码 lcc run 层 'agent'
-        return error;
+        return QStringLiteral("Error: ") + error;
     return result;
 }
 
@@ -678,6 +679,6 @@ QString TaskStore::runCompleteTask(const QJsonObject &args) const
     QString result;
     QString error;
     if (!completeTask(taskId, QStringLiteral("agent"), &result, &error))
-        return error;
+        return QStringLiteral("Error: ") + error;
     return result;
 }

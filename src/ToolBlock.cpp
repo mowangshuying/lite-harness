@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollBar>
+#include <QStyle>
 #include <QTimer>
 
 #include <FluUtils.h>
@@ -33,6 +34,11 @@ ToolBlock::ToolBlock(QWidget *parent) : CollapsibleBlock(parent)
     m_titleLabel = createTitleLabel("toolTitle");
     m_titleLabel->setText(tr("已执行"));
 
+    // 成败字形位（B1）：终态卡点亮 ✓/✕（失败红色由 QSS [outcome="fail"] 决定），
+    // live 进行态隐藏；未知态时保持中性隐藏，隐藏件不占宽度与间距
+    m_outcomeLabel = createGlyphLabel("toolOutcome");
+    m_outcomeLabel->hide();
+
     m_summaryLabel = new QLabel(m_header);
     m_summaryLabel->setObjectName("toolCommand");
     m_summaryLabel->setTextInteractionFlags(Qt::NoTextInteraction);
@@ -42,6 +48,7 @@ ToolBlock::ToolBlock(QWidget *parent) : CollapsibleBlock(parent)
     headerLayout->addWidget(m_iconLabel);
     headerLayout->addWidget(m_tagLabel);
     headerLayout->addWidget(m_titleLabel);
+    headerLayout->addWidget(m_outcomeLabel);
     headerLayout->addWidget(m_summaryLabel, 1);
     headerLayout->addWidget(m_arrowLabel);
 
@@ -97,7 +104,49 @@ QString ToolBlock::toolTitleText(const QString &toolName)
     return tr("已执行");
 }
 
-void ToolBlock::setToolExecution(const QString &toolName, const QString &summary, const QString &output)
+QString ToolBlock::toolFailText(const QString &toolName)
+{
+    // 中文失败词条（B1）：与成功词条同密度朴素直译，未知工具回退"执行失败"
+    if (toolName == ToolNames::BASH)
+        return tr("执行失败");
+    if (toolName == ToolNames::READ_FILE)
+        return tr("读取失败");
+    if (toolName == ToolNames::WRITE_FILE)
+        return tr("写入失败");
+    if (toolName == ToolNames::EDIT_FILE)
+        return tr("编辑失败");
+    if (toolName == ToolNames::GLOB)
+        return tr("查找失败");
+    if (toolName == ToolNames::TASK)
+        return tr("代办失败"); // 子代理任务未达成（s06 task 工具）
+    if (toolName == ToolNames::LOAD_SKILL)
+        return tr("加载失败"); // 技能载入失败（s07 load_skill 工具）
+    if (toolName == ToolNames::COMPACT)
+        return tr("压缩失败"); // 上下文压缩失败（s08 compact 工具）
+    if (toolName == QLatin1String("memory"))
+        return tr("记忆失败"); // 记忆事件合成卡的失败态（s09 记忆系统）
+    if (toolName == ToolNames::CREATE_TASK)
+        return tr("建任务失败"); // 任务节点创建失败（s10 任务系统）
+    if (toolName == ToolNames::UPDATE_TASK)
+        return tr("依赖登记失败"); // 依赖边更新失败（s10 任务系统）
+    if (toolName == ToolNames::LIST_TASKS)
+        return tr("清单读取失败"); // 任务总览读取失败（s10 任务系统）
+    if (toolName == ToolNames::GET_TASK)
+        return tr("详情读取失败"); // 单任务详情读取失败（s10 任务系统）
+    if (toolName == ToolNames::CLAIM_TASK)
+        return tr("认领失败"); // 任务认领失败（s10 任务系统）
+    if (toolName == ToolNames::COMPLETE_TASK)
+        return tr("完结失败"); // 任务完结失败（s10 任务系统）
+    if (toolName == ToolNames::SCHEDULE_CRON)
+        return tr("定时登记失败"); // 定时任务登记失败（s12 cron 系统）
+    if (toolName == ToolNames::LIST_CRONS)
+        return tr("定时清单读取失败"); // 定时任务总览读取失败（s12 cron 系统）
+    if (toolName == ToolNames::CANCEL_CRON)
+        return tr("取消定时失败"); // 定时任务取消失败（s12 cron 系统）
+    return tr("执行失败");
+}
+
+void ToolBlock::setToolExecution(const QString &toolName, const QString &summary, const QString &output, bool ok)
 {
     // live 进行态收口：停轮播（基类 stopLiveTimer 复位 m_live），标题/标签由下方按终态重建
     stopLiveTimer();
@@ -107,7 +156,7 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
     m_summary = summary;
 
     // 头部呈现方案：bash 保留 "$" 提示符观感；其余工具隐藏 $、显示等宽工具名标签。
-    // 中文词条统一承担"动作 + 完成态"语义，工具名标签承担"哪个工具"。
+    // 中文词条统一承担"动作 + 成败态"语义（ok 选完成/失败词表），工具名标签承担"哪个工具"。
     const bool prompt = usesPromptGlyph();
     m_iconLabel->setVisible(prompt);
     m_tagLabel->setVisible(!prompt);
@@ -115,8 +164,12 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
         m_tagLabel->setText(toolName);
     // 工具名标签按语义类别着色：这里只打类别属性 toolTagKind，具体颜色由主题 QSS 的
     // [toolTagKind=...] 决定；未知工具归 other，沿用中性小片底色。
+    // 类别色与状态色分层（ToolTagKind 头注释承诺）：成败只上字形位，不染标签。
     ToolTagKind::applyTo(m_tagLabel, toolName);
-    m_titleLabel->setText(toolTitleText(toolName));
+    m_titleLabel->setText(ok ? toolTitleText(toolName) : toolFailText(toolName));
+
+    // 成败字形位点亮（B1，判定单源在 AgentLoop::isToolFailure，本类不嗅探输出）
+    applyOutcome(ok ? "ok" : "fail", ok ? QStringLiteral("\u2713") : QStringLiteral("\u2715"));
 
     refreshSummaryLabel();
 
@@ -144,9 +197,11 @@ void ToolBlock::startLive(const QString &liveTitle)
     m_liveTitle = liveTitle;
     m_liveDots = 0;
 
-    // live 期工具身份未知：隐藏 $ 提示符与工具名标签，仅留轮播标题 + 箭头
+    // live 期工具身份未知：隐藏 $ 提示符与工具名标签，仅留轮播标题 + 箭头；
+    // 成败字形位同隐（结果尚未产生，不许预设）
     m_iconLabel->hide();
     m_tagLabel->hide();
+    m_outcomeLabel->hide();
     m_summaryLabel->clear();
     m_titleLabel->setText(liveText());
 
@@ -171,12 +226,14 @@ void ToolBlock::startTaskLive()
     m_liveDots = 0;
 
     // 与记忆 startLive 不同：工具身份恒知（task），保留等宽工具名标签按 delegate
-    // 类别着色；头部形态 = [task 标签 + 轮播标题 + 最新进度行（关键参数位）]
+    // 类别着色；头部形态 = [task 标签 + 轮播标题 + 最新进度行（关键参数位）]；
+    // 成败字形位隐藏（子代理尚未收口，不许预设）
     m_toolName = ToolNames::TASK;
     m_iconLabel->hide();
     m_tagLabel->show();
     m_tagLabel->setText(ToolNames::TASK);
     ToolTagKind::applyTo(m_tagLabel, ToolNames::TASK);
+    m_outcomeLabel->hide();
     m_titleLabel->setText(liveText());
 
     startLiveTimer();
@@ -227,7 +284,63 @@ void ToolBlock::finishTaskLiveAborted()
     // 进度行作现场线索；折叠但日志不销毁（stop/error 终局后 toolOutputReady("task")
     // 不再到达，此处是唯一收口点——由气泡 finishStreaming 兜底驱动）
     m_titleLabel->setText(tr("已中断"));
+    applyOutcome("stopped", QStringLiteral("\u25a0")); // 灰方块：无结果终态（与常规卡同纪律）
     setExpanded(false);
+}
+
+// ---- B3 常规工具事前 live 卡 ----
+
+void ToolBlock::startToolLive(const QString &toolName, const QString &summary)
+{
+    if (m_live)
+        return;
+    m_live = true;
+    m_liveTitle = tr("执行中");
+    m_liveDots = 0;
+
+    // 身份可见形态与终态卡同款（bash $ / 其余等宽标签 + 类别着色）——toolStarted
+    // 已带 toolSummaryOf 同源摘要，头部即展示「哪个工具 + 关键参数」的进行态版本；
+    // 成败字形位隐藏（结果尚未产生）
+    m_toolName = toolName;
+    m_summary = summary;
+    const bool prompt = usesPromptGlyph();
+    m_iconLabel->setVisible(prompt);
+    m_tagLabel->setVisible(!prompt);
+    if (!prompt)
+        m_tagLabel->setText(toolName);
+    ToolTagKind::applyTo(m_tagLabel, toolName);
+    m_outcomeLabel->hide();
+    m_titleLabel->setText(liveText());
+    refreshSummaryLabel();
+
+    // 圆点轮播骨架（400ms 相位 0..3 循环）已下沉基类；保持 initCollapsed 折叠形态，
+    // 不自动展开（区别 task 卡）——高频工具执行时防内容区闪跳
+    startLiveTimer();
+}
+
+void ToolBlock::finishToolLiveAborted()
+{
+    // 仅 live 进行态可收中断终局（已被 setToolExecution 收过终态/从未 live 均 no-op）
+    if (!m_live)
+        return;
+    stopLiveTimer();
+
+    // 中断终局（stop/error 收口时该工具不再经 toolOutputReady 回流）：标题切
+    // 「已停止」+ 灰方块字形位，折叠留痕；输出区留空属预期（结果从未产生）
+    m_titleLabel->setText(tr("已停止"));
+    applyOutcome("stopped", QStringLiteral("\u25a0"));
+    setExpanded(false);
+}
+
+void ToolBlock::applyOutcome(const char *state, const QString &glyph)
+{
+    // 照 PermissionCard::applyTrace 模式：动态属性喂 QSS 选择器 + unpolish/polish
+    // 重取样式，字形用文本字符零新图标资源
+    m_outcomeLabel->setText(glyph);
+    m_outcomeLabel->setProperty("outcome", QLatin1String(state));
+    m_outcomeLabel->show();
+    style()->unpolish(m_outcomeLabel);
+    style()->polish(m_outcomeLabel);
 }
 
 QStringList ToolBlock::displayedSubagentLines() const
@@ -270,7 +383,9 @@ void ToolBlock::refreshSummaryLabel()
                               ? m_iconLabel->width()
                               : m_tagLabel->sizeHint().width();
     static constexpr int kHeaderChrome = 12 + 10 + 16 + 8 * 3;
-    const int avail = qMax(40, width() - kHeaderChrome - leadWidth
+    // 成败字形位点亮时（终态卡）再占 16 宽 + 1 段间距；live 期隐藏不计
+    const int outcomeExt = m_outcomeLabel->isVisible() ? 16 + 8 : 0;
+    const int avail = qMax(40, width() - kHeaderChrome - outcomeExt - leadWidth
                                   - m_titleLabel->sizeHint().width());
 
     QFontMetrics fm(m_summaryLabel->font());

@@ -233,16 +233,17 @@ void ChatSessionPage::wireAgent()
         }
     });
     // 工具执行可视化：按到达顺序内嵌到当前流式气泡的时间线中（正文与工具块交替出现）。
-    // 信号契约：toolOutputReady(toolName, summary, output)，summary 为关键参数
+    // 信号契约：toolOutputReady(toolName, summary, output, ok)，summary 为关键参数，
+    // ok = AgentLoop::isToolFailure 取反的成败判定（B1 单源，UI 不再嗅探输出）
     connect(m_agentLoop, &AgentLoop::toolOutputReady, this,
-            [this](const QString &toolName, const QString &summary, const QString &output) {
+            [this](const QString &toolName, const QString &summary, const QString &output, bool ok) {
                 // 侧栏变更文件台账：write/edit 的 summary 即裸路径串（AgentLoop::toolSummary 契约），
-                // 放在所有早退分支之前保证不漏记
-                if (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file"))
+                // 放在所有早退分支之前保证不漏记；失败/被拒的写入不记账（B1 联动修正）
+                if (ok && (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file")))
                     recordModifiedFile(toolName, summary);
                 if (m_currentBubble)
                 {
-                    m_currentBubble->appendToolExecution(toolName, summary, output);
+                    m_currentBubble->appendToolExecution(toolName, summary, output, ok);
                     QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
                     return;
                 }
@@ -254,8 +255,21 @@ void ChatSessionPage::wireAgent()
                 // 边界情况（无流式气泡，如信号在回合外到达）：独立气泡兜底，避免信息静默丢失
                  addMessage(MessageBubbleWidget::Role::Assistant,
                             tr("%1 %2:\n```\n%3\n```\n\n输出:\n```\n%4\n```")
-                                .arg(ToolBlock::toolTitleText(toolName), toolName, summary, output));
+                                .arg(ok ? ToolBlock::toolTitleText(toolName)
+                                        : ToolBlock::toolFailText(toolName),
+                                     toolName, summary, output));
              });
+
+    // 工具开始执行 → 事前 live 卡（AgentLoop 经权限门放行时发射，B3）。
+    // 无宿主气泡防御忽略：事前卡是终态卡（toolOutputReady 兜底链）的进度前戏，
+    // 回合外到达无时间线可挂、终态照常留痕不丢信息
+    connect(m_agentLoop, &AgentLoop::toolStarted, this,
+            [this](const QString &toolName, const QString &summary) {
+                if (!m_currentBubble)
+                    return;
+                m_currentBubble->appendToolStart(toolName, summary);
+                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+            });
 
     // task 子代理实时进度行 → 时间线 task live 卡（AgentLoop 直连转发 SubAgent::progressEmitted）。
     // 无宿主气泡防御忽略：进度行是辅助展示，不像 toolOutputReady 那样兜底独立气泡
@@ -423,7 +437,9 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
         m_currentBubble->finishStreaming();
 
     m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
-    m_currentBubble->startStreaming();
+    // B2：提交到首 token（含记忆召回异步期）以占位文案消除流内空白，
+    // 首个思考/正文/工具事件到达即由气泡内部 dropPlaceholder 清除
+    m_currentBubble->startStreaming(tr("处理中…"));
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
     m_agentLoop->run(userText);
@@ -476,7 +492,8 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
                 // 终态回复（无工具调用）：独立流式气泡承载正文后收尾
                 closeReplayBubble();
                 m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
-                m_currentBubble->startStreaming();
+                // 回放同步即填满，占位无滞留窗口（与实时链路同参传法保持三调用点一致）
+                m_currentBubble->startStreaming(tr("处理中…"));
                 m_scrollView->getMainLayout()->addWidget(m_currentBubble);
                 scrollToBottom();
                 // Replay the thinking block before the body text (content-only,
@@ -495,7 +512,7 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
                 if (!m_currentBubble)
                 {
                     m_currentBubble = new MessageBubbleWidget(MessageBubbleWidget::Role::Assistant, this);
-                    m_currentBubble->startStreaming();
+                    m_currentBubble->startStreaming(tr("处理中…"));   // B2 占位（回放同步即被内容/工具块清除）
                     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
                     scrollToBottom();
                 }
@@ -531,11 +548,13 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
             const QJsonObject args =
                 QJsonDocument::fromJson(argsStr.toUtf8()).object();
             const QString summary = AgentLoop::toolSummaryOf(toolName, args);
-            // 历史回放顺带重建侧栏变更文件台账（与实时链路同一提取语义）
-            if (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file"))
+            const QString content = msg.value(QStringLiteral("content")).toString();
+            // 回放成败与实时链路共享单源判定（AgentLoop::isToolFailure）；
+            // 失败/被拒的写入不入侧栏台账（与实时口径一致）
+            const bool ok = !AgentLoop::isToolFailure(content);
+            if (ok && (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file")))
                 recordModifiedFile(toolName, summary);
-            m_currentBubble->appendToolExecution(
-                toolName, summary, msg.value(QStringLiteral("content")).toString());
+            m_currentBubble->appendToolExecution(toolName, summary, content, ok);
             scrollToBottom();
             continue;
         }

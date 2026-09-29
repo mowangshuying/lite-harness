@@ -75,14 +75,28 @@ public:
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
     void resolvePermission(bool allow);
 
+    // 工具输出成败判定单源（B1）：工具侧一切失败一律折叠为输出文本，文案族固定——
+    // "Error:" 前缀（handler 校验/超时/危险拦截/TaskStore 补前缀族）、精确
+    // "Permission denied"（权限门拒绝）、"Blocked:" 前缀（deny 列表硬拒）、
+    // "[Background task start error]"（后台启动失败）、"Unknown tool:"（未注册名）。
+    // 发射点据此算 ok 随 toolOutputReady 带出；历史回放侧以 tool 消息 content 同判据复用
+    static bool isToolFailure(const QString &output);
+
 signals:
     // 思考过程增量（forward 给 UI）
     void thinkingDelta(const QString &delta);
     // 回复文本增量（逐字/逐段）
     void textDelta(const QString &delta);
-    // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出
-    // 每次工具执行完成发射一次（含 Dangerous blocked / Unknown tool / 沙箱拒绝等错误结果）
-    void toolOutputReady(const QString &toolName, const QString &summary, const QString &output);
+    // 工具执行开始（UI 用于事前 live 卡）：工具名 / 人类可读关键参数摘要（与
+    // toolOutputReady 前两参同源生成）。经权限门放行、即将真正执行时发射；
+    // compact（批尾特判）与参数 JSON 解析失败（直接终态）不发。权限询问续跑重发时
+    // 同名信号可能到达两次，UI 端幂等去重；SubAgent 内部工具不经本信号（黑盒契约不变）
+    void toolStarted(const QString &toolName, const QString &summary);
+    // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出 / 成败判定
+    // 每次工具执行完成发射一次（含 Dangerous blocked / Unknown tool / 沙箱拒绝等错误结果）。
+    // ok 由 isToolFailure(output) 取反单源判定（B1：失败折叠文本在 UI 显形，消费端不再嗅探）
+    void toolOutputReady(const QString &toolName, const QString &summary, const QString &output,
+                         bool ok);
     // task 子代理内部活动转发（SubAgent::progressEmitted 信号直连，见 startSubAgentTask）：
     // 子代理每完成一个内部工具调用发射一次，仅主循环运行且存在活动子代理时到达。
     // UI 用于 task 工具卡的 live 进度行（turnNo=子代理轮次自 1 起，toolName/summary=
@@ -334,7 +348,7 @@ private:
     bool m_compactRequested = false;     // compact 工具被调用（批尾以 compact_history 替换历史后消费）
     int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc MAX_REACTIVE_RETRIES=1，每次 run 归零）
     QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
-    // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用三参 toolOutputReady（"memory"）
+    // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用四参 toolOutputReady（"memory"）
     MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，异步回调式，构造时注入回调）
     QString m_relevantMemories;          // 本轮召回的记录文本（system prompt 尾段；run() 时刷新）
     // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然

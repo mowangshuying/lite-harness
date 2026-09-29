@@ -24,7 +24,7 @@ namespace QOpenAi { class AsyncRequest; }
  *   - consolidateMemoriesAsync：记录数达到阈值后的整体合并（快照-回滚语义）。
  *
  * 与宿主（AgentLoop）的耦合仿 CompactManager：构造函数注入 workDir/model 回调（目录随
- * setWorkDir 动态跟随），卡片经 CardSink 回传（宿主复用三参 toolOutputReady，"memory" 名义），
+ * setWorkDir 动态跟随），卡片经 CardSink 回传（宿主复用四参 toolOutputReady，"memory" 名义），
  * 零新增公共信号。三条链全部走 QOpenAi::AsyncRequest（召回 P1、提取/合并 P2），
  * 阻塞链族与迁移期兼容壳已随 P4 整体删除，宿主无需再守阻塞窗口。
  *

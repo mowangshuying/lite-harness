@@ -34,8 +34,18 @@ public:
 
     // 工具执行节点（AgentLoop::toolOutputReady）：按到达顺序内嵌到气泡时间线，
     // 将当前流式文本段冻结归档后插入可折叠的 ToolBlock，后续增量另起新段。
-    // toolName 为工具名；summary 为关键参数（bash=命令行，文件类=path，glob=pattern）
-    void appendToolExecution(const QString &toolName, const QString &summary, const QString &output);
+    // toolName 为工具名；summary 为关键参数（bash=命令行，文件类=path，glob=pattern）；
+    // ok = AgentLoop::isToolFailure 取反的成败判定（B1 单源，透传给卡片驱动
+    // 完成/失败词条与 ✓/✕ 字形位）。若此前 appendToolStart 挂过同名 live 卡，
+    // 本次调用就地收口该卡而非新建
+    void appendToolExecution(const QString &toolName, const QString &summary, const QString &output, bool ok);
+
+    // 工具开始执行（AgentLoop::toolStarted）：B3 事前 live 卡——按到达顺序冻结正文段
+    // 后挂「执行中」轮播 ToolBlock（保持折叠一行头部），同名 toolOutputReady 到达时
+    // appendToolExecution 就地收口带成败字形；task 走 startTaskLive 进度卡（与
+    // appendSubagentProgress 共槽幂等）；memory/compact 无此信号语义，防御跳过。
+    // 串行执行契约下同名防重即匹配依据（无 callId 的既有限制，见 .cpp 注释）
+    void appendToolStart(const QString &toolName, const QString &summary);
 
     // 权限确认卡（AgentLoop::permissionRequired）：会话页创建 PermissionCard 并接好
     // 信号后交此挂进气泡时间线（冻结当前正文段后追加），裁决留痕停在对应工具执行
@@ -89,6 +99,9 @@ private:
     QTextBrowser *ensureLiveView();
     // 思考计时：每轮独立思考区间计时（工具执行/正文打断即停，下一轮重新起表）
     void stopThinkingInterval();
+    // B2 占位清除：占位文案（"处理中…"）仅是首事件到达前的观饰，绝不能随正文追加
+    // 或段冻结流入正文归档——各写入/冻结点前调用，命中则清空当前段视图
+    void dropPlaceholder();
 
 private:
     // 时间线中的一个文本段：正文 markdown 原文 + 渲染视图（工具块到达时冻结）
@@ -114,5 +127,7 @@ private:
     bool m_thinkingRunning = false;       // 当前思考区间计时进行中
     ToolBlock *m_liveMemoryBlock = nullptr; // 记忆沉淀进度卡（live 态），结果卡到达就地切换
     ToolBlock *m_liveTaskBlock = nullptr;   // task 子代理进度卡（live 态），首行进度创建、终态收口置空
+    ToolBlock *m_liveToolBlock = nullptr;   // 常规工具事前 live 卡（toolStarted 创建），同名终态就地收口
+    QString m_liveToolName;                 // 在途 live 卡工具名（串行契约下的匹配依据）
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };

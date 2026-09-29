@@ -274,16 +274,16 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
 
-    // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用三参 toolOutputReady，
+    // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用四参 toolOutputReady，
     // toolName 固定 "compact"，summary 为档位描述，output 携带转写路径与前后估算
     m_compact.setCardSink([this](const QString &summary, const QString &output) {
-        emit toolOutputReady(ToolNames::COMPACT, summary, output);
+        emit toolOutputReady(ToolNames::COMPACT, summary, output, !isToolFailure(output));
     });
 
-    // 记忆卡片出口（lcc s09 裁决：复用三参 toolOutputReady，toolName 固定 "memory"，
+    // 记忆卡片出口（lcc s09 裁决：复用四参 toolOutputReady，toolName 固定 "memory"，
     // 零新增公共信号；卡片文本 [memory] stored / [memory] consolidated 系列，lcc 终态 tag 化）
     m_memory.setCardSink([this](const QString &summary, const QString &output) {
-        emit toolOutputReady(QStringLiteral("memory"), summary, output);
+        emit toolOutputReady(QStringLiteral("memory"), summary, output, !isToolFailure(output));
     });
 
     // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/.lite-harness/skills/*/SKILL.md，目录注入 system prompt
@@ -1040,7 +1040,7 @@ void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolN
     if (!m_running)
         return;
 
-    emit toolOutputReady(toolName, summary, output);
+    emit toolOutputReady(toolName, summary, output, !isToolFailure(output));
 
     // 构建 tool 结果消息回填上下文
     QJsonObject toolResult;
@@ -1113,6 +1113,11 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
         return;
     }
 
+    // 事前进行中信号（B3）：已通过权限门、即将真正执行——UI 据此先行落 live 工具卡。
+    // compact 已在函数前部特判离开，硬拒绝/询问暂停路径不会到达此处；询问批准的
+    // 续跑路径（permissionGranted=true）重走全链会再次到达，UI 端同名 live 卡幂等去重
+    emit toolStarted(toolName, summary);
+
     // bash 走异步进程链（不进 handler 表：跨事件循环回填，表内只放同步工具）
     if (toolName == ToolNames::BASH)
     {
@@ -1175,6 +1180,18 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     triggerPostToolUseHooks(toolCall, output);
 
     onToolFinished(toolCall, toolName, summary, output);
+}
+
+bool AgentLoop::isToolFailure(const QString &output)
+{
+    // 成败判定单源（见头文件注释）：文案族为全仓既成约定——各 handler/钩子/BashRunner/
+    // TaskStore（本任务起统一补 "Error: " 前缀）的失败输出必居其一；stop 链的
+    // "(stopped)"/"(cancelled)" 直写历史不经本判定（不发 toolOutputReady）。
+    return output.startsWith(QStringLiteral("Error:"))
+        || output == QLatin1String("Permission denied")
+        || output.startsWith(QStringLiteral("Blocked:"))
+        || output.startsWith(QStringLiteral("[Background task start error]"))
+        || output.startsWith(QStringLiteral("Unknown tool:"));
 }
 
 QString AgentLoop::checkDenyList(const QString &command)

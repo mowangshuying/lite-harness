@@ -271,6 +271,7 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
 
         // 冻结上一正文段（与 appendToolExecution 同一套约定）：
         // 后续正文经 ensureLiveView 在思考块之后另起新段，保证时间线因果顺序
+        dropPlaceholder();   // B2：段若仅剩占位文案则清空→按空段收起，不把占位冻结进归档
         if (m_liveView)
         {
             if (m_liveView->document()->isEmpty())
@@ -340,6 +341,9 @@ void MessageBubbleWidget::appendText(const QString &delta)
     // 思考阶段结束（正文开始），暂停计时
     stopThinkingInterval();
 
+    // B2：首个正文增量清除占位文案（此时 m_liveText 仍空，占位未入正文）
+    dropPlaceholder();
+
     m_liveText += delta;
 
     QTextBrowser *view = ensureLiveView();
@@ -352,7 +356,8 @@ void MessageBubbleWidget::appendText(const QString &delta)
     scheduleStreamResize();
 }
 
-void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QString &summary, const QString &output)
+void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QString &summary, const QString &output,
+                                              bool ok)
 {
     // 仅助手气泡承载工具时间线；用户气泡防御性忽略
     if (m_role != Assistant)
@@ -363,7 +368,7 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     if (m_liveMemoryBlock && toolName == QLatin1String("memory"))
     {
         stopThinkingInterval();
-        m_liveMemoryBlock->setToolExecution(toolName, summary, output);
+        m_liveMemoryBlock->setToolExecution(toolName, summary, output, ok);
         m_liveMemoryBlock = nullptr;
         scheduleSizeUpdate();
         return;
@@ -375,9 +380,23 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     if (m_liveTaskBlock && toolName == QLatin1String("task"))
     {
         stopThinkingInterval();
-        m_liveTaskBlock->setToolExecution(toolName, summary, output);
+        m_liveTaskBlock->setToolExecution(toolName, summary, output, ok);
         m_liveTaskBlock->setExpanded(false);
         m_liveTaskBlock = nullptr;
+        scheduleSizeUpdate();
+        return;
+    }
+
+    // 常规工具事前 live 卡（toolStarted 经 appendToolStart 挂入）就地收口：同名即
+    // 匹配（串行执行契约 runNextTool takeAt(0) 逐个、上卡未收口不会发下一个
+    // toolStarted；无 callId 为既有限制）。setToolExecution 内部 stopLiveTimer 停
+    // 轮播、切完成/失败词条并亮 ✓/✕ 字形；保持折叠一行形态
+    if (m_liveToolBlock && toolName == m_liveToolName)
+    {
+        stopThinkingInterval();
+        m_liveToolBlock->setToolExecution(toolName, summary, output, ok);
+        m_liveToolBlock = nullptr;
+        m_liveToolName.clear();
         scheduleSizeUpdate();
         return;
     }
@@ -389,6 +408,7 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
 
     // 冻结当前流式段：有可见内容（思考或正文）则归档，空段直接收起，
     // 后续增量经 ensureLiveView 在工具块之后另起新段，保证时间线顺序
+    dropPlaceholder();   // B2：段若仅剩占位文案则清空，不把占位冻结进归档
     if (m_liveView)
     {
         if (m_liveView->document()->isEmpty())
@@ -399,8 +419,10 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
         m_liveText.clear();
     }
 
+    // 错配防御（理论不发生）：槽位被异名在途卡占用（toolStarted 与终态间断裂等
+    // 极端序列），旧卡留待 finishStreaming 兜底收「已停止」，本卡照常新建
     auto *block = new ToolBlock(this);
-    block->setToolExecution(toolName, summary, output);
+    block->setToolExecution(toolName, summary, output, ok);
     block->setExpanded(false);
     m_timeline->addWidget(block);
 
@@ -421,6 +443,7 @@ void MessageBubbleWidget::appendTimelineSection(QWidget *section)
 
     // 冻结当前流式段（与 appendToolExecution 同一套约定）：后续正文经
     // ensureLiveView 在插入件之后另起新段，保证时间线因果顺序
+    dropPlaceholder();   // B2：段若仅剩占位文案则清空，不把占位冻结进归档
     if (m_liveView)
     {
         if (m_liveView->document()->isEmpty())
@@ -457,6 +480,7 @@ void MessageBubbleWidget::appendMemoryProgress()
     // 冻结当前流式段（防御：finalizeStreamedText 的时间线分支已归档则 no-op；
     // 无 timeline 分支定稿后 m_liveView 仍指向主视图，与 appendToolExecution
     // 同一套约定归档，保证 live 卡挂在已渲染正文之后）
+    dropPlaceholder();   // B2：段若仅剩占位文案则清空，不把占位冻结进归档
     if (m_liveView)
     {
         if (m_liveView->document()->isEmpty())
@@ -488,6 +512,7 @@ void MessageBubbleWidget::appendSubagentProgress(int turnNo, const QString &tool
         stopThinkingInterval();
         rebuildAsTimeline();
 
+        dropPlaceholder();   // B2：段若仅剩占位文案则清空，不把占位冻结进归档
         if (m_liveView)
         {
             if (m_liveView->document()->isEmpty())
@@ -506,6 +531,91 @@ void MessageBubbleWidget::appendSubagentProgress(int turnNo, const QString &tool
 
     m_liveTaskBlock->appendSubagentProgress(turnNo, toolName, summary);
     scheduleSizeUpdate();
+}
+
+void MessageBubbleWidget::appendToolStart(const QString &toolName, const QString &summary)
+{
+    // 仅助手气泡承载事前 live 卡；用户气泡防御性忽略
+    if (m_role != Assistant)
+        return;
+
+    // memory/compact 无 toolStarted 语义（批尾 sink 直发终态，AgentLoop 已不发
+    // 本信号）：防御跳过，正常路径不会到达
+    if (toolName == QLatin1String("memory") || toolName == QLatin1String("compact"))
+        return;
+
+    // task：挂/复用「子代理执行中」进度卡（与 appendSubagentProgress 共槽幂等，
+    // 后续进度行由该信号自然附着；终态 appendToolExecution 就地收口）
+    if (toolName == QLatin1String("task"))
+    {
+        if (!m_liveTaskBlock)
+        {
+            stopThinkingInterval();
+            rebuildAsTimeline();
+            dropPlaceholder();
+            if (m_liveView)
+            {
+                if (m_liveView->document()->isEmpty())
+                    m_liveView->hide();
+                else
+                    m_textRuns.append({m_liveText, m_liveView});
+                m_liveView = nullptr;
+                m_liveText.clear();
+            }
+
+            auto *block = new ToolBlock(this);
+            block->startTaskLive();
+            m_timeline->addWidget(block);
+            m_liveTaskBlock = block;
+        }
+        scheduleSizeUpdate();
+        return;
+    }
+
+    // 常规工具：同名防重（询问批准续跑时 toolStarted 可能二次到达）
+    if (m_liveToolBlock && m_liveToolName == toolName)
+        return;
+
+    // 异名在途卡（理论不发生：串行契约下上卡必已被同名终态收口）：先收「已停止」
+    // 再建新卡，防轮播永转
+    if (m_liveToolBlock)
+    {
+        m_liveToolBlock->finishToolLiveAborted();
+        m_liveToolBlock = nullptr;
+        m_liveToolName.clear();
+    }
+
+    // 与 appendToolExecution 同套冻结-建卡链：事前卡定格在「当时」时间线位置，
+    // 后续思考/正文另起新段出现在其下方
+    stopThinkingInterval();
+    rebuildAsTimeline();
+    dropPlaceholder();
+    if (m_liveView)
+    {
+        if (m_liveView->document()->isEmpty())
+            m_liveView->hide();
+        else
+            m_textRuns.append({m_liveText, m_liveView});
+        m_liveView = nullptr;
+        m_liveText.clear();
+    }
+
+    auto *block = new ToolBlock(this);
+    block->startToolLive(toolName, summary);
+    m_timeline->addWidget(block);
+    m_liveToolBlock = block;
+    m_liveToolName = toolName;
+
+    scheduleSizeUpdate();
+}
+
+void MessageBubbleWidget::dropPlaceholder()
+{
+    // B2：占位文案（startStreaming("处理中…")）仅是首事件到达前的观饰。当前段
+    // 正文尚未开始（m_liveText 空）而视图却非空 → 内容必为占位，清空之，令
+    // 各冻结点按「空段」收起、正文增量从干净视图续写
+    if (m_liveView && m_liveText.isEmpty() && !m_liveView->document()->isEmpty())
+        m_liveView->clear();
 }
 
 void MessageBubbleWidget::finalizeStreamedText()
@@ -563,6 +673,15 @@ void MessageBubbleWidget::finishStreaming()
     {
         m_liveTaskBlock->finishTaskLiveAborted();
         m_liveTaskBlock = nullptr;
+    }
+
+    // 常规工具事前 live 卡兜底收口（B5：stop/error 终局不发 toolOutputReady，
+    // 在途卡不得永转）：切「已停止」+灰字形折叠留痕，与 task 卡同纪律
+    if (m_liveToolBlock)
+    {
+        m_liveToolBlock->finishToolLiveAborted();
+        m_liveToolBlock = nullptr;
+        m_liveToolName.clear();
     }
 
     finalizeStreamedText();
