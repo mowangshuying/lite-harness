@@ -18,7 +18,7 @@
 #include "ThemeAware.h"
 
 // 可选模型清单见 AgentConst::kModelOptions（AgentConstants.h）：字面量列表，
-// 不做注册表/配置等多余抽象；首项为回落默认项
+// 不做配置文件等多余抽象；首项为回落默认项
 // （AgentLoop::model() 不在列表内时下拉显示并选中它）
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
@@ -85,6 +85,13 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     toolSetsLayout->addWidget(m_sendMsgButton);
 
     connect(m_sendMsgButton, &QPushButton::clicked, this, [this]() {
+        // 停止形态单源判定走 m_turnBusy（与钮视觉形态同一驱动）：运行中点击只发中止，
+        // 绝不把输入框残留文本当消息发出；空闲态维持原发送逻辑
+        if (m_turnBusy)
+        {
+            emit stopRequested();
+            return;
+        }
         QString text = m_textEdit->toPlainText().trimmed();
         if (!text.isEmpty()) {
             emit sendMessage(text);
@@ -127,8 +134,8 @@ QString ChatMsgEdit::currentModel() const
 void ChatMsgEdit::setTurnBusy(bool busy)
 {
     // 本会话回合态唯一禁用来源（异步化 P4 起；宿主页面接 runningChanged 直连注入）；
-    // 同值早退防噪声刷新。禁用面沿用旧 Gate 单源口径：输入框+发送钮；Enter 发送走
-    // textEdit 键事件，控件禁用后天然关闭；模型下拉不禁（改选只写成员不发起请求）
+    // 同值早退防噪声刷新。禁用面：输入框（Enter 发送在禁用控件上天然关闭）；发送钮不再
+    // 禁用而是随 busy 切停止/发送形态（见 applyBusyState）；模型下拉不禁（改选只写成员不发起请求）
     if (m_turnBusy == busy)
         return;
     m_turnBusy = busy;
@@ -138,7 +145,11 @@ void ChatMsgEdit::setTurnBusy(bool busy)
 void ChatMsgEdit::applyBusyState()
 {
     m_textEdit->setEnabled(!m_turnBusy);
-    m_sendMsgButton->setEnabled(!m_turnBusy);
+    // 「运行中缺停止入口」修复：发送钮不再随 busy 禁用，而是切成停止形态
+    // （方块字形 + 强调蓝淡染），点击走 stopRequested 分支；空闲恢复发送形态。
+    // 输入框禁用口径不变（Enter 发送在禁用控件上天然收不到键事件）；模型下拉不禁
+    m_sendMsgButton->setStopMode(m_turnBusy);
+    m_sendMsgButton->setToolTip(m_turnBusy ? tr("停止") : tr("发送"));
 }
 
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)

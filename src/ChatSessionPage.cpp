@@ -3,12 +3,12 @@
 #include <FluThemeUtils.h>
 #include <FluUtils.h>
 #include <QResizeEvent>
-#include <QSettings>
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include "AppSettings.h"
 #include "ChatMsgEdit.h"
 #include "AgentLoop.h"
 #include "AgentConstants.h"
@@ -92,8 +92,8 @@ void ChatSessionPage::buildLayout()
             FluAwesomeType::ChevronLeft, FluThemeUtils::getUtils()->getTheme(), 14, 14));
     });
 
-    // 显隐偏好恢复（QSettings sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
-    setSidebarVisible(QSettings().value(QStringLiteral("sidebarVisible"), true).toBool());
+    // 显隐偏好恢复（settings.ini 键 sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
+    setSidebarVisible(AppSettings::ini().value(QStringLiteral("sidebarVisible"), true).toBool());
 }
 
 ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
@@ -140,6 +140,11 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
         addMessage(MessageBubbleWidget::Role::User, text);
         startAssistantStream(text); // 创建流式气泡并启动代理循环
     });
+
+    // 停止入口收口：runningChanged(true) 经 setTurnBusy 已把发送钮切成停止形态，
+    // 点击回流本页 stop() → AgentLoop::stop() 既有终局链（子代理/权限/进程/流全收口，
+    // 终局经 error("已停止。") 与 runningChanged(false) 复原钮形态），零后端改动
+    connect(m_inputEdit, &ChatMsgEdit::stopRequested, this, &ChatSessionPage::stop);
 
     // 页面级 QSS：bind 完成首载与 themeChanged 联动。不再手工 connect
     // themeChanged→onThemeChanged——FluWidget 基类构造已连接并虚派发（重复连接
@@ -230,9 +235,20 @@ void ChatSessionPage::wireAgent()
                 if (toolName == QLatin1String("memory") && !m_memoryBubble)
                     return;
                 // 边界情况（无流式气泡，如信号在回合外到达）：独立气泡兜底，避免信息静默丢失
-                addMessage(MessageBubbleWidget::Role::Assistant,
-                           tr("%1 %2:\n```\n%3\n```\n\n输出:\n```\n%4\n```")
-                               .arg(ToolBlock::toolTitleText(toolName), toolName, summary, output));
+                 addMessage(MessageBubbleWidget::Role::Assistant,
+                            tr("%1 %2:\n```\n%3\n```\n\n输出:\n```\n%4\n```")
+                                .arg(ToolBlock::toolTitleText(toolName), toolName, summary, output));
+             });
+
+    // task 子代理实时进度行 → 时间线 task live 卡（AgentLoop 直连转发 SubAgent::progressEmitted）。
+    // 无宿主气泡防御忽略：进度行是辅助展示，不像 toolOutputReady 那样兜底独立气泡
+    //（回合外残帧极罕见——子代理随 cancelSubAgent 同步静默，仅 UI 事件排队深度造成瞬时错位）
+    connect(m_agentLoop, &AgentLoop::subagentProgress, this,
+            [this](int turnNo, const QString &toolName, const QString &summary) {
+                if (!m_currentBubble)
+                    return;
+                m_currentBubble->appendSubagentProgress(turnNo, toolName, summary);
+                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
             });
 
     // 记忆沉淀相位开始（仅自然结束分支，P2 起为异步链启动前、与 finished 同栈相邻发射）：
@@ -294,21 +310,36 @@ void ChatSessionPage::wireAgent()
                 QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
             });
 
-    // 任务清单：会话流常驻卡片 —— 首次 todoUpdated 时挂到流末尾（锚定在首次出现的
-    // 时间线位置，之后只就地刷新内容、不再增殖；lcc s05 全量替换语义由 TodoCard 内部消化）。
+    // 任务清单：时点快照留痕 —— 每次 todoUpdated（状态改变事件）在消息流当前位置嵌入
+    // 一张冻结该时刻的折叠快照卡，不再维护「底部活卡」（最新态观看职能归右侧侧栏
+    // 「任务清单」节）。与上一快照全同的更新（模型原表重写/幂等重试）不重复造卡；
+    // 空列表是「计划清空」事件不嵌隐形卡（侧栏收口照发）。
     // 信号契约：todoUpdated(todos)，元素 {content, status: pending|in_progress|completed}
     connect(m_agentLoop, &AgentLoop::todoUpdated, this, [this](const QJsonArray &todos) {
-        if (!m_todoCard)
+        if (!todos.isEmpty() && todos != m_lastTodoSnapshot)
         {
             auto *card = new TodoCard(this);
-            // QPointer：卡片异常销毁后自动置空，下次信号到达再自动重挂
-            m_todoCard = card;
-            m_scrollView->getMainLayout()->addWidget(card);
+            // 快照形态：构造即真折叠（initCollapsed），灌数据不起展开动画；用户点击
+            // 头部展开按已测 m_fullContentHeight 动画到位（行高公式与宽度无关）
+            card->setTodos(todos);
+            m_lastTodoSnapshot = todos;
+            // 延后一拍插入：todoUpdated 在 runTodoWrite handler 内先发，早于该
+            // todo_write 调用的 toolOutputReady（同栈同步发射链），立即嵌卡会排在
+            // 自家工具块之前；singleShot(0) 后工具块先落位，快照卡紧跟其后，
+            // 符合「更新清单执行后直接嵌入」。有在途气泡则嵌其内部时间线
+            // （后续思考/工具内容出现在卡下方，时序不打乱，所有权随附气泡）；
+            // 回合间隙无气泡兜底插滚动布局末尾
+            QPointer<MessageBubbleWidget> anchor = m_currentBubble;
+            QTimer::singleShot(0, this, [this, card, anchor]() {
+                if (anchor)
+                    anchor->appendTimelineSection(card);
+                else
+                    m_scrollView->getMainLayout()->addWidget(card);
+                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+            });
         }
-        m_todoCard->setTodos(todos);
-        // 侧栏任务清单同步（同一全量快照，样式语义与 TodoCard 状态点一致）
+        // 侧栏任务清单同步（最新态观看，含清空事件；样式语义与快照卡状态点一致）
         m_sidebar->setTodos(todos);
-        QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
     });
 
     // 定时任务送达（lcc s12）：后端空闲 tick 交付——展示走带前缀文本，活跃请求走无原文本
@@ -557,11 +588,11 @@ void ChatSessionPage::stop()
         m_agentLoop->stop();
 }
 
-// 侧栏显隐切换单点：偏好落 QSettings（org/app=LiteHarness，默认显示）+ 浮动钮互斥 +
+// 侧栏显隐切换单点：偏好落 settings.ini（键 sidebarVisible，默认显示）+ 浮动钮互斥 +
 // 消息列重钳。构造期 buildLayout 尾部也走此函数完成首帧恢复
 void ChatSessionPage::setSidebarVisible(bool visible)
 {
-    QSettings().setValue(QStringLiteral("sidebarVisible"), visible);
+    AppSettings::ini().setValue(QStringLiteral("sidebarVisible"), visible);
     m_sidebar->setVisible(visible);
     m_restoreBtn->setVisible(!visible);
     if (!visible)

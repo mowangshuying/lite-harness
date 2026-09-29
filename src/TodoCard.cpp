@@ -56,10 +56,10 @@ TodoCard::TodoCard(QWidget *parent) : CollapsibleBlock(parent)
     // （构造尾调用，虚派发安全）+ themeChanged 订阅；三态颜色全部由 QSS 属性选择器控制
     initTheme("TodoCard.qss");
 
-    // 初始态与 Thinking/Tool（initCollapsed）不同：状态面板默认展开是 lcc 面板的核心信息；
-    // 但无任务即无高度——内容区隐藏，等待第一次 setTodos
-    m_expanded = true;
-    m_contentArea->hide();
+    // 快照卡形态：与 Thinking/Tool 同款 initCollapsed——默认折叠 32px 留痕条。
+    // 会话页灌入快照后即冻结；头部 done/total 计数传达进度，点击展开回看当时态；
+    // 实时最新观看职能已迁右侧侧栏「任务清单」节
+    initCollapsed();
 }
 
 void TodoCard::changeEvent(QEvent *event)

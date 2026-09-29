@@ -2,13 +2,13 @@
 
 #include "BasePage.h"
 #include "MessageBubbleWidget.h"
+#include <QJsonArray>
 #include <QPointer>
 
 class FluVScrollView;
 class ChatMsgEdit;
 class AgentLoop;
 class PermissionCard;
-class TodoCard;
 class WorkDirPathBar;
 class SessionSidebar;
 class QToolButton;
@@ -56,7 +56,7 @@ private:
     void startAssistantStream(const QString &userText);
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
-    // 侧栏显隐切换：写 QSettings 键 sidebarVisible + 收起钮摆位 + 重钳消息列宽
+    // 侧栏显隐切换：写 settings.ini 键 sidebarVisible + 收起钮摆位 + 重钳消息列宽
     void setSidebarVisible(bool visible);
     // 重算并钳制消息列/输入组宽（min(800, 可用宽 − 侧栏可见时的占位)），resizeEvent 与侧栏切换共用
     void applyColumnWidth();
@@ -74,7 +74,7 @@ private:
     ChatMsgEdit *m_inputEdit = nullptr;
     AgentLoop *m_agentLoop = nullptr;
     // QPointer：气泡若被异常销毁自动置空，
-    // 与 m_permissionCard/m_todoCard 同一初值纪律；流式槽位的显式清空语义保留（finishStreaming 不销毁气泡）
+    // 与 m_permissionCard 同一初值纪律；流式槽位的显式清空语义保留（finishStreaming 不销毁气泡）
     QPointer<MessageBubbleWidget> m_currentBubble;
     // 记忆相位保留的气泡引用（异步化 P2，设计文档 §3.5a）：memoryPhaseStarted 时记下
     // 当前气泡、finished 处理中不清空槽位，供记忆结果卡（toolOutputReady "memory"）
@@ -82,9 +82,9 @@ private:
     // m_currentBubble（异常销毁自动置空）
     QPointer<MessageBubbleWidget> m_memoryBubble;
     QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
-    QPointer<TodoCard> m_todoCard;                    // 会话流常驻任务清单卡（首次 todoUpdated 挂载，此后就地刷新；异常销毁自动置空）
+    QJsonArray m_lastTodoSnapshot;                    // 最近一次已嵌快照的清单内容（全同更新去重防刷屏；空=尚未嵌过任何卡）
 
-    SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 QSettings sidebarVisible）
+    SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
     QToolButton *m_restoreBtn = nullptr;   // 侧栏收起后的浮动展开钮（页面右上角，手动摆位随 resize 跟随）
     QString m_sessionTitle;                // 首条用户消息派生的会话标题（抄宿主规则，重命名不回传=已知限制）
 };

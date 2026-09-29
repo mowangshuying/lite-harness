@@ -42,6 +42,12 @@ public:
     // 之前，后续工具块/正文另起新段出现在其后。气泡不依赖卡片具体类型，仅接管几何
     void appendPermissionCard(QWidget *card);
 
+    // 外部 widget 嵌入时间线（任务清单快照卡等留痕件）：结算思考、冻结当前正文段后
+    // 追加到时间线末尾，后续思考/工具/正文段另起新段出现在其下方——事件定格在
+    // 「当时」位置。所有权归气泡（addWidget 自动 reparent，随气泡析构）；
+    // 用户气泡/空指针防御性忽略，调用方需自行兜底插位
+    void appendTimelineSection(QWidget *section);
+
     // Replay-only: insert a terminal (static) thinking block. history.json
     // carries no thinking duration, so this shows content only — no startLive,
     // no timer, neutral no-duration title. The round's body text is NOT
@@ -59,6 +65,12 @@ public:
     // 末尾挂「记忆整理中...」轮播卡；提取结果卡（toolName="memory"）到达时
     // 就地切换为终态留痕；无新增（stored=0 无卡）则 finishStreaming 时收口删除
     void appendMemoryProgress();
+
+    // task 子代理实时进度行（AgentLoop::subagentProgress）：首行到达时按
+    // appendToolExecution 同款冻结-建卡链挂 task live 卡（保证与前后块因果顺序），
+    // 后续行同卡追加；task 终态 toolOutputReady 到达时 appendToolExecution 就地收口，
+    // stop/error 终局由 finishStreaming 兜底切「已中断」保留日志
+    void appendSubagentProgress(int turnNo, const QString &toolName, const QString &summary);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -101,5 +113,6 @@ private:
     QElapsedTimer m_thinkingTimer;        // 当前轮思考计时器
     bool m_thinkingRunning = false;       // 当前思考区间计时进行中
     ToolBlock *m_liveMemoryBlock = nullptr; // 记忆沉淀进度卡（live 态），结果卡到达就地切换
+    ToolBlock *m_liveTaskBlock = nullptr;   // task 子代理进度卡（live 态），首行进度创建、终态收口置空
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
 };

@@ -8,16 +8,19 @@ class QLabel;
 class QScrollArea;
 class QVBoxLayout;
 
-// 会话任务清单卡片（对齐 lcc s05 的 "Current Tasks" 面板，GUI 常驻形态）：
-//   会话流中的持久状态面板 —— 首次 todoUpdated 时由会话页挂载到流末尾，
-//   此后每次更新仅就地刷新列表内容（todo 全量替换语义），不随回合增殖。
+// 会话任务清单卡片（时点快照形态，会话消息流留痕）：
+//   每次 todoUpdated 由会话页在消息流当时位置嵌一张灌入后即冻结的快照卡（有在途
+//   气泡则嵌其内部时间线末尾，随气泡析构；否则兜底流末尾），后续更新另建新卡，
+//   不再维护「底部活卡」；最新态实时观看职能归右侧侧栏「任务清单」节。
+//   默认折叠 32px 留痕条（头部计数即传达进度，点击展开回看当时态）。
 //   头部 = 标题"任务清单" + 完成计数 "done/total" + 折叠箭头；
 //   条目三态：pending 空心圆 / in_progress 琥珀实心+淡染底行 / completed 绿勾+暗淡文字。
 // 折叠骨架（头部点击/叠放滑动/contentHeight 动画/几何定位）全部下沉 CollapsibleBlock；
 //   本类仅保留列表形态差异：三态行组装、行数公式测高（覆写 measureContent，
 //   经基类 startHeightAnimation 平滑跟高），更新节奏覆写 scheduleMeasure（无流式）。
 // 数据来源为 AgentLoop::todoUpdated：元素 {content: string,
-//   status: "pending"|"in_progress"|"completed"}；空列表时整卡隐藏（保留挂载位，待再现）。
+//   status: "pending"|"in_progress"|"completed"}；空列表灌入时整卡隐藏（会话页现不嵌
+//   空快照，此行为仅作防御留痕）。
 // 对外 API 冻结（前轮承诺）：ctor/setTodos/kMaxListHeight 不变；
 //   setExpanded/isExpanded/contentHeight/expandedChanged/sizeChanged 直接继承基类。
 class TodoCard : public CollapsibleBlock
@@ -30,7 +33,8 @@ public:
 
     explicit TodoCard(QWidget *parent = nullptr);
 
-    // 全量替换任务列表并就地刷新（计数、行、高度）；空列表 => 隐藏整卡
+    // 灌入全量清单（计数、行、高度一次成型；快照卡仅构造后调用一次，之后冻结不再改写）；
+    // 空列表 => 隐藏整卡（防御路径）
     void setTodos(const QJsonArray &todos);
 
 protected:

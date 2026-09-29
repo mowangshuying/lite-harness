@@ -28,11 +28,13 @@ protected:
 
 signals:
     void sendMessage(const QString &text);
+    // 运行中（发送钮已切停止形态）点击发出：宿主页面接 ChatSessionPage::stop 中止回合
+    void stopRequested();
     // 用户在下拉框改选模型时发出（程序化 setCurrentModel 不回环）
     void modelChanged(const QString &model);
 
 private:
-    // 依 m_turnBusy 刷新 输入框+发送钮 enabled
+    // 依 m_turnBusy 刷新形态：输入框 enabled + 发送钮停止/发送形态切换（钮恒可点）
     void applyBusyState();
 
     QTextEdit *m_textEdit = nullptr;

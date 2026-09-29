@@ -369,6 +369,19 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
         return;
     }
 
+    // task 终态：在途 live 进度卡就地收口（setToolExecution 重组「进度段+分隔+结果」），
+    // 收口后按家族惯例折叠——展开回看执行轨迹的入口仍在头部；无进度卡（子代理未调用
+    // 任何工具即产出）走下方常规新起块路径，行为与旧版逐字一致
+    if (m_liveTaskBlock && toolName == QLatin1String("task"))
+    {
+        stopThinkingInterval();
+        m_liveTaskBlock->setToolExecution(toolName, summary, output);
+        m_liveTaskBlock->setExpanded(false);
+        m_liveTaskBlock = nullptr;
+        scheduleSizeUpdate();
+        return;
+    }
+
     // 等待工具结果的这段时间不计入思考耗时
     stopThinkingInterval();
 
@@ -394,20 +407,20 @@ void MessageBubbleWidget::appendToolExecution(const QString &toolName, const QSt
     scheduleSizeUpdate();
 }
 
-void MessageBubbleWidget::appendPermissionCard(QWidget *card)
+void MessageBubbleWidget::appendTimelineSection(QWidget *section)
 {
-    // 仅助手气泡承载权限时间线；用户气泡防御性忽略
-    if (m_role != Assistant || !card)
+    // 仅助手气泡承载时间线嵌入件；空指针/用户气泡防御性忽略（调用方兜底插位）
+    if (m_role != Assistant || !section)
         return;
 
-    // 权限询问到达时思考输出已结束：结算本轮思考区间（幂等，无进行中区间为 no-op），
-    // 保证思考块先于权限卡收终态
+    // 嵌入件到达时思考输出已结束：结算本轮思考区间（幂等，无进行中区间为 no-op），
+    // 保证思考块先于插入件收终态
     stopThinkingInterval();
 
     rebuildAsTimeline();
 
     // 冻结当前流式段（与 appendToolExecution 同一套约定）：后续正文经
-    // ensureLiveView 在权限卡之后另起新段，保证时间线因果顺序
+    // ensureLiveView 在插入件之后另起新段，保证时间线因果顺序
     if (m_liveView)
     {
         if (m_liveView->document()->isEmpty())
@@ -418,9 +431,15 @@ void MessageBubbleWidget::appendPermissionCard(QWidget *card)
         m_liveText.clear();
     }
 
-    m_timeline->addWidget(card);
+    m_timeline->addWidget(section);
 
     scheduleSizeUpdate();
+}
+
+void MessageBubbleWidget::appendPermissionCard(QWidget *card)
+{
+    // 权限卡与任务快照卡同款时间线嵌入件：机制单源收敛到 appendTimelineSection
+    appendTimelineSection(card);
 }
 
 void MessageBubbleWidget::appendMemoryProgress()
@@ -453,6 +472,39 @@ void MessageBubbleWidget::appendMemoryProgress()
     m_timeline->addWidget(block);
     m_liveMemoryBlock = block;
 
+    scheduleSizeUpdate();
+}
+
+void MessageBubbleWidget::appendSubagentProgress(int turnNo, const QString &toolName, const QString &summary)
+{
+    // 仅助手气泡承载子代理进度；用户气泡防御性忽略
+    if (m_role != Assistant)
+        return;
+
+    // 首行：与 appendToolExecution 同套冻结-建卡链（工具执行在回合中途，正文段还需
+    // 在其后续写，不做 finalizeStreamedText——定稿时机仍归 finished/记忆相位）
+    if (!m_liveTaskBlock)
+    {
+        stopThinkingInterval();
+        rebuildAsTimeline();
+
+        if (m_liveView)
+        {
+            if (m_liveView->document()->isEmpty())
+                m_liveView->hide();
+            else
+                m_textRuns.append({m_liveText, m_liveView});
+            m_liveView = nullptr;
+            m_liveText.clear();
+        }
+
+        auto *block = new ToolBlock(this);
+        block->startTaskLive();
+        m_timeline->addWidget(block);
+        m_liveTaskBlock = block;
+    }
+
+    m_liveTaskBlock->appendSubagentProgress(turnNo, toolName, summary);
     scheduleSizeUpdate();
 }
 
@@ -502,6 +554,15 @@ void MessageBubbleWidget::finishStreaming()
         m_timeline->removeWidget(m_liveMemoryBlock);
         m_liveMemoryBlock->deleteLater();
         m_liveMemoryBlock = nullptr;
+    }
+
+    // task live 进度卡兜底收口（stop/error 终局：cancelSubAgent 不发 task 结果，
+    // appendToolExecution 的就地收口路径永不到达）——与记忆空壳不同，本卡携带进度
+    // 日志，切「已中断」终态折叠保留，不删卡
+    if (m_liveTaskBlock)
+    {
+        m_liveTaskBlock->finishTaskLiveAborted();
+        m_liveTaskBlock = nullptr;
     }
 
     finalizeStreamedText();
