@@ -4,48 +4,48 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="429"/>
+        <location filename="../src/AgentLoop.cpp" line="444"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>会话未分配数据目录 ID，无法定位历史文件</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="442"/>
+        <location filename="../src/AgentLoop.cpp" line="457"/>
         <source>无法打开历史文件：%1</source>
         <translation>无法打开历史文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="450"/>
+        <location filename="../src/AgentLoop.cpp" line="465"/>
         <source>历史文件解析失败：%1</source>
         <translation>历史文件解析失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="556"/>
+        <location filename="../src/AgentLoop.cpp" line="571"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent 仍在运行中，请等待完成后再发送。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="695"/>
-        <location filename="../src/AgentLoop.cpp" line="739"/>
+        <location filename="../src/AgentLoop.cpp" line="715"/>
+        <location filename="../src/AgentLoop.cpp" line="759"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>工具调用轮次超过上限（%1 轮），终止循环。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="769"/>
+        <location filename="../src/AgentLoop.cpp" line="789"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>反应式压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="812"/>
+        <location filename="../src/AgentLoop.cpp" line="832"/>
         <source>自动压缩（上下文超限）</source>
         <translation>自动压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="983"/>
+        <location filename="../src/AgentLoop.cpp" line="1003"/>
         <source>主动压缩（compact 工具）</source>
         <translation>主动压缩（compact 工具）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="2279"/>
+        <location filename="../src/AgentLoop.cpp" line="2299"/>
         <source>已停止。</source>
         <translation>已停止。</translation>
     </message>
@@ -87,16 +87,21 @@
     <name>ChatSessionPage</name>
     <message>
         <location filename="../src/ChatSessionPage.cpp" line="87"/>
+        <source>展开侧边栏</source>
+        <translation>展开侧边栏</translation>
+    </message>
+    <message>
+        <location filename="../src/ChatSessionPage.cpp" line="137"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent 仍在运行中，请等待完成后再发送</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="141"/>
+        <location filename="../src/ChatSessionPage.cpp" line="194"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="174"/>
+        <location filename="../src/ChatSessionPage.cpp" line="234"/>
         <source>%1 %2:
 ```
 %3
@@ -115,6 +120,11 @@
 ```
 %4
 ```</translation>
+    </message>
+    <message>
+        <location filename="../src/ChatSessionPage.cpp" line="643"/>
+        <source>新会话</source>
+        <translation>新会话</translation>
     </message>
 </context>
 <context>
@@ -287,7 +297,7 @@
         <translation>全选</translation>
     </message>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="418"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="452"/>
         <source>记忆整理中</source>
         <translation>记忆整理中</translation>
     </message>
@@ -427,6 +437,99 @@
         <location filename="../src/QOpenAi.cpp" line="383"/>
         <source>HTTP %1 错误（重试 %2 次后仍失败）: %3</source>
         <translation>HTTP %1 错误（重试 %2 次后仍失败）: %3</translation>
+    </message>
+</context>
+<context>
+    <name>SessionSidebar</name>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="305"/>
+        <source>会话面板</source>
+        <translation>会话面板</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="312"/>
+        <source>收起侧边栏</source>
+        <translation>收起侧边栏</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="347"/>
+        <source>上下文</source>
+        <translation>上下文</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="354"/>
+        <source>状态</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="361"/>
+        <source>任务清单</source>
+        <translation>任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="363"/>
+        <source>暂无任务</source>
+        <translation>暂无任务</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="369"/>
+        <source>变更文件</source>
+        <translation>变更文件</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="371"/>
+        <source>暂无变更</source>
+        <translation>暂无变更</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="384"/>
+        <source>lite-harness v%1</source>
+        <translation>lite-harness v%1</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="398"/>
+        <source>新会话</source>
+        <translation>新会话</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="416"/>
+        <source>%1 / %2 字符 · %3%</source>
+        <translation>%1 / %2 字符 · %3%</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="469"/>
+        <source>%1 进行中</source>
+        <translation>%1 进行中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="470"/>
+        <source>%1 待办</source>
+        <translation>%1 待办</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="471"/>
+        <source>%1 完成</source>
+        <translation>%1 完成</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="503"/>
+        <source>%1 个文件</source>
+        <translation>%1 个文件</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="529"/>
+        <source>等待审批</source>
+        <translation>等待审批</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="531"/>
+        <source>运行中</source>
+        <translation>运行中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="533"/>
+        <source>空闲</source>
+        <translation>空闲</translation>
     </message>
 </context>
 <context>

@@ -19,4 +19,17 @@ inline constexpr int kSideMargin = 35;
 /// availableContentWidth 的钳制乘数（用户气泡刻意窄于全栏，与助手气泡区分）
 inline constexpr qreal kMsgColWidthFactor = 0.75;
 
+/// 会话侧边栏固定宽度：SessionSidebar 自钳制 + ChatSessionPage 列宽计算扣除量
+inline constexpr int kSidebarWidth = 280;
+
+/// 消息列与侧栏之间的间隙：页面外层 QHBoxLayout 的 spacing，
+/// 亦计入 ChatSessionPage::resizeEvent 的侧栏占用扣除（宽 + 隙为一个整块）
+inline constexpr int kSidebarGap = 12;
+
+/// 侧栏收起后浮动展开钮的边长（手动摆位的小按钮，ChatSessionPage 创建/定位）
+inline constexpr int kSidebarRestoreBtnSize = 28;
+
+/// 浮动展开钮距页面顶部的偏移（右上角定位，横向沿用 kSideMargin）
+inline constexpr int kSidebarRestoreTop = 12;
+
 } // namespace LayoutConst

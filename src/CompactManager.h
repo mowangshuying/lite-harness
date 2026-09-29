@@ -65,9 +65,9 @@ public:
      *  done 交付前发出），仅摘要段挂起。 */
     QOpenAi::AsyncRequest *compactHistoryAsync(const QVector<QJsonObject> &conversation,
                                                const QString &activeRequest,
-                                               const QString &cardSummary,
-                                               QObject *ctx,
-                                               std::function<void(const QVector<QJsonObject> &replaced)> done) const;
+                                                 const QString &cardSummary,
+                                                 QObject *ctx,
+                                                 std::function<void(const QVector<QJsonObject> &replaced)> done) const;
 
     /** reactiveCompact 的异步版（lcc reactive_compact：上下文超限后的反应式压缩，
      *  保留最近若干消息为尾段）：空 conversation 短路（零请求，与原同步链一致，
@@ -75,8 +75,12 @@ public:
     QOpenAi::AsyncRequest *reactiveCompactAsync(const QVector<QJsonObject> &conversation,
                                                 const QString &activeRequest,
                                                 const QString &cardSummary,
-                                                QObject *ctx,
-                                                std::function<void(const QVector<QJsonObject> &replaced)> done) const;
+    QObject *ctx,
+                                                 std::function<void(const QVector<QJsonObject> &replaced)> done) const;
+
+    /// OpenAI 形态会话字符总量估算（与压缩管线同源口径）。
+    /// 公开供侧栏「上下文占用」计量复用，避免第二套估算漂移。
+    static qsizetype estimateChars(const QVector<QJsonObject> &conversation);
 
 private:
     // ---- lcc 六方法在 OpenAI 形态下的等价实现（均原地修改 conversation） ----
@@ -106,7 +110,6 @@ private:
     // ---- OpenAI 形态谓词与估算 ----
     static bool isToolResult(const QJsonObject &message);   // role=="tool"（lcc is_tool_result）
     static bool hasToolUse(const QJsonObject &message);     // assistant 且 tool_calls 非空（lcc has_tool_use）
-    static qsizetype estimateChars(const QVector<QJsonObject> &conversation);
     /** lcc 尾段回退规则在 OpenAI 形态下的推广：尾段起点若落在工具结果串中间，
      *  整串回退，确保 assistant(tool_calls) 与其后全部 tool 消息不被切开（400 风险）。 */
     static qsizetype retreatToolBatch(const QVector<QJsonObject> &conversation, qsizetype tailStart);

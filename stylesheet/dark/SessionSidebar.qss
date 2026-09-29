@@ -1,0 +1,155 @@
+/* dark —— SessionSidebar 会话侧边栏 */
+
+#SessionSidebar {
+    background: rgb(37, 37, 37);
+    border: 1px solid rgba(255, 255, 255, 8);
+    border-radius: 8px;
+}
+
+/* ---- 面板头部 ---- */
+#sbPanelTitle {
+    color: rgb(153, 153, 153);
+    font: bold 12px "Segoe UI";
+}
+#sidebarHideBtn, #sidebarRestoreBtn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 2px;
+}
+#sidebarHideBtn:hover, #sidebarRestoreBtn:hover {
+    background: rgba(255, 255, 255, 16);
+}
+#sidebarHideBtn:pressed, #sidebarRestoreBtn:pressed {
+    background: rgba(255, 255, 255, 28);
+}
+
+/* ---- 会话标题 / 模型 ---- */
+#sbSessTitle {
+    color: rgb(220, 220, 220);
+    font: bold 15px "Segoe UI";
+}
+#sbSessModel {
+    color: rgb(136, 136, 136);
+    font: 12px "Consolas";
+}
+#sbSeparator {
+    background: rgba(255, 255, 255, 10);
+    border: none;
+}
+
+/* ---- 滚动容器透明（透出面板底色） ---- */
+#sbScroll { background: transparent; border: none; }
+#sbScroll > QWidget > QWidget { background: transparent; border: none; }
+#sbScrollInner { background: transparent; }
+#sbScroll QScrollBar:vertical {
+    background: transparent;
+    width: 6px;
+    margin: 2px 1px 2px 1px;
+}
+#sbScroll QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 50);
+    border-radius: 3px;
+    min-height: 28px;
+}
+#sbScroll QScrollBar::add-line:vertical, #sbScroll QScrollBar::sub-line:vertical {
+    height: 0;
+}
+#sbScroll QScrollBar::add-page:vertical, #sbScroll QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+/* ---- 节头 ---- */
+#sbSectionHead { background: transparent; border: none; }
+#sbSectionHead[clickable="true"] { cursor: pointinghand; }
+#sbSectionHead[clickable="true"]:hover { background: rgba(255, 255, 255, 8); border-radius: 5px; }
+#sbSectionTitle {
+    color: rgb(153, 153, 153);
+    font: bold 12px "Segoe UI";
+}
+#sbSectionCount {
+    color: rgb(136, 136, 136);
+    font: 12px "Consolas";
+}
+#sbSectionArrow { background: transparent; }
+#sbSectionBody { background: transparent; border: none; }
+
+/* ---- 上下文占用条 ---- */
+#ctxTrack {
+    background: rgba(255, 255, 255, 18);
+    border-radius: 3px;
+}
+#ctxFill {
+    background: rgb(118, 185, 237);
+    border-radius: 3px;
+}
+#ctxFill[level="warn"] {
+    background: rgb(255, 196, 10);
+}
+#ctxNumbers {
+    color: rgb(153, 153, 153);
+    font: 11px "Consolas";
+}
+
+/* ---- 状态灯行（waiting 与消息流审批卡同语言：淡染底 + 左描边） ---- */
+#statusRow {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+}
+#statusRow[state="running"] { background: rgba(118, 185, 237, 16); }
+#statusRow[state="waiting"] {
+    background: rgba(255, 196, 10, 16);
+    border-left: 3px solid rgba(255, 196, 10, 155);
+}
+#statusDot { font: 11px "Segoe UI"; color: rgb(136, 136, 136); background: transparent; }
+#statusText {
+    color: rgb(153, 153, 153);
+    font: 12px "Segoe UI";
+    background: transparent;
+}
+#statusRow[state="running"] #statusDot, #statusRow[state="running"] #statusText { color: rgb(118, 185, 237); }
+#statusRow[state="running"] #statusText { font-weight: bold; }
+#statusRow[state="waiting"] #statusDot, #statusRow[state="waiting"] #statusText { color: rgb(255, 196, 10); }
+#statusRow[state="waiting"] #statusText { font-weight: bold; }
+
+/* ---- TODO / 文件行 ---- */
+#sbRow {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+}
+#sbMark { font: 12px "Segoe UI"; color: rgb(136, 136, 136); background: transparent; }
+#sbText {
+    color: rgb(153, 153, 153);
+    font: 12px "Segoe UI";
+    background: transparent;
+}
+#sbRow[status="active"] {
+    background: rgba(255, 196, 10, 14);
+    border-left: 3px solid rgba(255, 196, 10, 150);
+}
+#sbRow[status="active"] #sbMark { color: rgb(255, 196, 10); }
+#sbRow[status="active"] #sbText { color: rgb(220, 220, 220); font-weight: bold; }
+#sbRow[status="done"] #sbMark { color: rgb(108, 203, 91); }
+#sbRow[status="done"] #sbText { color: rgb(136, 136, 136); }
+#sbRow[kind="write"] #sbMark { color: rgb(108, 203, 91); }
+#sbRow[kind="edit"] #sbMark { color: rgb(118, 185, 237); }
+#sbEmptyHint {
+    color: rgb(110, 110, 110);
+    font: italic 12px "Segoe UI";
+    background: transparent;
+    padding-left: 8px;
+}
+
+/* ---- 页脚 ---- */
+#sbFooterDir {
+    color: rgb(140, 140, 140);
+    font: 11px "Consolas";
+    background: transparent;
+}
+#sbFooterVersion {
+    color: rgb(110, 110, 110);
+    font: 11px "Consolas";
+    background: transparent;
+}

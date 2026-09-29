@@ -4,48 +4,48 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="429"/>
+        <location filename="../src/AgentLoop.cpp" line="444"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>The session has no data directory ID; cannot locate the history file</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="442"/>
+        <location filename="../src/AgentLoop.cpp" line="457"/>
         <source>无法打开历史文件：%1</source>
         <translation>Cannot open history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="450"/>
+        <location filename="../src/AgentLoop.cpp" line="465"/>
         <source>历史文件解析失败：%1</source>
         <translation>Failed to parse history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="556"/>
+        <location filename="../src/AgentLoop.cpp" line="571"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="695"/>
-        <location filename="../src/AgentLoop.cpp" line="739"/>
+        <location filename="../src/AgentLoop.cpp" line="715"/>
+        <location filename="../src/AgentLoop.cpp" line="759"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>Tool call rounds exceeded the limit (%1 rounds); loop terminated.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="769"/>
+        <location filename="../src/AgentLoop.cpp" line="789"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>Reactive compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="812"/>
+        <location filename="../src/AgentLoop.cpp" line="832"/>
         <source>自动压缩（上下文超限）</source>
         <translation>Automatic compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="983"/>
+        <location filename="../src/AgentLoop.cpp" line="1003"/>
         <source>主动压缩（compact 工具）</source>
         <translation>Manual compaction (compact tool)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="2279"/>
+        <location filename="../src/AgentLoop.cpp" line="2299"/>
         <source>已停止。</source>
         <translation>Stopped.</translation>
     </message>
@@ -87,16 +87,21 @@
     <name>ChatSessionPage</name>
     <message>
         <location filename="../src/ChatSessionPage.cpp" line="87"/>
+        <source>展开侧边栏</source>
+        <translation>Show Sidebar</translation>
+    </message>
+    <message>
+        <location filename="../src/ChatSessionPage.cpp" line="137"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent is still running. Please wait for it to finish before sending</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="141"/>
+        <location filename="../src/ChatSessionPage.cpp" line="194"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="174"/>
+        <location filename="../src/ChatSessionPage.cpp" line="234"/>
         <source>%1 %2:
 ```
 %3
@@ -115,6 +120,11 @@ Output:
 ```
 %4
 ```</translation>
+    </message>
+    <message>
+        <location filename="../src/ChatSessionPage.cpp" line="643"/>
+        <source>新会话</source>
+        <translation>New Session</translation>
     </message>
 </context>
 <context>
@@ -287,7 +297,7 @@ Output:
         <translation>Select All</translation>
     </message>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="418"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="452"/>
         <source>记忆整理中</source>
         <translation>Consolidating memory</translation>
     </message>
@@ -427,6 +437,99 @@ Output:
         <location filename="../src/QOpenAi.cpp" line="383"/>
         <source>HTTP %1 错误（重试 %2 次后仍失败）: %3</source>
         <translation>HTTP %1 error (failed after %2 retries): %3</translation>
+    </message>
+</context>
+<context>
+    <name>SessionSidebar</name>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="305"/>
+        <source>会话面板</source>
+        <translation>Session Panel</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="312"/>
+        <source>收起侧边栏</source>
+        <translation>Hide Sidebar</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="347"/>
+        <source>上下文</source>
+        <translation>Context</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="354"/>
+        <source>状态</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="361"/>
+        <source>任务清单</source>
+        <translation>Todo List</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="363"/>
+        <source>暂无任务</source>
+        <translation>No tasks yet</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="369"/>
+        <source>变更文件</source>
+        <translation>Modified Files</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="371"/>
+        <source>暂无变更</source>
+        <translation>No changes yet</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="384"/>
+        <source>lite-harness v%1</source>
+        <translation>lite-harness v%1</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="398"/>
+        <source>新会话</source>
+        <translation>New Session</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="416"/>
+        <source>%1 / %2 字符 · %3%</source>
+        <translation>%1 / %2 chars · %3%</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="469"/>
+        <source>%1 进行中</source>
+        <translation>%1 in progress</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="470"/>
+        <source>%1 待办</source>
+        <translation>%1 pending</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="471"/>
+        <source>%1 完成</source>
+        <translation>%1 done</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="503"/>
+        <source>%1 个文件</source>
+        <translation>%1 files</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="529"/>
+        <source>等待审批</source>
+        <translation>Awaiting Approval</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="531"/>
+        <source>运行中</source>
+        <translation>Running</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="533"/>
+        <source>空闲</source>
+        <translation>Idle</translation>
     </message>
 </context>
 <context>

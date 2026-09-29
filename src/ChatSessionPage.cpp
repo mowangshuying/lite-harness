@@ -1,13 +1,21 @@
 #include "ChatSessionPage.h"
 #include <FluVScrollView.h>
+#include <FluThemeUtils.h>
+#include <FluUtils.h>
 #include <QResizeEvent>
+#include <QSettings>
 #include <QStyle>
 #include <QTimer>
+#include <QToolButton>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 #include "ChatMsgEdit.h"
 #include "AgentLoop.h"
+#include "AgentConstants.h"
+#include "CompactManager.h"
 #include "ToolBlock.h"
 #include "PermissionCard.h"
+#include "SessionSidebar.h"
 #include "TodoCard.h"
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
@@ -23,12 +31,19 @@
 // 构造期无布局 activate/show，widget 几何不受 addWidget 时机影响，行为等价
 void ChatSessionPage::buildLayout()
 {
-    auto vMainLayout = new QVBoxLayout(this);
+    // 外层水平两列：左 = 原消息列 + 输入组竖排（整体搬入 leftColumn，参数逐句不变），
+    // 右 = 会话侧栏。侧栏隐藏时 QBoxLayout 自动剔除其占位与间隙，左列回收全宽
+    auto hRootLayout = new QHBoxLayout(this);
+    hRootLayout->setContentsMargins(0, 0, 0, 0);
+    hRootLayout->setSpacing(LayoutConst::kSidebarGap);
+    setLayout(hRootLayout);
+
+    auto leftColumn = new QWidget(this);
+    auto vMainLayout = new QVBoxLayout(leftColumn);
     vMainLayout->setContentsMargins(LayoutConst::kSideMargin, 35, LayoutConst::kSideMargin, 35);
     vMainLayout->setSpacing(15);
-    setLayout(vMainLayout);
 
-    m_scrollView = new FluVScrollView(this);
+    m_scrollView = new FluVScrollView(leftColumn);
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
     m_scrollView->getMainLayout()->setContentsMargins(15, 15, 15, 15);
     m_scrollView->getMainLayout()->setSpacing(15);
@@ -37,7 +52,7 @@ void ChatSessionPage::buildLayout()
 
     // 底部输入区：只读工作目录条在上、ChatMsgEdit 在下，同栏同宽（与消息列同列，
     // 栏宽由 resizeEvent 钳制并居中；栏内子控件铺满栏宽，摆位关系不变）
-    m_inputSection = new QWidget(this);
+    m_inputSection = new QWidget(leftColumn);
     auto sectionLayout = new QVBoxLayout(m_inputSection);
     sectionLayout->setContentsMargins(0, 0, 0, 0);
     sectionLayout->setSpacing(8); // 与 NewChatPage 输入栏同参数，路径条与输入框读作同一组件
@@ -53,6 +68,32 @@ void ChatSessionPage::buildLayout()
     sectionLayout->addWidget(m_inputEdit);
 
     vMainLayout->addWidget(m_inputSection, 0, Qt::AlignHCenter);
+
+    hRootLayout->addWidget(leftColumn, 1);
+
+    // 侧栏：固定宽纯信息面板（类 opencode），数据全部由本页接线经 setter 推入
+    m_sidebar = new SessionSidebar(this);
+    hRootLayout->addWidget(m_sidebar);
+    connect(m_sidebar, &SessionSidebar::hideRequested, this,
+            [this]() { setSidebarVisible(false); });
+
+    // 收起后的浮动展开钮：右上角手动摆位（resizeEvent 跟随），与侧栏共用同一份
+    // SessionSidebar.qss 取色（#sidebarRestoreBtn 选择器，按钮自身 bind 生效）
+    m_restoreBtn = new QToolButton(this);
+    m_restoreBtn->setObjectName(QStringLiteral("sidebarRestoreBtn"));
+    m_restoreBtn->setFixedSize(LayoutConst::kSidebarRestoreBtnSize, LayoutConst::kSidebarRestoreBtnSize);
+    m_restoreBtn->setIconSize(QSize(14, 14));
+    m_restoreBtn->setCursor(Qt::PointingHandCursor);
+    m_restoreBtn->setToolTip(tr("展开侧边栏"));
+    connect(m_restoreBtn, &QToolButton::clicked, this,
+            [this]() { setSidebarVisible(true); });
+    ThemeAware::bind("SessionSidebar.qss", m_restoreBtn, [this]() {
+        m_restoreBtn->setIcon(FluIconUtils::getFluentIconPixmap(
+            FluAwesomeType::ChevronLeft, FluThemeUtils::getUtils()->getTheme(), 14, 14));
+    });
+
+    // 显隐偏好恢复（QSettings sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
+    setSidebarVisible(QSettings().value(QStringLiteral("sidebarVisible"), true).toBool());
 }
 
 ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
@@ -66,11 +107,20 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     m_agentLoop = new AgentLoop(sessionDataId, workDir, this);
     // 模型切换接线：用户在下拉框改选 → 后端 setModel（下一轮请求生效）
     connect(m_inputEdit, &ChatMsgEdit::modelChanged, m_agentLoop, &AgentLoop::setModel);
+    // 侧栏模型名联动（同一 modelChanged 第二订阅，不回环）
+    connect(m_inputEdit, &ChatMsgEdit::modelChanged, this, [this](const QString &model) {
+        m_sidebar->setSessionMeta(m_sessionTitle, model);
+    });
     // 初始显示同步为后端生效模型（MODEL_ID 环境变量值不在两选项内时，下拉回落显示 qwen3.8-flash）
     m_inputEdit->setCurrentModel(m_agentLoop->model());
     // 工作目录在会话存续期固定（构造注入 AgentLoop，新建/恢复两条路径都在构造时传最终
     // 生效目录），故路径条只读一次快照；后续 Resize 重排仅对该快照重新省略，与组件契约一致
     m_workDirBar->setPath(m_agentLoop->workDir());
+
+    // 侧栏初始快照：工作目录 + 会话元（标题占位「新会话」，首条用户消息后经
+    // maybeCaptureSessionTitle 定稿）+ 后端生效模型
+    m_sidebar->setWorkDir(m_agentLoop->workDir());
+    m_sidebar->setSessionMeta(m_sessionTitle, m_agentLoop->model());
 
     // AgentLoop 输出信号 → UI 的接线整体搬移至 wireAgent()（纯移动，不改任何 lambda 逻辑）
     wireAgent();
@@ -126,6 +176,9 @@ void ChatSessionPage::wireAgent()
         // 无气泡（如前序 error 链已清槽位）仍走独立气泡兜底不丢回复
         if (!m_currentBubble)
             addMessage(MessageBubbleWidget::Role::Assistant, reply);
+        // 侧栏收口：审批灯兜底回灭 + 回合终了重算上下文占用（勿接 textDelta 高频信号）
+        m_sidebar->setPermissionPending(false);
+        refreshContextUsage();
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
         // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
@@ -139,6 +192,9 @@ void ChatSessionPage::wireAgent()
         }
         // 模板整体入 tr：英文译文恒等保留 "*Error:* %1"（Error 为气泡渲染约定的 markdown 前缀）
         addMessage(MessageBubbleWidget::Role::Assistant, tr("*Error:* %1").arg(err));
+        // 侧栏收口：错误终局同样灭审批灯 + 重算占用（与 finished 对称）
+        m_sidebar->setPermissionPending(false);
+        refreshContextUsage();
     });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
         if (m_currentBubble)
@@ -158,6 +214,10 @@ void ChatSessionPage::wireAgent()
     // 信号契约：toolOutputReady(toolName, summary, output)，summary 为关键参数
     connect(m_agentLoop, &AgentLoop::toolOutputReady, this,
             [this](const QString &toolName, const QString &summary, const QString &output) {
+                // 侧栏变更文件台账：write/edit 的 summary 即裸路径串（AgentLoop::toolSummary 契约），
+                // 放在所有早退分支之前保证不漏记
+                if (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file"))
+                    recordModifiedFile(toolName, summary);
                 if (m_currentBubble)
                 {
                     m_currentBubble->appendToolExecution(toolName, summary, output);
@@ -212,12 +272,19 @@ void ChatSessionPage::wireAgent()
     // 信号契约：permissionRequired(toolName, summary, reason)，reason 为英文短句（卡片内转译中文）
     connect(m_agentLoop, &AgentLoop::permissionRequired, this,
             [this](const QString &toolName, const QString &summary, const QString &reason) {
+                // 侧栏审批灯置亮（waiting 优先于 running 由侧栏内部归并）
+                m_sidebar->setPermissionPending(true);
                 // 防御：契约保证同一时刻至多一个待决；若残留未裁决旧卡直接丢弃（后端自行收口）
                 if (m_permissionCard && !m_permissionCard->isResolved())
                     m_permissionCard->deleteLater();
                 auto *card = new PermissionCard(this);
                 connect(card, &PermissionCard::userResolved, this,
-                        [this](bool allow) { m_agentLoop->resolvePermission(allow); });
+                        [this](bool allow) {
+                            // 先灭灯再放行队列：resolvePermission 同步续跑若立刻再发
+                            // permissionRequired，新灯的置亮不被本行覆盖
+                            m_sidebar->setPermissionPending(false);
+                            m_agentLoop->resolvePermission(allow);
+                        });
                 card->setPermissionRequest(toolName, summary, reason);
                 m_permissionCard = card;
                 if (m_currentBubble)
@@ -239,6 +306,8 @@ void ChatSessionPage::wireAgent()
             m_scrollView->getMainLayout()->addWidget(card);
         }
         m_todoCard->setTodos(todos);
+        // 侧栏任务清单同步（同一全量快照，样式语义与 TodoCard 状态点一致）
+        m_sidebar->setTodos(todos);
         QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
     });
 
@@ -261,6 +330,10 @@ void ChatSessionPage::wireAgent()
     connect(m_agentLoop, &AgentLoop::runningChanged, this, [this](bool running) {
         if (m_inputEdit)
             m_inputEdit->setTurnBusy(running);
+        // 侧栏状态灯：running 置亮/熄灭；终局（先于 finished 到达）兜底回灭审批灯
+        m_sidebar->setRunning(running);
+        if (!running)
+            m_sidebar->setPermissionPending(false);
     });
 }
 
@@ -273,6 +346,9 @@ void ChatSessionPage::wireAgent()
 void ChatSessionPage::dismissPendingPermission()
 {
     QPointer<PermissionCard> staleCard = m_permissionCard;
+    // 侧栏审批灯先灭再放行：resolvePermission(false) 同步续跑若立刻再建待决卡，
+    // permissionRequired 接线会重新置亮，不被本行覆盖；无新待决则保持灭
+    m_sidebar->setPermissionPending(false);
     m_agentLoop->resolvePermission(false);
     if (staleCard && !staleCard->isResolved())
         staleCard->resolveDenySilently();
@@ -280,6 +356,9 @@ void ChatSessionPage::dismissPendingPermission()
 
 void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &content)
 {
+    // 会话标题单点捕获：startConversation/定时送达/历史重放的用户消息全部经过本函数
+    if (role == MessageBubbleWidget::Role::User)
+        maybeCaptureSessionTitle(content);
     auto bubble = new MessageBubbleWidget(role, this);
     bubble->setContent(content);
     m_scrollView->getMainLayout()->addWidget(bubble);
@@ -319,6 +398,8 @@ void ChatSessionPage::restoreFromDisk()
     replayHistory(m_agentLoop->messages());
     // 恢复后端生效模型到下拉框；setCurrentModel 不发 modelChanged，无回环
     m_inputEdit->setCurrentModel(m_agentLoop->model());
+    // 侧栏上下文占用基线：重放完成后按内存历史估算一次
+    refreshContextUsage();
 }
 
 void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
@@ -402,6 +483,9 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
             const QJsonObject args =
                 QJsonDocument::fromJson(argsStr.toUtf8()).object();
             const QString summary = AgentLoop::toolSummaryOf(toolName, args);
+            // 历史回放顺带重建侧栏变更文件台账（与实时链路同一提取语义）
+            if (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file"))
+                recordModifiedFile(toolName, summary);
             m_currentBubble->appendToolExecution(
                 toolName, summary, msg.value(QStringLiteral("content")).toString());
             scrollToBottom();
@@ -417,6 +501,9 @@ void ChatSessionPage::setModel(const QString &model)
     // 两条路径均不回环信号，无循环触发风险
     m_agentLoop->setModel(model);
     m_inputEdit->setCurrentModel(model);
+    // setCurrentModel 不发 modelChanged，宿主注入路径需自行同步侧栏模型名
+    if (m_sidebar)
+        m_sidebar->setSessionMeta(m_sessionTitle, model);
 }
 
 void ChatSessionPage::startConversation(const QString &text)
@@ -438,33 +525,15 @@ void ChatSessionPage::scrollToBottom()
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
 {
     BasePage::resizeEvent(event);
-    // 统一钳制消息列与底部输入组栏宽为 min(800, 可用宽)（纯布局 stretch 无法表达"撑到上限后居中"，
-    // 与 NewChatPage 同款手法）；路径条随组宽变化触发 Resize，由 WorkDirPathBar 内部重新中间省略
-    const int columnWidth = qMin(LayoutConst::kColumnMaxWidth, width() - 2 * LayoutConst::kSideMargin);
-    if (m_scrollView)
-        m_scrollView->setFixedWidth(columnWidth);
-    if (m_inputSection)
-        m_inputSection->setFixedWidth(columnWidth);
-
-    //m_scrollView->resize(event->size().width() - 100, m_scrollView->height());
-
-    auto mainLayout = m_scrollView->getMainLayout();
-    for (int i = 0; i < mainLayout->count(); ++i)
+    // 浮动展开钮跟随右上角（无论显隐都更新摆位，保证出现瞬间即对位）
+    if (m_restoreBtn)
     {
-        auto bubble = qobject_cast<MessageBubbleWidget *>(mainLayout->itemAt(i)->widget());
-        if (bubble)
-            bubble->refreshSize();
+        m_restoreBtn->move(width() - LayoutConst::kSideMargin - LayoutConst::kSidebarRestoreBtnSize,
+                           LayoutConst::kSidebarRestoreTop);
     }
+    applyColumnWidth();
 
-    QTimer::singleShot(0, this, [this]() {
-        auto mainLayout = m_scrollView->getMainLayout();
-        for (int i = 0; i < mainLayout->count(); ++i)
-        {
-            auto bubble = qobject_cast<MessageBubbleWidget *>(mainLayout->itemAt(i)->widget());
-            if (bubble)
-                bubble->refreshSize();
-        }
-    });
+    QTimer::singleShot(0, this, [this]() { applyColumnWidth(); });
 }
 
 QString ChatSessionPage::sessionDataId() const
@@ -486,4 +555,93 @@ void ChatSessionPage::stop()
 {
     if (m_agentLoop)
         m_agentLoop->stop();
+}
+
+// 侧栏显隐切换单点：偏好落 QSettings（org/app=LiteHarness，默认显示）+ 浮动钮互斥 +
+// 消息列重钳。构造期 buildLayout 尾部也走此函数完成首帧恢复
+void ChatSessionPage::setSidebarVisible(bool visible)
+{
+    QSettings().setValue(QStringLiteral("sidebarVisible"), visible);
+    m_sidebar->setVisible(visible);
+    m_restoreBtn->setVisible(!visible);
+    if (!visible)
+    {
+        // 浮动钮是页面直接子件且手动几何：布局不管理它，raise 保证盖过滚动区等兄弟
+        m_restoreBtn->move(width() - LayoutConst::kSideMargin - LayoutConst::kSidebarRestoreBtnSize,
+                           LayoutConst::kSidebarRestoreTop);
+        m_restoreBtn->raise();
+    }
+    applyColumnWidth();
+    // 切换不触发本页 resizeEvent：补一次延帧重钳（布局结算后气泡按新列宽重排）
+    QTimer::singleShot(0, this, [this]() { applyColumnWidth(); });
+}
+
+// 消息列/输入组同栏宽钳制：min(800, 可用宽)，侧栏可见时扣除「宽+隙」整块
+// （隐藏时 QBoxLayout 自动剔除该列与 spacing，左列占满，无扣除）；含气泡宽度刷新，
+// resizeEvent 与 setSidebarVisible 共用
+void ChatSessionPage::applyColumnWidth()
+{
+    const int sidebarReserve = (m_sidebar && !m_sidebar->isHidden())
+        ? LayoutConst::kSidebarWidth + LayoutConst::kSidebarGap
+        : 0;
+    const int columnWidth = qMin(LayoutConst::kColumnMaxWidth,
+                                 width() - 2 * LayoutConst::kSideMargin - sidebarReserve);
+    if (m_scrollView)
+        m_scrollView->setFixedWidth(columnWidth);
+    if (m_inputSection)
+        m_inputSection->setFixedWidth(columnWidth);
+
+    if (!m_scrollView)
+        return;
+    auto mainLayout = m_scrollView->getMainLayout();
+    for (int i = 0; i < mainLayout->count(); ++i)
+    {
+        auto bubble = qobject_cast<MessageBubbleWidget *>(mainLayout->itemAt(i)->widget());
+        if (bubble)
+            bubble->refreshSize();
+    }
+}
+
+// 上下文占用快照 → 侧栏。口径对齐压缩管线：system 消息不计入会话占用
+// （AgentLoop::messages() 含下标 0 的 system，防御式仅当首元素确为 system 才剔除）
+void ChatSessionPage::refreshContextUsage()
+{
+    if (!m_agentLoop || !m_sidebar)
+        return;
+    QVector<QJsonObject> msgs = m_agentLoop->messages();
+    if (!msgs.isEmpty() &&
+        msgs.first().value(QStringLiteral("role")).toString() == QLatin1String("system"))
+    {
+        msgs.removeFirst();
+    }
+    m_sidebar->setContextUsage(CompactManager::estimateChars(msgs),
+                               AgentConst::contextCharLimitValue());
+}
+
+// write_file/edit_file 变更登记（path 即 toolSummary 的裸路径语义），去重/排序由侧栏消化
+void ChatSessionPage::recordModifiedFile(const QString &toolName, const QString &path)
+{
+    if (path.isEmpty() || !m_sidebar)
+        return;
+    m_sidebar->addModifiedFile(toolName == QLatin1String("write_file")
+            ? QStringLiteral("write")
+            : QStringLiteral("edit"),
+        path);
+}
+
+// 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，
+// 空回退「新会话」）；仅首次捕获生效——导航树重命名不回传本页面（已知限制）
+void ChatSessionPage::maybeCaptureSessionTitle(const QString &userText)
+{
+    if (!m_sessionTitle.isEmpty())
+        return;
+    constexpr int kTitlePreviewChars = 12;
+    QString title = userText.simplified();
+    if (title.length() > kTitlePreviewChars)
+        title = title.left(kTitlePreviewChars) + QStringLiteral("...");
+    if (title.isEmpty())
+        title = tr("新会话");
+    m_sessionTitle = title;
+    if (m_sidebar)
+        m_sidebar->setSessionMeta(m_sessionTitle, m_agentLoop->model());
 }
