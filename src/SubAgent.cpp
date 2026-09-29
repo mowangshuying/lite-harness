@@ -271,6 +271,24 @@ void SubAgent::onToolFinished(const QJsonObject &toolCall, const QString &output
     if (m_cancelled || m_settled)
         return;
 
+    // 实时进度透传（六路收口的唯一汇流点，取消卫兵之后）：宿主直连转发 subagentProgress
+    // 驱动 UI task 卡进度行。名称/摘要从 toolCall 就地重算——arguments 是小 JSON 串，
+    // 重算开销可忽略，免为进度信号扩六处调用签名；参数非法路径 parse 失败摘要留空。
+    // turnNo=m_turns：工具由第 N 次请求产出，下一次 ++ 在全队收口后，恒为所属轮
+    {
+        const QJsonObject fn = toolCall.value(QStringLiteral("function")).toObject();
+        const QString toolName = fn.value(QStringLiteral("name")).toString();
+        QString summary;
+        const QString arguments = fn.value(QStringLiteral("arguments")).toString();
+        if (!arguments.trimmed().isEmpty())
+        {
+            const QJsonDocument parsed = QJsonDocument::fromJson(arguments.toUtf8());
+            if (parsed.isObject())
+                summary = AgentLoop::toolSummaryOf(toolName, parsed.object());
+        }
+        emit progressEmitted(m_turns, toolName, summary);
+    }
+
     // 黑盒收口：只回填 tool 结果，不发 toolOutputReady——task 对外可见性由宿主收口一次
     QJsonObject toolResult;
     toolResult[QStringLiteral("role")] = QStringLiteral("tool");

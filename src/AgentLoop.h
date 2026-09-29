@@ -83,6 +83,11 @@ signals:
     // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出
     // 每次工具执行完成发射一次（含 Dangerous blocked / Unknown tool / 沙箱拒绝等错误结果）
     void toolOutputReady(const QString &toolName, const QString &summary, const QString &output);
+    // task 子代理内部活动转发（SubAgent::progressEmitted 信号直连，见 startSubAgentTask）：
+    // 子代理每完成一个内部工具调用发射一次，仅主循环运行且存在活动子代理时到达。
+    // UI 用于 task 工具卡的 live 进度行（turnNo=子代理轮次自 1 起，toolName/summary=
+    // 内部工具名与关键参数摘要）；task 终态仍由 toolOutputReady("task") 唯一收口
+    void subagentProgress(int turnNo, const QString &toolName, const QString &summary);
     // 权限门：工具调用命中询问规则（不含硬拒绝列表项）时发射，队列暂停等待 resolvePermission() 裁决
     // toolName / summary 与 toolOutputReady 前两参同义；reason = 命中规则文案
     //（"Writing outside workspace" / "Potentially destructive command"）
@@ -187,7 +192,9 @@ private:
     // permissionRequired 转发；完成回调以汇总文本走 onToolFinished 收口）
     void startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args);
     // 子代理统一收口（lcc s06 R1）：级联 cancel → kill 流与进程 → 为 task 合成
-    // "(cancelled)" tool_result 直写历史 → 清父队列；stop()/错误链/析构三路复用
+    // "(cancelled)" tool_result 直写历史 → 半途批一并收口（已完成结果 flush +
+    // 剩余调用合成 "(cancelled)"）后清父队列，绝不裸清空致配对断裂；
+    // stop()/错误链/析构三路复用
     void cancelSubAgent();
     // 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：发送请求前对会话——不含
     // system——跑五级压缩，有变化则回写 m_messages，裁决 g 保留 m_messages[0] system）：

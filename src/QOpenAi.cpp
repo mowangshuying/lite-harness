@@ -1,5 +1,7 @@
 #include "QOpenAi.h"
 
+#include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）
+
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -22,6 +24,9 @@ public:
     QString token;
     int maxRetries = 0;          // 最大重试次数（仅 5xx / 429），默认 0 不重试
     int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
+    // 流式总时长哨兵（毫秒）：idle 每收字节即重置，杀不死"慢而不断"的流（持续有字节、
+    // 永不发 [DONE]），需总量防线——与 AsyncRequest 的总超时同机制；取值进 AgentConstants.h
+    int streamTotalTimeout = AgentConst::kStreamTotalTimeoutMs;
     bool verbose = false;        // 调试日志开关
 };
 
@@ -77,11 +82,13 @@ public:
     QString content;           // 累积正文原文
     QJsonArray toolCalls;      // 累积的 tool_calls（按 index 对齐，含占位）
     bool done = false;         // 是否已收尾（防重复 emit）
-    bool timedOut = false;     // 是否超时中止
+    bool timedOut = false;     // 是否超时中止（idle 静默防线）
+    bool totalTimedOut = false; // 是否总时长哨兵中止（"慢而不断"防线，收字节不重置）
     Mode mode = Mode::Chat;    // 流处理模式（决定端点与 SSE 解析分支）
     QJsonObject input;         // 请求体，供重试复用
     int retriesLeft = 0;       // 剩余可重试次数
     QTimer *timeoutTimer = nullptr;
+    QTimer *totalTimer = nullptr;  // 总时长哨兵（对照 AsyncRequest::m_totalTimer 同款机制）
 };
 
 ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
@@ -92,6 +99,20 @@ ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
         d->timedOut = true;
         if (client().verbose)
             qDebug() << "QOpenAi [timeout] 服务器静默超过" << client().streamIdleTimeout << "ms";
+        if (d->reply)
+            d->reply->abort();
+    });
+
+    // 总时长哨兵：与 idle 防线的分工——idle 杀"静默卡死"，本表杀"慢而不断"
+    // （readIncoming 收字节只重置 idle、绝不重置本表）。超时动作与 idle 同口径：
+    // 置终态标志 → abort reply → finished 落 finishStream 的 error 分支，
+    // 「done 恒一次」「cancel 后永久静默」语义不受影响
+    d->totalTimer = new QTimer(this);
+    d->totalTimer->setSingleShot(true);
+    connect(d->totalTimer, &QTimer::timeout, this, [this] {
+        d->totalTimedOut = true;
+        if (client().verbose)
+            qDebug() << "QOpenAi [timeout] 流式响应总时长超过" << client().streamTotalTimeout << "ms";
         if (d->reply)
             d->reply->abort();
     });
@@ -109,6 +130,7 @@ void ChatStream::cancel()
         return;
     d->done = true;
     d->timeoutTimer->stop();
+    d->totalTimer->stop();
 
     if (d->reply)
     {
@@ -148,6 +170,7 @@ void ChatStream::sendRequest()
         qDebug() << "QOpenAi [request]" << "url=" << endpoint << "body=" << QString::fromUtf8(body);
 
     d->timedOut = false;
+    d->totalTimedOut = false;
     d->reply = c.manager.post(req, body);
     connect(d->reply, &QNetworkReply::readyRead, this, &ChatStream::readIncoming);
     connect(d->reply, &QNetworkReply::finished, this, &ChatStream::finishStream);
@@ -156,6 +179,13 @@ void ChatStream::sendRequest()
     d->timeoutTimer->stop();
     if (c.streamIdleTimeout > 0)
         d->timeoutTimer->start(c.streamIdleTimeout);
+
+    // 总时长哨兵：自此计时且收字节不重置；重试（scheduleRetry→sendRequest）按单次
+    // attempt 口径重新起表，与 idle 的每 attempt 重装保持同构；<=0 时禁用
+    d->totalTimedOut = false;
+    d->totalTimer->stop();
+    if (c.streamTotalTimeout > 0)
+        d->totalTimer->start(c.streamTotalTimeout);
 }
 
 void ChatStream::readIncoming()
@@ -224,6 +254,8 @@ void ChatStream::processFrame(const QByteArray &frame)
         // 则同批后续帧继续处理、残留帧还能触发 finishStream 发出 messageFinished，
         // 与 error 后的回合终局竞态（第六轮审计 C1）
         d->done = true;
+        // error 终局处停哨（idle 表未停为既有行为——reply 已清空，其触发无副作用）
+        d->totalTimer->stop();
         cleanupReply();
         emit error(tr("SSE 帧 JSON 解析失败: %1").arg(payload.left(200)));
         return;
@@ -324,6 +356,7 @@ void ChatStream::finishStream()
     if (d->done)
         return;
     d->timeoutTimer->stop();
+    d->totalTimer->stop();
 
     OpenAiClient &c = client();
     const bool hasError = d->reply && d->reply->error() != QNetworkReply::NoError;
@@ -350,6 +383,17 @@ void ChatStream::finishStream()
             d->done = true;
             cleanupReply();
             emit error(tr("服务器无响应（连续 %1 ms 未收到数据）。").arg(c.streamIdleTimeout));
+            return;
+        }
+
+        // 总时长哨兵中止（同样区别于主动取消）："慢而不断"的流——idle 窗口内始终有字节，
+        // 静默防线永不触发，由本分支收口。须排在 OperationCanceledError 吞掉分支之前，
+        // 否则 abort 产生的取消错误会被当作主动取消静默丢弃
+        if (d->totalTimedOut)
+        {
+            d->done = true;
+            cleanupReply();
+            emit error(tr("流式响应超时（总时长超过 %1 ms）。").arg(c.streamTotalTimeout));
             return;
         }
 

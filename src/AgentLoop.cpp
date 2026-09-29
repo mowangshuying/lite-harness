@@ -1345,6 +1345,9 @@ void AgentLoop::startSubAgentTask(const QJsonObject &toolCall, const QJsonObject
                                  args.value(QStringLiteral("prompt")).toString());
     // 子代理权限询问透明转发：复用宿主同一个 3 参 permissionRequired 信号，UI 零改动
     connect(sub, &SubAgent::permissionRequired, this, &AgentLoop::permissionRequired);
+    // 子代理内部活动转发：进度信号直连宿主同名信号（UI task 卡 live 进度行；
+    // 取消路径由 SubAgent 卫兵/SignalBlocker 双保险静默，sub 先于宿主析构无悬空）
+    connect(sub, &SubAgent::progressEmitted, this, &AgentLoop::subagentProgress);
 
     m_activeSub = sub;
     m_pendingTaskCall = toolCall;
@@ -1382,8 +1385,24 @@ void AgentLoop::cancelSubAgent()
         m_messages.append(toolResult);
         m_pendingTaskCall = QJsonObject();
     }
-    m_pendingToolCalls = QJsonArray();
+    // 半途批其余成员一并收口（实证缺陷：曾裸清空两队列）：子代理卡队时，队列里
+    // 「已完成未回填」与「未开始」两类调用同样悬空——裸清空令 stop() 后段半途批兜底
+    // 空转、坏配对落盘，续谈必遭上游 400（每条 tool_call 必须有对应 tool 消息）。
+    // 同款纪律直写历史：flush 已完成结果 → 剩余调用逐一合成 "(cancelled)" → 清队列。
+    // 三路调用方（stop/错误链/析构）自此都拿到配对完整历史。
+    for (const auto &value : m_toolResultsReady)
+        m_messages.append(value.toObject());
     m_toolResultsReady = QJsonArray();
+    for (const auto &value : m_pendingToolCalls)
+    {
+        QJsonObject toolResult;
+        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+        toolResult[QStringLiteral("tool_call_id")] =
+            value.toObject().value(QStringLiteral("id")).toString();
+        toolResult[QStringLiteral("content")] = QStringLiteral("(cancelled)");
+        m_messages.append(toolResult);
+    }
+    m_pendingToolCalls = QJsonArray();
 }
 
 // SubAgent（友元）复用的内部工具函数静态转发
@@ -1585,11 +1604,40 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         return;
     }
 
+    // 防双收口门闩（照后台分支 recorded 写法）：Qt 文档口径 FailedToStart 的
+    // errorOccurred 之后仍会发 finished，handled 保证 onToolFinished 恰好走一次
+    auto handled = std::make_shared<bool>(false);
+
     BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
-                      [this, toolCall, command, timedOut](QProcess *process) {
+                      [this, toolCall, command, timedOut, handled](QProcess *process) {
+        // 启动失败显式收口（挂起审计防御加固，对齐后台分支的 errorOccurred 防线）：
+        // 原前台只连 finished、依赖"FailedToStart 后仍发 finished"的隐式行为收口，
+        // 且届时会把空输出+退出码 0 当正常结果交还模型；此处直接以明确错误文本终结
+        // 工具调用，保证工具结果必达、m_running 回合不悬停。进程清理仍留给 finished
+        // 分支（同款时序：errorOccurred 先于 finished，removeAll/deleteLater 单点执行）
+        connect(process, &QProcess::errorOccurred, this,
+                [this, process, toolCall, command, handled](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart || *handled)
+                return;
+            *handled = true;
+            const QString output = QStringLiteral("Error: bash 启动失败：powershell.exe 无法启动（%1）")
+                                       .arg(process->errorString());
+            // PostToolUse 钩子与正常分支同时序（handler 产出后、回填前）
+            triggerPostToolUseHooks(toolCall, output);
+            onToolFinished(toolCall, ToolNames::BASH, command, output);
+        });
+
         connect(process, &QProcess::finished, this,
-                [this, process, toolCall, command, timedOut](int exitCode, QProcess::ExitStatus) {
+                [this, process, toolCall, command, timedOut, handled](int exitCode, QProcess::ExitStatus) {
             m_activeProcesses.removeAll(process);
+
+            // FailedToStart 已由 errorOccurred 显式收口：不再二次 onToolFinished，只销毁进程
+            if (*handled)
+            {
+                process->deleteLater();
+                return;
+            }
+            *handled = true;
 
             // finalizeOutput：超时→Timeout 文案（不读缓冲）；否则截断+空兜底（与后台/子代理同口径）
             const QString base = BashRunner::finalizeOutput(process, *timedOut);
@@ -1686,8 +1734,16 @@ QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args
     if (!file.open(QIODevice::ReadOnly))
         return QStringLiteral("Error:%1").arg(file.errorString());
 
+    // 读前字节预检（挂起审计防御加固）：原实现同步 readAll，LLM 指到数百 MB 文件时
+    // 主线程冻结秒级且截断发生在读入之后。零线程纪律下改限量读：超限只读开头
+    // kReadFileMaxBytes 字节，返回尾部附中文截断说明；行区间 limit 逻辑保持原行为
+    // （对已读入的头部内容照常生效）。
+    const bool sizeTruncated = QFileInfo(abs).size() > AgentConst::kReadFileMaxBytes;
+    const QByteArray raw = sizeTruncated ? file.read(AgentConst::kReadFileMaxBytes)
+                                         : file.readAll();
+
     // UTF-8 按行读取；QTextStream 行为对齐 Python splitlines（末尾换行不产生空行）
-    QString text = QString::fromUtf8(file.readAll()); // 非 const：QTextStream 需要 QString*
+    QString text = QString::fromUtf8(raw); // 非 const：QTextStream 需要 QString*
     QStringList lines;
     QTextStream ts(&text);
     for (QString line = ts.readLine(); !line.isNull(); line = ts.readLine())
@@ -1702,7 +1758,14 @@ QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args
     }
 
     // 截断与空输出兜底与 bash 同口径（lcc [:50000] + 空则默认文案），单源于 BashRunner
-    return BashRunner::truncateOutput(lines.join(QLatin1Char('\n')));
+    QString result = BashRunner::truncateOutput(lines.join(QLatin1Char('\n')));
+    if (sizeTruncated)
+    {
+        // 字节级限量读说明后置追加：若先拼进正文可能被 50000 字符截断吃掉，警告必须可见
+        result += QStringLiteral("\n[警告：文件超过 %1 字节，仅读取开头部分]")
+                      .arg(AgentConst::kReadFileMaxBytes);
+    }
+    return result;
 }
 
 QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &args)

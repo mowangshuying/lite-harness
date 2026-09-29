@@ -50,6 +50,11 @@ public:
 signals:
     // 与主循环 AgentLoop::permissionRequired 的 3 参契约一致；宿主信号直连转发
     void permissionRequired(const QString &toolName, const QString &summary, const QString &reason);
+    // 实时进度透传（黑盒的唯一例外，纯展示不携带结果数据）：每个内部工具调用收口时
+    // 发射一次（含拒绝/错误路径）。turnNo=产出该调用的请求轮次（自 1 起，复用 m_turns）；
+    // toolName/summary=内部工具名与关键参数摘要（摘要解析失败时为空串）。
+    // 宿主直连转发为 AgentLoop::subagentProgress，UI 用作 task 卡 live 进度行
+    void progressEmitted(int turnNo, const QString &toolName, const QString &summary);
 
 private:
     // 发起一次流式请求（先做轮次预算检查，超预算以停跑文案收尾）

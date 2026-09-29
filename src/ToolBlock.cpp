@@ -1,10 +1,13 @@
 #include "ToolBlock.h"
 #include "ToolTagKind.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）；"memory" 为 UI 伪键保持字面量
+#include "AgentConstants.h" // kSubagentProgressMaxLines 进度行上限
 
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QScrollBar>
+#include <QTimer>
 
 #include <FluUtils.h>
 
@@ -98,6 +101,7 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
 {
     // live 进行态收口：停轮播（基类 stopLiveTimer 复位 m_live），标题/标签由下方按终态重建
     stopLiveTimer();
+    m_taskLive = false;
 
     m_toolName = toolName;
     m_summary = summary;
@@ -116,8 +120,20 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
 
     refreshSummaryLabel();
 
-    // 输出走纯文本路径（50k 字符内性能可控），颜色/等宽字体由 QSS 控制
-    m_content->setPlainText(output.isEmpty() ? tr("(无输出)") : output);
+    // 输出走纯文本路径（50k 字符内性能可控），颜色/等宽字体由 QSS 控制；
+    // task 卡带子代理进度日志（live 收口路径）：进度段 + 分隔行前置在结果之前，
+    // 执行轨迹与终态输出同区保留可回看（进度行为 UI 瞬态，历史重放无此数据属预期）
+    QString body = output.isEmpty() ? tr("(无输出)") : output;
+    if (!m_subagentLines.isEmpty())
+    {
+        QStringList lines = displayedSubagentLines();
+        lines.append(QString());
+        lines.append(tr("──── 子代理最终结果 ────"));
+        lines.append(QString());
+        lines.append(body);
+        body = lines.join(QLatin1Char('\n'));
+    }
+    m_content->setPlainText(body);
 }
 
 void ToolBlock::startLive(const QString &liveTitle)
@@ -141,6 +157,90 @@ void ToolBlock::startLive(const QString &liveTitle)
 QString ToolBlock::liveText() const
 {
     return m_liveTitle + QStringLiteral(".").repeated(m_liveDots);
+}
+
+// ---- task 子代理 live 进度 ----
+
+void ToolBlock::startTaskLive()
+{
+    if (m_taskLive)
+        return;
+    m_taskLive = true;
+    m_live = true;
+    m_liveTitle = tr("子代理执行中");
+    m_liveDots = 0;
+
+    // 与记忆 startLive 不同：工具身份恒知（task），保留等宽工具名标签按 delegate
+    // 类别着色；头部形态 = [task 标签 + 轮播标题 + 最新进度行（关键参数位）]
+    m_toolName = ToolNames::TASK;
+    m_iconLabel->hide();
+    m_tagLabel->show();
+    m_tagLabel->setText(ToolNames::TASK);
+    ToolTagKind::applyTo(m_tagLabel, ToolNames::TASK);
+    m_titleLabel->setText(liveText());
+
+    startLiveTimer();
+    setExpanded(true);   // 自动展开露出进度区（ThinkingBlock 流式先例；空内容测得≈行距高，
+                         // 首行到达经 contentsChanged→scheduleMeasure 跟高跳变）
+}
+
+void ToolBlock::appendSubagentProgress(int turnNo, const QString &toolName, const QString &summary)
+{
+    // 单行 = 「第 N 轮 · 工具名  关键参数」；summary 压单行（bash 命令行可能含换行）
+    QString line = tr("第 %1 轮").arg(turnNo) + QStringLiteral(" · ") + toolName;
+    if (!summary.isEmpty())
+        line += QStringLiteral("  ") + summary.simplified();
+
+    // 超限策略：滑窗丢最旧（上限见 AgentConst::kSubagentProgressMaxLines），
+    // 省略条数在日志顶部常驻标注——整体重组写法下提示行只有一条、永不重复
+    while (m_subagentLines.size() >= AgentConst::kSubagentProgressMaxLines)
+    {
+        m_subagentLines.removeFirst();
+        ++m_subagentDropped;
+    }
+    m_subagentLines.append(line);
+
+    renderSubagentLog();
+
+    // 展开态钉底跟随最新行（ThinkingBlock::appendLiveText 同款范式：延一帧等测高后取最大）
+    if (m_expanded)
+    {
+        QTimer::singleShot(0, this, [this]() {
+            QScrollBar *bar = m_content->verticalScrollBar();
+            bar->setValue(bar->maximum());
+        });
+    }
+
+    // 头部关键参数位同步为最新行（折叠态也可见进展；tooltip 全文，宽度省略按块宽重算）
+    m_summary = line;
+    refreshSummaryLabel();
+}
+
+void ToolBlock::finishTaskLiveAborted()
+{
+    if (!m_taskLive)
+        return;
+    m_taskLive = false;
+    stopLiveTimer();
+
+    // 中断终局：task 未达成「已代办」语义，标题切「已中断」，头部关键参数位保留最新
+    // 进度行作现场线索；折叠但日志不销毁（stop/error 终局后 toolOutputReady("task")
+    // 不再到达，此处是唯一收口点——由气泡 finishStreaming 兜底驱动）
+    m_titleLabel->setText(tr("已中断"));
+    setExpanded(false);
+}
+
+QStringList ToolBlock::displayedSubagentLines() const
+{
+    QStringList display = m_subagentLines;
+    if (m_subagentDropped > 0)
+        display.prepend(tr("…更早 %1 条进度已省略").arg(m_subagentDropped));
+    return display;
+}
+
+void ToolBlock::renderSubagentLog()
+{
+    m_content->setPlainText(displayedSubagentLines().join(QLatin1Char('\n')));
 }
 
 QString ToolBlock::singleLineSummary() const
