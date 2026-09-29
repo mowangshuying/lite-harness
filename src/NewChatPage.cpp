@@ -2,6 +2,7 @@
 #include <QLabel>
 #include <QPixmap> // 英雄区图标直接使用 QPixmap（原经 FluUtils.h 间接引入，收敛后显式化）
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
@@ -13,6 +14,22 @@
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
 #include "WorkDirPathBar.h"
+
+// 居中行容器：列 widget 以 stretch 1 铺满行，两侧留白由 resizeEvent 手动写入布局
+// 边距，列宽靠 maximumWidth 封顶（宽窗定宽居中、窄窗吃满）。水平 Ignored 策略令
+// 本行不参与父布局 minimumSize 计算，断开「边距/列固有最小宽 → 上传窗口最小宽」
+// 的收缩棘轮（与会话页 ChatSessionPage 同款机制）
+static QWidget *makeCenteringRow(QWidget *column, QWidget *parent, QHBoxLayout **outLayout)
+{
+    auto *row = new QWidget(parent);
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(0);
+    rowLayout->addWidget(column, 1);
+    row->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    *outLayout = rowLayout;
+    return row;
+}
 
 NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 {
@@ -37,7 +54,8 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     heroLayout->addWidget(m_welcomeLabel, 0, Qt::AlignHCenter);
 
     // —— 输入区（视觉中心，略低于页心）：工作目录路径条在上、ChatMsgEdit 在下，同栏同宽 ——
-    // 栏宽由 resizeEvent 钳制为 min(800, 可用宽) 并居中；栏内子控件铺满栏宽，无需再单独居中
+    // 栏宽由 resizeEvent 钳 maximumWidth(min(800, 可用宽))，经居中行容器手动留白
+    // （修窗口收缩棘轮）；栏内子控件铺满栏宽，无需再单独居中
     m_inputDock = new QWidget(this);
     auto dockLayout = new QVBoxLayout(m_inputDock);
     dockLayout->setContentsMargins(0, 0, 0, 0);
@@ -74,7 +92,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     vMainLayout->addStretch(9);
     vMainLayout->addLayout(heroLayout);
     vMainLayout->addSpacing(36);
-    vMainLayout->addWidget(m_inputDock, 0, Qt::AlignHCenter);
+    vMainLayout->addWidget(makeCenteringRow(m_inputDock, this, &m_dockRowLayout), 0);
     vMainLayout->addStretch(10);
 
     // 页面级 QSS：bind 完成首载与 themeChanged 联动（BasePage 构造期不再虚调用，
@@ -85,9 +103,18 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 void NewChatPage::resizeEvent(QResizeEvent *event)
 {
     BasePage::resizeEvent(event);
-    if (m_inputDock)
-        m_inputDock->setFixedWidth(qMin(LayoutConst::kColumnMaxWidth,
-                                        width() - 2 * LayoutConst::kSideMargin));
+    if (!m_inputDock)
+        return;
+    // 栏宽只设 maximumWidth + 行容器手动居中边距（Ignored 行容器不上传最小宽，
+    // 断开旧 setFixedWidth 造成的窗口收缩棘轮）；与会话页 applyColumnWidth 同法
+    const int avail = qMax(0, width() - 2 * LayoutConst::kSideMargin);
+    const int columnWidth = qMin(LayoutConst::kColumnMaxWidth, avail);
+    // 两侧留白对称居中；奇数富余 1px 落在右侧，与旧 AlignHCenter 结算一致
+    const int pad = qMax(0, (avail - columnWidth) / 2);
+    const int padRight = qMax(0, avail - columnWidth - pad);
+    if (m_dockRowLayout)
+        m_dockRowLayout->setContentsMargins(pad, 0, padRight, 0);
+    m_inputDock->setMaximumWidth(columnWidth);
 }
 
 void NewChatPage::changeEvent(QEvent *event)

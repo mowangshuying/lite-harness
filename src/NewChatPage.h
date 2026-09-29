@@ -7,6 +7,7 @@ class WorkDirPathBar;
 class QLabel;
 class QEvent;
 class QShowEvent;
+class QHBoxLayout;
 
 class NewChatPage : public BasePage
 {
@@ -25,7 +26,8 @@ signals:
     void newChatRequested(const QString &text);
 
 protected:
-    // 维护输入区栏宽（min(800, 可用宽) 并水平居中，纯布局 stretch 无法表达该语义）
+    // 维护输入区栏宽（maximumWidth(min(800, 可用宽)) + 行容器手动居中边距；
+    // 只钳上限不钳下限，配合 Ignored 行容器断开窗口收缩棘轮）
     void resizeEvent(QResizeEvent *event) override;
 
     // i18n 第八轮：常驻页面，LanguageChange 时重译欢迎语（工作目录条文本由
@@ -41,6 +43,9 @@ private:
     void applyStoredWorkDir();
 
     ChatMsgEdit *m_chatMsgEdit = nullptr;
+    // 输入栏的居中行容器布局：栏宽靠 maximumWidth 钳制，两侧留白由 resizeEvent
+    // 手动写入边距（水平 Ignored 行容器，断开窗口收缩棘轮，与会话页同款机制）
+    QHBoxLayout *m_dockRowLayout = nullptr;
     QWidget *m_inputDock = nullptr;       // 工作目录路径条 + 输入框的同栏容器（英雄页视觉中心）
     WorkDirPathBar *m_workDirBar = nullptr; // 只读路径展示 + 浏览入口（省略/配色细节见组件注释）
     QLabel *m_welcomeLabel = nullptr;     // 英雄区问候语（重译面）

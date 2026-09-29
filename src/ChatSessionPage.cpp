@@ -26,6 +26,22 @@
 #include <QHash>
 #include <QPair>
 
+// 居中行容器：列 widget 以 stretch 1 铺满行，两侧留白由钳制函数手动写入布局边距，
+// 列宽靠 maximumWidth 封顶（宽窗定宽居中、窄窗吃满）。水平 Ignored 策略令本行
+// 不参与父布局 minimumSize 计算，断开「边距/列固有最小宽 → 上传窗口最小宽」的
+// 收缩棘轮（旧 setFixedWidth + AlignHCenter 会把推荐最小宽顶成窗口地板）
+static QWidget *makeCenteringRow(QWidget *column, QWidget *parent, QHBoxLayout **outLayout)
+{
+    auto *row = new QWidget(parent);
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(0);
+    rowLayout->addWidget(column, 1);
+    row->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    *outLayout = rowLayout;
+    return row;
+}
+
 // 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit）。
 // 纯搬移自原构造函数，摆位/参数/注释逐句不变；m_inputSection 入列提前到本段末尾——
 // 构造期无布局 activate/show，widget 几何不受 addWidget 时机影响，行为等价
@@ -47,8 +63,9 @@ void ChatSessionPage::buildLayout()
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
     m_scrollView->getMainLayout()->setContentsMargins(15, 15, 15, 15);
     m_scrollView->getMainLayout()->setSpacing(15);
-    // 消息列与底部输入组同栏宽（resizeEvent 钳制 min(800, 可用宽)）并居中成同一阅读列
-    vMainLayout->addWidget(m_scrollView, 1, Qt::AlignHCenter);
+    // 消息列与底部输入组同栏宽（applyColumnWidth 钳 max(800, 可用宽)），经居中行
+    // 容器手动留白成同一阅读列（不再 AlignHCenter+setFixedWidth，修窗口收缩棘轮）
+    vMainLayout->addWidget(makeCenteringRow(m_scrollView, leftColumn, &m_scrollRowLayout), 1);
 
     // 底部输入区：只读工作目录条在上、ChatMsgEdit 在下，同栏同宽（与消息列同列，
     // 栏宽由 resizeEvent 钳制并居中；栏内子控件铺满栏宽，摆位关系不变）
@@ -67,7 +84,7 @@ void ChatSessionPage::buildLayout()
     m_inputEdit = new ChatMsgEdit(m_inputSection);
     sectionLayout->addWidget(m_inputEdit);
 
-    vMainLayout->addWidget(m_inputSection, 0, Qt::AlignHCenter);
+    vMainLayout->addWidget(makeCenteringRow(m_inputSection, leftColumn, &m_inputRowLayout), 0);
 
     hRootLayout->addWidget(leftColumn, 1);
 
@@ -607,20 +624,28 @@ void ChatSessionPage::setSidebarVisible(bool visible)
     QTimer::singleShot(0, this, [this]() { applyColumnWidth(); });
 }
 
-// 消息列/输入组同栏宽钳制：min(800, 可用宽)，侧栏可见时扣除「宽+隙」整块
-// （隐藏时 QBoxLayout 自动剔除该列与 spacing，左列占满，无扣除）；含气泡宽度刷新，
-// resizeEvent 与 setSidebarVisible 共用
+// 消息列/输入组同栏宽钳制：列宽 = min(800, 可用宽)，侧栏可见时扣除「宽+隙」整块
+// （隐藏时 QBoxLayout 自动剔除该列与 spacing，左列占满，无扣除）。列宽只设
+// maximumWidth、居中留白手动写入行容器边距，配合 Ignored 行容器彻底断开窗口
+// 收缩棘轮；含气泡宽度刷新，resizeEvent 与 setSidebarVisible 共用
 void ChatSessionPage::applyColumnWidth()
 {
     const int sidebarReserve = (m_sidebar && !m_sidebar->isHidden())
         ? LayoutConst::kSidebarWidth + LayoutConst::kSidebarGap
         : 0;
-    const int columnWidth = qMin(LayoutConst::kColumnMaxWidth,
-                                 width() - 2 * LayoutConst::kSideMargin - sidebarReserve);
+    const int avail = qMax(0, width() - 2 * LayoutConst::kSideMargin - sidebarReserve);
+    const int columnWidth = qMin(LayoutConst::kColumnMaxWidth, avail);
+    // 两侧留白对称居中；奇数富余 1px 落在右侧，与旧 AlignHCenter 结算一致
+    const int pad = qMax(0, (avail - columnWidth) / 2);
+    const int padRight = qMax(0, avail - columnWidth - pad);
+    if (m_scrollRowLayout)
+        m_scrollRowLayout->setContentsMargins(pad, 0, padRight, 0);
+    if (m_inputRowLayout)
+        m_inputRowLayout->setContentsMargins(pad, 0, padRight, 0);
     if (m_scrollView)
-        m_scrollView->setFixedWidth(columnWidth);
+        m_scrollView->setMaximumWidth(columnWidth);
     if (m_inputSection)
-        m_inputSection->setFixedWidth(columnWidth);
+        m_inputSection->setMaximumWidth(columnWidth);
 
     if (!m_scrollView)
         return;

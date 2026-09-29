@@ -12,6 +12,7 @@ class PermissionCard;
 class WorkDirPathBar;
 class SessionSidebar;
 class QToolButton;
+class QHBoxLayout;
 
 class ChatSessionPage : public BasePage
 {
@@ -69,6 +70,10 @@ private:
 
 private:
     FluVScrollView *m_scrollView = nullptr;
+    // 消息列/输入组各自的居中行容器布局：列宽靠 maximumWidth 钳制，两侧留白由
+    // applyColumnWidth 手动写入边距（水平 Ignored 行容器，断开窗口收缩棘轮）
+    QHBoxLayout *m_scrollRowLayout = nullptr;
+    QHBoxLayout *m_inputRowLayout = nullptr;
     QWidget *m_inputSection = nullptr;      // 底部同栏容器：只读工作目录条(上) + 输入框(下)，宽上限与 ChatMsgEdit 同为 800
     WorkDirPathBar *m_workDirBar = nullptr; // 只读工作目录条（省略/ToolTip 兜底细节见组件；配色见 ChatSessionPage.qss）
     ChatMsgEdit *m_inputEdit = nullptr;
