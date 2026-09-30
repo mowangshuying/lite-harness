@@ -15,15 +15,14 @@
 - **后台 bash**：`run_in_background` 异步执行，结果以通知注入后续回合
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
 - **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
-- **模型选择**：下拉切换（清单见 `AgentConstants.h`），API 经环境变量配置
+- **模型选择**：下拉切换（清单见 `AgentConstants.h`），API 经设置页配置
 
-## 运行时配置（环境变量）
+## 运行时配置
 
-| 变量 | 用途 |
-| --- | --- |
-| `QOpenAiBaseUrl` | OpenAI 兼容 API 基地址 |
-| `QOpenAiToken` | API token |
-| `MODEL_ID` | 模型名（缺省用内置默认值） |
+- **模型服务**（设置页「模型服务」分组，落盘 exe 同目录 `settings.ini`）：
+  - `apiBaseUrl` — OpenAI 兼容 API 基地址（http/https）
+  - `apiToken` — API token（值区脱敏显示；明文存本机 ini）
+- **环境变量**：`MODEL_ID` — 模型名（缺省用内置默认值）
 
 ## 构建
 
