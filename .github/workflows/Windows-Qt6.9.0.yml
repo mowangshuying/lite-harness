@@ -1,9 +1,15 @@
 # 结构参考 3rdparty/FluentUI/.github/workflows/Windows-Qt6.9.0.yml（蓝本），按本仓实际裁剪：
-# - 本仓无测试/lint，CI 验收 = 干净环境全量 configure + build 成功（AGENTS.md 声明的验证方式）
+# - 本仓无测试/lint，CI 验收 = 干净环境全量 configure + Release build + CPack 出包成功
 # - Windows-only / MSVC 2022 x64 / Qt 6.9.0 单点，不铺版本矩阵
+# - tag（v*）推送时末尾步骤把 zip 上传为该 tag 的 GitHub Release（蓝本 New Release 同款分流）
 name: Windows-Qt6.9.0
 on:
   push:
+    # branches 必须与 tags 显式同写：官方语义「只定义 tags 时，未定义的 ref 类型不触发」，
+    # 漏写 branches 会静默丢掉分支验收流。paths 过滤只拦分支推送——官方原文
+    # "Path filters are not evaluated for pushes of tags"，tag 流不受下方清单拦截。
+    branches: ['main']
+    tags: ['v*']
     paths:
       - 'CMakeLists.txt'
       - 'LiteHarness.rc'
@@ -28,6 +34,9 @@ on:
 jobs:
   build:
     name: Build
+    # upload-release-action 上传 Release 资产所需；显式声明防仓库级设置收紧后静默 403
+    permissions:
+      contents: write
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -62,7 +71,7 @@ jobs:
       # 蓝本硬编码 D:\a\FluentUI\Qt\<ver>\<arch> 前缀路径；本仓改经 qmake -query 定位
       # （install-qt-action 会把 Qt bin 加入 PATH），不依赖 runner 盘符/目录布局，并以
       # lrelease 存在性做前置断言（qt_add_translations 构建期必需）。
-      - name: Msvc configure & build
+      - name: Msvc configure & build (Release)
         shell: pwsh
         run: |
           $prefix = (qmake -query QT_INSTALL_PREFIX).Trim()
@@ -70,5 +79,26 @@ jobs:
           if (-not (Test-Path (Join-Path $prefix 'bin\lrelease.exe'))) { throw "lrelease not found under $prefix (LinguistTools missing?)" }
           Write-Output "Qt prefix: $prefix (version $((qmake -query QT_VERSION).Trim()))"
           cmake -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_PREFIX_PATH=$prefix"
-          cmake --build build --config Debug --target lite-harness --parallel
+          cmake --build build --config Release --target lite-harness --parallel
           Get-Item build\bin\lite-harness.exe
+
+      # CPack ZIP（AGENTS.md「打包」节实证链）：--config 必带否则报 generator not specified；
+      # cpack 不触发编译，staging 取上一步 Release 产物 build/bin/lite-harness.exe。
+      - name: Package (CPack ZIP)
+        shell: pwsh
+        run: |
+          cpack --config build/CPackConfig.cmake -B build
+          Get-Item build\lite-harness-*-win64.zip
+
+      # 蓝本同款 tag 分流：分支/PR 推送跑到上一步即验收完成；tag 推送把 zip 传为该 tag 的
+      # Release（svenstaro 动作对不存在的 Release 自动创建）。file_glob 开启时资产名取
+      # zip basename（含版本号），免在 yml 硬编码版本、守住「版本号单源」。
+      - name: New Release
+        if: startsWith(github.event.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./build/lite-harness-*-win64.zip
+          file_glob: true
+          tag: ${{ github.ref }}
+          overwrite: true
