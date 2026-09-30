@@ -92,7 +92,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `TaskStore` | 任务图文件存储：一任务一 `.task/task_<hex8>.json`，每操作直读盘；6 个 `run_*` 纯文本进出 | `AgentConstants` |
 | `CronSchedulerManager` | 定时任务台账：cron 校验/匹配、到期队列、`scheduled_tasks.json` 持久化、两段式 at-least-once 交付；`QTimer` 1s 轮询不建线程 | 仅 QtCore |
 | `BackgroundTasksManager` | 后台 bash 任务台账：登记 / 存结果 / 渲染 `<task_notification>`，进程由宿主驱动 | `ToolNames` |
-| `SessionStore` | 全局索引 `<workDir>/.lite-harness/index.json` 读写 + 条目 upsert（`QSaveFile` 原子写）；纯静态 header-only（`SessionStore.cpp` 仅 4 行占位） | 仅 QtCore |
+| `SessionStore` | 全局索引 `<workDir>/.lite-harness/index.json` 读写 + 条目 upsert（`QSaveFile` 原子写）；纯静态 header-only（无 `.cpp`，方法全在类内定义即隐式 inline） | 仅 QtCore |
 
 ### L6 单源与设施
 
@@ -308,15 +308,11 @@ SubAgent::progressEmitted(turnNo, toolName, summary) → 直连 AgentLoop::subag
    `toolSummary` 口径。**这是有意为之的例外**，别据此开「UI 可以吃内核内部头」的先例。
 3. **`SettingsPage` 直改全局运行时配置**（`QOpenAi::setUrl/setToken`）：设置页 → 引擎的直连边，
    生效语义见 `SettingsPage.h` 注释。
-4. **`LiteHarness.cpp:10` 的 `#include "MessageBubbleWidget.h"` 是残留**：该文件内再无 `MessageBubble`
-   引用（已 grep 核实），可删。
-5. **`SessionStore.cpp` 只剩 4 行占位**：实现全在头里（header-only 纯静态）。要么并回头文件，
-   要么留作 TU 锚点，二选一别混着。
-6. **仍偏大的文件**（下一批可读性优化的候选，按体量排序）：`MemoryManager.cpp` 1116、
+4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序）：`MemoryManager.cpp` 1116、
    `MessageBubbleWidget.cpp` 836、`ChatSessionPage.cpp` 722、`TaskStore.cpp` 684、
    `QOpenAi.cpp` 668、`CompactManager.cpp` 659、`SettingsPage.cpp` 652、
    `CronSchedulerManager.cpp` 631。
-7. **无自动化测试**：`tests/` 不存在，`CMakeLists.txt` 无 `add_test`/`enable_testing`，CI 不跑测试。
+5. **无自动化测试**：`tests/` 不存在，`CMakeLists.txt` 无 `add_test`/`enable_testing`，CI 不跑测试。
    因此重构的验证手段只有「编译期等价 + 冒烟运行 + 移动代码逐字一致」，行为回归**不可证**。
    若要补，最小切口是给已无 GUI 依赖的纯函数（`AgentLoopDetail::toolSummary` / `parseToolCall` /
    `BashRunner::dangerWarning` / `isToolFailure`）建一个 `Qt6::Test` 单测目标。

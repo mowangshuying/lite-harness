@@ -7,7 +7,6 @@
 #include <QIcon>
 #include "NewChatPage.h"
 #include "ChatSessionPage.h"
-#include "MessageBubbleWidget.h"
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
