@@ -63,8 +63,6 @@ private:
     void applyColumnWidth();
     // 上下文占用快照 → 侧栏（剔除 system 后交 CompactManager::estimateChars 估算）
     void refreshContextUsage();
-    // 登记一次 write_file/edit_file 变更（path 走 toolSummary 的裸路径语义），交侧栏去重展示
-    void recordModifiedFile(const QString &toolName, const QString &path);
     // 首条用户消息派生会话标题（抄宿主 LiteHarness 规则）并同步侧栏；已有标题则 no-op
     void maybeCaptureSessionTitle(const QString &userText);
 

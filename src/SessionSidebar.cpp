@@ -252,12 +252,12 @@ private:
 
 namespace {
 constexpr int kPanelHMargin = 14;    // 面板左右内边距
-constexpr int kRowHeight = 24;       // TODO / 文件行高（比消息流 TodoCard 稍密）
+constexpr int kRowHeight = 24;       // TODO 行高（比消息流 TodoCard 稍密）
 constexpr int kMarkWidth = 16;       // 行首状态点宽
 constexpr int kRowHPadding = 20;     // 行左右留白 + 点距（8+8+6 的取整用途常量，估算可用文本宽）
 constexpr int kBodyHPadding = 4;     // 节体左右缘修正
 
-/// 生成一行「状态点 + 文本」：propName/propValue 决定 QSS 属性着色（status=… / kind=…），
+/// 生成一行「状态点 + 文本」：propName/propValue 决定 QSS 属性着色（如 status=…），
 /// 文本按 avail 宽度截断省略，tooltip 保留全文
 QWidget* makeRow(const char* propName, const QString& propValue,
                  const QString& markText, const QString& fullText,
@@ -333,7 +333,7 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     separator->setFixedHeight(1);
     root->addWidget(separator);
 
-    // ---- 滚动体：信息节（内容可超屏：长 TODO / 大量变更文件） ----
+    // ---- 滚动体：信息节（内容可超屏：长 TODO 清单） ----
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName(QStringLiteral("sbScroll"));
     scroll->setWidgetResizable(true);
@@ -366,14 +366,6 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_todoEmpty->setObjectName(QStringLiteral("sbEmptyHint"));
     m_todoList->addWidget(m_todoEmpty);
     iv->addWidget(m_todoSection);
-
-    // ④ 变更文件（同折叠策略）
-    m_fileSection = new SidebarSection(tr("变更文件"), inner);
-    m_fileList = m_fileSection->body();
-    m_fileEmpty = new QLabel(tr("暂无变更"), inner);
-    m_fileEmpty->setObjectName(QStringLiteral("sbEmptyHint"));
-    m_fileList->addWidget(m_fileEmpty);
-    iv->addWidget(m_fileSection);
 
     iv->addStretch();
     scroll->setWidget(inner);
@@ -475,56 +467,6 @@ void SessionSidebar::refreshTodoSummary(qsizetype total, qsizetype done, qsizety
                                               : parts.join(QStringLiteral(" · ")));
 }
 
-void SessionSidebar::addModifiedFile(const QString& kind, const QString& path) {
-    if (path.isEmpty()) return;
-
-    // 去重：已有同名条目 → 就地更新 kind 着色，不挪位（保持首次出现的上下文顺序）
-    const int avail = bodyTextAvail(m_fileSection->width(), width());
-    for (int i = 0; i < m_fileList->count(); ++i) {
-        QLayoutItem* item = m_fileList->itemAt(i);
-        QWidget* w = item ? item->widget() : nullptr;
-        if (w && w->property("path").toString() == path) {
-            w->setProperty("kind", kind);
-            if (QLabel* mark = w->findChild<QLabel*>(QStringLiteral("sbMark")))
-                mark->setText(kind == QLatin1String("write") ? QStringLiteral("+") : QStringLiteral("~"));
-            w->style()->unpolish(w);
-            w->style()->polish(w);
-            return;
-        }
-    }
-
-    // 新条目置顶（最新改动最先看到）
-    auto* row = makeRow("kind", kind,
-                        kind == QLatin1String("write") ? QStringLiteral("+") : QStringLiteral("~"),
-                        path, avail, Qt::ElideMiddle);
-    row->setProperty("path", path);
-    m_fileEmpty->setVisible(false);
-    m_fileList->insertWidget(0, row);
-    ++m_fileCount;
-    m_fileSection->setCount(QString::number(m_fileCount));
-    m_fileSection->setSummary(tr("%1 个文件").arg(m_fileCount));
-    const bool collapsible = m_fileCount > 2;
-    if (!collapsible && !m_fileSection->isExpanded())
-        m_fileSection->setExpanded(true, false);
-    m_fileSection->setCollapsible(collapsible);
-}
-
-void SessionSidebar::clearModifiedFiles() {
-    while (QLayoutItem* item = m_fileList->takeAt(0)) {
-        QWidget* w = item->widget();
-        if (w == m_fileEmpty) { delete item; continue; }
-        if (w) { w->hide(); w->deleteLater(); }
-        delete item;
-    }
-    m_fileCount = 0;
-    m_fileList->addWidget(m_fileEmpty);
-    m_fileEmpty->show();
-    m_fileSection->setCount(QString());
-    m_fileSection->setSummary(QString());
-    m_fileSection->setCollapsible(false);
-    m_fileSection->setExpanded(true, false);
-}
-
 void SessionSidebar::applyRunState() {
     // waiting 优先：审批挂起时无论 running 与否都亮警示态
     if (m_permPending) {
@@ -542,5 +484,4 @@ void SessionSidebar::refreshIcons() {
     m_contextSection->refreshArrow();
     m_statusSection->refreshArrow();
     m_todoSection->refreshArrow();
-    m_fileSection->refreshArrow();
 }

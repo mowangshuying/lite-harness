@@ -20,7 +20,6 @@ class SidebarSection;
  *   上下文占用（同源压缩管线的字符估算 ÷ 可设置上限）
  *   运行状态灯（空闲 / 运行中 / 等待审批，waiting 优先）
  *   任务清单（todoUpdated 全量快照；条目 >2 时可手风琴折叠，折叠标题带汇总）
- *   变更文件（write_file/edit_file 台账，去重最新在前；同折叠策略）
  *   页脚（工作目录 + 版本号——运行时 QCoreApplication::applicationVersion()，禁硬编码）
  *
  * 设计约束：
@@ -48,11 +47,6 @@ public:
     void setPermissionPending(bool pending);
     /// 任务清单全量快照（[{content, status: pending|in_progress|completed}]）
     void setTodos(const QJsonArray& todos);
-    /// 变更文件登记（kind: "write" 新建 / "edit" 编辑；去重，最新置顶）
-    void addModifiedFile(const QString& kind, const QString& path);
-    /// 清空变更文件台账（会话数据整体重载时用）
-    void clearModifiedFiles();
-
 signals:
     /// 头部收起钮被点击（显隐偏好与恢复钮由 ChatSessionPage 管）
     void hideRequested();
@@ -73,11 +67,8 @@ private:
     SidebarSection*   m_statusSection = nullptr;
     StatusRow*        m_statusRow = nullptr;
     SidebarSection*   m_todoSection = nullptr;
-    SidebarSection*   m_fileSection = nullptr;
     QVBoxLayout*      m_todoList = nullptr;     // 任务清单行容器
-    QVBoxLayout*      m_fileList = nullptr;     // 变更文件行容器
     QLabel*           m_todoEmpty = nullptr;    // 「暂无任务」占位
-    QLabel*           m_fileEmpty = nullptr;    // 「暂无变更」占位
     QLabel*           m_footerDir = nullptr;
     QLabel*           m_footerVersion = nullptr;
 
@@ -88,5 +79,4 @@ private:
     bool              m_permPending = false;
 
     int               m_todoCount = 0;          // 当前任务条数（折叠策略判定）
-    int               m_fileCount = 0;
 };

@@ -136,8 +136,6 @@
 #sbRow[status="active"] #sbText { color: rgb(60, 60, 60); font-weight: bold; }
 #sbRow[status="done"] #sbMark { color: rgb(16, 124, 16); }
 #sbRow[status="done"] #sbText { color: rgb(120, 120, 120); }
-#sbRow[kind="write"] #sbMark { color: rgb(16, 124, 16); }
-#sbRow[kind="edit"] #sbMark { color: rgb(0, 90, 158); }
 #sbEmptyHint {
     color: rgb(153, 153, 153);
     font: italic 12px "Segoe UI";

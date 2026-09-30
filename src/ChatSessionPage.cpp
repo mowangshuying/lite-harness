@@ -238,10 +238,6 @@ void ChatSessionPage::wireAgent()
     // ok = AgentLoop::isToolFailure 取反的成败判定（B1 单源，UI 不再嗅探输出）
     connect(m_agentLoop, &AgentLoop::toolOutputReady, this,
             [this](const QString &toolName, const QString &summary, const QString &output, bool ok) {
-                // 侧栏变更文件台账：write/edit 的 summary 即裸路径串（AgentLoop::toolSummary 契约），
-                // 放在所有早退分支之前保证不漏记；失败/被拒的写入不记账（B1 联动修正）
-                if (ok && (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file")))
-                    recordModifiedFile(toolName, summary);
                 if (m_currentBubble)
                 {
                     m_currentBubble->appendToolExecution(toolName, summary, output, ok);
@@ -549,11 +545,8 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
             const QJsonObject args = AgentLoopDetail::parseToolArgsText(argsStr);
             const QString summary = AgentLoopDetail::toolSummary(toolName, args);
             const QString content = msg.value(QStringLiteral("content")).toString();
-            // 回放成败与实时链路共享单源判定（AgentLoop::isToolFailure）；
-            // 失败/被拒的写入不入侧栏台账（与实时口径一致）
+            // 回放成败与实时链路共享单源判定（AgentLoop::isToolFailure）
             const bool ok = !AgentLoop::isToolFailure(content);
-            if (ok && (toolName == QLatin1String("write_file") || toolName == QLatin1String("edit_file")))
-                recordModifiedFile(toolName, summary);
             m_currentBubble->appendToolExecution(toolName, summary, content, ok);
             scrollToBottom();
             continue;
@@ -691,17 +684,6 @@ void ChatSessionPage::refreshContextUsage()
     }
     m_sidebar->setContextUsage(CompactManager::estimateChars(msgs),
                                AgentConst::contextCharLimitValue());
-}
-
-// write_file/edit_file 变更登记（path 即 toolSummary 的裸路径语义），去重/排序由侧栏消化
-void ChatSessionPage::recordModifiedFile(const QString &toolName, const QString &path)
-{
-    if (path.isEmpty() || !m_sidebar)
-        return;
-    m_sidebar->addModifiedFile(toolName == QLatin1String("write_file")
-            ? QStringLiteral("write")
-            : QStringLiteral("edit"),
-        path);
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，
