@@ -1,6 +1,7 @@
 #include "QOpenAi.h"
 
 #include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）
+#include "AppSettings.h"    // settings.ini 单源（apiBaseUrl / apiToken 两个键）
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -155,7 +156,7 @@ void ChatStream::sendRequest()
     {
         // 不在此处同步 emit（调用方此刻尚未连接信号），延迟一拍让 connect 先完成
         QTimer::singleShot(0, this, [this] {
-            emit error(tr("未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。"));
+            emit error(tr("未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。"));
         });
         return;
     }
@@ -654,13 +655,14 @@ bool verbose()
     return client().verbose;
 }
 
-void initByEnv()
+void initFromSettings()
 {
     OpenAiClient &c = client();
-    setUrl(QString::fromUtf8(qgetenv("QOpenAiBaseUrl")));
-    c.token = QString::fromUtf8(qgetenv("QOpenAiToken"));
+    const QSettings settings = AppSettings::ini();
+    setUrl(settings.value(QStringLiteral("apiBaseUrl")).toString());
+    c.token = settings.value(QStringLiteral("apiToken")).toString();
     if (c.url.isEmpty() || c.token.isEmpty())
-        qWarning() << "QOpenAi: 环境变量 QOpenAiBaseUrl / QOpenAiToken 未配置或为空。";
+        qWarning() << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
 }
 
 } // namespace QOpenAi

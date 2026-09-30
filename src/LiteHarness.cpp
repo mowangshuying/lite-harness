@@ -57,7 +57,7 @@ void appendOwnSheetOverride(QWidget *w, const char *marker, const QString &chunk
 
 LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 {
-    QOpenAi::initByEnv();
+    QOpenAi::initFromSettings();
     initUi();
     initNavView();
     setupConnections();

@@ -118,7 +118,7 @@ CategoryChat &chat();
 // legacy 补全入口（/completions）
 CategoryCompletion &completion();
 
-// ---- 运行时配置（默认值来自 initByEnv，可在运行期覆盖）----
+// ---- 运行时配置（默认值来自 initFromSettings，可在运行期覆盖）----
 
 // 设置 / 获取接口基础 URL（如 https://api.example.com/v1，不含端点路径）
 void setUrl(const QString &url);
@@ -140,7 +140,7 @@ int timeout();
 void setVerbose(bool enabled);
 bool verbose();
 
-// 初始化：从环境变量 QOpenAiBaseUrl / QOpenAiToken 读取配置
-void initByEnv();
+// 初始化：从 settings.ini 键 apiBaseUrl / apiToken 读取配置
+void initFromSettings();
 
 } // namespace QOpenAi

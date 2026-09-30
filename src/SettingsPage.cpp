@@ -2,6 +2,7 @@
 #include "AgentConstants.h"
 #include "FluentInputDialog.h"
 #include "I18n.h"
+#include "QOpenAi.h" // 写入 ini 后即时覆盖全局配置（setUrl / setToken）
 #include "ThemeAware.h"
 #include <FluUtils.h>
 #include <FluMessageBox.h>
@@ -12,6 +13,7 @@
 #include "AppSettings.h"
 #include <QFileInfo>
 #include <QFileDialog>
+#include <QUrl>
 #include <FluVScrollView.h>
 #include <FluLabel.h>
 #include <FluSettingsVersionBox.h>
@@ -37,6 +39,52 @@ void writeDefaultWorkDir(const QString &value)
 QString workDirDisplayText(const QString &stored)
 {
     return stored.isEmpty() ? QObject::tr("未设置（使用进程当前目录）") : stored;
+}
+
+// 模型服务：settings.ini 键 apiBaseUrl / apiToken（QOpenAi::initFromSettings 读同源，
+// 设置页写入后立即 QOpenAi::setUrl/setToken 覆盖全局 client，无需重启）。
+// token 明文存 ini 属用户裁决：exe 同目录本机文件，属主可见可改（原环境变量方案已废弃）。
+const QString kApiBaseUrlKey = QStringLiteral("apiBaseUrl");
+const QString kApiTokenKey = QStringLiteral("apiToken");
+
+QString readApiBaseUrl()
+{
+    return AppSettings::ini().value(kApiBaseUrlKey).toString();
+}
+
+void writeApiBaseUrl(const QString &value)
+{
+    AppSettings::ini().setValue(kApiBaseUrlKey, value); // 空串=清除，读取侧 isEmpty 判缺省
+}
+
+QString readApiToken()
+{
+    return AppSettings::ini().value(kApiTokenKey).toString();
+}
+
+void writeApiToken(const QString &value)
+{
+    AppSettings::ini().setValue(kApiTokenKey, value);
+}
+
+// Base URL 合法性：须为绝对 URL 且 scheme 为 http/https（QUrl 对裸主机名给出空 scheme，
+// 天然落回拒绝）；比对 QOpenAi 端点拼接方式，无 scheme 的值写进去只会请求必失败
+bool isHttpBaseUrl(const QString &input)
+{
+    const QUrl url(input);
+    if (!url.isValid())
+        return false;
+    const QString scheme = url.scheme().toLower();
+    return scheme == QLatin1String("http") || scheme == QLatin1String("https");
+}
+
+// API Key 值区脱敏摘要：长值取前 4 + 星 + 后 4；短值（<=8）一律固定四星——
+// 否则前后各 4 会覆盖整个 Key，等于把明文摆上界面
+QString maskedApiToken(const QString &stored)
+{
+    if (stored.length() <= 8)
+        return QStringLiteral("****");
+    return stored.left(4) + QStringLiteral("****") + stored.right(4);
 }
 
 } // namespace
@@ -256,6 +304,147 @@ void MaxRoundsSettingCard::promptEdit()
     updateValue();
 }
 
+// 服务地址设置卡：WorkDirSettingCard 同款外观与操作行（图标+标题+说明，右侧「值 + 修改 + 清除」）。
+// 编辑走 FluentInputDialog 单行输入（parent 传主窗口保遮罩铺满），预填存量值；
+// 校验不过弹 FluMessageBox 拒写，空串按清除处理。
+ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("服务地址"), tr("OpenAI 兼容 API 的基础 URL（如 https://api.example.com/v1）。"));
+    setIcon(FluAwesomeType::Link); // 端点链接语义（Globe 已被语言卡占用）
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new FluLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText); // URL 按纯文本处理，避免被当作富文本解析
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+    m_clearButton = new FluPushButton(tr("清除"), this);
+    m_clearButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    row->addWidget(m_clearButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+    connect(m_clearButton, &QPushButton::clicked, this, [this]() {
+        writeApiBaseUrl(QString());
+        QOpenAi::setUrl(QString()); // 即时生效：下一回合请求走空配置报错路径
+        updateValue();
+    });
+}
+
+void ApiUrlSettingCard::retranslate()
+{
+    setTitleInfo(tr("服务地址"), tr("OpenAI 兼容 API 的基础 URL（如 https://api.example.com/v1）。"));
+    m_modifyButton->setText(tr("修改"));
+    m_clearButton->setText(tr("清除"));
+    updateValue();
+}
+
+void ApiUrlSettingCard::updateValue()
+{
+    const QString stored = readApiBaseUrl();
+    m_valueLabel->setText(stored.isEmpty() ? tr("未设置") : stored);
+    m_valueLabel->setToolTip(stored);
+}
+
+void ApiUrlSettingCard::promptEdit()
+{
+    const auto [input, accepted] = FluentInputDialog::getInputText(
+        window(), tr("设置服务地址"), tr("以 /v1 等版本路径结尾，不含补全端点。"),
+        readApiBaseUrl());
+    if (!accepted)
+        return; // 取消：保持原值
+    const QString cleaned = input.trimmed();
+    if (!cleaned.isEmpty() && !isHttpBaseUrl(cleaned))
+    {
+        // 非法 URL 拒绝并提示，不落盘（原值继续生效）
+        FluMessageBox(tr("无效地址"),
+                      tr("请输入以 http:// 或 https:// 开头的完整地址。"),
+                      window())
+            .exec();
+        return;
+    }
+    writeApiBaseUrl(cleaned);
+    QOpenAi::setUrl(cleaned); // 即时生效，无需重启
+    updateValue();
+}
+
+// API Key 设置卡：结构与 URL 卡一致，差异全在「机密值」处理——值区只显脱敏摘要、
+// tooltip 不带明文；编辑框预填存量明文（本机 ini 属主可见可改，属用户裁决），
+// 提示行明确保存即覆盖旧值。
+ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("API Key"), tr("Bearer Token，明文保存于 exe 同目录 settings.ini。"));
+    setIcon(FluAwesomeType::Lock); // 凭据语义（枚举表无 Key 项）
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new FluLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText);
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+    m_clearButton = new FluPushButton(tr("清除"), this);
+    m_clearButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    row->addWidget(m_clearButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+    connect(m_clearButton, &QPushButton::clicked, this, [this]() {
+        writeApiToken(QString());
+        QOpenAi::setToken(QString()); // 即时生效：下一回合请求走空配置报错路径
+        updateValue();
+    });
+}
+
+void ApiTokenSettingCard::retranslate()
+{
+    setTitleInfo(tr("API Key"), tr("Bearer Token，明文保存于 exe 同目录 settings.ini。"));
+    m_modifyButton->setText(tr("修改"));
+    m_clearButton->setText(tr("清除"));
+    updateValue();
+}
+
+void ApiTokenSettingCard::updateValue()
+{
+    const QString stored = readApiToken();
+    // 明文绝不上屏：值区只给摘要，tooltip 只给状态（不复制完整 key 到悬停提示）
+    m_valueLabel->setText(stored.isEmpty() ? tr("未设置") : maskedApiToken(stored));
+    m_valueLabel->setToolTip(stored.isEmpty() ? QString() : tr("已保存"));
+}
+
+void ApiTokenSettingCard::promptEdit()
+{
+    const auto [input, accepted] = FluentInputDialog::getInputText(
+        window(), tr("设置 API Key"), tr("留空表示清除；保存将覆盖已配置的 Key。"), readApiToken());
+    if (!accepted)
+        return; // 取消：保持原值
+    const QString cleaned = input.trimmed();
+    writeApiToken(cleaned);
+    QOpenAi::setToken(cleaned); // 即时生效（空串=清除），无需重启
+    updateValue();
+}
+
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
@@ -365,6 +554,23 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
+    /// model service（LLM 服务地址 / API Key 可设置，取代原环境变量；写 ini 后即时覆盖全局配置）
+    m_modelLabel = new FluLabel;
+    m_modelLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_modelLabel->setText(tr("模型服务"));
+    scrollView->getMainLayout()->addWidget(m_modelLabel, 0, Qt::AlignTop);
+
+    // 同组两卡紧邻不加 addSpacing：与「外观与行为」组（主题盒 + 语言盒）既有排布同款
+    m_apiUrlCard = new ApiUrlSettingCard;
+    scrollView->getMainLayout()->addWidget(m_apiUrlCard, 0, Qt::AlignTop);
+
+    m_apiTokenCard = new ApiTokenSettingCard;
+    scrollView->getMainLayout()->addWidget(m_apiTokenCard, 0, Qt::AlignTop);
+
+
+    //// add spacing
+    scrollView->getMainLayout()->addSpacing(20);
+
     /// about
     m_aboutLabel = new FluLabel;
     m_aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -431,6 +637,12 @@ void SettingsPage::retranslateUi()
     m_maxRoundsLabel->setText(tr("最大轮次"));
     if (m_maxRoundsCard)
         m_maxRoundsCard->retranslate();
+
+    m_modelLabel->setText(tr("模型服务"));
+    if (m_apiUrlCard)
+        m_apiUrlCard->retranslate();
+    if (m_apiTokenCard)
+        m_apiTokenCard->retranslate();
 
     m_aboutLabel->setText(tr("关于"));
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));

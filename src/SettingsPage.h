@@ -74,6 +74,50 @@ private:
     FluPushButton* m_modifyButton = nullptr;
 };
 
+// 服务地址设置卡（模型服务组）：WorkDirSettingCard 同款结构——值区 + 「修改 + 清除」操作行，
+// 编辑弹 FluentInputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
+// 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
+// 生效语义：写 settings.ini 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
+// 值区明文展示（URL 非机密）。
+// Q_OBJECT 理由同前三卡（tr 上下文与 lupdate 提取词法类名对齐）。
+class ApiUrlSettingCard : public FluSettingsSelectBox
+{
+    Q_OBJECT
+public:
+    explicit ApiUrlSettingCard(QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void updateValue();
+    void promptEdit();
+
+    QLabel* m_valueLabel = nullptr;
+    FluPushButton* m_modifyButton = nullptr;
+    FluPushButton* m_clearButton = nullptr;
+};
+
+// API Key 设置卡（模型服务组）：与 ApiUrlSettingCard 同结构，但值区**永不显示明文**——
+// 长值只展示前 4 + 星 + 后 4 的脱敏摘要（短值固定四星），tooltip 只提示「已保存」。
+// 编辑框预填当前存量明文（本机 settings.ini 属主可见可改，属用户裁决），空串=清除。
+// 生效语义：写 settings.ini 键 apiToken 后立即 QOpenAi::setToken()，下一回合请求即用新值。
+class ApiTokenSettingCard : public FluSettingsSelectBox
+{
+    Q_OBJECT
+public:
+    explicit ApiTokenSettingCard(QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void updateValue();
+    void promptEdit();
+
+    QLabel* m_valueLabel = nullptr;
+    FluPushButton* m_modifyButton = nullptr;
+    FluPushButton* m_clearButton = nullptr;
+};
+
 class SettingsPage : public BasePage
 {
     Q_OBJECT
@@ -98,6 +142,9 @@ private:
     ContextLimitSettingCard* m_contextCard = nullptr;
     FluLabel* m_maxRoundsLabel = nullptr;
     MaxRoundsSettingCard* m_maxRoundsCard = nullptr;
+    FluLabel* m_modelLabel = nullptr;
+    ApiUrlSettingCard* m_apiUrlCard = nullptr;
+    ApiTokenSettingCard* m_apiTokenCard = nullptr;
     FluLabel* m_aboutLabel = nullptr;
     FluSettingsVersionBox* m_versionBox = nullptr;
     FluLabel* m_infoLabel = nullptr;

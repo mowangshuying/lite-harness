@@ -51,6 +51,105 @@
     </message>
 </context>
 <context>
+    <name>ApiTokenSettingCard</name>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="388"/>
+        <location filename="../src/SettingsPage.cpp" line="422"/>
+        <source>API Key</source>
+        <translation>API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="388"/>
+        <location filename="../src/SettingsPage.cpp" line="422"/>
+        <source>Bearer Token，明文保存于 exe 同目录 settings.ini。</source>
+        <translation>Bearer token, saved in plain text in settings.ini next to the executable.</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="397"/>
+        <location filename="../src/SettingsPage.cpp" line="423"/>
+        <source>修改</source>
+        <translation>Change</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="399"/>
+        <location filename="../src/SettingsPage.cpp" line="424"/>
+        <source>清除</source>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="432"/>
+        <source>未设置</source>
+        <translation>Not set</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="433"/>
+        <source>已保存</source>
+        <translation>Saved</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="439"/>
+        <source>设置 API Key</source>
+        <translation>Set API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="439"/>
+        <source>留空表示清除；保存将覆盖已配置的 Key。</source>
+        <translation>Leave empty to clear; saving overwrites the configured key.</translation>
+    </message>
+</context>
+<context>
+    <name>ApiUrlSettingCard</name>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="313"/>
+        <location filename="../src/SettingsPage.cpp" line="347"/>
+        <source>服务地址</source>
+        <translation>Base URL</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="313"/>
+        <location filename="../src/SettingsPage.cpp" line="347"/>
+        <source>OpenAI 兼容 API 的基础 URL（如 https://api.example.com/v1）。</source>
+        <translation>Base URL of an OpenAI-compatible API (for example https://api.example.com/v1).</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="322"/>
+        <location filename="../src/SettingsPage.cpp" line="348"/>
+        <source>修改</source>
+        <translation>Change</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="324"/>
+        <location filename="../src/SettingsPage.cpp" line="349"/>
+        <source>清除</source>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="356"/>
+        <source>未设置</source>
+        <translation>Not set</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="363"/>
+        <source>设置服务地址</source>
+        <translation>Set Base URL</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="363"/>
+        <source>以 /v1 等版本路径结尾，不含补全端点。</source>
+        <translation>End with a version path such as /v1; do not include the completion endpoint.</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="371"/>
+        <source>无效地址</source>
+        <translation>Invalid Address</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="372"/>
+        <source>请输入以 http:// 或 https:// 开头的完整地址。</source>
+        <translation>Please enter a full address starting with http:// or https://.</translation>
+    </message>
+</context>
+<context>
     <name>ChatMsgEdit</name>
     <message>
         <location filename="../src/ChatMsgEdit.cpp" line="53"/>
@@ -426,9 +525,9 @@ Output:
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="158"/>
-        <source>未配置 QOpenAiBaseUrl/QOpenAiToken 环境变量。</source>
-        <translation>QOpenAiBaseUrl/QOpenAiToken environment variables are not configured.</translation>
+        <location filename="../src/QOpenAi.cpp" line="159"/>
+        <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
+        <translation>No model service base URL or API key configured. Fill them in under Model Service on the Settings page.</translation>
     </message>
     <message>
         <location filename="../src/QOpenAi.cpp" line="260"/>
@@ -631,6 +730,12 @@ Output:
         <location filename="../src/SettingsPage.cpp" line="431"/>
         <source>最大轮次</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="560"/>
+        <location filename="../src/SettingsPage.cpp" line="641"/>
+        <source>模型服务</source>
+        <translation>Model Service</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="371"/>
