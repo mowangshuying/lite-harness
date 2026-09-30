@@ -11,6 +11,7 @@
 #include "AppSettings.h"
 #include "ChatMsgEdit.h"
 #include "AgentLoop.h"
+#include "AgentLoopInternal.h"
 #include "AgentConstants.h"
 #include "CompactManager.h"
 #include "ToolBlock.h"
@@ -545,9 +546,8 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
             const QString toolName = it.value().first;
             const QString argsStr = it.value().second;
             pendingToolCalls.erase(it);
-            const QJsonObject args =
-                QJsonDocument::fromJson(argsStr.toUtf8()).object();
-            const QString summary = AgentLoop::toolSummaryOf(toolName, args);
+            const QJsonObject args = AgentLoopDetail::parseToolArgsText(argsStr);
+            const QString summary = AgentLoopDetail::toolSummary(toolName, args);
             const QString content = msg.value(QStringLiteral("content")).toString();
             // 回放成败与实时链路共享单源判定（AgentLoop::isToolFailure）；
             // 失败/被拒的写入不入侧栏台账（与实时口径一致）

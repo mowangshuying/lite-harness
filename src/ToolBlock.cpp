@@ -299,7 +299,7 @@ void ToolBlock::startToolLive(const QString &toolName, const QString &summary)
     m_liveDots = 0;
 
     // 身份可见形态与终态卡同款（bash $ / 其余等宽标签 + 类别着色）——toolStarted
-    // 已带 toolSummaryOf 同源摘要，头部即展示「哪个工具 + 关键参数」的进行态版本；
+    // 已带 AgentLoopDetail::toolSummary 同源摘要，头部即展示「哪个工具 + 关键参数」的进行态版本；
     // 成败字形位隐藏（结果尚未产生）
     m_toolName = toolName;
     m_summary = summary;

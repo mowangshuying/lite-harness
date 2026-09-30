@@ -2,6 +2,7 @@
 
 #include "QOpenAi.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
+#include "AgentLoopInternal.h"
 #include "AgentConstants.h" // 模型清单/max_tokens 单源（bash 超时与截断已随执行链收敛到 BashRunner）
 #include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与主循环单源共用
 
@@ -199,27 +200,17 @@ void SubAgent::runNextTool()
 
 void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
 {
-    // 解析工具名与参数（arguments 为流式拼装出的 JSON 字符串）。
-    // 解析失败不再静默变空对象（与主循环 AgentLoop::executeTool 同纪律）：直接以错误文本
-    // 回填模型并携带原始参数前 100 字符；空串/纯空白参数维持旧语义视作空对象。
-    const QJsonObject function = toolCall.value(QStringLiteral("function")).toObject();
-    const QString toolName = function.value(QStringLiteral("name")).toString();
-    const QString argsText = function.value(QStringLiteral("arguments")).toString();
-    QJsonObject args;
-    if (!argsText.trimmed().isEmpty())
+    // 解析工具名与参数：与主循环共用 AgentLoopDetail::parseToolCall（错误文案同源），非法
+    // arguments 直接以错误文本回填模型；空/纯空白参数视作空对象。
+    const AgentLoopDetail::ToolCallView call = AgentLoopDetail::parseToolCall(toolCall);
+    const QString toolName = call.name;
+    const QJsonObject args = call.args;
+    if (!call.ok())
     {
-        QJsonParseError parseErr{};
-        const QJsonDocument argsDoc = QJsonDocument::fromJson(argsText.toUtf8(), &parseErr);
-        if (!argsDoc.isObject())
-        {
-            const QString output = QStringLiteral("Error: invalid tool arguments JSON (%1): %2")
-                                       .arg(parseErr.errorString(), argsText.left(100));
-            onToolFinished(toolCall, output);
-            return;
-        }
-        args = argsDoc.object();
+        onToolFinished(toolCall, call.errorText);
+        return;
     }
-    const QString summary = AgentLoop::toolSummaryOf(toolName, args);
+    const QString summary = AgentLoopDetail::toolSummary(toolName, args);
 
     // PreToolUse 钩子链（共用宿主注册表，含 s03 权限门与日志钩子）。返回协议与主循环一致：
     // 1) "ASK:" 前缀 → 需询问：暂停子队列（宿主仍在等 task 回调，整条链冻结），
@@ -228,12 +219,12 @@ void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
     const QString gate = m_host->triggerPreToolUseHooks(toolCall, permissionGranted);
     if (!gate.isEmpty())
     {
-        if (gate.startsWith(AgentLoop::askPrefixOf()))
+        if (gate.startsWith(AgentLoopDetail::askPrefix()))
         {
             m_awaitingPermission = true;
             m_pendingPermissionCall = toolCall;
             emit permissionRequired(toolName, summary,
-                                    gate.mid(AgentLoop::askPrefixOf().size()));
+                                    gate.mid(AgentLoopDetail::askPrefix().size()));
             return; // 队列暂停：不回填、不请求，等宿主把裁决路由进 resolvePermission()
         }
         onToolFinished(toolCall, gate);
@@ -272,21 +263,15 @@ void SubAgent::onToolFinished(const QJsonObject &toolCall, const QString &output
         return;
 
     // 实时进度透传（六路收口的唯一汇流点，取消卫兵之后）：宿主直连转发 subagentProgress
-    // 驱动 UI task 卡进度行。名称/摘要从 toolCall 就地重算——arguments 是小 JSON 串，
-    // 重算开销可忽略，免为进度信号扩六处调用签名；参数非法路径 parse 失败摘要留空。
+    // 驱动 UI task 卡进度行。名称/摘要从 toolCall 就地重算（arguments 是小 JSON 串，重算
+    // 开销可忽略，免为进度信号扩六处调用签名）；参数非法路径摘要留空。
     // turnNo=m_turns：工具由第 N 次请求产出，下一次 ++ 在全队收口后，恒为所属轮
     {
-        const QJsonObject fn = toolCall.value(QStringLiteral("function")).toObject();
-        const QString toolName = fn.value(QStringLiteral("name")).toString();
-        QString summary;
-        const QString arguments = fn.value(QStringLiteral("arguments")).toString();
-        if (!arguments.trimmed().isEmpty())
-        {
-            const QJsonDocument parsed = QJsonDocument::fromJson(arguments.toUtf8());
-            if (parsed.isObject())
-                summary = AgentLoop::toolSummaryOf(toolName, parsed.object());
-        }
-        emit progressEmitted(m_turns, toolName, summary);
+        const AgentLoopDetail::ToolCallView call = AgentLoopDetail::parseToolCall(toolCall);
+        const QString summary = call.ok()
+            ? AgentLoopDetail::toolSummary(call.name, call.args)
+            : QString();
+        emit progressEmitted(m_turns, call.name, summary);
     }
 
     // 黑盒收口：只回填 tool 结果，不发 toolOutputReady——task 对外可见性由宿主收口一次
@@ -328,9 +313,9 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
 {
     const QString command = args.value(QStringLiteral("command")).toString();
 
-    // bash 内部危险黑名单（lcc fddb23e G4 单源：与权限门 DENY_LIST 共用宿主 bashDenyList；
+    // bash 内部危险黑名单（lcc fddb23e G4 单源：与权限门 DENY_LIST 共用 AgentLoopDetail::bashDenyList；
     // 清单与文案与主循环逐字一致，判定/文案实现亦单源于 BashRunner::dangerWarning）
-    const QString danger = BashRunner::dangerWarning(command, AgentLoop::bashDenyList());
+    const QString danger = BashRunner::dangerWarning(command, AgentLoopDetail::bashDenyList());
     if (!danger.isEmpty())
     {
         m_host->triggerPostToolUseHooks(toolCall, danger);

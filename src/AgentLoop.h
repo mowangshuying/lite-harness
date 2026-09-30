@@ -135,8 +135,8 @@ private:
     // task 子代理需要复用本类的钩子注册表、权限门静态检查、工具定义与 handler 表构建器，
     // 以及 ToolHandler 嵌套类型（对外部接口零暴露，仅友元可见）
     friend class SubAgent;
-    // ChatSessionPage 恢复历史时需按实时链路一致口径渲染工具折叠块，复用私有静态
-    // toolSummaryOf（与 SubAgent 同走友元通道，不为此扩大公开 API 面）
+    // ChatSessionPage 恢复历史时需按实时链路一致口径渲染工具折叠块，复用
+    // AgentLoopInternal.h 的 AgentLoopDetail::toolSummary（不为此扩大公开 API 面）
     friend class ChatSessionPage;
 
     // 发起一次流式聊天请求（P3 起为「压缩前导 + 真实发起」两段式的入口：先跑
@@ -177,11 +177,8 @@ private:
     // （s06 起显式传入 workDir：文件工具逃逸判定以该沙箱根为准，供子代理共用同一逻辑）
     static QString checkPermissionRules(const QString &workDir, const QString &toolName,
                                         const QJsonObject &args);
-    // —— 供 SubAgent（友元）复用同一份实现的静态转发（转调 .cpp 内部同名工具函数）——
-    static const QString &askPrefixOf();
-    static QString toolSummaryOf(const QString &toolName, const QJsonObject &args);
-    // lcc fddb23e G4 单源：bash 危险黑名单与权限门 DENY_LIST 共用同一份列表
-    static const QStringList &bashDenyList();
+    // —— 内部工具（toolSummary / askPrefix / bashDenyList / parseToolCall）不再经此静态转发：
+    //    SubAgent 与 ChatSessionPage 直接 #include "AgentLoopInternal.h" 取用（声明单源、零转发层）。
     // 单个工具执行完成的统一收口（安全/超时/未知/沙箱等快捷路径也走这里）
     void onToolFinished(const QJsonObject &toolCall, const QString &toolName,
                         const QString &summary, const QString &output);
