@@ -264,6 +264,9 @@ void LiteHarness::restoreSessions()
         m_sLayout->addWidget(key, page);
 
         const QString title = e.value(QStringLiteral("title")).toString();
+        // 用索引标题播种会话页：否则重启后右侧面板恒显占位「新会话」与导航不一致；
+        // 播种后 maybeCaptureSessionTitle 也不会再用首条消息覆盖历史改名结果
+        page->setSessionTitle(title);
         auto childItem = m_navView->insertIconTextItem(FluAwesomeType::Message, title, key, NavKey::SessionsGroup);
         if (childItem == nullptr)
             continue;
@@ -405,6 +408,11 @@ void LiteHarness::renameSession(const QString &key)
     SessionStore::upsertEntry(
         SessionStore::rootDirFor(QDir::currentPath()),
         dataId, text, QString(), QString());
+
+    // 回填会话页：右侧信息面板的标题单源在 ChatSessionPage，不推这一步即表现为「导航已改、面板仍旧」。
+    // 顺序上先落 index 再推页面：页面标题为纯内存态，index 才是重启后的权威来源。
+    if (auto *page = m_registry.page(key))
+        page->setSessionTitle(text);
 }
 
 void LiteHarness::deleteSession(const QString &key)

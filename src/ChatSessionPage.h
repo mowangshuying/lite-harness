@@ -29,6 +29,9 @@ public:
     void startConversation(const QString &text);
     // 宿主注入初始模型（同步输入区下拉与 AgentLoop；需在 startConversation 前调用使首轮即用该模型）
     void setModel(const QString &model);
+    // 宿主回传会话标题（右键重命名 / 启动恢复读 index 条目）：更新本页标题单源并推给右侧信息面板，
+    // 使导航子项、index.json、会话页面板三处同源一致；空串由面板回退占位「新会话」。
+    void setSessionTitle(const QString &title);
     void scrollToBottom();
     // 从磁盘恢复后重放历史到会话流：按 wire 消息重建气泡，assistant 段用流式气泡
     // （正文 + 工具折叠块）镜像实时链路；messages 应为已剔除 system 的会话主体
@@ -89,5 +92,5 @@ private:
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
     QToolButton *m_restoreBtn = nullptr;   // 侧栏收起后的浮动展开钮（页面右上角，手动摆位随 resize 跟随）
-    QString m_sessionTitle;                // 首条用户消息派生的会话标题（抄宿主规则，重命名不回传=已知限制）
+    QString m_sessionTitle;                // 会话标题单源：首条用户消息派生，宿主重命名/恢复经 setSessionTitle 回传覆盖
 };

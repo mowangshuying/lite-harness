@@ -571,6 +571,16 @@ void ChatSessionPage::setModel(const QString &model)
         m_sidebar->setSessionMeta(m_sessionTitle, model);
 }
 
+// 宿主回传会话标题：右侧信息面板是纯视图，其标题唯一来源就是本页 m_sessionTitle，
+// 导航子项改名只动 nav label + index.json，不回填此处即表现为「左边已改、右边仍显旧标题」。
+// 定值后 maybeCaptureSessionTitle 的「非空即 no-op」顺带保证改名不被后续首条消息派生标题覆盖。
+void ChatSessionPage::setSessionTitle(const QString &title)
+{
+    m_sessionTitle = title.simplified();
+    if (m_sidebar)
+        m_sidebar->setSessionMeta(m_sessionTitle, m_agentLoop ? m_agentLoop->model() : QString());
+}
+
 void ChatSessionPage::startConversation(const QString &text)
 {
     addMessage(MessageBubbleWidget::Role::User, text);
@@ -696,7 +706,7 @@ void ChatSessionPage::refreshContextUsage()
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，
-// 空回退「新会话」）；仅首次捕获生效——导航树重命名不回传本页面（已知限制）
+// 空回退「新会话」）；仅首次捕获生效——宿主改名/恢复经 setSessionTitle 先行定值后即不再派生覆盖
 void ChatSessionPage::maybeCaptureSessionTitle(const QString &userText)
 {
     if (!m_sessionTitle.isEmpty())
