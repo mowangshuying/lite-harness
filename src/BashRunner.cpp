@@ -2,10 +2,37 @@
 
 #include "AgentConstants.h" // 超时毫秒/超时文案/输出截断上限单源
 
+#include <QFileInfo>
 #include <QProcess>
+#include <QStandardPaths>
 #include <QTimer>
 
 namespace BashRunner {
+
+namespace {
+
+// Resolve the host shell to an absolute path when possible. CreateProcess only
+// auto-searches %WINDIR% and %WINDIR%\System32 (not the WindowsPowerShell\v1.0
+// subdirectory), so a bare "powershell.exe" relies entirely on PATH: launch
+// contexts with a scrubbed PATH fail with FailedToStart (error 2).
+QString resolveShell()
+{
+    QString exe = QStandardPaths::findExecutable(QStringLiteral("powershell.exe"));
+    if (!exe.isEmpty())
+        return exe;
+    QString windir = qEnvironmentVariable("WINDIR");
+    if (windir.isEmpty())
+        windir = qEnvironmentVariable("SystemRoot");
+    if (windir.isEmpty())
+        windir = QStringLiteral("C:/Windows");
+    const QString candidate
+        = windir + QStringLiteral("/System32/WindowsPowerShell/v1.0/powershell.exe");
+    if (QFileInfo::exists(candidate))
+        return candidate;
+    return QStringLiteral("powershell.exe"); // last resort: previous bare-name behavior
+}
+
+} // namespace
 
 QString dangerWarning(const QString &command, const QStringList &denyList)
 {
@@ -56,7 +83,7 @@ QProcess *start(const QString &command, const QString &workDir, QObject *parent,
     // 宿主壳 = Windows PowerShell 5.1（本仓仅 Windows）：-NoProfile 跳配置文件防启动干扰、
     // -NonInteractive 禁交互提示挂死；command 经 QProcess 按 Windows argv 规则整段传参，
     // PS 收到原文再按脚本解析——bash 风格命令失败重试的根因修复，与工具描述声明同源
-    process->start(QStringLiteral("powershell.exe"),
+    process->start(resolveShell(),
                    {QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
                     QStringLiteral("-Command"), command});
     return process;
