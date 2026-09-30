@@ -199,7 +199,7 @@ void ChatSessionPage::wireAgent()
         // 无气泡（如前序 error 链已清槽位）仍走独立气泡兜底不丢回复
         if (!m_currentBubble)
             addMessage(MessageBubbleWidget::Role::Assistant, reply);
-        // 侧栏收口：审批灯兜底回灭 + 回合终了重算上下文占用（勿接 textDelta 高频信号）
+        // 侧栏收口：审批灯兜底回灭 + 终局再算一次占用（完整刷新时机见 refreshContextUsage 注释）
         m_sidebar->setPermissionPending(false);
         refreshContextUsage();
     });
@@ -238,6 +238,9 @@ void ChatSessionPage::wireAgent()
     // ok = AgentLoop::isToolFailure 取反的成败判定（B1 单源，UI 不再嗅探输出）
     connect(m_agentLoop, &AgentLoop::toolOutputReady, this,
             [this](const QString &toolName, const QString &summary, const QString &output, bool ok) {
+                // 占用条随手补刷一次：延后一拍是因为 tool 结果此刻还压在 m_toolResultsReady，
+                // 同栈的 runNextTool 批尾才回填历史（compact 卡片到达时历史也已替换完）
+                QTimer::singleShot(0, this, [this]() { refreshContextUsage(); });
                 if (m_currentBubble)
                 {
                     m_currentBubble->appendToolExecution(toolName, summary, output, ok);
@@ -440,6 +443,8 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
     m_agentLoop->run(userText);
+    // 用户消息已在 run() 内同步入历史，此刻刷一次：否则发送后要等整回合终局才见抬升
+    refreshContextUsage();
 }
 
 void ChatSessionPage::closeReplayBubble()
@@ -670,7 +675,11 @@ void ChatSessionPage::applyColumnWidth()
     }
 }
 
-// 上下文占用快照 → 侧栏。口径对齐压缩管线：system 消息不计入会话占用
+// 上下文占用快照 → 侧栏。刷新时机（全是低频点，刻意不接 textDelta/thinkingDelta 高频流）：
+//   ① 用户消息入历史后（startAssistantStream）——发送即见抬升，不必等整回合；
+//   ② 每个工具结果到达（toolOutputReady，含 compact 卡片）——多轮 ReAct 途中逐轮跟手；
+//   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
+// 口径对齐压缩管线：system 消息不计入会话占用。
 // （AgentLoop::messages() 含下标 0 的 system，防御式仅当首元素确为 system 才剔除）
 void ChatSessionPage::refreshContextUsage()
 {
