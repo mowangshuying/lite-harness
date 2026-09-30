@@ -66,7 +66,8 @@ constexpr qsizetype kLargeOutputThreshold = 100000;
 constexpr int kTodoMaxItems = 20;
 
 // task 子代理实时进度行的在卡条数上限（UI 侧裁剪）：超限丢弃最旧行、保留最新窗口，
-// 日志顶部标注省略条数。子代理预算 50 轮 × 每轮多工具时日志可远超单卡承载，
+// 日志顶部标注省略条数。子代理轮次预算与主循环同源可设置（默认 500 轮）× 每轮多工具时
+// 日志可远超单卡承载，
 // 60 行足够回看近况且限高滚动区不膨胀（进度行由 ToolBlock 消费）
 constexpr int kSubagentProgressMaxLines = 60;
 

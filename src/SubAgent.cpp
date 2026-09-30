@@ -16,11 +16,9 @@
 
 namespace {
 
-// 子代理轮次预算（lcc s06 MAX_SUBAGENT_TURNS）：每次发起请求消耗一轮
-// （lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）。
-// 第十二轮注：主循环轮次上限已可设置（maxToolIterations，默认 500），子代理预算
-// 是独立固定值、不随主循环设置联动——lcc 语义保留，用户裁决字面也未涉子代理
-constexpr int kMaxSubagentTurns = 50;
+// 子代理轮次预算：每次发起请求消耗一轮（lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）。
+// 用户裁决改与主循环一致：上限取 maxToolIterationsValue()（settings.ini 可设置，默认 500），
+// 于 start() 入口快照进 m_maxTurns，单次运行中不随设置变动（同主循环回合入口快照纪律）。
 
 // 子代理工具白名单（lcc s06 subTools）：主循环 7 工具定义中的前 5 个，
 // 定义逐字共享（todo_write/task 不进子表，模型幻觉调用也只落 Unknown 回填）。
@@ -87,6 +85,8 @@ QString SubAgent::subSystemPrompt(const QString &workDir)
 void SubAgent::start(CompleteHandler onComplete)
 {
     m_onComplete = std::move(onComplete);
+    // 轮次预算入口快照：与主循环 maxToolIterations 同源（用户裁决一致化）
+    m_maxTurns = AgentConst::maxToolIterationsValue();
 
     // 独立上下文：仅 system（子代理 prompt）+ user（任务描述），不携带主循环任何历史
     //（lcc run_subagent 的 messages=[{role:user,...}] + system= 参数，OpenAI 协议下
@@ -109,11 +109,11 @@ void SubAgent::startChatRequest()
     if (m_cancelled || m_settled)
         return;
 
-    // 轮次预算：50 次请求内未产出最终答案则以停跑文案收尾（lcc 循环耗尽后的 return 文案）
-    if (m_turns >= kMaxSubagentTurns)
+    // 轮次预算：入口快照 m_maxTurns（与主循环同源）内未产出最终答案则以停跑文案收尾
+    if (m_turns >= m_maxTurns)
     {
         finish(QStringLiteral("Subagent stopped after %1 turns without a final answer.")
-                   .arg(kMaxSubagentTurns));
+                   .arg(m_maxTurns));
         return;
     }
     ++m_turns;

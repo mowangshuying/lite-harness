@@ -22,7 +22,8 @@ class QProcess;
 //   （由宿主作为 task 工具的 tool_result 回填）；无嵌套 QEventLoop，全事件驱动
 // - 权限转发：命中询问规则时暂停自身并经自身 permissionRequired 信号发出，
 //   宿主以信号直连方式转发为主循环同名 3 参信号（UI 契约零改动）
-// - 轮次预算 kMaxSubagentTurns（lcc range(50)）：每次发起请求（含 Stop 续跑）消耗一次，
+// - 轮次预算 m_maxTurns（start() 入口快照 AgentConst::maxToolIterationsValue()，与主循环
+//   同源可设置，默认 500）：每次发起请求（含 Stop 续跑）消耗一次，
 //   预算耗尽仍未产出最终答案时以停跑文案收尾
 // - 取消：cancel() 幂等地断流、kill 子进程、抑制完成回调；配对收口由宿主
 //   AgentLoop::cancelSubAgent() 统一处理（stop()/错误链/析构三路复用）
@@ -87,6 +88,7 @@ private:
     QJsonObject m_pendingPermissionCall;    // 等待权限裁决的工具调用（自身队列暂停上下文）
     bool m_awaitingPermission = false;      // 权限询问中
     int m_turns = 0;                        // 已发起的请求次数（lcc range(50) 计数语义）
+    int m_maxTurns = 0;                     // 轮次预算入口快照（与主循环 maxToolIterations 同源，start() 写入）
     bool m_settled = false;                 // finish() 已触发（幂等保护）
     bool m_cancelled = false;               // 已取消（回调抑制）
     CompleteHandler m_onComplete;
