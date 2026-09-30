@@ -71,7 +71,11 @@ jobs:
       # 蓝本硬编码 D:\a\FluentUI\Qt\<ver>\<arch> 前缀路径；本仓改经 qmake -query 定位
       # （install-qt-action 会把 Qt bin 加入 PATH），不依赖 runner 盘符/目录布局，并以
       # lrelease 存在性做前置断言（qt_add_translations 构建期必需）。
-      - name: Msvc configure & build (Release)
+      # 必须全量构建（不加 --target lite-harness）：install 规则在 configure 期注册进全树
+      # 安装清单，FluentUI 子项目（gallery.exe/cmark.exe 等）的规则也在其中；CPack 逐条
+      # file(INSTALL) 时缺文件=硬错误中止，根级清理 install(CODE) 依赖「子先父后」执行序
+      # 根本没轮到。s12.2 两条 run 实证挂此坑（CPack Error: cannot find gallery.exe/cmark.exe）。
+      - name: Msvc configure & build (Release, all targets)
         shell: pwsh
         run: |
           $prefix = (qmake -query QT_INSTALL_PREFIX).Trim()
@@ -79,7 +83,7 @@ jobs:
           if (-not (Test-Path (Join-Path $prefix 'bin\lrelease.exe'))) { throw "lrelease not found under $prefix (LinguistTools missing?)" }
           Write-Output "Qt prefix: $prefix (version $((qmake -query QT_VERSION).Trim()))"
           cmake -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_PREFIX_PATH=$prefix"
-          cmake --build build --config Release --target lite-harness --parallel
+          cmake --build build --config Release --parallel
           Get-Item build\bin\lite-harness.exe
 
       # CPack ZIP（AGENTS.md「打包」节实证链）：--config 必带否则报 generator not specified；
