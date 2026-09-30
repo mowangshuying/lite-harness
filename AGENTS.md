@@ -17,6 +17,10 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## 架构（src/）
 
+> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 12 个 TU 的职责地图、
+> `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
+> 异常与技术债、新增代码落位决策树**见 [docs/architecture.md](docs/architecture.md)——改结构须同步它。
+
 ### Agent 核心链
 
 - **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。
