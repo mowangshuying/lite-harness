@@ -13,13 +13,27 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 #include <FluComboBox.h>
-#include "AgentConstants.h" // 模型清单单源（原文件内 static 列表迁入头文件，值不变）
+#include "AgentConstants.h" // 模型清单单源（settings.ini 可配置，取值见 AgentConst::modelOptions()）
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
 
-// 可选模型清单见 AgentConst::kModelOptions（AgentConstants.h）：字面量列表，
-// 不做配置文件等多余抽象；首项为回落默认项
-// （AgentLoop::model() 不在列表内时下拉显示并选中它）
+// 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：settings.ini 的
+// modelOptions 键（逗号分隔）优先，未配置/写空回退内置两项；生效清单首项为回落默认项
+// （AgentLoop::model() 不在清单内时下拉显示并选中它），可用 defaultModel 键单独指定
+
+// 模型下拉框占位宽：随清单里最长的模型名自适应。原固定 130 是按内置 qwen3.8-flash 调的，
+// 配置化之后清单可长可短，写 deepseek-r1-distill-llama-70b 这类长名会被截断成看不懂的片段。
+// 下限 130 保持既有观感（内置两项最长 13 字符，按此口径算得 128 落在下限，未配置时宽度不变），
+// 上限 220 防超长名把右对齐工具行挤爆。系数 8 为默认字体 14px 下 latin 均宽的保守值，
+// 24 给下拉箭头与内边距。定义成文件内静态函数：清单在运行期可被 reloadModelOptions 换掉，
+// 宽度必须跟着重算，不能只算一次。
+static int modelComboWidth(const QStringList &options)
+{
+    int longest = 0;
+    for (const QString &option : options)
+        longest = qMax(longest, option.size());
+    return qMin(220, qMax(130, 24 + longest * 8));
+}
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
@@ -77,8 +91,11 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 模型下拉框：FluComboBox 自带三主题 QSS 与 hover/pressed 态，弹层为 FluIndicatorRoundMenu
     // （当前项左侧画主题色选中标识竖条，WinUI ComboBox 观感）；高度 30 与 SendMsgButton 同高
     m_modelComboBox = new FluComboBox(this);
-    m_modelComboBox->addItems(AgentConst::kModelOptions);
-    m_modelComboBox->setFixedWidth(130); // 紧凑宽度：容纳 "qwen3.8-flash" + chevron，不撑爆右对齐工具行
+    m_modelComboBox->addItems(AgentConst::modelOptions()); // 清单来自 settings.ini（未配置回退内置两项）
+    m_modelComboBox->setFixedWidth(modelComboWidth(AgentConst::modelOptions())); // 占位宽随清单最长名自适应，理由见 modelComboWidth
+    // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 settings.ini
+    // 不必重启即可在下拉里选中新加的模型；清单未变时 reloadModelOptions 整体早退
+    m_modelComboBox->installEventFilter(this);
     toolSetsLayout->addWidget(m_modelComboBox);
 
     m_sendMsgButton = new SendMsgButton(this);
@@ -116,11 +133,14 @@ ChatMsgEdit::~ChatMsgEdit()
 
 void ChatMsgEdit::setCurrentModel(const QString &model)
 {
-    // 不在选项内回落默认项（首项 qwen3.8-flash）；blockSignals 抑制 currentTextChanged，
+    // 不在清单内回落默认项（AgentConst::defaultModel()：settings.ini 的 defaultModel 键，
+    // 未配置即生效清单首项）；blockSignals 抑制 currentTextChanged，
     // 程序化设置不对外回环 emit modelChanged
     int index = m_modelComboBox->findText(model);
     if (index < 0)
-        index = 0;
+        index = m_modelComboBox->findText(AgentConst::defaultModel());
+    if (index < 0)
+        index = 0; // 默认项也不在清单内（配置写坏的极端情形）：取首项保底
     m_modelComboBox->blockSignals(true);
     m_modelComboBox->setCurrentIndex(index);
     m_modelComboBox->blockSignals(false);
@@ -129,6 +149,36 @@ void ChatMsgEdit::setCurrentModel(const QString &model)
 QString ChatMsgEdit::currentModel() const
 {
     return m_modelComboBox->currentText();
+}
+
+// 重读 settings.ini 的可选模型清单并原地刷新下拉项（配置化改造的核心收益：改完配置
+// 不必重启即可选新模型）。清单未变则整体早退——不动弹层、不发信号，避免每次点击都
+// 重建 item 列表与无谓的 currentTextChanged 广播；原选中项被配置移除时回落默认项，
+// 并对外 emit modelChanged 同步后端（否则 UI 显示与实际请求模型分叉）。
+void ChatMsgEdit::reloadModelOptions()
+{
+    const QStringList options = AgentConst::modelOptions();
+    QStringList shown;
+    shown.reserve(m_modelComboBox->count());
+    for (int i = 0; i < m_modelComboBox->count(); ++i)
+        shown.append(m_modelComboBox->itemText(i));
+    if (shown == options)
+        return;
+
+    // 清单变了才重算占位宽：配置里新写长的模型名不再被固定宽截断
+    m_modelComboBox->setFixedWidth(modelComboWidth(options));
+
+    const QString keep = m_modelComboBox->currentText();
+    m_modelComboBox->blockSignals(true);
+    m_modelComboBox->clear();
+    m_modelComboBox->addItems(options);
+    int index = m_modelComboBox->findText(keep);
+    if (index < 0)
+        index = m_modelComboBox->findText(AgentConst::defaultModel());
+    m_modelComboBox->setCurrentIndex(index < 0 ? 0 : index);
+    m_modelComboBox->blockSignals(false);
+    if (m_modelComboBox->currentText() != keep)
+        emit modelChanged(m_modelComboBox->currentText());
 }
 
 void ChatMsgEdit::setTurnBusy(bool busy)
@@ -154,6 +204,13 @@ void ChatMsgEdit::applyBusyState()
 
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
 {
+    // 模型下拉：鼠标按下/键盘展开弹层前先重读配置清单（过滤器早于控件处理，
+    // 刷新发生在弹层构建之前，用户展开即见最新配置；清单未变则早退无副作用）
+    if (watched == m_modelComboBox &&
+        (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress))
+    {
+        reloadModelOptions();
+    }
     if (watched == m_textEdit)
     {
         if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut)

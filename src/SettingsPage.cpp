@@ -67,6 +67,31 @@ void writeApiToken(const QString &value)
     AppSettings::ini().setValue(kApiTokenKey, value);
 }
 
+// 可选模型清单：settings.ini 键 modelOptions（逗号分隔）。解析与回退单源在
+// AgentConst::modelOptions()（未配置/写空即内置两项）；输入框下拉在每次弹层展开前
+// 重读该键，故本页改完配置无需重启即可选到新模型（见 ChatMsgEdit::reloadModelOptions）。
+const QString kModelOptionsKey = QStringLiteral("modelOptions");
+
+QString readModelOptionsRaw()
+{
+    return AgentConst::iniTextValue(kModelOptionsKey); // 手改不带引号（ini 列表语法）也读得回
+}
+
+void writeModelOptions(const QString &value)
+{
+    AppSettings::ini().setValue(kModelOptionsKey, value); // 空串=清除，读取侧回退内置清单
+}
+
+// 录入规范化：逐项去空白、丢空项、保序去重（重名会让下拉出现同文两项，选中歧义且
+// 占位宽度白涨）；返回逗号分隔的落盘串。大小写原样保留——模型名大小写敏感
+// （QOpenAi 直接把它塞进请求体 model 字段，改大小写可能 404）
+QString normalizeModelOptions(const QString &input)
+{
+    // 口径单源：切分/去空/去重/条数上限全走 AgentConst::parseModelOptions（与下拉框读取侧
+    // 同一实现），本卡不再自带一份解析——否则写侧不截断、读侧截断，两处规则必然漂移
+    return AgentConst::parseModelOptions(input).join(QLatin1Char(','));
+}
+
 // Base URL 合法性：须为绝对 URL 且 scheme 为 http/https（QUrl 对裸主机名给出空 scheme，
 // 天然落回拒绝）；比对 QOpenAi 端点拼接方式，无 scheme 的值写进去只会请求必失败
 bool isHttpBaseUrl(const QString &input)
@@ -445,6 +470,83 @@ void ApiTokenSettingCard::promptEdit()
     updateValue();
 }
 
+// 可选模型清单设置卡：与 URL / Key 卡同款结构（图标+标题+说明，右侧「值 + 修改 + 清除」）。
+// 值区展示**生效清单**（含未配置时的内置回退），而非原始配置串——所见即下拉所得。
+// 生效路径：本卡只写 settings.ini，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框下拉
+// 在每次弹层展开前重读该键并原地刷新，故改完配置无需重启即可选到新模型。
+ModelListSettingCard::ModelListSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    setTitleInfo(tr("可选模型"), tr("输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。"));
+    setIcon(FluAwesomeType::ReadingList); // 清单语义（Link / Lock 已用于同组两卡）
+    getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
+
+    m_valueLabel = new FluLabel(this);
+    m_valueLabel->setTextFormat(Qt::PlainText); // 模型名按纯文本处理，避免被当作富文本解析
+    m_valueLabel->setMaximumWidth(320);
+    m_valueLabel->setMinimumWidth(0);
+    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_modifyButton = new FluPushButton(tr("修改"), this);
+    m_modifyButton->setFixedSize(64, 30);
+    m_clearButton = new FluPushButton(tr("清除"), this);
+    m_clearButton->setFixedSize(64, 30);
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_valueLabel);
+    row->addWidget(m_modifyButton);
+    row->addWidget(m_clearButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
+
+    updateValue();
+
+    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+    connect(m_clearButton, &QPushButton::clicked, this, [this]() {
+        writeModelOptions(QString()); // 即时生效：下拉下次展开回退内置清单
+        updateValue();
+    });
+}
+
+void ModelListSettingCard::retranslate()
+{
+    setTitleInfo(tr("可选模型"), tr("输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。"));
+    m_modifyButton->setText(tr("修改"));
+    m_clearButton->setText(tr("清除"));
+    updateValue();
+}
+
+void ModelListSettingCard::updateValue()
+{
+    const QString stored = readModelOptionsRaw().trimmed();
+    const QString shown = AgentConst::modelOptions().join(QStringLiteral(", "));
+    if (stored.isEmpty())
+    {
+        // 未配置：值区仍展示回退后的内置清单（下拉里就是这些），并标注来源——留空不等于
+        // 「没有模型可选」，直接把空串摆上界面会让人以为功能坏了
+        m_valueLabel->setText(tr("内置默认：%1").arg(shown));
+        m_valueLabel->setToolTip(tr("未配置 modelOptions 键，可用本卡「修改」填写。"));
+    }
+    else
+    {
+        m_valueLabel->setText(shown); // 展示清洗去重后的生效值，非原始录入串
+        m_valueLabel->setToolTip(tr("settings.ini: %1").arg(stored));
+    }
+}
+
+void ModelListSettingCard::promptEdit()
+{
+    const auto [input, accepted] = FluentInputDialog::getInputText(
+        window(), tr("设置可选模型"), tr("多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。"),
+        readModelOptionsRaw());
+    if (!accepted)
+        return; // 取消：保持原值
+    // 清洗后全空（只输了逗号或空白）按清除处理而非报错：语义与「清除」按钮一致，
+    // 且空清单本就不该落盘——下拉无项可展，AgentLoop 白名单也会把所有模型判成回落
+    writeModelOptions(normalizeModelOptions(input));
+    updateValue();
+}
+
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
@@ -560,12 +662,15 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     m_modelLabel->setText(tr("模型服务"));
     scrollView->getMainLayout()->addWidget(m_modelLabel, 0, Qt::AlignTop);
 
-    // 同组两卡紧邻不加 addSpacing：与「外观与行为」组（主题盒 + 语言盒）既有排布同款
+    // 同组三卡紧邻不加 addSpacing：与「外观与行为」组（主题盒 + 语言盒）既有排布同款
     m_apiUrlCard = new ApiUrlSettingCard;
     scrollView->getMainLayout()->addWidget(m_apiUrlCard, 0, Qt::AlignTop);
 
     m_apiTokenCard = new ApiTokenSettingCard;
     scrollView->getMainLayout()->addWidget(m_apiTokenCard, 0, Qt::AlignTop);
+
+    m_modelListCard = new ModelListSettingCard;
+    scrollView->getMainLayout()->addWidget(m_modelListCard, 0, Qt::AlignTop);
 
 
     //// add spacing
@@ -643,6 +748,8 @@ void SettingsPage::retranslateUi()
         m_apiUrlCard->retranslate();
     if (m_apiTokenCard)
         m_apiTokenCard->retranslate();
+    if (m_modelListCard)
+        m_modelListCard->retranslate();
 
     m_aboutLabel->setText(tr("关于"));
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));

@@ -118,6 +118,29 @@ private:
     FluPushButton* m_clearButton = nullptr;
 };
 
+// 可选模型清单设置卡（模型服务组）：与 ApiUrlSettingCard 同结构——值区 + 「修改 + 清除」操作行，
+// 编辑弹 FluentInputDialog 录入逗号分隔的模型名（落盘前逐项 trim、丢空、保序去重）。
+// 生效语义：写 settings.ini 键 modelOptions；输入框模型下拉在每次弹层展开前重读该键并原地
+// 刷新（ChatMsgEdit::reloadModelOptions），故改完不必重启。值区展示的是**生效清单**——
+// 未配置时展示内置回退项并标注「内置默认」，避免空串让人误以为无模型可选。
+// Q_OBJECT 理由同前四卡（tr 上下文与 lupdate 提取词法类名对齐）。
+class ModelListSettingCard : public FluSettingsSelectBox
+{
+    Q_OBJECT
+public:
+    explicit ModelListSettingCard(QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void updateValue();
+    void promptEdit();
+
+    QLabel* m_valueLabel = nullptr;
+    FluPushButton* m_modifyButton = nullptr;
+    FluPushButton* m_clearButton = nullptr;
+};
+
 class SettingsPage : public BasePage
 {
     Q_OBJECT
@@ -145,6 +168,7 @@ private:
     FluLabel* m_modelLabel = nullptr;
     ApiUrlSettingCard* m_apiUrlCard = nullptr;
     ApiTokenSettingCard* m_apiTokenCard = nullptr;
+    ModelListSettingCard* m_modelListCard = nullptr;
     FluLabel* m_aboutLabel = nullptr;
     FluSettingsVersionBox* m_versionBox = nullptr;
     FluLabel* m_infoLabel = nullptr;

@@ -42,11 +42,12 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     , m_taskStore([this] { return sessionDataRoot(); })
     , m_sessionDataId(sessionDataId)
 {
-    // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::kDefaultModel（清单首项；
-    // 原注释误写 qwen3.8-max，实际回落一直是 flash，随单源化一并订正）
+    // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::defaultModel()
+    // （settings.ini 的 defaultModel 键，未配置则取生效清单首项；清单本身可由
+    // modelOptions 键配置，单点取值见 AgentConstants.h）
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())
-        m_model = AgentConst::kDefaultModel;
+        m_model = AgentConst::defaultModel();
 
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();

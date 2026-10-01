@@ -60,7 +60,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `BasePage` | 导航页基类；主题契约：基类构造不首刷，派生页构造尾 `ThemeAware::bind` | `ThemeAware` |
 | `NewChatPage` | 发起页（欢迎语 + 工作目录条 + 输入框），发 `newChatRequested(text)`；进入时重读 `settings.ini` 默认目录 | `BasePage`、`ChatMsgEdit`、`WorkDirPathBar`、`AppSettings`、`LayoutConstants` |
 | `ChatSessionPage` | 每会话一页：布局 + **持有 `AgentLoop`** + `wireAgent()` 把全部后端信号接成 UI + 历史重放 + 侧栏接线 | `AgentLoop`、**`AgentLoopInternal.h`**（`ChatSessionPage.cpp:14`）、`MessageBubbleWidget`、`ToolBlock`、`PermissionCard`、`TodoCard`、`SessionSidebar`、`ChatMsgEdit`、`WorkDirPathBar`、`CompactManager` |
-| `SettingsPage` | 主题/语言/默认工作目录/模型服务 `apiBaseUrl`+`apiToken`/上下文上限/轮次上限 | `BasePage`、`QOpenAi`（直改运行时配置）、`AppSettings`、`AgentConstants`、`I18n`、`FluentInputDialog` |
+| `SettingsPage` | 主题/语言/默认工作目录/模型服务 `apiBaseUrl`+`apiToken`/模型清单 `modelOptions`（下拉选项，逗号分隔）/上下文上限/轮次上限 | `BasePage`、`QOpenAi`（直改运行时配置）、`AppSettings`、`AgentConstants`、`I18n`、`FluentInputDialog` |
 
 ### L3 展示控件
 
@@ -98,10 +98,10 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 
 | 模块 | 单一事实源 |
 |---|---|
-| `AgentConstants.h` | 模型清单、`kMaxTokens`、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`，`AgentConstants.h:130-135`，拼法涉数据兼容不可改） |
+| `AgentConstants.h` | 模型清单（settings.ini `modelOptions` 逗号分隔 + `defaultModel` 缺省项，未配置回落内置 `kBuiltinModelOptions`；读值经头内 `iniTextValue()` 兼容 QSettings 的 ini 列表语法，裸 `.toString()` 会得空串）、`kMaxTokens`、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`，`AgentConstants.h:130-135`，拼法涉数据兼容不可改） |
 | `ToolNames.h` | 18 个工具名（bash/read_file/write_file/edit_file/glob/todo_write/task/load_skill/compact/create_task/update_task/list_tasks/get_task/claim_task/complete_task/schedule_cron/list_crons/cancel_cron） |
 | `LayoutConstants.h` | 聊天栏宽 800 / 边距 35 / 气泡系数 0.75 / 侧栏宽 280 |
-| `AppSettings.h` | 配置存储：一律 `applicationDirPath()/settings.ini`（弃用注册表），键清单见 `AppSettings.h:3-6`（`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`） |
+| `AppSettings.h` | 配置存储：一律 `applicationDirPath()/settings.ini`（弃用注册表），键清单见 `AppSettings.h:3-6`（`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`） |
 | `ToolTagKind.h` | 工具名 → 语义类别（read/search/plan/delegate/run/write/other）→ QSS `toolTagKind` 动态属性 |
 | `I18n.h` | 中英文切换：源文中文 + Linguist + **重启生效**（`exit(931)` 自重启） |
 | `ThemeAware.h` | 「加载 QSS + 订阅 themeChanged + 重载」样板单源 `bind(qss, widget, extraRefresh)` |

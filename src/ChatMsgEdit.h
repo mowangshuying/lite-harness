@@ -37,6 +37,10 @@ private:
     // 依 m_turnBusy 刷新形态：输入框 enabled + 发送钮停止/发送形态切换（钮恒可点）
     void applyBusyState();
 
+    // 重读 settings.ini 的可选模型清单并原地刷新下拉项（清单未变整体早退、不发信号）；
+    // 由模型下拉弹层展开前的事件过滤器调用——改完配置无需重启即可选新模型
+    void reloadModelOptions();
+
     QTextEdit *m_textEdit = nullptr;
     SendMsgButton *m_sendMsgButton = nullptr;
     FluComboBox *m_modelComboBox = nullptr;

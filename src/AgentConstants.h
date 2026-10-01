@@ -9,17 +9,72 @@
 #include <QString>
 #include <QStringList>
 #include <QtGlobal> // qsizetype
+#include <QMetaType> // iniTextValue 判返回值形态
+#include <QVariant>  // iniTextValue 取原始值
 #include "AppSettings.h"
 
 namespace AgentConst {
 
-// 可选模型清单（原 ChatMsgEdit.cpp 静态字面量迁入）：不做配置文件等多余抽象；
-// 首项为回落默认项（AgentLoop::model() 不在列表内时下拉显示并选中它）
-inline const QStringList kModelOptions = {QStringLiteral("qwen3.8-flash"),
-                                         QStringLiteral("qwen3.8-max")};
+// 可选模型清单：内置兜底两项 + settings.ini 覆盖（键 modelOptions，逗号分隔）。
+// 用户裁决（配置化改造）：加模型改配置文件即可，下拉框即时可选，不再改代码重编。
+// 生效清单首项为回落默认项（AgentLoop::model() 不在清单内时下拉显示并选中它），
+// 也可用 defaultModel 键越过首项单独指定默认模型。
+// 值带不带引号都认：不带引号的逗号串在 ini 语法里是「列表」写法，由 iniTextValue 归一化回逗号串。
+inline const QStringList kBuiltinModelOptions = {QStringLiteral("qwen3.8-flash"),
+                                                 QStringLiteral("qwen3.8-max")};
+inline const QString kModelOptionsKey = QStringLiteral("modelOptions");
+inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 
-// 回落默认模型 = 清单首项（AgentLoop 构造期 MODEL_ID 环境变量为空时使用）
-inline const QString kDefaultModel = kModelOptions.first();
+// ini 取值归一化（读侧唯一入口）：手改 settings.ini 时值一般不带引号，而「逗号分隔的一串」恰好是
+// QSettings ini 语法的列表写法——它被解析成 QStringList，此时 .toString() 返回空串（Qt 6.9 实测），
+// 配置就被误判成「未配置」而静默回退内置清单。故统一走这里：QStringList 用逗号回接（Qt 解析时已逐项
+// trim），其余形态按字符串取。标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
+inline QString iniTextValue(const QString &key)
+{
+    const QVariant stored = AppSettings::ini().value(key);
+    if (stored.metaType() == QMetaType::fromType<QStringList>())
+        return stored.toStringList().join(QLatin1Char(','));
+    return stored.toString();
+}
+constexpr qsizetype kModelOptionsMax = 32; // 清单条数上限（防手工篡改塞进超长清单）
+
+// 逗号分隔串 → 清单：切分去空项、逐项 trim、去重、截断上限。纯函数，
+// 读侧（modelOptions）与设置页写侧（ModelListSettingCard 展示/回写）共用同一口径。
+inline QStringList parseModelOptions(const QString &stored)
+{
+    QStringList result;
+    const QStringList parts = stored.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &part : parts)
+    {
+        const QString name = part.trimmed();
+        if (name.isEmpty() || result.contains(name))
+            continue;
+        result.append(name);
+        if (result.size() >= kModelOptionsMax)
+            break;
+    }
+    return result;
+}
+
+// 生效清单单点取值：settings.ini 的 modelOptions 解析结果为空（键缺失/空串/全空白）
+// 一律回退内置清单——配置文件只增不改语义，写坏或清空都不会让下拉框变成空下拉。
+inline QStringList modelOptions()
+{
+    const QStringList parsed =
+        parseModelOptions(iniTextValue(kModelOptionsKey));
+    return parsed.isEmpty() ? kBuiltinModelOptions : parsed;
+}
+
+// 默认模型单点取值（AgentLoop 构造期 MODEL_ID 环境变量为空、下拉框回落选中时共用）：
+// defaultModel 非空且确在生效清单内才采信，否则取清单首项（防配置指向不存在的模型）。
+inline QString defaultModel()
+{
+    const QStringList options = modelOptions();
+    const QString stored = iniTextValue(kDefaultModelKey).trimmed();
+    if (!stored.isEmpty() && options.contains(stored))
+        return stored;
+    return options.first();
+}
 
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
 constexpr int kMaxTokens = 8000;
