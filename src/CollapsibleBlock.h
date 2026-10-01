@@ -1,6 +1,7 @@
 #pragma once
 
 #include <FluWidget.h>
+#include <QElapsedTimer>
 #include <QTextBrowser>
 
 class QLabel;
@@ -99,8 +100,11 @@ protected:
     void startHeightAnimation(int target);
 
     // ---- live 圆点轮播公共骨架（400ms 一个相位，0..3 循环）----
-    void startLiveTimer();  // 懒建定时器并启动
+    void startLiveTimer();  // 懒建定时器并启动，同时重起进行时长计时
     void stopLiveTimer();   // 复位 m_live 并停止（标题文案由子类自行收尾）
+    // live 已进行时长（整秒、向下取整；未起表返回 0）。轮播定时器每 400ms 重取一次
+    // liveText，子类把此值拼进标题即可获得秒级跳动，无需另起 1s 定时器
+    int liveElapsedSeconds() const;
 
     // ---- 共享部件与状态 ----
     QWidget *m_header = nullptr;
@@ -122,6 +126,7 @@ protected:
     bool m_live = false;            // 流式进行态
     int m_liveDots = 0;             // 圆点轮播相位 0..3
     QTimer *m_liveTimer = nullptr;  // 懒建 400ms 轮播定时器
+    QElapsedTimer m_liveElapsed;    // live 进行时长（startLiveTimer 起表，复用实例时重起）
 
     static constexpr int kHeaderHeight = 32;   // 头部固定高（几何公式与 setContentHeight 共用）
     static constexpr int kVerticalChrome = 8;  // 内容区 QSS 上下 padding 各 4px（三主题一致）

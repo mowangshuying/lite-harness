@@ -139,7 +139,17 @@ void CollapsibleBlock::startLiveTimer()
             m_titleLabel->setText(liveText());
         });
     }
+    // 时长与轮播同表起算：本轮 live 的秒数从此刻累计（同一块复用则重起）
+    m_liveElapsed.start();
     m_liveTimer->start();
+}
+
+int CollapsibleBlock::liveElapsedSeconds() const
+{
+    // 未起表（startLiveTimer 之前子类先刷一次标题的路径）返回 0，由子类决定不显示时长
+    if (!m_liveElapsed.isValid())
+        return 0;
+    return int(m_liveElapsed.elapsed() / 1000);
 }
 
 void CollapsibleBlock::stopLiveTimer()

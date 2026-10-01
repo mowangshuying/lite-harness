@@ -7,7 +7,7 @@ class QLabel;
 // 思考过程折叠块（Ollama 风格）：
 //   标题栏（灯泡图标 + "思考了 N 秒" + 折叠箭头）+ 可展开/折叠的思考内容区。
 // 折叠/动画/测量骨架已下沉 CollapsibleBlock（与 ToolBlock 逐行等价的部分）；
-// 本类仅保留思考专属差异：灯泡图标、耗时文案、live 轮播文案（"思考中"+圆点）、
+// 本类仅保留思考专属差异：灯泡图标、耗时文案、live 轮播文案（"思考中"+圆点+已耗时）、
 // 进行态单行限高策略与用户手动操作记忆。
 class ThinkingBlock : public CollapsibleBlock
 {
@@ -28,7 +28,7 @@ public:
     void finishWithoutDuration();
 
     // ---- 流式进行态（思考生成期间占位展示）----
-    // startLive：头部切换为「思考中」（圆点轮播），未被打扰时自动展开，
+    // startLive：头部切换为「思考中」（圆点轮播 + 已耗时逐秒跳动），未被打扰时自动展开，
     //   展开可见高度压缩为单行文本，钉底滚动只显示最新一行思考内容；
     // stopLive：恢复终态「思考了 N 秒」，未被打扰时自动折叠；
     //   此后手动展开按完整限高（kMaxThinkingHeight）显示全部内容。
@@ -45,12 +45,13 @@ public:
 protected:
     // ---- CollapsibleBlock 钩子 ----
     void refreshIcons() override;              // 灯泡 + 箭头方向
-    QString liveText() const override;         // 「思考中」+ 轮播圆点
+    QString liveText() const override;         // 「思考中」+ 轮播圆点 + 已耗时
     int expandedHeightCap() const override;    // 进行态压缩为单行
     void toggleExpanded() override;            // 记忆用户意愿
 
 private:
     QString durationText() const;
+    QString durationPhrase(int seconds) const;   // 时长短语单源（"< 1 秒"/"N 秒"/"N 分 M 秒"）
     int liveLineHeight() const;
 
     QLabel *m_iconLabel = nullptr;

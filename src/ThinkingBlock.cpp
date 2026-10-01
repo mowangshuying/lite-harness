@@ -104,7 +104,13 @@ void ThinkingBlock::appendLiveText(const QString &delta)
 
 QString ThinkingBlock::liveText() const
 {
-    return tr("思考中") + QStringLiteral(".").repeated(m_liveDots);
+    // 进行态同步显示已耗时：让用户随时看到本轮思考跑了多久（不足 1 秒不占位，
+    // 首帧标题早于起表，天然走此分支）。轮播每 400ms 重取文案，秒数随之跳动
+    const QString dots = QStringLiteral(".").repeated(m_liveDots);
+    const int elapsed = liveElapsedSeconds();
+    if (elapsed < 1)
+        return tr("思考中") + dots;
+    return tr("思考中 · %1").arg(durationPhrase(elapsed)) + dots;
 }
 
 int ThinkingBlock::expandedHeightCap() const
@@ -134,11 +140,18 @@ void ThinkingBlock::refreshIcons()
 
 QString ThinkingBlock::durationText() const
 {
-    if (m_durationSeconds < 1)
-        return tr("思考了 < 1 秒");
-    if (m_durationSeconds < 60)
-        return tr("思考了 %1 秒").arg(m_durationSeconds);
-    return tr("思考了 %1 分 %2 秒").arg(m_durationSeconds / 60).arg(m_durationSeconds % 60);
+    return tr("思考了 %1").arg(durationPhrase(m_durationSeconds));
+}
+
+QString ThinkingBlock::durationPhrase(int seconds) const
+{
+    // 时长短语单源：终态「思考了 …」与进行态「思考中 · …」共用同一分支，
+    // 避免两处各自演化出不同的秒/分口径
+    if (seconds < 1)
+        return tr("< 1 秒");
+    if (seconds < 60)
+        return tr("%1 秒").arg(seconds);
+    return tr("%1 分 %2 秒").arg(seconds / 60).arg(seconds % 60);
 }
 
 int ThinkingBlock::liveLineHeight() const
