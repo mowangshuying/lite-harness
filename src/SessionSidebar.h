@@ -17,7 +17,7 @@ class SidebarSection;
  * 固定宽 LayoutConst::kSidebarWidth，自上而下分节：
  *   面板头部（标题 + 收起钮）
  *   会话标题 / 模型名（muted 小字）
- *   上下文占用（同源压缩管线的字符估算 ÷ 可设置上限）
+ *   上下文占用（≈token 估算 ÷ 派生 token 预算：contextCharLimit/4）
  *   运行状态灯（空闲 / 运行中 / 等待审批，waiting 优先）
  *   任务清单（todoUpdated 全量快照；条目 >2 时可手风琴折叠，折叠标题带汇总）
  *   页脚（工作目录 + 版本号——运行时 QCoreApplication::applicationVersion()，禁硬编码）
@@ -39,8 +39,8 @@ public:
     void setSessionMeta(const QString& title, const QString& model);
     /// 页脚工作目录
     void setWorkDir(const QString& dir);
-    /// 上下文占用：与压缩管线同源的字符估算 ÷ 当前上限（limit<=0 时按 0% 展示）
-    void setContextUsage(qsizetype usedChars, qsizetype limitChars);
+    /// 上下文占用：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0% 展示）
+    void setContextUsage(qsizetype usedTokens, qsizetype limitTokens);
     /// 运行状态灯（AgentLoop::runningChanged 转发）
     void setRunning(bool running);
     /// 审批等待灯（permissionRequired 置亮；应答/回合终结由接线侧回灭）

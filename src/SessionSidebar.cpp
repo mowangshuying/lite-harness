@@ -404,12 +404,12 @@ void SessionSidebar::setWorkDir(const QString& dir) {
     m_footerDir->setToolTip(dir);
 }
 
-void SessionSidebar::setContextUsage(qsizetype usedChars, qsizetype limitChars) {
-    const double ratio = limitChars > 0 ? double(usedChars) / double(limitChars) : 0.0;
+void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens) {
+    const double ratio = limitTokens > 0 ? double(usedTokens) / double(limitTokens) : 0.0;
     const QLocale loc(QLocale::c());
-    const QString text = tr("%1 / %2 字符 · %3%")
-                             .arg(loc.toString(usedChars),
-                                  loc.toString(limitChars),
+    const QString text = tr("≈%1 / %2 token · %3%")
+                             .arg(loc.toString(usedTokens),
+                                  loc.toString(limitTokens),
                                   QString::number(ratio * 100.0, 'f', 1));
     m_meter->setUsage(ratio, text);
 }

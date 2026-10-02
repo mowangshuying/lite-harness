@@ -217,8 +217,13 @@ void ContextLimitSettingCard::retranslate()
 
 void ContextLimitSettingCard::updateValue()
 {
-    // 千分位展示（c-locale 固定逗号分组，不随界面语言变）；编辑预填用裸数字防解析歧义
-    m_valueLabel->setText(QLocale(QLocale::c()).toString(AgentConst::contextCharLimitValue()));
+    // 千分位展示（c-locale 固定逗号分组，不随界面语言变）；编辑预填用裸数字防解析歧义。
+    // 键语义保持字符域（规格修4：settings.ini 零新键零迁移）；括号内 token 仅为
+    // 展示层派生提示 = contextCharLimit/4（计量预算口径，与侧栏/触发同源），不参与校验回写。
+    const QLocale loc(QLocale::c());
+    m_valueLabel->setText(tr("%1 字符（≈%2 token）")
+                              .arg(loc.toString(AgentConst::contextCharLimitValue()),
+                                   loc.toString(AgentConst::contextTokenBudget())));
 }
 
 void ContextLimitSettingCard::promptEdit()

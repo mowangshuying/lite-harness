@@ -13,7 +13,6 @@
 #include "AgentLoop.h"
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h"
-#include "CompactManager.h"
 #include "ToolBlock.h"
 #include "PermissionCard.h"
 #include "SessionSidebar.h"
@@ -689,20 +688,15 @@ void ChatSessionPage::applyColumnWidth()
 //   ① 用户消息入历史后（startAssistantStream）——发送即见抬升，不必等整回合；
 //   ② 每个工具结果到达（toolOutputReady，含 compact 卡片）——多轮 ReAct 途中逐轮跟手；
 //   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
-// 口径对齐压缩管线：system 消息不计入会话占用。
-// （AgentLoop::messages() 含下标 0 的 system，防御式仅当首元素确为 system 才剔除）
+// 口径（规格修4）：≈token 估算与压缩触发同源——服务端 usage.prompt_tokens 锚 + 本地增量估算，
+// 锚失效时兜底全量本地估算（含 system + tools schema + 注入块，即 B4 修复）；
+// 预算为 settings.ini 字符上限的纯派生值（/4），键语义不变。
 void ChatSessionPage::refreshContextUsage()
 {
     if (!m_agentLoop || !m_sidebar)
         return;
-    QVector<QJsonObject> msgs = m_agentLoop->messages();
-    if (!msgs.isEmpty() &&
-        msgs.first().value(QStringLiteral("role")).toString() == QLatin1String("system"))
-    {
-        msgs.removeFirst();
-    }
-    m_sidebar->setContextUsage(CompactManager::estimateChars(msgs),
-                               AgentConst::contextCharLimitValue());
+    m_sidebar->setContextUsage(m_agentLoop->estimatedContextTokens(),
+                               AgentConst::contextTokenBudget());
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，

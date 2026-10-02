@@ -64,7 +64,8 @@ private:
     void setSidebarVisible(bool visible);
     // 重算并钳制消息列/输入组宽（min(800, 可用宽 − 侧栏可见时的占位)），resizeEvent 与侧栏切换共用
     void applyColumnWidth();
-    // 上下文占用快照 → 侧栏（剔除 system 后交 CompactManager::estimateChars 估算）
+    // 上下文占用快照 → 侧栏（AgentLoop::estimatedContextTokens 的 ≈token 锚定估算，
+    // 预算 = contextCharLimit/4 派生，见规格修4）
     void refreshContextUsage();
     // 首条用户消息派生会话标题（抄宿主 LiteHarness 规则）并同步侧栏；已有标题则 no-op
     void maybeCaptureSessionTitle(const QString &userText);
