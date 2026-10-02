@@ -48,11 +48,18 @@ public:
     /** prepare 的异步版（lcc prepare 五级压缩流水线，原地修改 conversation）：
      *  前四段本地管线同步跑；仅触发全量压缩时挂起。
      *  autoCompactCardSummary 为触发全量压缩时卡片的档位描述（宿主注入译文）。
+     *  修4（token 域门槛，D10）：conversationTokens 为宿主锚定的会话体 token 估算
+     *  （usage.prompt_tokens 校准值减 overhead，首轮回落纯估算）——入口门槛只用它；
+     *  overheadTokens 为随每次请求下发但不进 conversation 的固定开销（system +
+     *  tools schema + 注入段）估算，管线内从全局预算扣除。段内退出判定仍用管线
+     *  自身对 conversation 的即时估算（estimateTokens）。
      *  done(changed, conversation)：changed 为最终态与入参不等价（镜像迁移前同步宿主
      *  的 `conversation == original` 判定），conversation 为交付时的最终会话
      *  （偏离 §3.3 草案：按值经回调交付而非原地引用——挂起跨越 await 后调用方
      *  栈上引用可能已析构）。 */
     QOpenAi::AsyncRequest *prepareAsync(QVector<QJsonObject> conversation,
+                                        qsizetype conversationTokens,
+                                        qsizetype overheadTokens,
                                         const QString &activeRequest,
                                         const QString &autoCompactCardSummary,
                                         QObject *ctx,
@@ -78,16 +85,24 @@ public:
     QObject *ctx,
                                                  std::function<void(const QVector<QJsonObject> &replaced)> done) const;
 
-    /// OpenAI 形态会话字符总量估算（与压缩管线同源口径）。
-    /// 公开供侧栏「上下文占用」计量复用，避免第二套估算漂移。
+    /// OpenAI 形态会话字符总量估算（UTF-16 码元口径，压缩管线旧计量）。
+    /// 修4 后管线门槛改用 estimateTokens；本函数按规格保留（历史数据口径参照）。
     static qsizetype estimateChars(const QVector<QJsonObject> &conversation);
+
+    /// OpenAI 形态会话 token 总量估算（修4 计量口径：逐条 Compact 序列化后交
+    /// AgentConst::estimateTokens 求和）。公开供宿主计量/锚点组合复用，防第二套口径漂移。
+    static qsizetype estimateTokens(const QVector<QJsonObject> &conversation);
 
 private:
     // ---- lcc 六方法在 OpenAI 形态下的等价实现（均原地修改 conversation） ----
-    void toolResultBudget(QVector<QJsonObject> &conversation) const;
-    void snipCompact(QVector<QJsonObject> &conversation) const;
-    void microCompact(QVector<QJsonObject> &conversation, qsizetype targetChars) const;
-    void fitToolResults(QVector<QJsonObject> &conversation, qsizetype targetChars) const;
+    /** 修4：batch/large 判定切 token 域，比例不变（batch=4×会话体预算、large=0.6×会话体预算），
+     *  会话体预算 convBudgetTokens 由 prepareAsync 现算注入（= 全局预算 − overhead，钳位）。 */
+    void toolResultBudget(QVector<QJsonObject> &conversation, qsizetype convBudgetTokens) const;
+    /** 修2（D3 回滞双门槛）：条数 > kSnipTriggerMessages 且 tokenGateOk（调用方判
+     *  会话体估算 > 会话体预算/2）才归档；两门槛消除「低占用也压缩」与逐请求反复归档。 */
+    void snipCompact(QVector<QJsonObject> &conversation, bool tokenGateOk) const;
+    void microCompact(QVector<QJsonObject> &conversation, qsizetype targetTokens) const;
+    void fitToolResults(QVector<QJsonObject> &conversation, qsizetype targetTokens) const;
     QString summaryInput(const QVector<QJsonObject> &conversation) const;
     /** 摘要请求体（model / system+user 两条消息 / max_tokens）——异步链构建段。 */
     QJsonObject buildSummaryRequest(const QVector<QJsonObject> &conversation) const;
@@ -104,8 +119,14 @@ private:
     bool saveOutput(const QString &toolUseId, const QString &output, QString *savedPath) const;
     QString persistedPreview(const QString &toolUseId, const QString &output,
                              qsizetype previewChars) const;
-    QString persistLargeOutput(const QString &toolUseId, const QString &output) const;
-    bool isArchiveMarker(const QJsonObject &message) const;
+    /** 修4：直通判定切 token 域（估算 ≤ largeTokenLimit 不落盘），阈值由调用方按
+     *  会话体预算派生注入（落盘预览 kBudgetPreviewChars 仍为字符域，D11 不动）。 */
+    QString persistLargeOutput(const QString &toolUseId, const QString &output,
+                               qsizetype largeTokenLimit) const;
+    /** 修2（D5）：被归档中段逐行追加到会话级固定文件 <转写目录>/snip_archive.jsonl
+     *  （Append 只增不重写，替换旧每轮 UUID 全量快照）。返回落盘路径；失败返回空串，
+     *  调用方 snip 本轮直通降级（沿用「落盘失败不归档」旧语义）。 */
+    QString appendSnipTranscript(const QVector<QJsonObject> &archived) const;
 
     // ---- OpenAI 形态谓词与估算 ----
     static bool isToolResult(const QJsonObject &message);   // role=="tool"（lcc is_tool_result）
@@ -115,7 +136,8 @@ private:
     static qsizetype retreatToolBatch(const QVector<QJsonObject> &conversation, qsizetype tailStart);
     QJsonObject summaryMessage(const QString &label, const QString &request,
                                const QString &summary, const QString &transcript) const;
-    void emitCard(const QString &cardSummary, qsizetype beforeChars, qsizetype afterChars,
+    /** 修4：卡片前后值改 token 口径（文案 `≈tokens` 同步；Transcript 路径行不变）。 */
+    void emitCard(const QString &cardSummary, qsizetype beforeTokens, qsizetype afterTokens,
                   const QString &transcript) const;
 
     QString transcriptDir() const;

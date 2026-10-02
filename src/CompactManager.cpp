@@ -18,23 +18,29 @@
 // lcc s08 compact_manager.py 的常量（逐字对齐取值）
 namespace {
 
-// 第九轮：四个字符阈值不再是文件级常量，而是「可设置主上限 S + 等比派生」——
-// S 单点取值走 AgentConst::contextCharLimitValue()（settings.ini + 校验 + 默认回退，
-// 与设置页共用实现防口径分叉；每次管线/消费点现取，改设置后下一回合即生效）。
-// 派生比例以表达式写死防漂移，与原 lcc 常量在 S=50000 基准下逐一对齐：
-//   batch   = 4S   （原 kBatchCharLimit 200000）
-//   large   = 0.6S （原 kLargeResultCharLimit 30000）
-//   summary = 1.6S （原 kSummaryInputCharLimit 80000）
-//   压缩目标 = 0.8S（原 prepare 内联 50000*8/10，见 prepareAsync）
+// 第九轮：阈值经「可设置主上限 S + 等比派生」——S 单点取值走
+// AgentConst::contextCharLimitValue()（settings.ini + 校验 + 默认回退，与设置页共用
+// 实现防口径分叉；每次消费点现取，改设置后下一回合即生效）。
+// 修4（token 口径迁移，D8/D11）：batch=4S / large=0.6S / 压缩目标=0.8S 的判定对象
+// 由字符改 token，且基准从 S 改为会话体预算 T'（prepareAsync 现算：全局 token 预算
+// − overhead，钳位 [T/4,T]），比例原样保留（4×T' / 0.6×T' / 0.8×T'），派生表达式
+// 写死在消费点防漂移。summary 输入裁剪仍是字符域 1.6S（D11：内容级启发不随迁）。
 inline qsizetype contextCharLimit() { return AgentConst::contextCharLimitValue(); }
-inline qsizetype batchCharLimit() { return contextCharLimit() * 4; }
-inline qsizetype largeResultCharLimit() { return contextCharLimit() * 6 / 10; }
 inline qsizetype summaryInputCharLimit() { return contextCharLimit() * 16 / 10; }
 
 constexpr qsizetype kKeepRecentResults = 3;          // KEEP_RECENT_RESULTS
 constexpr qsizetype kKeepRecentMessages = 5;         // KEEP_RECENT_MESSAGES（reactive 尾段）
-constexpr qsizetype kSnipMaxMessages = 50;           // snip_compact max_messages
+// ---- 修2（D3 回滞）：snip 触发/保留双门槛，替换旧单阈值 50（触发即压到 50 造成摇摆） ----
+constexpr qsizetype kSnipTriggerMessages = 60;       // 条数超过才触发（配合 token 门槛与回滞带）
+constexpr qsizetype kSnipKeepMessages = 50;          // 归档后总条数目标（头 3 + 标记 1 + 尾 46）
 constexpr qsizetype kSnipHeadEnd = 3;                // snip_compact 头部保留数
+// 归档标记恒定文案（D4）：不含条数、不含路径——逐请求重写 index 3 也字节稳定，
+// 前缀缓存不再被 snip 轮打断。C 类禁翻：QStringLiteral 落进会话历史，禁包 tr()。
+const QString kSnipArchiveMarkerText =
+    QStringLiteral("[earlier messages archived to session transcript]");
+// snip 会话级固定名追加式转写文件（D5，替换旧每轮 UUID 全量快照）：随 .transcripts
+// 目录名进数据兼容清单——同会话后续恢复归档可续写此文件。
+const QString kSnipTranscriptFileName = QStringLiteral("snip_archive.jsonl");
 constexpr int kSummaryMaxTokens = 2000;              // 摘要请求 max_tokens
 constexpr qsizetype kBudgetPreviewChars = 2000;      // budget 阶段预览长度
 constexpr qsizetype kFitPreviewChars = 1000;         // fit 阶段预览长度
@@ -144,6 +150,20 @@ qsizetype CompactManager::estimateChars(const QVector<QJsonObject> &conversation
     return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)).size();
 }
 
+// 修4：会话 token 估算（计量口径主函数）。逐条 Compact 序列化 → UTF-16 解码 →
+// AgentConst::estimateTokens 求和。与 estimateChars 同族近似（登记偏差同源），
+// 但换算目标从「字符总量 ÷ 字符上限」升级为「token 估算 ÷ token 预算」。
+// 复杂度与 estimateChars 相当（每条一次序列化）；仅换调用方，不新增劣化（B3 纪律）。
+qsizetype CompactManager::estimateTokens(const QVector<QJsonObject> &conversation)
+{
+    qsizetype total = 0;
+    for (const QJsonObject &message : conversation) {
+        total += AgentConst::estimateTokens(
+            QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
+    }
+    return total;
+}
+
 // lcc 尾段回退（单步）的 OpenAI 推广：见头文件注释
 qsizetype CompactManager::retreatToolBatch(const QVector<QJsonObject> &conversation,
                                            qsizetype tailStart)
@@ -187,6 +207,35 @@ QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation
         if (file.write(line) != line.size() || file.write("\n") != 1) {
             qWarning().noquote()
                 << QStringLiteral("[compact] 转写文件写入失败 %1: %2").arg(path, file.errorString());
+            break;
+        }
+    }
+    return QDir::cleanPath(path);
+}
+
+// 修2（D5）：snip 专用追加式转写 —— 会话级固定文件 <转写目录>/snip_archive.jsonl。
+// 只写本轮被归档的中段（Append 单调增长，不重写不删除），与 writeTranscript 的分工：
+// 后者继续为 compactHistory/reactive 承担全量 UUID 快照（产物格式红线不动）。
+// 本函数消灭旧 snip「每轮全量重刷 + 新文件名」的磁盘放大与路径抖动（缓存命中元凶之二）。
+// 失败语义：mkpath/open 失败 qWarning 后返回空串 → snip 本轮直通不归档（沿用旧降级）；
+// 行写中断记日志后 break（与 writeTranscript 同型，缺行须可见）。
+QString CompactManager::appendSnipTranscript(const QVector<QJsonObject> &archived) const
+{
+    QDir dir;
+    if (!dir.mkpath(transcriptDir()))
+        return QString();
+    const QString path = QDir(transcriptDir()).filePath(kSnipTranscriptFileName);
+    QFile file(path);
+    if (!file.open(QIODevice::Append | QIODevice::Text)) {
+        qWarning().noquote()
+            << QStringLiteral("[compact] 无法追加 snip 转写文件 %1: %2").arg(path, file.errorString());
+        return QString();
+    }
+    for (const QJsonObject &message : archived) {
+        const QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact).trimmed();
+        if (file.write(line) != line.size() || file.write("\n") != 1) {
+            qWarning().noquote()
+                << QStringLiteral("[compact] snip 转写文件写入失败 %1: %2").arg(path, file.errorString());
             break;
         }
     }
@@ -267,39 +316,29 @@ QString CompactManager::persistedPreview(const QString &toolUseId, const QString
         .arg(path, preview);
 }
 
-// lcc persist_large_output：<=30000（0.6S）直通，否则落盘 + 2000 字符预览（Format A）
-QString CompactManager::persistLargeOutput(const QString &toolUseId, const QString &output) const
+// lcc persist_large_output：小结果直通，否则落盘 + 2000 字符预览（Format A）。
+// 修4：直通判定切 token 域（对 output 文本估算，阈值 largeTokenLimit 由调用方按
+// 会话体预算 0.6×T' 派生注入）；预览长度 kBudgetPreviewChars 仍字符域（D11 内容级启发不动）。
+QString CompactManager::persistLargeOutput(const QString &toolUseId, const QString &output,
+                                           qsizetype largeTokenLimit) const
 {
-    if (output.size() <= largeResultCharLimit())
+    if (AgentConst::estimateTokens(output) <= largeTokenLimit)
         return output;
     return persistedPreview(toolUseId, output, kBudgetPreviewChars);
 }
 
-// lcc is_archive_marker：整条 content 恰为归档标记且指向本工作区转写目录内的现存文件
-bool CompactManager::isArchiveMarker(const QJsonObject &message) const
-{
-    static const QRegularExpression marker(
-        QStringLiteral("^\\[(\\d+) messages archived at (.+)\\]$"));
-    const QString content = message.value(QStringLiteral("content")).toString();
-    const QRegularExpressionMatch match = marker.match(content);
-    if (!match.hasMatch())
-        return false;
-    const QString path = QFileInfo(match.captured(2)).canonicalFilePath();
-    if (path.isEmpty() || !QFileInfo(path).isFile())
-        return false;
-    const QString root = QFileInfo(transcriptDir()).canonicalFilePath();
-    if (root.isEmpty())
-        return false;
-    return path == root || path.startsWith(root + QLatin1Char('/'));
-}
-
 // ---- 六方法（OpenAI 形态等价实现，均原地修改 conversation） ---------------------
 
-// lcc tool_result_budget：末条"结果批"内，总量超批量上限（4S）时把超单条大结果上限
-// （0.6S）的单条结果落盘换成预览。
+// lcc tool_result_budget：末条"结果批"内，总量超批量上限时把超单条大结果上限的
+// 单条结果落盘换成预览。
 // R-1 映射：lcc 检查末条 user 消息的 tool_result block 列表 ≡ 我们末尾连续 role=="tool" 消息段，
 // block 长度 ≡ 单条消息 content 字符串长度。falsy 陷阱修正：显式 <=0 判定（docs/code 冲突以代码为准）。
-void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation) const
+// 修4：batch=4×T'、large=0.6×T'（T'=会话体预算，比例与原 4S/0.6S 一致，D11），
+// 判定对象由字符长度改 token 估算。单条 token 数前置一次计算并增量维护：
+// 估算是 O(长度) 扫描，沿用旧「每轮 totalOf 全量重算」在新口径下会放大常数
+// （缓存与旧逐轮重算等值、非语义变更；B3 纪律——不引入比现状更差的复杂度）。
+void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation,
+                                      qsizetype convBudgetTokens) const
 {
     if (conversation.isEmpty())
         return;
@@ -313,43 +352,56 @@ void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation) const
     auto contentOf = [&conversation](qsizetype index) {
         return conversation.at(index).value(QStringLiteral("content")).toString();
     };
-    auto totalOf = [&contentOf](const QList<qsizetype> &indices) {
-        qsizetype total = 0;
-        for (const qsizetype index : indices)
-            total += contentOf(index).size();
-        return total;
-    };
 
-    QList<qsizetype> indices;
-    for (qsizetype i = start; i < end; ++i)
-        indices.append(i);
-    const qsizetype limit = batchCharLimit(); // lcc max_chars or 200000（=4S，随主上限缩放）
-    qsizetype total = totalOf(indices);
-    std::sort(indices.begin(), indices.end(),
-              [&contentOf](qsizetype a, qsizetype b) { return contentOf(a).size() > contentOf(b).size(); });
-    for (const qsizetype index : indices) {
+    const qsizetype limit = convBudgetTokens * 4;           // batch = 4×T'
+    const qsizetype largeLimit = convBudgetTokens * 6 / 10; // 单条大结果 = 0.6×T'
+
+    QVector<std::pair<qsizetype, qsizetype>> items; // (索引, 单条 token 估算)
+    qsizetype total = 0;
+    for (qsizetype i = start; i < end; ++i) {
+        const qsizetype itemTokens = AgentConst::estimateTokens(contentOf(i));
+        items.append(std::make_pair(i, itemTokens));
+        total += itemTokens;
+    }
+    std::sort(items.begin(), items.end(),
+              [](const std::pair<qsizetype, qsizetype> &a,
+                 const std::pair<qsizetype, qsizetype> &b) { return a.second > b.second; });
+    for (auto &item : items) {
         if (total <= limit)
             break;
-        const QString output = contentOf(index);
-        if (output.size() <= largeResultCharLimit())
+        const QString output = contentOf(item.first);
+        if (item.second <= largeLimit)
             continue;
-        const QString id = conversation.at(index)
+        const QString id = conversation.at(item.first)
                                .value(QStringLiteral("tool_call_id"))
                                .toString(); // lcc tool_use_id 映射
-        conversation[index][QStringLiteral("content")] =
-            persistLargeOutput(id.isEmpty() ? QStringLiteral("unknown") : id, output);
-        total = totalOf(indices); // lcc 每轮重算
+        const QString replacement =
+            persistLargeOutput(id.isEmpty() ? QStringLiteral("unknown") : id, output, largeLimit);
+        const qsizetype newTokens = AgentConst::estimateTokens(replacement);
+        total += newTokens - item.second; // 等价于 lcc 每轮重算（本轮仅该条变化）
+        item.second = newTokens;
+        conversation[item.first][QStringLiteral("content")] = replacement;
     }
 }
 
-// lcc snip_compact：超过 50 条时保留头 3 + 尾 46，中段归档到转写文件并以标记占位。
+// lcc snip_compact：条数超门槛时保留头 3 + 标记 1 + 尾段，中段归档到转写文件并以标记占位。
 // 头/尾切点都做"切开 tool_calls/结果对"防护（R-1 配对不变量，映射见 retreatToolBatch）。
-void CompactManager::snipCompact(QVector<QJsonObject> &conversation) const
+// 修2 重写（D3/D4/D5）：
+//   ① 双门槛回滞：条数 > kSnipTriggerMessages(60) 且调用方 tokenGateOk（会话体估算 >
+//      会话体预算/2）才触发——旧按条数单门槛、与占用无关，是「低占用也压缩」锯齿根因之一；
+//      归档后总数 ≈ kSnipKeepMessages(50)，距下次触发留 10 条回滞带，单回合内不反复。
+//   ② 归档改追加式（D5）：中段逐条追加进固定名 snip_archive.jsonl（旧实现每轮另起
+//      UUID 文件全量重刷整会话，磁盘放大且路径每次变化）。
+//   ③ 标记恒定文案（D4）：不含条数、不含路径——snip 后到下次触发前，请求前缀逐字节
+//      稳定，中段归档不再打断上游前缀缓存（旧标记 N+新路径每轮必变，缓存命中元凶）。
+//   ④ 旧 B2 防递归死代码删除（守卫要求中段恰 1 条且是标记，与触发条件矛盾恒不成立）；
+//      回滞下中段至少 11 条（60−3−46），旧标记随中段被归档吸收，不累积。
+void CompactManager::snipCompact(QVector<QJsonObject> &conversation, bool tokenGateOk) const
 {
-    if (conversation.size() <= kSnipMaxMessages)
+    if (conversation.size() <= kSnipTriggerMessages || !tokenGateOk)
         return;
     qsizetype headEnd = kSnipHeadEnd;
-    qsizetype tailStart = conversation.size() - (kSnipMaxMessages - kSnipHeadEnd - 1);
+    qsizetype tailStart = conversation.size() - (kSnipKeepMessages - kSnipHeadEnd - 1);
     if (headEnd < conversation.size() && hasToolUse(conversation[headEnd - 1])) {
         while (headEnd < tailStart && isToolResult(conversation[headEnd]))
             ++headEnd; // 头部结束点切进结果批 → 结果批整体并入头部
@@ -357,16 +409,13 @@ void CompactManager::snipCompact(QVector<QJsonObject> &conversation) const
     tailStart = retreatToolBatch(conversation, tailStart);
     if (headEnd >= tailStart)
         return;
-    // 防递归：中段恰好已是归档标记（上轮 snip 的产物）→ 跳过，避免无限归档
-    if (tailStart - headEnd == 1 && isArchiveMarker(conversation[headEnd]))
-        return;
-    const QString transcript = writeTranscript(conversation); // lcc：转写全量（含将被丢弃的中段）
-    if (transcript.isEmpty())
-        return; // 落盘失败降级：本轮不归档（偏差登记）
+    const QString archivedPath =
+        appendSnipTranscript(conversation.mid(headEnd, tailStart - headEnd));
+    if (archivedPath.isEmpty())
+        return; // 落盘失败降级：本轮不归档（沿用旧语义；path 仅作成败信号）
     QJsonObject marker;
     marker[QStringLiteral("role")] = QStringLiteral("user");
-    marker[QStringLiteral("content")] =
-        QStringLiteral("[%1 messages archived at %2]").arg(tailStart - headEnd).arg(transcript);
+    marker[QStringLiteral("content")] = kSnipArchiveMarkerText; // 恒定文案（C 类禁翻，禁 tr()）
     QVector<QJsonObject> replaced = conversation.first(headEnd);
     replaced.append(marker);
     replaced.append(conversation.mid(tailStart));
@@ -376,8 +425,11 @@ void CompactManager::snipCompact(QVector<QJsonObject> &conversation) const
 // lcc micro_compact：模型已"消化"（最后一条 assistant 之前）的旧工具结果，
 // 除最近 3 条外逐个落盘换成 Format B 标记，直到估算值达标。
 // consumed[:len-3] 的 [:0] 陷阱用显式索引循环规避（docs/code 冲突以代码为准）。
+// 修4：达标口径切 token（每轮对整体重新估算——沿用旧 estimateChars 同款行为，
+// 单轮成本与旧全量序列化同量级，未新增劣化；B3 整体现状保持）。
+// 短结果豁免 kMicroExemptChars 仍字符域（D11 内容级启发不动）。
 void CompactManager::microCompact(QVector<QJsonObject> &conversation,
-                                  qsizetype targetChars) const
+                                  qsizetype targetTokens) const
 {
     qsizetype lastAssistant = -1;
     for (qsizetype i = 0; i < conversation.size(); ++i) {
@@ -392,7 +444,7 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
     }
     const qsizetype processCount = consumed.size() - kKeepRecentResults;
     for (qsizetype k = 0; k < processCount; ++k) {
-        if (estimateChars(conversation) <= targetChars)
+        if (estimateTokens(conversation) <= targetTokens)
             break; // lcc 每轮对整体重新估算
         const qsizetype index = consumed.at(k);
         QString output = conversation.at(index).value(QStringLiteral("content")).toString();
@@ -416,8 +468,10 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
 
 // lcc fit_tool_results：对全部工具结果（无 unseen 保护——以代码为准，docs 表述不采）
 // 按长度降序换成 1000 字符预览（Format A），只在替换确实变短时生效。
+// 修4：达标口径切 token（每轮整体重估，同 micro 段纪律）；排序/变短判定仍字符域
+// （D11 内容级启发不随迁）。
 void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
-                                    qsizetype targetChars) const
+                                    qsizetype targetTokens) const
 {
     QList<qsizetype> indices;
     for (qsizetype i = 0; i < conversation.size(); ++i) {
@@ -430,7 +484,7 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
     std::sort(indices.begin(), indices.end(),
               [&contentSize](qsizetype a, qsizetype b) { return contentSize(a) > contentSize(b); });
     for (const qsizetype index : indices) {
-        if (estimateChars(conversation) <= targetChars)
+        if (estimateTokens(conversation) <= targetTokens)
             break;
         const QString output = conversation.at(index).value(QStringLiteral("content")).toString();
         const QString id = conversation.at(index)
@@ -526,17 +580,19 @@ QJsonObject CompactManager::summaryMessage(const QString &label, const QString &
     return message;
 }
 
-// 压缩卡片（裁决 e：复用宿主 toolOutputReady，output 含转写路径与前后估算）
-void CompactManager::emitCard(const QString &cardSummary, qsizetype beforeChars,
-                              qsizetype afterChars, const QString &transcript) const
+// 压缩卡片（裁决 e：复用宿主 toolOutputReady，output 含转写路径与前后估算）。
+// 修4：前后估算切 token 口径（调用方传 estimateTokens 值，文案 `≈tokens` 同步）；
+// Transcript 路径行逐字不变。
+void CompactManager::emitCard(const QString &cardSummary, qsizetype beforeTokens,
+                              qsizetype afterTokens, const QString &transcript) const
 {
     if (!m_cardSink)
         return;
     m_cardSink(cardSummary,
-               QStringLiteral("Transcript: %1\n%2 → %3 chars")
+               QStringLiteral("Transcript: %1\n%2 → %3 ≈tokens")
                    .arg(transcript)
-                   .arg(beforeChars)
-                   .arg(afterChars));
+                   .arg(beforeTokens)
+                   .arg(afterTokens));
 }
 
 // lcc compact_history：转写全量 → 摘要 → 整个会话替换为单条摘要消息（print 由卡片承接）。
@@ -550,21 +606,21 @@ CompactManager::compactHistoryAsync(const QVector<QJsonObject> &conversation,
                                     QObject *ctx,
                                     std::function<void(const QVector<QJsonObject> &replaced)> done) const
 {
-    const qsizetype beforeChars = estimateChars(conversation);
+    const qsizetype beforeTokens = estimateTokens(conversation);
     QString transcript = writeTranscript(conversation);
     if (transcript.isEmpty())
         transcript = QStringLiteral("(transcript unavailable)"); // 落盘失败占位（偏差登记）
 
     return summarizeHistoryAsync(
         conversation, ctx,
-        [this, conversation, activeRequest, cardSummary, beforeChars, transcript, done](
+        [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, done](
             const QString &rawSummary) {
             // 摘要失败/空内容 → "(empty summary)" 占位（原同步链摘要末尾同款归属）
             const QString summary =
                 rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
             const QVector<QJsonObject> replaced{ summaryMessage(QStringLiteral("Compacted"),
                                                                 activeRequest, summary, transcript) };
-            emitCard(cardSummary, beforeChars, estimateChars(replaced), transcript);
+            emitCard(cardSummary, beforeTokens, estimateTokens(replaced), transcript);
             if (done)
                 done(replaced);
         });
@@ -587,7 +643,7 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
             done(conversation);
         return nullptr;
     }
-    const qsizetype beforeChars = estimateChars(conversation);
+    const qsizetype beforeTokens = estimateTokens(conversation);
     QString transcript = writeTranscript(conversation);
     if (transcript.isEmpty())
         transcript = QStringLiteral("(transcript unavailable)");
@@ -598,7 +654,7 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
 
     return summarizeHistoryAsync(
         oldHistory, ctx,
-        [this, conversation, activeRequest, cardSummary, beforeChars, transcript, tailStart, done](
+        [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, tailStart, done](
             const QString &rawSummary) {
             const QString summary =
                 rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
@@ -608,43 +664,52 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
             replaced.append(message);
             if (tailStart > 0)
                 replaced.append(conversation.mid(tailStart));
-            emitCard(cardSummary, beforeChars, estimateChars(replaced), transcript);
+            emitCard(cardSummary, beforeTokens, estimateTokens(replaced), transcript);
             if (done)
                 done(replaced);
         });
 }
 
-// lcc prepare：预算 → 截断归档 →（仍超主上限 S）micro →（仍超）fit →（仍超）全量压缩。
-// target = S*8/10（lcc 原式 int(50000*0.8)，随设置值缩放）。
-// 第九轮：主上限在管线入口取一次（contextCharLimit()），整条管线内一致，
-// 防中途设置变化导致同一管线前后口径分裂。
-// prepare 的异步版（P3，设计文档 §2.3）：前四段本地管线同步跑（逐字平移原同步链），
-// 仅触发全量压缩时经 compactHistoryAsync 挂起。conversation 按值入参（偏离 §3.3
-// 草案的原地引用：挂起跨越 await 后调用方栈上引用可能已析构，改由 done 按值交付
-// 最终态）；changed = 最终态与入参不等价，镜像迁移前同步宿主 `conversation == original`
-// 判定——挂起路径下即便本地段已改写会话，仍以最终 replaced 对 original 的比对为准。
+// lcc prepare：预算 → 截断归档 →（仍超预算）micro →（仍超）fit →（仍超）全量压缩。
+// 修4（D8/D10/D11）：门槛整体切 token 域——全局预算 T = AgentConst::contextTokenBudget()
+// （= contextCharLimit ÷ 每token均字符数，现取一次保管线内口径一致，沿用第九轮纪律）；
+// 会话体预算 T' = T − overhead（system+tools+注入段，宿主估算注入），钳位 [T/4, T]
+// 防 overhead 估大把 T' 压到 0。入口门槛用宿主锚定的 conversationTokens（D9：
+// usage.prompt_tokens 校准 − overhead，首轮回落纯估算）；段内退出用 estimateTokens 启发。
+// prepareAsync 的 changed/done 交付语义与 P3 异步契约逐字不变（五段顺序红线）。
 QOpenAi::AsyncRequest *
-CompactManager::prepareAsync(QVector<QJsonObject> conversation, const QString &activeRequest,
+CompactManager::prepareAsync(QVector<QJsonObject> conversation, qsizetype conversationTokens,
+                             qsizetype overheadTokens, const QString &activeRequest,
                              const QString &autoCompactCardSummary, QObject *ctx,
                              std::function<void(bool changed,
                                                 const QVector<QJsonObject> &conversation)> done) const
 {
     const QVector<QJsonObject> original = conversation;
-    // 管线入口取一次当前主上限，四条判定共用（管线执行中途改设置不影响本次判定一致性）
-    const qsizetype limit = contextCharLimit();
-    toolResultBudget(conversation);
-    snipCompact(conversation);
-    if (estimateChars(conversation) <= limit)
-    {
-        if (done)
-            done(conversation != original, conversation);
-        return nullptr;
+    const qsizetype budget = AgentConst::contextTokenBudget();
+    const qsizetype convBudget = qBound(
+        budget / 4, budget > overheadTokens ? budget - overheadTokens : budget / 4, budget);
+    // 验收期观测点（修4 口径换算校准用）：跑通后可降级 qCDebug 或移除，勿留噪音
+    qInfo().noquote() << QStringLiteral("[compact] prepare 入口 conv=%1 overhead=%2 T'=%3")
+                             .arg(conversationTokens)
+                             .arg(overheadTokens)
+                             .arg(convBudget);
+    auto convTokens = [](const QVector<QJsonObject> &c) { return estimateTokens(c); };
+
+    toolResultBudget(conversation, convBudget);
+    // 钉死处置（§6.2）：入口门槛用宿主锚定值，段内判定用管线自身启发——两口径
+    // 可能微偏。入口判超而各段启发均认为已达标时，不强推 compactHistory：
+    // 靠修3 救活的 reactive-400 兜底，防 LLM 摘要空转抖动。
+    if (conversationTokens > convBudget) {
+        // 修2 双门槛：条数回滞（>60）在 snipCompact 内判，token 门槛（> T'/2）在此传入
+        snipCompact(conversation, convTokens(conversation) * 2 > convBudget);
+        if (convTokens(conversation) > convBudget) {
+            const qsizetype targetTokens = convBudget * 8 / 10; // 0.8 比例不变（D11）
+            microCompact(conversation, targetTokens);
+            if (convTokens(conversation) > convBudget)
+                fitToolResults(conversation, targetTokens);
+        }
     }
-    const qsizetype targetChars = limit * 8 / 10;
-    microCompact(conversation, targetChars);
-    if (estimateChars(conversation) > limit)
-        fitToolResults(conversation, targetChars);
-    if (estimateChars(conversation) <= limit)
+    if (convTokens(conversation) <= convBudget)
     {
         if (done)
             done(conversation != original, conversation);

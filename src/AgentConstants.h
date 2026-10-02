@@ -177,6 +177,45 @@ inline qsizetype contextCharLimitValue()
     return static_cast<qsizetype>(stored);
 }
 
+// ---- token 估算与预算派生（修4：计量口径 token 化） ----
+// 触发与 UI 从「UTF-16 字符数」切换到 token 估算：CJK 码点 1 字符 ≈ 1 token，
+// 其余 4 字符 ≈ 1 token（向上取整）。预算换算单点：contextCharLimit（键名拼法涉
+// settings.ini 数据兼容，不可改；语义自此为「预算派生基准」）÷ 每 token 均字符数。
+// 不新增设置键（裁决）。锚点校准（usage.prompt_tokens 回填）在宿主侧与本估算组合，
+// 本头只提供纯函数估算，零 JSON 依赖。
+constexpr qsizetype kCharsPerTokenBudget = 4; // contextCharLimit(字符) → token 预算的换算基准
+
+// CJK 区段判定（估算用粗分类，非严格字族学）：假名/汉字/日韩谚文/兼容汉字/全角半角。
+// 落在 U+2E80–U+9FFF、U+AC00–U+D7AF、U+F900–U+FAFF、U+FF00–U+FFEF 之外的一律按 4:1 折算。
+inline bool isCjkCodePoint(char16_t u)
+{
+    return (u >= 0x2E80 && u <= 0x9FFF) || (u >= 0xAC00 && u <= 0xD7AF)
+        || (u >= 0xF900 && u <= 0xFAFF) || (u >= 0xFF00 && u <= 0xFFEF);
+}
+
+// UTF-16 码元串 → token 估算：CJK 每码元计 1，其余按 4 字符=1 token 向上取整
+// （代理对按 2 个非 CJK 码元参与折算，与全仓 UTF-16 字符计量口径同源的近似，登记偏差）。
+inline qsizetype estimateTokens(const QString &text)
+{
+    qsizetype cjk = 0;
+    for (const QChar ch : text) {
+        if (isCjkCodePoint(ch.unicode()))
+            ++cjk;
+    }
+    const qsizetype other = text.size() - cjk;
+    return cjk + (other + 3) / 4;
+}
+
+// 全局 token 预算单点取值：现取现用（与 contextCharLimitValue 同纪律，改设置下一回合生效）。
+inline qsizetype contextTokenBudget()
+{
+    return contextCharLimitValue() / kCharsPerTokenBudget;
+}
+
+// usage 尾 chunk 宽限毫秒（修3）：流 finished 后等待末个 SSE chunk 携带 usage 落地的
+// 短窗口，超时即按无 usage 交付（估算口径兜底）。消费方：QOpenAi::ChatStream（lane A）。
+constexpr int kUsageGraceMs = 1500;
+
 // ---- 会话数据根下的中间目录名（叶子段）单源 ----
 // 根路径统一由 AgentLoop::sessionDataRoot()（含 .lite-harness 中间层/会话段）或各引擎
 // 注入的 workDirSink 提供，此处只收敛最后拼接的叶子段，防止 AgentLoop/CompactManager
