@@ -651,8 +651,8 @@
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="378"/>
-        <source>lite-harness v%1</source>
-        <translation>lite-harness v%1</translation>
+        <source>lite-harness %1</source>
+        <translation>lite-harness %1</translation>
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="392"/>

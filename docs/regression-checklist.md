@@ -78,7 +78,7 @@
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（0.1.0）经 `LITE_VERSION` 宏运行时注入，全仓无散落硬编码
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（12.5）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s12.5`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s12.5` 不带多余 `v`
 
 ## 八、P2 记忆与子代理
 

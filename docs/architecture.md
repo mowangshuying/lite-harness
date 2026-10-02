@@ -294,7 +294,7 @@ SubAgent::progressEmitted(turnNo, toolName, summary) → 直连 AgentLoop::subag
 | 配置键与文件位置 | `AppSettings.h` |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION` → `LITE_VERSION` 宏 |
+| 版本号 | CMake `project VERSION`（数字段 12.5）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s12.5）|
 | 导航/堆叠键 | `NavItem.h::NavKey` |
 
 ---

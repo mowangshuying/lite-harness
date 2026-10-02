@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-# 版本号与基线 tag s00 对齐（s00 前身即 v0.1.0；原 0.0.1 与实际发布版本脱节）
-project(lite-harness VERSION 0.1.0)
+# 版本号与阶段 tag 对齐（当前 s12.5）：CMake project VERSION 只收数字点分，故存数字段 12.5，
+# 展示/打包用的 s 前缀统一在 LITE_VERSION 宏与 CPACK_PACKAGE_FILE_NAME 两处拼接（历史：s00 前身即 v0.1.0）
+project(lite-harness VERSION 12.5)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -75,9 +76,9 @@ target_include_directories(${TGT} PRIVATE
 # 不加 /WX：第三方/存量警告不致中断构建
 target_compile_options(${TGT} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 
-# 版本单单源：CMake project VERSION → LITE_VERSION 宏 → 运行时 setApplicationVersion
-# → 设置页版本标签（原 tr("0.0.1") 硬编码与 CMake 0.1.0 脱节，另案修并入此）
-target_compile_definitions(${TGT} PRIVATE LITE_VERSION="${PROJECT_VERSION}")
+# 版本号单源：CMake project VERSION（数字段）→ LITE_VERSION 宏（拼 s 前缀=s12.5）→ 运行时 setApplicationVersion
+# → 设置页版本标签 / 侧栏页脚（原 tr("0.0.1") 硬编码与 CMake 版本脱节，另案修并入此）
+target_compile_definitions(${TGT} PRIVATE LITE_VERSION="s${PROJECT_VERSION}")
 
 ### qss
 qt_add_resources(${TGT} "qss" PREFIX "/" FILES ${qss_rel})
@@ -151,7 +152,7 @@ if (LITE_PACKAGE)
 
 	set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
 	set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-	set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-win64")
+	set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-s${PROJECT_VERSION}-win64")
 	set(CPACK_GENERATOR "ZIP")
 	set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
 	include(CPack)

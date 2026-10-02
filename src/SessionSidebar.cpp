@@ -375,7 +375,7 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_footerDir = new QLabel(this);
     m_footerDir->setObjectName(QStringLiteral("sbFooterDir"));
     m_footerDir->setTextFormat(Qt::PlainText);
-    m_footerVersion = new QLabel(tr("lite-harness v%1").arg(QCoreApplication::applicationVersion()), this);
+    m_footerVersion = new QLabel(tr("lite-harness %1").arg(QCoreApplication::applicationVersion()), this);
     m_footerVersion->setObjectName(QStringLiteral("sbFooterVersion"));
     root->addWidget(m_footerDir);
     root->addWidget(m_footerVersion);
