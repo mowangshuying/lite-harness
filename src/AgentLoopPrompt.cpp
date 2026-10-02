@@ -25,11 +25,17 @@ namespace {
 // %2 = 技能目录文本（skillsCatalog）。arg() 单次替换语义保持：tempDir 由运行时拼接 tempRoot 得到
 // 且理论上可能含 '%'，故不走 arg 通道——模板拆成 head/tail 两段 QStringLiteral 各自单次 arg()，
 // tempDir 作为字面量在两段之间以 '+' 拼接；'+' 不解释 '%'，任何替换值中的 '%' 均不会被二次展开。
-// 编排规则段（"Work in rounds..." 五条 bullet）为 lite 自有增补、非 lcc 原文——有意破 verbatim
-// parity：实测同端点同模型下工具轮数偏高（默认低强度思考的补证），此段压轮数——一轮内并发发独立
-// 调用（AgentLoop 一批多调用仅计 1 轮）/先谋后动免逐步试探/宽域探索外包 task 子代理/失败不原样
-// 重试（呼应失败折叠回喂诱发重试的推手）。位置在 temp 纪律句后、Skills 段前；纯静态英文文本，
-// 不走 arg() 通道，%1..%4 单次替换语义与段间 \n\n 换行纪律不变；禁翻区 QStringLiteral 不包 tr()。
+// 编排规则段为 lite 自有增补、非 lcc 原文——有意破 verbatim parity：实测同端点同模型下工具轮数
+// 偏高（默认低强度思考的补证），原五条 bullet 压轮数——一轮内并发发独立调用（AgentLoop 一批多
+// 调用仅计 1 轮）/先谋后动免逐步试探/宽域探索外包 task 子代理/失败不原样重试（呼应失败折叠回喂
+// 诱发重试的推手）。本轮再增三条目标纪律（用户反馈"执行拖拉、目标不明确"的对症整改，原段只压
+// 轮数效率、不压目标收敛）：①首条前置句把"目标锚定+守范围"提到段首，bullet1 要求首次编辑前用
+// 一句话钉住目标与完成判据、多步任务用 todo_write 外化跟踪（全文此前对 todo_write 零提及，仅靠
+// schema 描述发现，模型几乎不自发调用；限定"multi-step"防小任务反增 1 轮）；②bullet2 目标歧义
+// 且影响方案时先问一条聚焦问题而非猜测跑偏；③末条收敛句——判据满足且验证即停手简洁汇报，禁未
+// 被要求的打磨与对已通过检查的重复验证（拖拉两形态；maxToolIterations=500 是熔断非收敛）。
+// 位置在 temp 纪律句后、Skills 段前；纯静态英文文本，不走 arg() 通道，%1..%4 单次替换语义与段间
+// \n\n 换行纪律不变；禁翻区 QStringLiteral 不包 tr()。
 QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
                          const QString &skillCatalog,
                          const QString &memoryIndex, const QString &memoryText)
@@ -46,7 +52,13 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
     // tail 段：仅 %2/%3/%4 参与 arg() 替换（多参 arg() 按升序映射到最小可用编号，仍为单次替换语义）
     const QString tail = QStringLiteral(
                              ". Never create throwaway files in the project root.\n\n"
-                             "Work in rounds; plan each round before acting.\n"
+                             "Work toward the user's stated goal; keep scope to what was "
+                             "asked. Plan each round before acting.\n"
+                             "- Before the first edit, pin the goal and its done-criteria in "
+                             "one sentence; for multi-step work, track it with todo_write and "
+                             "update statuses as steps complete.\n"
+                             "- If the goal is ambiguous in a way that changes the approach, "
+                             "ask one focused question instead of guessing.\n"
                              "- Issue all independent tool calls together in one round; "
                              "sequence only when a result gates the next call.\n"
                              "- Decide the full approach first; avoid step-by-step "
@@ -54,7 +66,10 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot,
                              "- Outsource broad codebase exploration to the task sub-agent; "
                              "keep this loop for decisions and integration.\n"
                              "- After a failed call, never retry it unchanged: diagnose from "
-                             "the output, change the approach, or report the blocker."
+                             "the output, change the approach, or report the blocker.\n"
+                             "- When the done-criteria are met and verified, stop and report "
+                             "the outcome; do not add unrequested refinements or re-check "
+                             "what already passed."
                              "\n\n"
                              "Skills available:\n%2\n\n"
                              "Use load_skill to read the full instructions when a skill applies."
