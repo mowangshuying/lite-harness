@@ -3,7 +3,7 @@
 > 沉淀历轮验收场景为可重复执行的手工回归清单。本仓无自动化测试/lint（CI 仅做干净环境构建），构建+运行+目测即验收手段。
 > **用法**：按改动面选组执行——P0 每次 src/ 改动必跑；P1 按受影响域跑；P2 里程碑/发版前抽查。
 > **基线环境**：Qt 6.9.0 msvc2022_64 + MSVC 2022 + CMake，仅 Windows；模型服务凭 `settings.ini` 键 `apiBaseUrl` / `apiToken`（主窗口构造期 `QOpenAi::initFromSettings()` 读取），模型下拉取 `modelOptions` / `defaultModel`（内置首项 `qwen3.8-flash`）。
-> **配置存储**：exe 同目录 `settings.ini`（`AppSettings::ini()` 单源，QSettings IniFormat）——注册表方案已随用户裁决废弃，禁再引入默认构造 `QSettings`。下文 `S` 指上下文上限字符数。
+> **配置存储**：exe 同目录 `settings.ini`（`AppSettings::ini()` 单源，QSettings IniFormat）——注册表方案已随用户裁决废弃，禁再引入默认构造 `QSettings`。下文 `S` 指上下文上限字符数（settings.ini `contextCharLimit`）；`T` 指派生 token 预算（`contextTokenBudget()` ≈ S/4，触发与 UI 均此口径）；`T′` 指 T 扣除 system+tools+注入 overhead 后的会话体预算。
 
 ## 一、P0 启动与构建
 
@@ -42,7 +42,7 @@
 ## 四、P1 设置与数据路径
 
 - [ ] 设置页「默认工作目录」：选新目录 → `settings.ini` `defaultWorkDir` 更新；对话框取消 → 保持原值；清除 → 展示「未设置（使用进程当前目录）」
-- [ ] 设置页「上下文上限（字符）」改为 300000 → 落盘即下一回合压缩管线现取生效（无需重启）；卡片展示千分位（QLocale::c() 固定，不随界面语言变）
+- [ ] 设置页「上下文上限（字符）」改为 300000 → 落盘即下一回合压缩管线现取生效（无需重启）；卡片展示千分位（QLocale::c() 固定，不随界面语言变），数值行带派生提示「≈N token」（= 字符上限/4，仅展示、键语义仍是字符）；侧栏占用同为 ≈token 口径（contextCharLimit/4 派生预算，非字符）
 - [ ] 上下文上限输入 9999 / 5000001 / 非数字 → 「无效数值」弹窗不落盘；输入带千分位的 `200,000` → 剥逗号解析成功；合法界 10000~5000000、默认 200000
 - [ ] 键位巡检 → `language` / `defaultWorkDir` / `sidebarVisible` / `contextCharLimit` / `maxToolIterations` / `apiBaseUrl` / `apiToken` / `modelOptions` / `defaultModel` 均落于 exe 同目录 `settings.ini`（手工编辑重启即生效，注册表路径不再被读写）
 - [ ] 模型清单可配置：`settings.ini` 写 `modelOptions=qwen-a,qwen-b`（裸逗号串、不带引号）→ 下拉恰列两项且顺序一致；手改首项为 `qwen3.8-flash,qwen3.8-max` 读侧解析成功（`iniTextValue()` 归一化列表串，回归点：曾误判「未配置」静默回退内置清单）；清单为空/全空白 → 回退内置两项；条数超 32 截断
@@ -52,11 +52,11 @@
 
 ## 五、P1 异步链与压缩（禁回退阻塞的验证点）
 
-- [ ] 新回合首条消息 → 记忆召回在开聊前**异步**注入（等待期 UI 不冻结、无嵌套事件循环），结果追加 system prompt 尾部（重建段：工作目录/技能目录/记忆索引/召回记录齐全）；召回飞行中 cron 交付被 `m_running` 卫兵拒投不插队
+- [ ] 新回合首条消息 → 记忆召回在开聊前**异步**注入（等待期 UI 不冻结、无嵌套事件循环），注入请求 payload 尾部独立消息（`<agent_context>` user，不落 history.json），system 全会话字节恒定（前缀缓存锚点）；召回飞行中 cron 交付被 `m_running` 卫兵拒投不插队
 - [ ] 压缩三路径各触发一次（超限自动 / `compact` 工具 / 溢出反应式）→ 全程滚动气泡、切主题、切页均响应
-- [ ] 超大工具输出（>0.6S 字符）→ 卸载落 `.task_outputs/tool-results/`，历史内仅保留约 2000 字符预览
-- [ ] 压缩完成后查盘 → 原转录落 `.transcripts/*.jsonl`；压缩后历史体量 ≤0.8S；派生阈值读码 CompactManager 等比 batch=4S / large=0.6S / summary=1.6S（勿写死绝对值）
-- [ ] 人为制造上下文超限错误 → 反应式压缩自动重试恰 1 次（预算每 run 归零、成功收响应即复位）后重发
+- [ ] 超大工具输出（token 估算 >0.6T′）→ 卸载落 `.task_outputs/tool-results/`，历史内仅保留约 2000 字符预览（预览仍字符域）
+- [ ] 压缩完成后查盘 → 原转录落 `.transcripts/*.jsonl`；压缩后历史体量 ≤0.8S；派生阈值读码 CompactManager 等比 batch=4S / large=0.6S / summary=1.6S（勿写死绝对值）；snip 迟滞 60/50（>60 条**且**过 token 闸门才归档、归档后总量 ≈50 条，10 条迟滞带内不重复 snip）、归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写）、会话内归档标记为恒定文本（无条数/无路径，缓存友好）
+- [ ] 人为制造上下文超限错误 → 服务端 4xx 响应体原文并入 error 文本（错误气泡可见 `context_length_exceeded` 等，不再恒为 Unknown error）；溢出关键词表单源 `isContextOverflowError`；反应式压缩自动重试恰 1 次（预算每 run 归零、成功收响应即复位）后重发
 - [ ] 全仓 grep `QEventLoop` → 零嵌套事件循环；任何新增「阻塞等待」代码按回归处理（异步链禁回退，压缩摘要失败以 `(empty summary)` 占位也不许改成同步等待）
 - [ ] 会话自然结束后 → 记忆沉淀 fire-and-forget 挂回合尾巴，不阻塞下一回合输入
 
@@ -83,7 +83,7 @@
 ## 八、P2 记忆与子代理
 
 - [ ] 会话自然结束后查 `.memory/` → MEMORY.md 索引 + slug.md 记录新增；强续跑 / 撞调用上限分支**不**触发沉淀；仅 persistent scope 记录且过三重去重
-- [ ] 召回 LLM 选择失败 → 关键词打分兜底，system prompt 尾部仍有注入段
+- [ ] 召回 LLM 选择失败 → 关键词打分兜底，兜底记录仍出现在 payload 尾部注入块（不落 history.json，勿回退为注入 system）
 - [ ] 记忆整理阈值触发 → 卡片「已整理记忆：%1 → %2 条」；重写中途失败 → 快照回滚原记录完好（无半成品态）；库过大 skip/skipped 降级不崩
 - [ ] `task` 子代理 → 全新上下文（不带主会话历史）、黑盒只回最终文本（中间过程不涌入主流气泡）
 - [ ] 子代理轮次预算与主循环同源（`start()` 入口快照 `AgentConst::maxToolIterationsValue()` 进 `m_maxTurns`，原固定 `kMaxSubagentTurns = 50` 已删）→ 改「单轮最大调用次数」联动子代理，但单次运行中不随设置变动；预算耗尽以停跑文案收尾
