@@ -11,6 +11,25 @@
 #include <QJsonArray>
 #include <functional>
 
+namespace {
+// 上下文超限错误判定单源（规格修3 §5.4）：小写包含式匹配主流 OpenAI 兼容端点的溢出
+// 文案族（含 4xx 响应体透传后的 message 文本）；命中即触发反应式压缩（预算 1 次不变）
+bool isContextOverflowError(const QString &msg)
+{
+    static const char *kPatterns[] = {
+        "prompt_too_long", "too many tokens", "context_length_exceeded",
+        "maximum context length", "context length", "input is too long",
+        "range of input length",
+    };
+    const QString lowered = msg.toLower();
+    for (const char *p : kPatterns) {
+        if (lowered.contains(QLatin1String(p)))
+            return true;
+    }
+    return false;
+}
+} // namespace
+
 void AgentLoop::startChatRequest(const QJsonArray &messages)
 {
     // 发送前压缩挂接（lcc s08 prepare：位于 lcc 主循环 while 顶部，即每次发起请求之前）。
@@ -34,7 +53,17 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
 
     QJsonObject request;
     request[QStringLiteral("model")] = m_model;
-    request[QStringLiteral("messages")] = requestMessages;
+    // 修1（D1）：记忆注入块作为独立 user 消息追加在 payload 尾部——不落 m_messages/
+    // history.json（历史与 UI 零污染、会话恢复无残留），跨回合的分歧点恒在序列末端，
+    // messages[0..n-1] 前缀字节稳定 → OpenAI 兼容端点的前缀缓存全保
+    QJsonArray payload = requestMessages;
+    if (!m_contextInjection.isEmpty()) {
+        QJsonObject injection;
+        injection[QStringLiteral("role")] = QStringLiteral("user");
+        injection[QStringLiteral("content")] = m_contextInjection;
+        payload.append(injection);
+    }
+    request[QStringLiteral("messages")] = payload;
     request[QStringLiteral("tools")] = createToolsDefinition();
     // 默认开启思考
     request[QStringLiteral("enable_thinking")] = true;
@@ -45,7 +74,16 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     request[QStringLiteral("top_p")] = AgentConst::kTopP;
     // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致，取自单源常量）
     request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
+    // 修3：流式回读 usage（OpenAI 兼容扩展，末帧携带 prompt_tokens 等）——仅主循环注入；
+    // 侧链压缩与 SubAgent 请求不带此键，token 锚只认真值来源（端点不认则静默忽略，走本地兜底）
+    request[QStringLiteral("stream_options")] =
+        QJsonObject{{QStringLiteral("include_usage"), true}};
     // stream 由 QOpenAi 内部按流式发送，无需在此显式指定
+
+    // 修4 发送点快照：usage 回读到达时以「当时发出的历史条数 + 注入块估算」落锚，
+    // 与 prompt_tokens 口径严格对齐（requestMessages 即由 m_messages 快照而来，同口径）
+    m_lastSendHistoryCount = m_messages.size();
+    m_lastSendInjectionTokens = AgentConst::estimateTokens(m_contextInjection);
 
     QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
     m_currentStream = s;
@@ -53,6 +91,9 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     // 增量转发（this 上下文：AgentLoop 销毁自动断连，s 为 this 子对象自动释放）
     connect(s, &QOpenAi::ChatStream::thinkingDelta, this, &AgentLoop::thinkingDelta);
     connect(s, &QOpenAi::ChatStream::textDelta, this, &AgentLoop::textDelta);
+    // 修3/修4：usage 末帧回读 → token 锚（契约 C-2：成功路径、messageFinished 之前发）
+    connect(s, &QOpenAi::ChatStream::usageReceived, this,
+            [this](const QJsonObject &usage) { adoptUsageAnchor(usage); });
 
     connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
         // 卫兵（第六轮审计 C1 纵深防御）：坏 JSON 帧 error 后流已成终局，但 error 回调
@@ -148,12 +189,9 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         // （串行队列下宿主流错误与子代理运行实际互斥，此处为防御性接线）
         cancelSubAgent();
         // 反应式压缩（lcc s08）：上下文超限且重试预算未用尽 → 压缩历史后重发请求，
-        // 否则落入原错误路径终止。关键词匹配依赖流错误文本（QOpenAi 未透传响应体时的
-        // 已知局限，登记偏差）；MAX_REACTIVE_RETRIES=1 为每轮用户提问的局部预算（run 归零）
-        const QString lowered = msg.toLower();
-        if ((lowered.contains(QStringLiteral("prompt_too_long")) ||
-             lowered.contains(QStringLiteral("too many tokens"))) &&
-            m_reactiveRetries < 1)
+        // 否则落入原错误路径终止。修3 后 4xx 响应体已并入 error 文本，关键词表扩至
+        // isContextOverflowError 单源；MAX_REACTIVE_RETRIES=1 为每轮用户提问的局部预算（run 归零）
+        if (isContextOverflowError(msg) && m_reactiveRetries < 1)
         {
             // 重试预算在发起前消费（原同步段 ++ 位置不动，防重试风暴）；空对话短路时
             // 预算同样被消费——与原同步链行为一致（reactiveCompact 空对话原样返回后重发）
@@ -206,8 +244,15 @@ void AgentLoop::applyCompactPipelineAsync(const QJsonArray &callerMessages,
             next(callerMessages);
         return;
     }
+    // 修4（契约 C-1/C-6）：token 口径拆分——conversationTokens 只含会话主体（mid(1)），
+    // 判定总额 = 锚定/本地全量估算（estimatedContextTokens 含 system[0]+tools+注入，
+    // 修 B4 漏计）；overhead = system+tools+注入，差值交 prepareAsync 与 token 预算比较
+    const qsizetype overheadTokens = contextOverheadTokens();
+    const qsizetype totalTokens = estimatedContextTokens();
+    const qsizetype conversationTokens = totalTokens > overheadTokens ? totalTokens - overheadTokens : 0;
     auto *req = m_compact.prepareAsync(
-        m_messages.mid(1), m_activeRequest, tr("自动压缩（上下文超限）"), this,
+        m_messages.mid(1), conversationTokens, overheadTokens, m_activeRequest,
+        tr("自动压缩（上下文超限）"), this,
         [this, callerMessages, next](bool changed, const QVector<QJsonObject> &conversation) {
             // 续延卫兵（同 P1 召回范式）：stop 后不回写历史、不发请求
             if (!m_running)
@@ -238,6 +283,9 @@ void AgentLoop::applyCompressedConversation(const QVector<QJsonObject> &conversa
     m_messages.clear();
     m_messages.append(systemMessage);
     m_messages.append(conversation);
+    // 修4：压缩整体改写历史 → prompt_tokens 锚作废（回退本地全量估算，直至下次 usage 重锚）
+    m_tokenAnchor = -1;
+    m_historyRewrittenSinceAnchor = true;
 }
 
 void AgentLoop::setRunning(bool running)

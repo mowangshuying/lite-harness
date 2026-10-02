@@ -29,6 +29,7 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QJsonArray>
+#include <QJsonDocument>
 
 AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObject *parent)
     : QObject(parent)
@@ -64,11 +65,12 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
         emit toolOutputReady(QStringLiteral("memory"), summary, output, !isToolFailure(output));
     });
 
-    // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/.lite-harness/skills/*/SKILL.md，目录注入 system prompt
+    // 技能扫描（lcc s07）：构造时扫描一次 <m_workDir>/.lite-harness/skills/*/SKILL.md；
+    // 修1 后目录数据不再进 system（见 makeContextInjection 注入块），仅供 load_skill 消费
     scanSkills();
 
-    // 初始 system prompt（lcc s09 六段：工作目录 + 临时目录 + 技能目录 + 记忆段，含 lcc 7e33a8e
-    // 追加的 temp 段；此刻记忆召回尚未执行，%3 读自磁盘索引（可能为空）、%4 为空串）
+    // 初始 system prompt（规格修1 静态化：仅工作目录 + 临时目录 + 编排规则 + 使用说明句/
+    // 记忆声明静态段；记忆目录与召回改由 run() 续延构建的注入块随 payload 尾部下发）
     QJsonObject systemMessage;
     systemMessage[QStringLiteral("role")] = QStringLiteral("system");
     systemMessage[QStringLiteral("content")] = QString();
@@ -97,6 +99,9 @@ void AgentLoop::setWorkDir(const QString &dir)
     if (dir.isEmpty())
         return;
     m_workDir = QDir(dir).absolutePath();
+    // 修4：换工作目录 → system/会话根全变，token 锚自然失效（回退本地全量估算，
+    // 直至下一次 usage 回读重锚）
+    m_tokenAnchor = -1;
 
     // lcc s12：换工作目录重载 durable 台账（stop→start 复位启动标志后重读新目录的
     // scheduled_tasks.json；load 幂等去重——同 id 已登记则跳过，见 CronSchedulerManager 偏差注释）
@@ -210,11 +215,12 @@ void AgentLoop::run(const QString &userMessage)
     // user 消息 → 通知并入其 content 尾部（lcc 末条 user 合并语义）；无通知不动作
     injectBackgroundResults();
 
-    // 记忆召回（lcc s09 loop.py :71-72：每轮提问在 while 前 load_memories → 重建 system
-    // prompt；空存储时选择段短路，零 LLM 调用）。mid(1) 排除 system，与 lcc 会话主体
-    // 语义对齐。异步化 P1（设计文档 §2.1）：召回链改走 AsyncRequest，下方续延是唯一
-    // 发起路径；断网/超时/配置缺失在 MemoryManager 内部统一降级为关键词兜底或空注入
-    // （§3.2 契约：done 恒收到可用文本），照常开聊、不抛不卡。
+    // 记忆召回（lcc s09 loop.py :71-72：每轮提问在 while 前 load_memories；规格修1 有意
+    // 偏离：召回结果不再重建 system——快照进注入块 m_contextInjection，由 doStartChatRequest
+    // 追加 payload 尾部，messages[0] 全会话字节恒定保前缀缓存；空存储时选择段短路，
+    // 零 LLM 调用）。mid(1) 排除 system，与 lcc 会话主体语义对齐。异步化 P1（设计文档 §2.1）：
+    // 召回链改走 AsyncRequest，下方续延是唯一发起路径；断网/超时/配置缺失在 MemoryManager
+    // 内部统一降级为关键词兜底或空注入（§3.2 契约：done 恒收到可用文本），照常开聊、不抛不卡。
     // 【红线契约 §6-1】m_running=true 必须保持同步置于本函数任何异步发起之前（位置见
     // 函数头部，不得移动或延迟）：tryDeliverCron 同栈直连 scheduledUserMessage 后回读
     // m_running 判定接管成败，依赖 run() 返回前标志已置位——召回飞行中不算回合结束。
@@ -231,8 +237,9 @@ void AgentLoop::run(const QString &userMessage)
             // cancel 本请求、done 正常永不触发，此处为防御复验，勿当作主防线删除
             if (!m_running)
                 return;
-            m_relevantMemories = recalled;
-            rebuildSystemPromptMessage();
+            // 修1：召回结果快照进注入块（回合内字节恒定），不再重写 system [0]；
+            // 目录读盘即时取（MEMORY.md 沉淀会全量重写索引，注入块每回合自然取新值）
+            m_contextInjection = buildContextInjection(m_memory.readMemoryIndex(), recalled);
             // 快照历史并发起流式请求（事件驱动，不创建工作线程）
             QJsonArray messagesJson;
             for (const auto &msg : m_messages)
@@ -330,3 +337,69 @@ void AgentLoop::stop()
     persistHistory(); // 用户停止终局落盘（已累积历史不丢）
     emit error(tr("已停止。"));
 }
+
+// ---- 上下文 token 计量（规格修4：usage 锚定 + 增量估算，UI 与压缩触发共用单源）----
+
+// 采纳一次 usage.prompt_tokens 为锚（契约 C-2：ChatStream 成功路径、messageFinished 之前发）。
+// prompt_tokens 缺失/非正（部分兼容端点不回 usage）一律忽略，保持旧锚或本地兜底路径。
+// 锚口径 = 发送点 payload 全量（system + 历史 + tools schema + 注入块）的服务端真值；
+// 故 anchorCount/anchorInjection 均取发送点快照，与当前 m_messages/m_contextInjection 对齐。
+void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
+{
+    const qint64 promptTokens = qint64(usage.value(QStringLiteral("prompt_tokens")).toDouble());
+    if (promptTokens <= 0)
+        return;
+    m_tokenAnchor = promptTokens;
+    m_tokenAnchorCount = m_lastSendHistoryCount;
+    m_anchorInjectionTokens = m_lastSendInjectionTokens;
+    m_historyRewrittenSinceAnchor = false;
+}
+
+// 当前上下文 token 估算（锚定 + 增量外推）：
+// - 锚有效（已采纳 usage、锚后未压缩/恢复改写历史、锚计数不超过当前条数）：
+//   锚真值 + 其后新增消息逐条估算 + 注入块变化量（当前注入 - 锚时注入，契约 C-6）。
+//   注意锚路径不再计 overhead——prompt_tokens 已含 system/tools/注入的发送点真值；
+//   增量与锚值同为 token 口径（AgentConst::estimateTokens），混合口径误差有界，
+//   下一次 usage 回读自然自校正（§9.7 已知项：todo reminder/后台注入尾拼接不计入，轻微低估有界）。
+// - 锚失效（首回合未回读/压缩/恢复/setWorkDir/换目录）：本地全量估算 =
+//   CompactManager::estimateTokens(m_messages)（含 system[0]）+ tools schema + 注入块。
+//   此为修 B4 的关键：旧字符口径触发漏计 system 与 18 工具 schema，本兜底一并计入。
+qsizetype AgentLoop::estimatedContextTokens() const
+{
+    const qsizetype injectionTokens = AgentConst::estimateTokens(m_contextInjection);
+    if (m_tokenAnchor > 0 && !m_historyRewrittenSinceAnchor
+        && m_tokenAnchorCount <= m_messages.size()) {
+        qsizetype delta = 0;
+        for (qsizetype i = m_tokenAnchorCount; i < m_messages.size(); ++i) {
+            delta += AgentConst::estimateTokens(QString::fromUtf8(
+                QJsonDocument(m_messages.at(i)).toJson(QJsonDocument::Compact)));
+        }
+        return qMax<qsizetype>(0, static_cast<qsizetype>(m_tokenAnchor) + delta
+                                    + injectionTokens - m_anchorInjectionTokens);
+    }
+    if (m_toolsSchemaTokens == 0) {
+        m_toolsSchemaTokens = AgentConst::estimateTokens(QString::fromUtf8(
+            QJsonDocument(createToolsDefinition()).toJson(QJsonDocument::Compact)));
+    }
+    return CompactManager::estimateTokens(m_messages) + m_toolsSchemaTokens + injectionTokens;
+}
+
+// 非会话开销（prepareAsync 拆分 conversationTokens 用，契约 C-1/C-6）：system[0] + tools
+// schema + 注入块。注意与 estimatedContextTokens 的锚路径混用时仅用于减法拆口径，
+// 误差同上（有界、下次 usage 自校正）。
+qsizetype AgentLoop::contextOverheadTokens() const
+{
+    qsizetype tokens = 0;
+    if (!m_messages.isEmpty()) {
+        tokens += AgentConst::estimateTokens(QString::fromUtf8(
+            QJsonDocument(m_messages.at(0)).toJson(QJsonDocument::Compact)));
+    }
+    if (m_toolsSchemaTokens == 0) {
+        m_toolsSchemaTokens = AgentConst::estimateTokens(QString::fromUtf8(
+            QJsonDocument(createToolsDefinition()).toJson(QJsonDocument::Compact)));
+    }
+    tokens += m_toolsSchemaTokens;
+    tokens += AgentConst::estimateTokens(m_contextInjection);
+    return tokens;
+}
+

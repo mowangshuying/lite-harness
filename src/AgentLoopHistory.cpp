@@ -169,6 +169,9 @@ bool AgentLoop::loadSavedHistory(QString *error)
     flushOrphans(); // 数组结束：处理最后一段 assistant
 
     m_messages = rebuilt;
-    rebuildSystemPromptMessage(); // 按恢复后的 workDir/会话根/记忆重建 [0]
+    rebuildSystemPromptMessage(); // 按恢复后的 workDir/会话根/技能目录重建 [0]（修1 静态化）
+    // 修4：恢复会话 = 历史整体改写，prompt_tokens 锚作废（回退本地全量估算，下次 usage 重锚）
+    m_tokenAnchor = -1;
+    m_historyRewrittenSinceAnchor = true;
     return true;
 }

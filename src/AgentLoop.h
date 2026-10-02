@@ -71,6 +71,12 @@ public:
     void setModel(const QString &model);
     QString model() const { return m_model; }
 
+    // 上下文 token 口径单源（规格修4）：UI 进度条与压缩触发共用。usage.prompt_tokens 锚有效时
+    // = 锚 + 其后新增消息逐条估算 + 注入块变化量；锚失效时回退本地全量估算（含 system[0]、
+    // tools schema、注入块——修 B4 触发漏计）。估算单源 AgentConst::estimateTokens /
+    // CompactManager::estimateTokens（字符→token 折算）。
+    qsizetype estimatedContextTokens() const;
+
     // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
     void resolvePermission(bool allow);
@@ -254,9 +260,21 @@ private:
     QString runLoadSkill(const QJsonObject &args) const;
 
     // ---- 记忆（lcc s09 MemoryManager：独立类承接存储与三条 LLM 链，本类持有实例）----
-    // 以当前工作目录/技能目录/记忆索引/本轮召回记录重建 m_messages[0] 的 system prompt
-    // （构造、setWorkDir 与每轮 run() 召回后调用；lcc build_system_prompt 六段结构（含 lcc 7e33a8e temp 段）的 lite 等价）
+    // 以当前工作目录/会话根/技能目录使用说明句重建 m_messages[0] 的 system prompt
+    //（规格修1 静态化：调用点=构造/setWorkDir/loadSavedHistory，run() 召回不再逐轮重写 [0]，
+    // 技能目录/记忆目录/召回改走注入块（D2 回填技能目录）；lcc build_system_prompt 六段结构的 lite 有意偏离）
     void rebuildSystemPromptMessage();
+    // 请求尾部注入块构建的成员包装（模板单源在 AgentLoopPrompt.cpp 匿名 ns；run() 召回续延调用；
+    // 经包装透传 skillsCatalog()，签名不含技能参数）
+    QString buildContextInjection(const QString &memoryIndex, const QString &memoryText) const;
+
+    // ---- 上下文 token 计量（规格修4：usage 锚定 + 增量估算）----
+    // 采纳 ChatStream::usageReceived 回传的 usage.prompt_tokens 为锚（<=0 忽略；同时以发送点
+    // 快照 m_lastSendHistoryCount/m_lastSendInjectionTokens 落锚、清历史改写标记）
+    void adoptUsageAnchor(const QJsonObject &usage);
+    // 非会话口径的固定开销（system[0] + tools schema + 注入块），交 prepareAsync 拆分
+    // conversationTokens = estimated − overhead（token 计量升级后压缩触发不再漏计 B4）
+    qsizetype contextOverheadTokens() const;
 
     // 记忆沉淀链启动（异步化 P2，设计文档 §2.2/§3.4）：单槽队列——链空闲则立即发起
     // extractMemoriesAsync，在途则置 m_memoryChainPending（至多补一次，尽力而为语义）；
@@ -347,7 +365,17 @@ private:
     QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
     // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用四参 toolOutputReady（"memory"）
     MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，异步回调式，构造时注入回调）
-    QString m_relevantMemories;          // 本轮召回的记录文本（system prompt 尾段；run() 时刷新）
+    // 本回合注入块快照（规格修1/D1）：run() 召回续延构建一次、回合内字节恒定；
+    // doStartChatRequest 以独立 user 消息追加 payload 尾部，不落 m_messages/history.json
+    QString m_contextInjection;
+    // ---- 上下文 token 计量锚（规格修4）：prompt_tokens 真值锚 + 发送点快照增量外推 ----
+    qint64 m_tokenAnchor = -1;           // 最近一次有效 usage.prompt_tokens；-1=无锚（本地全量兜底）
+    qsizetype m_tokenAnchorCount = 0;    // 锚对应的历史条数（发送点 m_messages.size()）
+    qsizetype m_anchorInjectionTokens = 0; // 锚对应发送点的注入块估算（当前值-锚值=注入变化量）
+    qsizetype m_lastSendHistoryCount = 0;  // 发送点快照：请求发出时 m_messages.size()
+    qsizetype m_lastSendInjectionTokens = 0; // 发送点快照：请求发出时注入块估算
+    bool m_historyRewrittenSinceAnchor = false; // 锚后历史被压缩/恢复改写 → 锚作废
+    mutable qsizetype m_toolsSchemaTokens = 0;  // tools schema 估算惰性缓存（构造后字节恒定）
     // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然
     // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由
     // executeBashAsync 后台模式异步驱动，仅主线程访问，无锁
