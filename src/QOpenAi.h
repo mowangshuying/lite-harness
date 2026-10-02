@@ -35,6 +35,10 @@ signals:
     void messageFinished(const QJsonObject &fullMessage);
     // 错误
     void error(const QString &message);
+    // 服务端 usage 对象（prompt_tokens / completion_tokens / total_tokens 等原样透出）。
+    // 修3 契约 C-2：仅在成功路径、且 usage 非空时发射，恒先于 messageFinished（直连，
+    // 顺序有保证）。不并入 assistantMsg——塞进去会随历史落盘污染持久化与计量。
+    void usageReceived(const QJsonObject &usage);
 
 private:
     void startRequest(const QJsonObject &input, Mode mode = Mode::Chat);

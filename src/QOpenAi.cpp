@@ -90,6 +90,12 @@ public:
     int retriesLeft = 0;       // 剩余可重试次数
     QTimer *timeoutTimer = nullptr;
     QTimer *totalTimer = nullptr;  // 总时长哨兵（对照 AsyncRequest::m_totalTimer 同款机制）
+    // 修3（usage 回读）：stream_options.include_usage 的 usage 尾 chunk 在 finish_reason
+    // 之后到达，宽限表只在「请求了 stream_options 且 usage 未达」时武装，单次触发
+    QTimer *usageGraceTimer = nullptr;
+    QJsonObject usage;            // 捕获的 usage 对象（服务端原样透出，不进 assistantMsg）
+    bool usageRequested = false;  // 本次请求体是否带 stream_options（仅 Chat 模式武装）
+    bool sawFinishReason = false; // 已见 finish_reason 且进入宽限（usage 尾 chunk 到达即提前收口）
 };
 
 ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
@@ -117,6 +123,13 @@ ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
         if (d->reply)
             d->reply->abort();
     });
+
+    // usage 尾 chunk 宽限（修3 / 决策 D7）：finish_reason 已至而 usage 未至时给它最后一拍；
+    // 超时直接走 finishStream 正常收尾（usage 为空则不 emit usageReceived），
+    // done 门闩保证终局恰一次，最坏代价仅 +kUsageGraceMs 尾延迟
+    d->usageGraceTimer = new QTimer(this);
+    d->usageGraceTimer->setSingleShot(true);
+    connect(d->usageGraceTimer, &QTimer::timeout, this, &ChatStream::finishStream);
 }
 
 ChatStream::~ChatStream()
@@ -132,6 +145,7 @@ void ChatStream::cancel()
     d->done = true;
     d->timeoutTimer->stop();
     d->totalTimer->stop();
+    d->usageGraceTimer->stop();
 
     if (d->reply)
     {
@@ -145,6 +159,10 @@ void ChatStream::startRequest(const QJsonObject &input, Mode mode)
     d->input = input;
     d->input[QStringLiteral("stream")] = true; // 流式请求必须参数
     d->mode = mode;
+    // 修3：stream_options 由调用方塞进 input 原样透传（仅主循环携带）；此处只判定
+    // 本流是否需要 finish_reason 后的 usage 宽限。AsyncRequest/SubAgent 不带该字段
+    // → usageRequested 恒 false，LegacyCompletion 亦恒 false，行为逐字节不变。
+    d->usageRequested = (d->mode == Mode::Chat) && d->input.contains(QStringLiteral("stream_options"));
     d->retriesLeft = client().maxRetries;
     sendRequest();
 }
@@ -262,12 +280,25 @@ void ChatStream::processFrame(const QByteArray &frame)
         return;
     }
     const QJsonObject root = doc.object();
+
+    // 修3：usage 捕获必须先于 choices 检查——include_usage 语义下末帧 choices=[] 且带
+    // usage，若按原顺序会被 isEmpty 分支静默丢弃
+    const QJsonValue usageVal = root.value(QStringLiteral("usage"));
+    if (usageVal.isObject() && !usageVal.toObject().isEmpty())
+        d->usage = usageVal.toObject();
+
     const QJsonValue choicesVal = root.value(QStringLiteral("choices"));
     if (!choicesVal.isArray())
         return;
     const QJsonArray choices = choicesVal.toArray();
     if (choices.isEmpty())
+    {
+        // include_usage 的尾 chunk：usage 已在上方捕获。finish_reason 已见过的话提前收口，
+        // 不再空等 [DONE]/finished（done 门闩保证与后续终局路径互斥、恰一次）
+        if (d->sawFinishReason && !d->usage.isEmpty())
+            finishStream();
         return;
+    }
     const QJsonObject choice = choices.first().toObject();
 
     // legacy /completions：text 直接位于 choice，无 delta/reasoning_content/tool_calls
@@ -346,10 +377,23 @@ void ChatStream::processFrame(const QByteArray &frame)
         }
     }
 
-    // 本轮结束（finish_reason 出现）
+    // 本轮结束（finish_reason 出现）。修3（决策 D7）：OpenAI 语义下 usage 尾 chunk 排在
+    // finish_reason 帧之后，现状「finish_reason 即终局」会让 usage 永失——请求了
+    // stream_options 且 usage 未到时改启单次宽限；usage 尾 chunk / [DONE] / reply
+    // finished / 宽限超时任一先行收口，done 门闩保证恰一次。未请求方逐字节不变。
     const QString finishReason = choice.value(QStringLiteral("finish_reason")).toString();
     if (!finishReason.isEmpty())
-        finishStream();
+    {
+        if (d->usageRequested && d->usage.isEmpty() && !d->sawFinishReason)
+        {
+            d->sawFinishReason = true;
+            d->usageGraceTimer->start(AgentConst::kUsageGraceMs);
+        }
+        else
+        {
+            finishStream();
+        }
+    }
 }
 
 void ChatStream::finishStream()
@@ -358,6 +402,7 @@ void ChatStream::finishStream()
         return;
     d->timeoutTimer->stop();
     d->totalTimer->stop();
+    d->usageGraceTimer->stop(); // 任何终局路径收口即撤宽限（[DONE]/提前收口/超时后残留表不再触发）
 
     OpenAiClient &c = client();
     const bool hasError = d->reply && d->reply->error() != QNetworkReply::NoError;
@@ -408,10 +453,39 @@ void ChatStream::finishStream()
         // HTTP 状态码分层
         if (httpStatus >= 400 && httpStatus < 500)
         {
-            // 4xx 客户端错误：硬错误，不重试
+            // 4xx 客户端错误：硬错误，不重试。修3：响应体是 reactive 判定的信息源
+            // （context_length_exceeded 等只存在于服务端 JSON 错误体里），errorString()
+            // 对 4xx 常是 "Unknown error"——必须读体并入 error 文本。
             d->done = true;
+            // 合并全部残体来源（须在 cleanupReply 前读 reply）：pendingFrame 存已成行但未
+            // 遇帧边界派发的行（错误体单行带尾部 '\n' 时全文在此）、buffer 存未成行残段、
+            // readAll 取尚未交付的尾巴。规格骨架只列后两处，加 pendingFrame 防单行体被
+            // 行提取吞掉后合并结果为空、诊断失效。
+            QByteArray body = d->pendingFrame;
+            if (!body.isEmpty() && !d->buffer.isEmpty())
+                body += '\n';
+            body.append(d->buffer);
+            if (d->reply)
+                body.append(d->reply->readAll());
+            const QByteArray errBody = body.trimmed();
+            QString detail = errorMsg;
+            const QJsonDocument errDoc = QJsonDocument::fromJson(errBody);
+            if (errDoc.isObject())
+            {
+                const QJsonObject errObj = errDoc.object().value(QStringLiteral("error")).toObject();
+                const QString msg = errObj.value(QStringLiteral("message")).toString();
+                const QString code = errObj.value(QStringLiteral("code")).toString();
+                if (!msg.isEmpty())
+                    detail = code.isEmpty() ? msg : msg + QStringLiteral(" [") + code + QStringLiteral("]");
+            }
+            else if (!errBody.isEmpty())
+            {
+                // 非 JSON 错误体：截 400 字节直呈（utf8 断字符由替换符兜底，诊断用途可接受）
+                detail = QString::fromUtf8(errBody.left(400));
+            }
             cleanupReply();
-            emit error(tr("HTTP %1 错误: %2").arg(httpStatus).arg(errorMsg));
+            // tr 格式串沿用现状，不新增 i18n 条目；detail 为服务端英文原文，关键词匹配依赖它
+            emit error(tr("HTTP %1 错误: %2").arg(httpStatus).arg(detail));
             return;
         }
         else if (isRetryableStatus(httpStatus))
@@ -460,6 +534,10 @@ void ChatStream::finishStream()
         assistantMsg[QStringLiteral("tool_calls")] = realCalls;
 
     cleanupReply();
+    // 契约 C-2：usage 恒先于 messageFinished、仅成功路径、仅非空时发射；
+    // 直连顺序有保证，不并入 assistantMsg（落盘历史会污染持久化与计量）
+    if (!d->usage.isEmpty())
+        emit usageReceived(d->usage);
     emit messageFinished(assistantMsg);
 }
 
@@ -480,6 +558,11 @@ void ChatStream::scheduleRetry()
     d->thinking.clear();
     d->content.clear();
     d->toolCalls = QJsonArray();
+    // 修3：usage 捕获态与宽限一并复位，重试 attempt 从零重收（input 保留 stream_options，
+    // usageRequested 无需重置——同一请求体重发）
+    d->usage = QJsonObject();
+    d->sawFinishReason = false;
+    d->usageGraceTimer->stop();
 
     QTimer::singleShot(delayMs, this, [this] {
         if (!d->done)
