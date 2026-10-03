@@ -132,7 +132,8 @@ void AgentLoop::resolvePermission(bool allow)
         // 允许：该 toolCall 重新走完整执行链（permission 钩子在 permissionGranted=true 时内部短路，
         // 不再二次询问；日志等其他 PreToolUse 钩子照常执行，对齐 lcc 批准后继续走链的行为。
         // executeBashAsync 内置黑名单仍生效——双层防御）
-        executeTool(toolCall, mainToolHandlers(), /*permissionGranted = */ true);
+        // 效率 P4：批准续跑同走缓存表（与 runNextTool 单源，见 ensureToolHandlers）
+        executeTool(toolCall, ensureToolHandlers(), /*permissionGranted = */ true);
         return;
     }
 

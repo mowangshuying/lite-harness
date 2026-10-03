@@ -144,6 +144,11 @@ QString AgentLoop::buildContextInjection(const QString &memoryIndex,
 
 QJsonArray AgentLoop::createToolsDefinition()
 {
+    // 缓存理由：18 个工具 schema 全为静态字面量、无运行期可变态、无 tr()（C 类禁翻区 QStringLiteral），
+    // 每个 LLM 请求（含 SubAgent 与重试路径）从零重建属重复分配；改为函数局部 static 惰性一次性初始化。
+    // 零线程原则（全仓主线程事件驱动）下，函数局部 static 的初始化与读取均无线程安全问题。
+    // 按值返回 QJsonArray 依赖 Qt 隐式共享（CoW），拷贝廉价，调用点无需改动。
+    static const QJsonArray cached = [] {
     // 单个工具定义（OpenAI function schema 风格）；props 为 {参数名, 类型} 列表
     auto makeTool = [](const QString &name, const QString &description,
                        const QList<QPair<QString, QString>> &props, const QStringList &required) {
@@ -433,4 +438,7 @@ QJsonArray AgentLoop::createToolsDefinition()
                           {QStringLiteral("job_id")}));
 
     return tools;
+    }();
+
+    return cached;
 }

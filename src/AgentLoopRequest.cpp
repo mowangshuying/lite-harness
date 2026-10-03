@@ -456,5 +456,6 @@ void AgentLoop::runNextTool()
     }
 
     const QJsonObject toolCall = m_pendingToolCalls.takeAt(0).toObject();
-    executeTool(toolCall, mainToolHandlers(), /*permissionGranted=*/false);
+    // 效率 P4：传缓存表（ensureToolHandlers 首用构建/setWorkDir 失效），替代旧每工具调用整表重建
+    executeTool(toolCall, ensureToolHandlers(), /*permissionGranted=*/false);
 }

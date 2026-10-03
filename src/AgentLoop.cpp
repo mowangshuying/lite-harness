@@ -99,6 +99,9 @@ void AgentLoop::setWorkDir(const QString &dir)
     if (dir.isEmpty())
         return;
     m_workDir = QDir(dir).absolutePath();
+    // 效率 P4：handler 表的文件四件套 lambda 按值固化了旧 workDir（见 mainToolHandlers
+    // 头注释），换目录后必须清缓存，下一工具调用经 ensureToolHandlers() 以新目录重建
+    m_toolHandlers.clear();
     // 修4：换工作目录 → system/会话根全变，token 锚自然失效（回退本地全量估算，
     // 直至下一次 usage 回读重锚）
     m_tokenAnchor = -1;

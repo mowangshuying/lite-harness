@@ -271,6 +271,11 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QSt
 
 QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
 {
+    // 效率 P4：本函数只负责「构建一份新表」，结果交 ensureToolHandlers() 缓存复用；
+    // 捕获方式逐 lambda 核实——首行 baseFileToolHandlers 将 workDir **按值**固化进四个
+    // 文件工具 lambda（表构建时刻定死沙箱根，切目录后旧表即陈旧，须失效重建）；
+    // 其余 todo_write/load_skill/任务图六件套/cron 三件套共十个 lambda 均 [this] 捕获、
+    // 执行时才读成员，表内不固化任何可变状态，可全局复用
     // 主循环同步工具集：文件四件套 + todo_write + load_skill + 任务图六件套（bash/task 为 executeTool 异步特判）；
     // lcc s07：load_skill 仅主循环注册，子代理工具白名单不含它（见 SubAgent filterSubTools）；
     // lcc s10：任务图六件套同为仅主循环注册（lcc subTools/subToolsHandlers 仍为五工具，天然不进 sub）
@@ -311,5 +316,16 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
         return runListCrons();
     });
     return handlers;
+}
+
+const QHash<QString, AgentLoop::ToolHandler> &AgentLoop::ensureToolHandlers()
+{
+    // 惰性首用构建（P4）：表构建仅依赖 m_workDir（构造 init-list 或 setWorkDir 定值）与 this，
+    // 无构造时序约束，但取惰性可免从不跑工具的会话（如仅恢复历史浏览）空转建表；
+    // 失效策略：setWorkDir 写目录后 clear（文件四件套按值捕获 workDir 的保险失效路径，
+    // 见 mainToolHandlers 头注释的逐 lambda 核实结论），其余路径表一经构建即恒定
+    if (m_toolHandlers.isEmpty())
+        m_toolHandlers = mainToolHandlers();
+    return m_toolHandlers;
 }
 

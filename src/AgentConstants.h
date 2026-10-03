@@ -113,10 +113,6 @@ inline int maxToolIterationsValue()
     return static_cast<int>(stored);
 }
 
-// PostToolUse large_output 提醒阈值（字符数，lcc 语义独立于 kOutputCharLimit 截断上限：
-// 截断发生在 BashRunner/工具侧，此处是"未截断的超长输出"给模型的额外提醒门槛）
-constexpr qsizetype kLargeOutputThreshold = 100000;
-
 // todo_write 清单项数上限（schema maxItems，超限交模型重试）
 constexpr int kTodoMaxItems = 20;
 

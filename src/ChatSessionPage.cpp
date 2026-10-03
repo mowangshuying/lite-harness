@@ -118,6 +118,17 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
 {
     buildLayout();
 
+    // 滚动合并定时器（效率 P5）：流式期间 QOpenAi 每帧 SSE 都发一次 textDelta/thinkingDelta，
+    // 每帧直调 scrollToBottom 就是每帧对整个消息列做一遍完整布局 pass（vlayout->activate()）
+    // 加滚动条写值——主线程最重且最频繁的冗余。此处以 30ms singleShot 窗口把窗口内的多次
+    // 滚动请求折叠成一次真实滚动（量级与 MessageBubbleWidget 流式测量节流 50ms 对齐，
+    // 气泡自身先按 50ms 结算尺寸，本页 30ms 采点不会漏掉最终态）。
+    // 一次性路径（用户发送/新气泡/历史回放/终态）仍直调 scrollToBottom 保持零延迟。
+    m_scrollCoalesceTimer = new QTimer(this);
+    m_scrollCoalesceTimer->setInterval(30);
+    m_scrollCoalesceTimer->setSingleShot(true);
+    connect(m_scrollCoalesceTimer, &QTimer::timeout, this, &ChatSessionPage::scrollToBottom);
+
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
     // 会话数据 ID + 工作目录经构造注入：前者令任务图/记忆/压缩转写/定时台账等落盘按会话隔离，
     // 后者令上述数据根、技能目录与 bash/子代理进程 cwd 全部随所选工作目录解析（空则回落进程当前目录）
@@ -201,6 +212,9 @@ void ChatSessionPage::wireAgent()
         // 侧栏收口：审批灯兜底回灭 + 终局再算一次占用（完整刷新时机见 refreshContextUsage 注释）
         m_sidebar->setPermissionPending(false);
         refreshContextUsage();
+        // 终态强制结算滚动（效率 P5）：取消在途合并窗口立即贴底。记忆相位分支下
+        // memoryPhaseStarted 紧随同栈到达，其进度卡另起窗口、由 memoryChainFinished 再结算
+        flushPendingScroll();
     });
     connect(m_agentLoop, &AgentLoop::error, this, [this](const QString &err) {
         // 后端收口：若仍待决权限（如挂起期间用户又发了消息 → run() 拒绝 → error），
@@ -217,19 +231,23 @@ void ChatSessionPage::wireAgent()
         // 侧栏收口：错误终局同样灭审批灯 + 重算占用（与 finished 对称）
         m_sidebar->setPermissionPending(false);
         refreshContextUsage();
+        // 错误终局（含用户 stop 的「已停止。」回流）：取消在途合并窗口并立即贴底
+        flushPendingScroll();
     });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
         if (m_currentBubble)
         {
             m_currentBubble->appendThinkingText(delta);
-            scrollToBottom();
+            // 每帧 SSE 思考增量都请求贴底 → 走 30ms 合并窗口（效率 P5）
+            requestScrollToBottom();
         }
     });
     connect(m_agentLoop, &AgentLoop::textDelta, this, [this](const QString &delta) {
         if (m_currentBubble)
         {
             m_currentBubble->appendText(delta);
-            scrollToBottom();
+            // 每帧 SSE 正文增量都请求贴底 → 走 30ms 合并窗口（效率 P5，头号 UI 卡顿点）
+            requestScrollToBottom();
         }
     });
     // 工具执行可视化：按到达顺序内嵌到当前流式气泡的时间线中（正文与工具块交替出现）。
@@ -243,7 +261,9 @@ void ChatSessionPage::wireAgent()
                 if (m_currentBubble)
                 {
                     m_currentBubble->appendToolExecution(toolName, summary, output, ok);
-                    QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                    // 在途工具终态卡：原延一帧（singleShot(0)）滚底，现统一走 30ms 合并窗口
+                    // （窗口到期本就晚于一帧，延帧语义被包含，效率 P5）
+                    requestScrollToBottom();
                     return;
                 }
                 // 记忆结果卡特殊闸（审查 M1）：清屏/双回合交叠时 m_memoryBubble 已空，
@@ -267,7 +287,8 @@ void ChatSessionPage::wireAgent()
                 if (!m_currentBubble)
                     return;
                 m_currentBubble->appendToolStart(toolName, summary);
-                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                // 事前 live 卡：改走合并窗口（一回合内多工具调用成串到达，逐条 activate 冗余）
+                requestScrollToBottom();
             });
 
     // task 子代理实时进度行 → 时间线 task live 卡（AgentLoop 直连转发 SubAgent::progressEmitted）。
@@ -278,7 +299,8 @@ void ChatSessionPage::wireAgent()
                 if (!m_currentBubble)
                     return;
                 m_currentBubble->appendSubagentProgress(turnNo, toolName, summary);
-                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                // 子代理进度行按轮次高频刷屏：改走合并窗口（效率 P5）
+                requestScrollToBottom();
             });
 
     // 记忆沉淀相位开始（仅自然结束分支，P2 起为异步链启动前、与 finished 同栈相邻发射）：
@@ -293,7 +315,8 @@ void ChatSessionPage::wireAgent()
         if (m_currentBubble)
         {
             m_currentBubble->appendMemoryProgress();
-            QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+            // 记忆进度 live 卡：改走合并窗口（后续结果卡/定稿仍会贴底，终态由 memoryChainFinished 强制结算）
+            requestScrollToBottom();
         }
     });
 
@@ -304,12 +327,16 @@ void ChatSessionPage::wireAgent()
     // memoryPhaseStarted，其结果卡被上方 M1 闸静默丢弃（数据仍落盘）；极端交叠下旧链尾
     // 的 finished 可能提前定稿新相位气泡。修它需给两信号加世代参数，收益不配成本
     connect(m_agentLoop, &AgentLoop::memoryChainFinished, this, [this]() {
-        if (!m_memoryBubble)
-            return;
-        m_memoryBubble->finishStreaming();
-        if (m_currentBubble == m_memoryBubble)
-            m_currentBubble = nullptr;
-        m_memoryBubble = nullptr;
+        // 记忆链真正的终态：先收尾保留气泡，再无条件强制结算滚动（链尾结果卡/定稿刚走合并
+        // 窗口，此处立即贴底防停在半截）。原「无保留气泡早退」改为条件体，行为等价
+        if (m_memoryBubble)
+        {
+            m_memoryBubble->finishStreaming();
+            if (m_currentBubble == m_memoryBubble)
+                m_currentBubble = nullptr;
+            m_memoryBubble = nullptr;
+        }
+        flushPendingScroll();
     });
 
     // 权限确认：工具即将执行但需用户裁决，后端队列暂停直至 resolvePermission。
@@ -337,7 +364,8 @@ void ChatSessionPage::wireAgent()
                     m_currentBubble->appendPermissionCard(card);
                 else
                     m_scrollView->getMainLayout()->addWidget(card);
-                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                // 审批卡属在途时间线插卡（最多晚 30ms 贴底，肉眼无感）：走合并窗口
+                requestScrollToBottom();
             });
 
     // 任务清单：时点快照留痕 —— 每次 todoUpdated（状态改变事件）在消息流当前位置嵌入
@@ -365,7 +393,9 @@ void ChatSessionPage::wireAgent()
                     anchor->appendTimelineSection(card);
                 else
                     m_scrollView->getMainLayout()->addWidget(card);
-                QTimer::singleShot(0, this, [this]() { scrollToBottom(); });
+                // 外层 singleShot(0) 的「延一帧插卡」时序语义保持不变，仅把其内的延帧滚底
+                // 换为合并窗口（到期本就晚于一帧）
+                requestScrollToBottom();
             });
         }
         // 侧栏任务清单同步（最新态观看，含清空事件；样式语义与快照卡状态点一致）
@@ -596,6 +626,25 @@ void ChatSessionPage::scrollToBottom()
     scrollBar->setValue(scrollBar->maximum());
 }
 
+// 滚动合并入口（效率 P5）：流式高频与在途内容事件（每个 SSE delta 的思考/正文增量、工具起止、
+// 子代理进度行、权限卡、清单快照卡、记忆进度卡）统一走此口。30ms 窗口内的多次请求只在窗口
+// 起点挂一次定时器，到期由 scrollToBottom 做一次布局结算并贴底——把「每帧一次全列 activate」
+// 降为「每 30ms 至多一次」。窗口已在途则直接复用，不延长（保证最多晚 30ms 而非持续顺延）
+void ChatSessionPage::requestScrollToBottom()
+{
+    if (m_scrollCoalesceTimer && !m_scrollCoalesceTimer->isActive())
+        m_scrollCoalesceTimer->start();
+}
+
+// 终态强制结算：丢弃在途合并窗口（不再等 30ms）并立即贴底，供 finished/error/记忆链收口/
+// 用户 stop 调用，确保会话结束瞬间滚动停在真正的底部、无残留延迟滚动帧
+void ChatSessionPage::flushPendingScroll()
+{
+    if (m_scrollCoalesceTimer)
+        m_scrollCoalesceTimer->stop();
+    scrollToBottom();
+}
+
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
 {
     BasePage::resizeEvent(event);
@@ -627,6 +676,9 @@ bool ChatSessionPage::isRunning() const
 
 void ChatSessionPage::stop()
 {
+    // 用户主动停止即刻强制结算滚动（效率 P5）：不等终态信号回流，视图立即停在当前底部；
+    // 其后 error("已停止。")/finished 终态链还会各自再结算一次，幂等无害
+    flushPendingScroll();
     if (m_agentLoop)
         m_agentLoop->stop();
 }

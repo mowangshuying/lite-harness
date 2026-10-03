@@ -5,7 +5,6 @@
 
 #include "AgentLoopInternal.h"
 #include "ToolNames.h"
-#include "AgentConstants.h"
 
 #include <QDebug>
 
@@ -83,23 +82,18 @@ void AgentLoop::registerBuiltinHooks()
         return QString();
     });
 
-    // PostToolUse #1: log_after —— 打印工具调用信息与输出（lcc 原文案；
+    // PostToolUse: log_after —— 打印工具调用信息与输出（lcc 原文案；
     // lcc 在此再次打印 tool_use 行，与 log_before 有意重复，原样保留）
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
         const QString toolName = AgentLoopDetail::callToolName(toolCall);
         qDebug().noquote() << QStringLiteral("[hook] tool_use: %1 - %2")
                                   .arg(toolName, toolUseInfo(toolName, AgentLoopDetail::callToolArgs(toolCall)));
-        qDebug().noquote() << QStringLiteral("[hook] tool_result:\n%1").arg(output);
-        return QString();
-    });
-
-    // PostToolUse #2: large_output —— 超长输出提醒（lcc 阈值 100000 字符）。
-    // 注：本实现中 bash/read_file 输出在 handler 内已先行截断到 AgentConst::kOutputCharLimit，
-    // 钩子实际难以触发，与 lcc 现状一致（lcc 的 run_bash 同样先行截断），保留以对齐结构
-    m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
-        if (output.size() > AgentConst::kLargeOutputThreshold)
-            qDebug().noquote() << QStringLiteral("[hook] Large output from %1: %2 chars")
-                                      .arg(AgentLoopDetail::callToolName(toolCall)).arg(output.size());
+        // 完整工具输出可达 kOutputCharLimit（50000 字符），QString::arg(output) 的格式化与内存分配
+        // 在 Release 下同样发生、且本钩子跑在主线程——每个工具调用无条件打印全文是热点开销。
+        // 默认只打上面的 tool_use 简报行，仅显式设置 LITE_VERBOSE_TOOLS 环境变量时才输出全文（调试用）。
+        static const bool verboseTools = qEnvironmentVariableIsSet("LITE_VERBOSE_TOOLS");
+        if (verboseTools)
+            qDebug().noquote() << QStringLiteral("[hook] tool_result:\n%1").arg(output);
         return QString();
     });
 

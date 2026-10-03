@@ -171,7 +171,13 @@ private:
                      bool permissionGranted);
     // 主循环同步 handler 表：read/write/edit/glob（复用 baseFileToolHandlers）+ todo_write + load_skill；
     // bash/task 为异步特判，不在此表；compact 为 schema-only 特判（lcc s08），同样不入表
+    // 效率 P4 起本函数仅作「构建一份新表」的实现，供 ensureToolHandlers() 缓存初始化调用；
+    // 执行路径勿直接调本函数（旧每调用点整表重建已收敛为缓存复用）
     QHash<QString, ToolHandler> mainToolHandlers();
+    // handler 表缓存取用入口（效率 P4）：首用或失效后构建 mainToolHandlers()，返回成员缓存的 const 引用。
+    // 失效点仅 setWorkDir（文件四件套按值固化 workDir，见 m_toolHandlers 注释）；
+    // runNextTool 与权限批准续跑两处共用本入口，替代原先每执行一个工具调用就整表重建
+    const QHash<QString, ToolHandler> &ensureToolHandlers();
     // 基础文件工具 handler 表（lcc s06 主/子代理共享注册形态）：以传入 workDir 为沙箱根，
     // 宿主与子代理各自构建、互不串扰（子代理不经 todo_write/task，工具集为其白名单子集）
     static QHash<QString, ToolHandler> baseFileToolHandlers(const QString &workDir);
@@ -352,6 +358,14 @@ private:
     int m_maxToolIterations = AgentConst::kMaxToolIterationsDefault;
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息
+    // 主循环 handler 表缓存（效率 P4：每工具调用整表重建 → 首用构建、setWorkDir 失效）：
+    // 逐 lambda 核实结论——read/write/edit/glob 四件套经 baseFileToolHandlers 把 workDir
+    // 按值捕获进 lambda（表构建时刻固化目录），其余十个（todo_write/load_skill/任务图六件套/
+    // cron 三件套）均为 [this] 捕获、执行时才读成员（m_taskStore/m_cron 等经构造期注入的
+    // sessionDataRoot 惰性回调解析路径，切根自然生效）——故表唯一随外部状态变化的依赖是
+    // m_workDir，setWorkDir 写入新目录后 clear 本表即可保证语义与逐次重建严格等价；
+    // 表在服务端路由期间不被任何路径改写（工具 handler 无一调用 setWorkDir，主线程无嵌套事件循环重入）
+    QHash<QString, ToolHandler> m_toolHandlers;
     QList<QProcess *> m_activeProcesses; // 正在运行的 QProcess，stop()/析构时 kill
     QJsonObject m_pendingPermissionCall; // 等待权限裁决的工具调用（队列暂停上下文）
     bool m_awaitingPermission = false;   // 权限询问中（permissionRequired 已发、resolvePermission 未到）

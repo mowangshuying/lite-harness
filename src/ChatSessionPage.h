@@ -13,6 +13,7 @@ class WorkDirPathBar;
 class SessionSidebar;
 class QToolButton;
 class QHBoxLayout;
+class QTimer;
 
 class ChatSessionPage : public BasePage
 {
@@ -32,6 +33,8 @@ public:
     // 宿主回传会话标题（右键重命名 / 启动恢复读 index 条目）：更新本页标题单源并推给右侧信息面板，
     // 使导航子项、index.json、会话页面板三处同源一致；空串由面板回退占位「新会话」。
     void setSessionTitle(const QString &title);
+    // 立即滚到底（不节流）：一次性路径专用——用户发送/新气泡、历史回放、终态 flush，
+    // 以及外部宿主调用。流式高频路径请改走 requestScrollToBottom()（合并窗口）
     void scrollToBottom();
     // 从磁盘恢复后重放历史到会话流：按 wire 消息重建气泡，assistant 段用流式气泡
     // （正文 + 工具折叠块）镜像实时链路；messages 应为已剔除 system 的会话主体
@@ -69,9 +72,22 @@ private:
     void refreshContextUsage();
     // 首条用户消息派生会话标题（抄宿主 LiteHarness 规则）并同步侧栏；已有标题则 no-op
     void maybeCaptureSessionTitle(const QString &userText);
+    // 滚动合并入口（效率 P5）：流式高频/在途内容事件（每个 SSE delta 的思考与正文增量、
+    // 工具起止与子代理进度行、权限卡、清单快照卡、记忆进度卡）改走此口——30ms singleShot
+    // 窗口内多次请求只执行一次真实滚动，避免每条 delta 都对整个消息列做完整布局 pass
+    // （scrollToBottom 内 vlayout->activate()）+ 滚动条写值。语义＝滚动始终最终贴底，流式中最多晚 30ms
+    void requestScrollToBottom();
+    // 终态强制结算：取消在途合并窗口并立即滚到底（finished/error/记忆链收口/用户 stop 处调用），
+    // 防止最后一个合并窗口迟到或残留导致停在半截
+    void flushPendingScroll();
 
 private:
     FluVScrollView *m_scrollView = nullptr;
+    // 滚动合并定时器（效率 P5，singleShot 30ms；构造期创建，风格对齐 MessageBubbleWidget
+    // 的 50ms 流式测量节流）：requestScrollToBottom 在窗口内首次请求时启动，到期执行一次
+    // scrollToBottom；flushPendingScroll 在终态 stop 后立即执行。超时直连 scrollToBottom，
+    // 所有权随本页（QTimer parent=this），零所有权语义同其余子件
+    QTimer *m_scrollCoalesceTimer = nullptr;
     // 消息列/输入组各自的居中行容器布局：列宽靠 maximumWidth 钳制，两侧留白由
     // applyColumnWidth 手动写入边距（水平 Ignored 行容器，断开窗口收缩棘轮）
     QHBoxLayout *m_scrollRowLayout = nullptr;
