@@ -113,6 +113,27 @@ inline int maxToolIterationsValue()
     return static_cast<int>(stored);
 }
 
+// ---- 网络重试次数（429 / 5xx 指数退避）----
+// QOpenAi 的重试上限。原默认 0 且全仓无 setMaxRetries 调用方，退避链路运行时不可达；
+// 现由 QOpenAi::initFromSettings 读本键注入。校验界 [0,5]：下界 0 保留「不重试」语义
+// （用户裁决），上界防手工改配置把单回合拖成分钟级等待（退避 1s,2s,4s…，5 次累计约 31s）。
+constexpr int kMaxRetriesDefault = 2; // 未设置时的默认重试次数（用户裁决值）
+constexpr int kMaxRetriesMin = 0;     // 校验下界（0 = 关闭重试）
+constexpr int kMaxRetriesMax = 5;     // 校验上界
+inline const QString kMaxRetriesKey = QStringLiteral("maxRetries");
+
+// 重试次数单点取值：settings.ini 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律）。
+// 消费方：QOpenAi::initFromSettings（启动注入）；缺失、非整数、越界一律回退默认值。
+inline int maxRetriesValue()
+{
+    QSettings settings = AppSettings::ini();
+    bool ok = false;
+    const qlonglong stored = settings.value(kMaxRetriesKey).toLongLong(&ok);
+    if (!ok || stored < kMaxRetriesMin || stored > kMaxRetriesMax)
+        return kMaxRetriesDefault;
+    return static_cast<int>(stored);
+}
+
 // PostToolUse large_output 提醒阈值（字符数，lcc 语义独立于 kOutputCharLimit 截断上限：
 // 截断发生在 BashRunner/工具侧，此处是"未截断的超长输出"给模型的额外提醒门槛）
 constexpr qsizetype kLargeOutputThreshold = 100000;

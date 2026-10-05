@@ -25,7 +25,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 ### Agent 核心链
 
 - **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。
-- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta/textDelta/messageFinished）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自 settings.ini 键 `apiBaseUrl` / `apiToken`（`initFromSettings()` 于主窗口构造调用；设置页「模型服务」分组可编辑，写后即时生效），模型名 `MODEL_ID`（仍走环境变量），缺省 `AgentConst::defaultModel()`（settings.ini 键 `defaultModel`，未配置/非法则取生效清单首项）。
+- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta/textDelta/messageFinished）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自 settings.ini 键 `apiBaseUrl` / `apiToken`（`initFromSettings()` 于主窗口构造调用；设置页「模型服务」分组可编辑，写后即时生效），模型名 `MODEL_ID`（仍走环境变量），缺省 `AgentConst::defaultModel()`（settings.ini 键 `defaultModel`，未配置/非法则取生效清单首项）。429/5xx 走指数退避重试（1s,2s,4s…，上限 settings.ini 键 `maxRetries`，默认 2、校验界 0~5，`AgentConst::maxRetriesValue()` 单点取值，`initFromSettings()` 注入）；可重试判定**必须先于** 4xx 硬错误分支——429 落在 [400,500) 内，顺序颠倒会让退避链路永不可达（曾如此，429 直接终结回合）。
 - **TaskStore** — 任务图存储（lcc s10 移植）：每任务一个 `<会话根>/.task/task_<hex8>.json`，每次操作直读磁盘；6 个 run_* handler + 14 内核方法，失败一律折叠为工具输出字符串。
 - **SubAgent** — `task` 工具子代理（lcc s06）：全新上下文、黑盒只回最终文本、轮次预算与主循环同源可设置（`maxToolIterations`，start 入口快照）；仅开放 read/write/edit/glob + bash 异步。
 - **BashRunner** — bash 执行单源（危险检测 / 截断 / 超时终态 / QProcess 启动），AgentLoop 前后端与 SubAgent 共用。
@@ -59,7 +59,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - 所有会话数据落在 **`<workDir>/.lite-harness/`**（`SessionStore::rootDirFor`）——是会话工作目录下的相对根，**不是**用户主目录。
 - 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json 等）；`skills/` 始终跨会话共享。
-- 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
+- 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
 - 上下文压缩上限可设置（settings.ini 键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认），派生阈值随主上限等比缩放（batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S）；设置页写值后压缩管线下一回合即生效，无需重启。
 - 单轮最大工具调用次数可设置（settings.ini 键 `maxToolIterations`，默认 500，校验界 10~1000；缺失/非法/越界回退默认，`AgentConst::maxToolIterationsValue()` 单点取值，设置页与主循环共用）；主循环回合入口快照，中途改设置不影响当前回合。SubAgent 轮次预算与之同源（`start()` 入口快照进 `m_maxTurns`，原固定 `kMaxSubagentTurns = 50` 已删）。
 - **零线程原则:** 全仓库主线程事件驱动，轮询/异步一律 QTimer + QProcess 信号，不起线程。

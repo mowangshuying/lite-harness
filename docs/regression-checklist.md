@@ -38,13 +38,14 @@
 - [ ] 回合进行中点停止 → 依序：子代理先级联取消（合成 `(cancelled)` 配对回填）、在途工具批收口（已完成批 flush + 未完 pending 每条合成 `(stopped)`）、QProcess 杀、SSE 流断、错误气泡「已停止。」；随后立刻发下一条 → 上游不报 400（tool_use/tool_result 配对完整）
 - [ ] 压缩请求（prepare/批尾/反应式共用 sideRequest）进行中按停止 → 历史不被摘要替换（取消后 done 永久静默）
 - [ ] 任意工具失败（read_file 不存在的文件等）→ 仅折叠为 tool_result 字符串交还 LLM，全程不抛异常、不弹窗
+- [ ] 子代理（`task`）内 bash 失败同样可判定 → 非零退出码回喂带 `Error: command exited with status N:` 前缀（与主循环前台/后台共用 `formatBashResult`）；PowerShell 起不来由 `errorOccurred` 显式收口回 `Error: bash 启动失败…`；不得把失败洗白成裸输出或 `(no output)`（曾如此）；取消后仍静默丢弃输出、`onToolFinished` 恒一次
 
 ## 四、P1 设置与数据路径
 
 - [ ] 设置页「默认工作目录」：选新目录 → `settings.ini` `defaultWorkDir` 更新；对话框取消 → 保持原值；清除 → 展示「未设置（使用进程当前目录）」
 - [ ] 设置页「上下文上限（字符）」改为 300000 → 落盘即下一回合压缩管线现取生效（无需重启）；卡片展示千分位（QLocale::c() 固定，不随界面语言变），数值行带派生提示「≈N token」（= 字符上限/4，仅展示、键语义仍是字符）；侧栏占用同为 ≈token 口径（contextCharLimit/4 派生预算，非字符）
 - [ ] 上下文上限输入 9999 / 5000001 / 非数字 → 「无效数值」弹窗不落盘；输入带千分位的 `200,000` → 剥逗号解析成功；合法界 10000~5000000、默认 200000
-- [ ] 键位巡检 → `language` / `defaultWorkDir` / `sidebarVisible` / `contextCharLimit` / `maxToolIterations` / `apiBaseUrl` / `apiToken` / `modelOptions` / `defaultModel` 均落于 exe 同目录 `settings.ini`（手工编辑重启即生效，注册表路径不再被读写）
+- [ ] 键位巡检 → `language` / `defaultWorkDir` / `sidebarVisible` / `contextCharLimit` / `maxToolIterations` / `maxRetries` / `apiBaseUrl` / `apiToken` / `modelOptions` / `defaultModel` 均落于 exe 同目录 `settings.ini`（手工编辑重启即生效，注册表路径不再被读写）
 - [ ] 模型清单可配置：`settings.ini` 写 `modelOptions=qwen-a,qwen-b`（裸逗号串、不带引号）→ 下拉恰列两项且顺序一致；手改首项为 `qwen3.8-flash,qwen3.8-max` 读侧解析成功（`iniTextValue()` 归一化列表串，回归点：曾误判「未配置」静默回退内置清单）；清单为空/全空白 → 回退内置两项；条数超 32 截断
 - [ ] `defaultModel` 指向清单内模型 → 生效；指向清单外或留空 → 回落清单首项（防配置指向不存在的模型）
 - [ ] 设置页改「模型服务」端点/密钥 → 写 ini 后立即 `QOpenAi::setUrl()` / `setToken()`，下一回合请求即用新值（无需重启）；密钥卡默认掩码、点眼睛切明文且焦点不跳字
@@ -57,7 +58,8 @@
 - [ ] 超大工具输出（token 估算 >0.6T′）→ 卸载落 `.task_outputs/tool-results/`，历史内仅保留约 2000 字符预览（预览仍字符域）
 - [ ] 压缩完成后查盘 → 原转录落 `.transcripts/*.jsonl`；压缩后历史体量 ≤0.8S；派生阈值读码 CompactManager 等比 batch=4S / large=0.6S / summary=1.6S（勿写死绝对值）；snip 迟滞 60/50（>60 条**且**过 token 闸门才归档、归档后总量 ≈50 条，10 条迟滞带内不重复 snip）、归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写）、会话内归档标记为恒定文本（无条数/无路径，缓存友好）
 - [ ] 人为制造上下文超限错误 → 服务端 4xx 响应体原文并入 error 文本（错误气泡可见 `context_length_exceeded` 等，不再恒为 Unknown error）；溢出关键词表单源 `isContextOverflowError`；反应式压缩自动重试恰 1 次（预算每 run 归零、成功收响应即复位）后重发
-- [ ] 全仓 grep `QEventLoop` → 零嵌套事件循环；任何新增「阻塞等待」代码按回归处理（异步链禁回退，压缩摘要失败以 `(empty summary)` 占位也不许改成同步等待）
+- [ ] 人为制造 429 / 5xx → 指数退避重试（1s,2s,4s…，次数上限 = `settings.ini` 键 `maxRetries`，默认 2、校验界 0~5，越界/非整数回退默认）；重试耗尽的错误文本含服务端响应体解析结果（`error.message [+ code]`，非 JSON 体截 400 字节），不再恒为 Unknown error；重试从头清空累积状态（buffer/thinking/content/toolCalls/usage）
+- [ ] 4xx（除 429）仍硬错误不重试 → `context_length_exceeded` 反应式压缩路径不受重试改动影响；可重试判定位于 4xx 分支**之前**（顺序颠倒会让 429 落进硬错误、退避链路成死代码，回归点）
 - [ ] 会话自然结束后 → 记忆沉淀 fire-and-forget 挂回合尾巴，不阻塞下一回合输入
 
 ## 六、P1 主题与导航样式
@@ -101,7 +103,10 @@
 ## 十、P2 打包部署与 CI
 
 - [ ] Release 全量构建 `cmake --build build --config Release` → 0 error（FluentUI 首编 >15 分钟，设足超时）
-- [ ] 部署 `cmake --build build --config Release --target deploy` → windeployqt 恰以 `--no-translations --no-compiler-runtime` 执行、**不传** `--compiled`（6.9 已移除，实测 Unknown option exit 1）；deploy 目标不进 ALL
-- [ ] 产物拷 `dist/` 到干净机器冒烟 → exe 可启动；缺 VC++ Redist 起不来属已知边界（deploy 明确不含 Redist）；配好 `settings.ini` 的 `apiBaseUrl` / `apiToken` 后可完整对话
-- [ ] push / PR → GitHub Actions `Windows-Qt6.9.0.yml` 触发干净环境全量 Debug 构建，绿灯即验收（实测约 19.5 分钟）；paths 白名单外（如本 docs 改动）不触发
+- [ ] 打包 `cpack --config build/CPackConfig.cmake -B build` → 出 `build/lite-harness-s<版本>-win64.zip`（约 54MB/75 条目）；`--config` 必带，否则报 generator not specified；cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）
+- [ ] 包内布局 → 顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + `qt.conf`（Prefix=..），根级 `plugins/` + `translations/`；无 FluentUI 泄漏物（`bin/Gallery.exe`、`include/`、`lib/`、`share/`、重复 Qt 运行时）——根级 `install(CODE)` 清理必跑在子目录规则之后
+- [ ] 解压到干净机器冒烟 → `<顶层目录>/bin/lite-harness.exe` 可启动；配好 `settings.ini` 的 `apiBaseUrl` / `apiToken` 后可完整对话；本链默认携带 VC 运行库（windeployqt 未传 `--no-compiler-runtime`），故缺 Redist 起不来不再是预期边界
+- [ ] push / PR → GitHub Actions `Windows-Qt6.9.0.yml` 触发干净环境全量 **Release** 构建 + cpack 打包，绿灯即验收；paths 白名单外（如本 docs 改动）不触发
+- [ ] tag `v*` / `s*` 推送 → 同一 workflow 把 zip 上传为该 tag 的 GitHub Release 资产
 - [ ] CI 零凭证读码 → workflow 内无任何 token/secret 硬编码或引用
+- [ ] 旧就地 `deploy` 目标（windeployqt 自定义目标）已摘除，**勿恢复双轨**：CPack ZIP 是唯一部署/打包路径，不要再验 `--target deploy` 或往 `dist/` 拷产物

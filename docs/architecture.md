@@ -85,7 +85,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 
 | 模块 | 职责 | 依赖 |
 |---|---|---|
-| `QOpenAi` | OpenAI 兼容 SSE 客户端：`ChatStream`（`thinkingDelta`/`textDelta`/`messageFinished`/`error`）+ `AsyncRequest`（一次性文本请求，`done` 恒恰好一次）+ 运行时 url/token/model 配置 | `AppSettings`、`AgentConstants` |
+| `QOpenAi` | OpenAI 兼容 SSE 客户端：`ChatStream`（`thinkingDelta`/`textDelta`/`messageFinished`/`error`）+ `AsyncRequest`（一次性文本请求，`done` 恒恰好一次）+ 运行时 url/token/model 配置 + 429/5xx 指数退避重试（`maxRetries`，可重试判定先于 4xx 硬错误） | `AppSettings`、`AgentConstants` |
 | `BashRunner` | bash 执行段单源：`dangerWarning` / `truncateOutput` / `finalizeOutput` / `start`（`powershell.exe -NoProfile -NonInteractive`） | `AgentConstants` |
 | `CompactManager` | 五级压缩管线 `toolResultBudget → snip → micro → fitToolResults → compactHistory` + 溢出反应式压缩；非 QObject，全靠回调注入 | `QOpenAi::AsyncRequest`、`AgentConstants` |
 | `MemoryManager` | 持久记忆：召回 / 提取 / 合并三条异步链，落 `.memory/MEMORY.md` + `<slug>.md` | `QOpenAi`、`AgentConstants` |
@@ -101,7 +101,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentConstants.h` | 模型清单（settings.ini `modelOptions` 逗号分隔 + `defaultModel` 缺省项，未配置回落内置 `kBuiltinModelOptions`；读值经头内 `iniTextValue()` 兼容 QSettings 的 ini 列表语法，裸 `.toString()` 会得空串）、`kMaxTokens`、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`，`AgentConstants.h:130-135`，拼法涉数据兼容不可改） |
 | `ToolNames.h` | 18 个工具名（bash/read_file/write_file/edit_file/glob/todo_write/task/load_skill/compact/create_task/update_task/list_tasks/get_task/claim_task/complete_task/schedule_cron/list_crons/cancel_cron） |
 | `LayoutConstants.h` | 聊天栏宽 800 / 边距 35 / 气泡系数 0.75 / 侧栏宽 280 |
-| `AppSettings.h` | 配置存储：一律 `applicationDirPath()/settings.ini`（弃用注册表），键清单见 `AppSettings.h:3-6`（`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`） |
+| `AppSettings.h` | 配置存储：一律 `applicationDirPath()/settings.ini`（弃用注册表），键清单见 `AppSettings.h:3-6`（`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`） |
 | `ToolTagKind.h` | 工具名 → 语义类别（read/search/plan/delegate/run/write/other）→ QSS `toolTagKind` 动态属性 |
 | `I18n.h` | 中英文切换：源文中文 + Linguist + **重启生效**（`exit(931)` 自重启） |
 | `ThemeAware.h` | 「加载 QSS + 订阅 themeChanged + 重载」样板单源 `bind(qss, widget, extraRefresh)` |

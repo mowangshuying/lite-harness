@@ -5,6 +5,7 @@
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h" // 模型清单/max_tokens 单源（bash 超时与截断已随执行链收敛到 BashRunner）
 #include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与主循环单源共用
+#include "BackgroundTasksManager.h" // formatBashResult：非零退出码前缀，与主循环前台/后台分支同口径
 
 #include <QDebug>
 #include <QJsonDocument>
@@ -325,21 +326,51 @@ void SubAgent::executeBashAsync(const QJsonObject &toolCall, const QJsonObject &
 
     // 超时标志（shared_ptr 随回调捕获，无裸 new/delete——MINOR-2）；进程创建/登记/
     // 挂超时/PowerShell 启动与主循环共用 BashRunner::start（原整函数级复制收敛），
-    // "先 connect 后 start"时序由 arm 回调保证。差异仅两处留在下方回调：
-    // m_cancelled 短路（取消后静默丢弃输出）与黑盒收口（onToolFinished 不带工具名参数）
+    // "先 connect 后 start"时序由 arm 回调保证。失败可判定性与主循环前台 bash 同款两道防线：
+    // errorOccurred 显式收口启动失败、非零退出码经 formatBashResult 前缀化——缺任一道都会把
+    // 失败洗白成"成功"回喂模型（裸输出或 (no output)），违背 B1「工具侧一切失败折叠为可判定
+    // 错误文本」约定。差异仅两处留在下方回调：m_cancelled 短路（取消后静默丢弃输出）与
+    // 黑盒收口（onToolFinished 不带工具名参数）
     auto timedOut = std::make_shared<bool>(false);
+    auto handled = std::make_shared<bool>(false);
     BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
-                      [this, toolCall, timedOut](QProcess *process) {
+                      [this, toolCall, timedOut, handled](QProcess *process) {
+        connect(process, &QProcess::errorOccurred, this,
+                [this, process, toolCall, handled](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart || *handled)
+                return;
+            *handled = true;
+            const QString output = QStringLiteral("Error: bash 启动失败：powershell.exe 无法启动（%1）")
+                                       .arg(process->errorString());
+            // PostToolUse 钩子与正常分支同时序（handler 产出后、回填前）
+            m_host->triggerPostToolUseHooks(toolCall, output);
+            onToolFinished(toolCall, output);
+        });
+
         connect(process, &QProcess::finished, this,
-                [this, process, toolCall, timedOut](int, QProcess::ExitStatus) {
+                [this, process, toolCall, timedOut, handled](int exitCode, QProcess::ExitStatus) {
             m_activeProcesses.removeAll(process);
+
+            // FailedToStart 已由 errorOccurred 显式收口：不再二次 onToolFinished，只销毁进程
+            if (*handled)
+            {
+                process->deleteLater();
+                return;
+            }
+            *handled = true;
+
             if (m_cancelled)
             {
                 process->deleteLater();
                 return;
             }
 
-            const QString output = BashRunner::finalizeOutput(process, *timedOut);
+            // finalizeOutput：超时→Timeout 文案（不读缓冲）；否则截断+空兜底（与主循环同口径）
+            const QString base = BashRunner::finalizeOutput(process, *timedOut);
+            // 非零退出码前缀 "Error: command exited with status N:"（与主循环前台/后台分支单源）
+            const QString output =
+                *timedOut ? base
+                          : BackgroundTasksManager::formatBashResult(base, exitCode, false);
             process->deleteLater();
 
             m_host->triggerPostToolUseHooks(toolCall, output);

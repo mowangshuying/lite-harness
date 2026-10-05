@@ -132,7 +132,8 @@ QString url();
 void setToken(const QString &token);
 QString token();
 
-// 设置 / 获取最大重试次数（仅 5xx / 429，指数退避；默认 0 不重试）
+// 设置 / 获取最大重试次数（仅 5xx / 429，指数退避；默认 AgentConst::kMaxRetriesDefault，
+// 启动由 initFromSettings 读 settings.ini 的 maxRetries 键注入，校验界见 AgentConstants.h）
 void setMaxRetries(int retries);
 int maxRetries();
 
