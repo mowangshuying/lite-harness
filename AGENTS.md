@@ -9,34 +9,58 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
 - **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 12.6`；展示/运行时/打包名统一带 `s` 前缀 = `s12.6`，与阶段 tag 同名）
 - **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
-- **单元测试:** `tests/` + ctest（详见下「测试」条）；**无 lint 配置**；**CI:**
+- **单元测试:** `tests/` + ctest，见下独立节「测试（tests/ + ctest）」；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目 install 规则 configure 期即注册进全树安装清单，单目标构建缺 gallery.exe/cmark.exe 会让 cpack `file(INSTALL)` 硬错误中止（s12.2 两条 run 实证），全量编出后由根级清理剥除。`v*`/`s*` tag 推送触发同一流水线并在末尾经 svenstaro/upload-release-action 把 zip 上传为该 tag 的 GitHub Release——官方语义：paths 过滤不拦 tag；`branches` 与 `tags` 必须显式同写，只写 tags 会静默丢掉分支验收流）
 - **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/regression-checklist.md`（P0/P1/P2 按改动面选组，提交前跑对应组）
-- **测试 (ctest):** `tests/` 下纯函数单测，`LITE_TESTS` 默认 ON，产物 `build/tests/lite-harness-tests.exe`（**输出目录与 `bin/` 分开**——CPack 的 staging 与根级 `install(CODE)` 清理都围绕 `bin/` 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删）。本地跑：`cmake --build build --config Release --target lite-harness-tests` 后 `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由 install-qt-action 注入）。**刻意不引 `Qt6::Test`/moc**：测试对象全是纯函数，无信号槽与数据驱动表需求，少一个组件依赖与 DLL 负担（取舍见 `tests/TestHarness.h` 顶部）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`（返回本套件失败数），在 `tests/main.cpp` 加一行调用；`file(GLOB tests/*.cpp)` 自动纳入，**无需改 CMakeLists**。测试直接 `#include` 生产头（`src/` 已入搜索路径），测的是真实编译产物而非算法副本。
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）。`3rdparty/sqlite`（vendored sqlite3）目录残留但同样从不进构建图。
 - **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s12.6-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
 
+## 测试（tests/ + ctest）
+
+- **机制:** `tests/` 下纯函数单测；根 `CMakeLists.txt` 的 `LITE_TESTS` 默认 ON → `enable_testing()` +
+  `file(GLOB tests/*.cpp CONFIGURE_DEPENDS)` + 单一 `add_test(NAME lite-harness-tests)`。产物
+  `build/tests/lite-harness-tests.exe`（**输出目录与 `bin/` 分开**——CPack 的 staging 与根级
+  `install(CODE)` 清理都围绕 `bin/` 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删）；测试目标
+  只链 `Qt6::Core`，`/W4 /utf-8` 与主目标同口径。
+- **本地跑:** `cmake --build build --config Release --target lite-harness-tests`，再
+  `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由
+  install-qt-action 注入）。
+- **CI 位置:** 构建之后、打包之前——单测失败即中止流程，坏产物不进 zip。
+- **新增套件:** 写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`（内部用 `TestHarness::check` 断言，
+  返回本套件失败数），在 `tests/main.cpp` 加一行调用；GLOB 自动纳入，**无需改 CMakeLists**。测试直接
+  `#include` 生产头（`src/` 已入搜索路径），测的是真实编译产物而非算法副本。
+- **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
+  组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
+  `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
+- **覆盖现状（勿高估）:** 目前**只有 `LineEnding.h` 一个头有测试**（`tests/tst_lineending.cpp`）。其余
+  改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/regression-checklist.md`」，大面积行为回归**不可证**。
+  下一批最小切口（均已无 GUI 依赖）：`AgentLoopDetail::toolSummary` / `parseToolCall` /
+  `AgentLoop::isToolFailure` / `BashRunner::dangerWarning` / cron 表达式匹配 /
+  `AgentConst::estimateTokens` / SKILL.md frontmatter 解析。
+
 ## 架构（src/）
 
-> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 12 个 TU 的职责地图、
+> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 13 个 TU 的职责地图、
 > `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
 > 异常与技术债、新增代码落位决策树**见 [docs/architecture.md](docs/architecture.md)——改结构须同步它。
+> 本仓各篇文档的权威等级、「该读哪篇」与同步纪律见 [docs/README.md](docs/README.md)。
 
 ### Agent 核心链
 
-- **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。
-- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta/textDelta/messageFinished）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自 settings.ini 键 `apiBaseUrl` / `apiToken`（`initFromSettings()` 于主窗口构造调用；设置页「模型服务」分组可编辑，写后即时生效），模型名 `MODEL_ID`（仍走环境变量），缺省 `AgentConst::defaultModel()`（settings.ini 键 `defaultModel`，未配置/非法则取生效清单首项）。429/5xx 走指数退避重试（1s,2s,4s…，上限 settings.ini 键 `maxRetries`，默认 2、校验界 0~5，`AgentConst::maxRetriesValue()` 单点取值，`initFromSettings()` 注入）；可重试判定**必须先于** 4xx 硬错误分支——429 落在 [400,500) 内，顺序颠倒会让退避链路永不可达（曾如此，429 直接终结回合）。
+- **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。**上下文占用单源** `AgentLoop::estimatedContextTokens()`：有锚时取 `usage.prompt_tokens` + 锚后逐条增量（`AgentConst::estimateTokens`，字符→token 折算基准 `kCharsPerTokenBudget=4`），锚对应发送点历史条数与注入块 token 快照；历史被改写（压缩/回滚）或无 usage 则回落全量估算 `CompactManager::estimateTokens(m_messages) + tools schema + 注入块`。侧栏只读该值，别处不再另算一套。
+- **提示词单源与注入块** — system prompt **静态化**：`makeSystemPrompt` 只由 workDir / 会话根 / 静态文字决定，全会话字节恒定（前缀缓存与 token 计量都靠它稳定）。每轮变化的数据（技能目录、记忆索引、召回记录）**严禁再写回 system**——改由 `makeContextInjection` 生成 `<agent_context>` 注入块随 payload 尾部下发（成员包装 `AgentLoop::buildContextInjection`，在召回 done 续延里快照进 `m_contextInjection`）。零技能 + 零记忆会话不产生注入块，也就不产生无信息量的 overhead。工具 function 定义 `createToolsDefinition` 与本段同属**禁翻区**（`QStringLiteral`，禁包 `tr()`）。
+- **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta / textDelta / messageFinished / usageReceived / error）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自 settings.ini 键 `apiBaseUrl` / `apiToken`（`initFromSettings()` 于主窗口构造调用；设置页「模型服务」分组可编辑，写后即时生效），模型名 `MODEL_ID`（仍走环境变量），缺省 `AgentConst::defaultModel()`（settings.ini 键 `defaultModel`，未配置/非法则取生效清单首项）。429/5xx 走指数退避重试（1s,2s,4s…，上限 settings.ini 键 `maxRetries`，默认 2、校验界 0~5，`AgentConst::maxRetriesValue()` 单点取值，`initFromSettings()` 注入）；可重试判定**必须先于** 4xx 硬错误分支——429 落在 [400,500) 内，顺序颠倒会让退避链路永不可达（曾如此，429 直接终结回合）。**usage 回读**：主循环请求体带 `stream_options.include_usage`（`AsyncRequest` 侧不带、不武装宽限），`include_usage` 语义下末帧 `choices=[]` 且带 usage，故 **usage 捕获必须先于 choices 检查**；`finish_reason` 已见而 usage 未达时启 `kUsageGraceMs`（1500ms）**单次**宽限兜底收尾，重试 attempt 须清空 usage 捕获态从零重收。
 - **TaskStore** — 任务图存储（lcc s10 移植）：每任务一个 `<会话根>/.task/task_<hex8>.json`，每次操作直读磁盘；6 个 run_* handler + 14 内核方法，失败一律折叠为工具输出字符串。
 - **SubAgent** — `task` 工具子代理（lcc s06）：全新上下文、黑盒只回最终文本、轮次预算与主循环同源可设置（`maxToolIterations`，start 入口快照）；仅开放 read/write/edit/glob + bash 异步。
 - **BashRunner** — bash 执行单源（危险检测 / 截断 / 超时终态 / QProcess 启动），AgentLoop 前后端与 SubAgent 共用。
 - **BackgroundTasksManager** — 后台 bash 任务台账（lcc s11）：`run_in_background` 严格布尔判定，宿主驱动 QProcess，结果以 `<task_notification>` 注入下一回合。
 - **CronSchedulerManager** — cron 定时任务（lcc s12）：5 段表达式校验/匹配，`<会话根>/scheduled_tasks.json` 持久账本，QTimer 1s 轮询替代线程，at-least-once 两段投递。
-- **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。主字符上限可设置（见「数据与路径」），其余阈值按 4S/0.6S/1.6S/0.8S 等比派生。
-- **MemoryManager** — 记忆（lcc s09）：`<会话根>/.memory/`（MEMORY.md 索引 + slug.md 记录）；沉淀（会话自然结束）、召回（LLM 选择 + 关键词兜底 → system prompt 尾部）、整理（阈值重写带快照回滚）。
+- **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。主字符上限可设置（见「数据与路径」）；**阈值判定对象已迁 token 域**：会话体预算 `T' = AgentConst::contextTokenBudget() − overhead`（overhead = system + tools schema + 注入块，钳位 `[T/4, T]`），batch=`4×T'`、单条大结果 `0.6×T'`、压缩目标 `0.8×T'`——比例与原字符口径一致，派生表达式写死在消费点防漂移；唯 summary 输入裁剪（`1.6S`）与预览长度仍是字符域（内容级启发不随迁）。snip 走双门槛回滞：条数 > 60 **且** 会话体估算过 token 闸门才归档，归档后总量 ≈50（10 条迟滞带内不重复触发）；归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写），会话内标记为恒定文本（无条数、无路径，缓存友好）。
+- **MemoryManager** — 记忆（lcc s09）：`<会话根>/.memory/`（MEMORY.md 索引 + slug.md 记录）；沉淀（会话自然结束）、召回（LLM 选择 + 关键词兜底 → **上下文注入块**，见上「提示词单源与注入块」条；system 不随召回变动）、整理（阈值重写带快照回滚）。
 
 ### 会话层
 
@@ -58,6 +82,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **MessageBubbleWidget** — 气泡流式渲染（打字机），首次工具/思考事件后重建为时间线。
 - **CollapsibleBlock** — 折叠动画基类（32px 头部 + 300ms OutCubic contentHeight 动画），子类 ThinkingBlock / ToolBlock / TodoCard。基类构造禁调虚函数，子类构造尾再 bind 主题。
 - **ThemeAware** — 「加载 QSS + 订阅 themeChanged + 重载」样板单源（约 12 处旧复制已收敛）。
+- **SessionSidebar** — 会话右栏信息面板（标题/模型/工作目录/上下文占用条/状态灯/待办清单/页脚版本）。**纯视图，不订阅 `AgentLoop`**：全部信息由 `ChatSessionPage` 调 setter 推入（`setSessionMeta`/`setWorkDir`/`setContextUsage`/`setRunning`/`setPermissionPending`/`setTodos`）。显隐单点 `ChatSessionPage::setSidebarVisible()`：偏好落 settings.ini 键 `sidebarVisible`（默认显示），收起后由右上角**浮动展开钮**恢复（页面直接子件、`resizeEvent` 手动摆位 + `raise()`，与侧栏互斥）。
 - **ChatMsgEdit / SendMsgButton / PermissionCard / WorkDirPathBar / FluentInputDialog** — 输入区、圆形 SVG 发送钮、内联审批卡（拒绝默认焦点、理由 EN→ZH）、工作目录条、通用单行输入对话框。
 
 ## 数据与路径
@@ -65,7 +90,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - 所有会话数据落在 **`<workDir>/.lite-harness/`**（`SessionStore::rootDirFor`）——是会话工作目录下的相对根，**不是**用户主目录。
 - 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json 等）；`skills/` 始终跨会话共享。
 - 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
-- 上下文压缩上限可设置（settings.ini 键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认），派生阈值随主上限等比缩放（batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S）；设置页写值后压缩管线下一回合即生效，无需重启。
+- 上下文压缩上限可设置（settings.ini 键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认，单点取值 `AgentConst::contextCharLimitValue()`）。**它是字符口径的唯一入口**：全局 token 预算 `T = contextCharLimit / kCharsPerTokenBudget(4)` 经 `AgentConst::contextTokenBudget()` 现取现用，压缩阈值 batch/large/目标按 `4×T'`/`0.6×T'`/`0.8×T'` 缩放（`T' = T − overhead`，见「CompactManager」条），summary 输入裁剪仍按 `1.6S` 字符域。设置页写值后压缩管线下一回合即生效，无需重启。
 - 单轮最大工具调用次数可设置（settings.ini 键 `maxToolIterations`，默认 500，校验界 10~1000；缺失/非法/越界回退默认，`AgentConst::maxToolIterationsValue()` 单点取值，设置页与主循环共用）；主循环回合入口快照，中途改设置不影响当前回合。SubAgent 轮次预算与之同源（`start()` 入口快照进 `m_maxTurns`，原固定 `kMaxSubagentTurns = 50` 已删）。
 - **零线程原则:** 全仓库主线程事件驱动，轮询/异步一律 QTimer + QProcess 信号，不起线程。
 
