@@ -95,3 +95,24 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## Git 提交
 采用中文日志
+
+## 发布（tag 与 Release）
+
+- **升版本只改一行:** CMake `project(lite-harness VERSION <数字段>)`（如 `12.5`）。`s` 前缀由
+  `LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处拼接，于是运行时展示版本、zip 名、
+  tag 名三者自动同名（`s12.5`）。**不得**在任何别处硬编码版本号（口径详见「国际化」节末
+  「版本号单源」条）。`project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
+- **tag 命名:** `s<数字段>`，与版本号单源同名（历史：`s00` 前身即 `v0.1.0`）。CI 的 tag 过滤
+  写的是 `v*`/`s*`，两者都会触发 Release 上传，但新 tag 一律用 `s` 前缀保持一致。
+- **发布流程:** ① 改 `project VERSION` 一行 → ② 本地全量 Release 构建（勿 `--target`，原因见
+  「构建」节）+ `ctest` 全绿 + `cpack` 出包，核对 zip 名已带新版本号 → ③ 跑
+  `docs/regression-checklist.md` 的 P0（+ 按改动面选 P1）→ ④ 提交（日志写明版本 bump）→
+  ⑤ `git tag s<版本>` 后 `git push origin s<版本>`。
+- **tag 推送即公开发布，实质不可撤回:** workflow 末尾 `svenstaro/upload-release-action` 对不存在
+  的 Release 自动创建，且 `overwrite: true` 会覆盖同名资产。故 tag 只在 main 已绿、包已核对后打。
+  打错的补救是 `git push origin :refs/tags/s<版本>` + `git tag -d s<版本>` 删除重打，但**已上传的
+  Release 与资产需手动到 GitHub 清理**，不会随 tag 删除自动消失。
+- **分支 push 不发布:** main push 只跑「构建 + ctest + cpack」验收，不上传任何资产。官方语义
+  「Path filters are not evaluated for pushes of tags」——tag 流不受 paths 白名单拦截，故只改
+  docs 的阶段也能正常发版。
+
