@@ -7,7 +7,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **工具链:** Qt 6.9.0 + MSVC 2022 + CMake 3.20+，C++17，仅 Windows
 - **Prefix:** `CMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64`
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
-- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 12.5`；展示/运行时/打包名统一带 `s` 前缀 = `s12.5`，与阶段 tag 同名）
+- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 12.6`；展示/运行时/打包名统一带 `s` 前缀 = `s12.6`，与阶段 tag 同名）
 - **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
 - **单元测试:** `tests/` + ctest（详见下「测试」条）；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
@@ -16,7 +16,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **测试 (ctest):** `tests/` 下纯函数单测，`LITE_TESTS` 默认 ON，产物 `build/tests/lite-harness-tests.exe`（**输出目录与 `bin/` 分开**——CPack 的 staging 与根级 `install(CODE)` 清理都围绕 `bin/` 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删）。本地跑：`cmake --build build --config Release --target lite-harness-tests` 后 `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由 install-qt-action 注入）。**刻意不引 `Qt6::Test`/moc**：测试对象全是纯函数，无信号槽与数据驱动表需求，少一个组件依赖与 DLL 负担（取舍见 `tests/TestHarness.h` 顶部）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`（返回本套件失败数），在 `tests/main.cpp` 加一行调用；`file(GLOB tests/*.cpp)` 自动纳入，**无需改 CMakeLists**。测试直接 `#include` 生产头（`src/` 已入搜索路径），测的是真实编译产物而非算法副本。
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）。`3rdparty/sqlite`（vendored sqlite3）目录残留但同样从不进构建图。
-- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s12.5-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
+- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s12.6-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
 
@@ -83,7 +83,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **切换=重启生效:** FluentUI 控件无运行中重译能力（无 languageChanged 信号）。仅跨切换常驻的组件经 `changeEvent(QEvent::LanguageChange)` 重译（LiteHarness 导航三项 / SettingsPage / NewChatPage / WorkDirPathBar / TodoCard 标题）；弹出即重建的菜单/对话框/卡片天然取当次语言。已渲染历史气泡滞留旧语言（接受）。
 - **新增/修改 UI 字符串:** 照常写中文 `tr()`；**勿跑 `lite-harness_lupdate` 目标**（实证会把 FluentUI 子工程源码扫入、灌入上千外部串），改手动 `lupdate -recursive src -no-obsolete -source-language zh_CN -target-language zh_CN -ts i18n/lite-harness_zh_CN.ts` 与 `-ts i18n/lite-harness_en_US.ts` 各刷一次，补英文译文再构建；漏译条目运行时回退中文源。成对手刷已固化为 `scripts/update-i18n.ps1`（仓库根执行即可，两条 `-ts` 命令的权威单源）。
 - **禁翻区:** 发往 LLM 的 C 类串（system prompt、压缩摘要指令、`AgentLoop` 落盘进历史的合成文本如 `(恢复：工具结果不可用)`——已改 `QStringLiteral` 硬隔离，禁再包 `tr()`）不进翻译、不入 .ts。品牌名/版本号豁免口径：代码中 `tr("lite-harness")`/`tr("AtomOneDark")` 等品牌专名与版本标签**保留 tr 包裹**（版本号经 LITE_VERSION 宏注入串天然不在 ts），在 .ts 内以译文=源文恒等登记，保证 Linguist 审计面完整。
-- **版本号单源:** CMake `project VERSION`（数字段，如 12.5）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s12.5`，与阶段 tag 同名）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。
+- **版本号单源:** CMake `project VERSION`（数字段，如 12.6）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s12.6`，与阶段 tag 同名）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。
 
 ## 关键约定
 
@@ -98,13 +98,21 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## 发布（tag 与 Release）
 
-- **升版本只改一行:** CMake `project(lite-harness VERSION <数字段>)`（如 `12.5`）。`s` 前缀由
-  `LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处拼接，于是运行时展示版本、zip 名、
-  tag 名三者自动同名（`s12.5`）。**不得**在任何别处硬编码版本号（口径详见「国际化」节末
-  「版本号单源」条）。`project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
+- **升版本：行为只改一行，文档必须 grep 同步。** 行为单源是 CMake
+  `project(lite-harness VERSION <数字段>)`——`LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME`
+  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s12.6`），
+  代码里**不得**再硬编码版本号（口径详见「国际化」节末「版本号单源」条）。
+  `project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
+  **但「只改一行」只对行为成立**：README / AGENTS / architecture / regression-checklist 与若干
+  源码注释把当前版本号当**示例**写死了（s12.6 这次实测 21 处、跨 7 文件），改完 `project VERSION`
+  必须跑 `git grep -n "12\.6" -- . ':(exclude)3rdparty' ':(exclude)build'` 逐处同步，
+  否则文档与现实矛盾、下一轮读文档的人无从判断哪个是当前版本。
+
 - **tag 命名:** `s<数字段>`，与版本号单源同名（历史：`s00` 前身即 `v0.1.0`）。CI 的 tag 过滤
   写的是 `v*`/`s*`，两者都会触发 Release 上传，但新 tag 一律用 `s` 前缀保持一致。
-- **发布流程:** ① 改 `project VERSION` 一行 → ② 本地全量 Release 构建（勿 `--target`，原因见
+- **发布流程:** ① 改 `project VERSION` 一行 + `git grep` 同步文档示例版本号（见上条）→
+  ② 本地全量 Release 构建（勿 `--target`，原因见
+
   「构建」节）+ `ctest` 全绿 + `cpack` 出包，核对 zip 名已带新版本号 → ③ 跑
   `docs/regression-checklist.md` 的 P0（+ 按改动面选 P1）→ ④ 提交（日志写明版本 bump）→
   ⑤ `git tag s<版本>` 后 `git push origin s<版本>`。

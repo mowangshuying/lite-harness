@@ -37,7 +37,7 @@ cmake -B build -S . -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64
 cmake --build build --config Release
 ```
 
-输出：`build/bin/lite-harness.exe`（版本 s12.5）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
+输出：`build/bin/lite-harness.exe`（版本 s12.6）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
 
 ### 打包发布 ZIP
 
@@ -47,7 +47,7 @@ cmake --build build --config Release
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s12.5-win64.zip`（约 54MB），解压后运行 `lite-harness-s12.5-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s12.6-win64.zip`（约 54MB），解压后运行 `lite-harness-s12.6-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
