@@ -115,7 +115,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
   「构建」节）+ `ctest` 全绿 + `cpack` 出包，核对 zip 名已带新版本号 → ③ 跑
   `docs/regression-checklist.md` 的 P0（+ 按改动面选 P1）→ ④ 提交（日志写明版本 bump）→
-  ⑤ `git tag s<版本>` 后 `git push origin s<版本>`。
+  ⑤ **`git tag -a`（必须附注）** 后 `git push origin s<版本>`。轻量 tag 会被 CI 的
+  `Read tag annotation as release notes` 步骤显式 throw，不产出空简介 Release。
+
 - **tag 推送即公开发布，实质不可撤回:** workflow 末尾 `svenstaro/upload-release-action` 对不存在
   的 Release 自动创建，且 `overwrite: true` 会覆盖同名资产。故 tag 只在 main 已绿、包已核对后打。
   打错的补救是 `git push origin :refs/tags/s<版本>` + `git tag -d s<版本>` 删除重打，但**已上传的
@@ -123,4 +125,22 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **分支 push 不发布:** main push 只跑「构建 + ctest + cpack」验收，不上传任何资产。官方语义
   「Path filters are not evaluated for pushes of tags」——tag 流不受 paths 白名单拦截，故只改
   docs 的阶段也能正常发版。
+- **Release 标题与简介的单源 = 附注 tag 正文:** CI 在上传前用
+  `git for-each-ref --format='%(contents)' refs/tags/<tag>` 读出 tag 附注，喂给
+  `upload-release-action` 的 `body`，标题统一 `lite-harness <tag>`。**写 tag 附注即等于写
+  Release 简介**，不存在第二处要同步的地方。此前 s12.5/s12.6 的 Release 标题为 null、正文为空
+  （该步骤当年没传 `release_name`/`body`），s12.2/s12.3 的简介则是人工在网页补的——四种来源
+  方式并存必然不一致，故收拢为 tag 附注单源。
+  - **简介格式:** 首行一句「本轮定位」概述 → `### 相对 <上一版> 的变更` 下按 `**分组名**` +
+    `- 条目` 列要点 → 末尾 `### 产物` 写 zip 名与运行方式。**不写 H1**（标题已由 Release name
+    承载，正文再写一遍是冗余）。
+- **Release 只覆盖 s12.2 起:** CI 发布链自 s12.2 接入，s00–s12.1 没有 Release 属正常、不是漏发，
+  勿为它们补建无资产的 Release。另注：`s12.4` 这个 tag **不存在**（s12.3 之后直接 s12.5，跳号）。
+- **历史资产文件名不统一，且刻意不改:** s12.2/s12.3/s12.5 的 zip 名为
+  `lite-harness-0.1.0-win64.zip`——当年 `project VERSION` 就是 `0.1.0`（版本号单源化在 s12.5..s12.6
+  区间才落地）。**包内顶层目录同名**（已实测 zip 本地文件头，解压出的就是
+  `lite-harness-0.1.0-win64/`），所以只改 GitHub 资产外层名会造成「下载名 s12.5、解压目录 0.1.0」
+  的新不一致，比现状更糟；重打包又会改动已发布二进制。结论：历史包名保留不改，s12.6 起包名与
+  tag 同名。
+
 

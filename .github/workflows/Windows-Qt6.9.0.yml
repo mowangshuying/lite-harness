@@ -107,6 +107,27 @@ jobs:
           cpack --config build/CPackConfig.cmake -B build
           Get-Item build\lite-harness-*-win64.zip
 
+      # Release 标题与简介的单源 = **附注 tag 的正文**（发版必须 `git tag -a`）。
+      # 此前本步不传 release_name/body，自动创建的 Release 天生裸奔——s12.5/s12.6 的 name 为
+      # null、正文为空，s12.2/s12.3 的简介是当年人工在网页补的，四种来源方式必然不一致。
+      # 故把 tag 附注喂进 body、标题统一成 `lite-harness <tag>`，让每个 tag 天然带规范格式。
+      - name: Read tag annotation as release notes
+        id: notes
+        if: startsWith(github.event.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # checkout 默认浅克隆不保证带 tag 对象，显式取回该 tag ref 再读附注
+          git fetch --no-tags --depth=1 origin "+refs/tags/${tag}:refs/tags/${tag}"
+          $body = (git for-each-ref --format='%(contents)' "refs/tags/${tag}") -join "`n"
+          if ([string]::IsNullOrWhiteSpace($body)) {
+            throw "tag ${tag} 无附注正文：发版必须用 git tag -a（附注即 Release 简介的单源），轻量 tag 会产出空简介的 Release。"
+          }
+          "body<<LITE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "LITE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+          Write-Output "Release 简介取自 tag ${tag} 附注（$($body.Length) 字）"
+
       # 蓝本同款 tag 分流：分支/PR 推送跑到上一步即验收完成；tag 推送把 zip 传为该 tag 的
       # Release（svenstaro 动作对不存在的 Release 自动创建）。file_glob 开启时资产名取
       # zip basename（含版本号），免在 yml 硬编码版本、守住「版本号单源」。
@@ -119,3 +140,6 @@ jobs:
           file_glob: true
           tag: ${{ github.ref }}
           overwrite: true
+          release_name: lite-harness ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.body }}
+
