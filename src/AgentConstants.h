@@ -168,6 +168,13 @@ constexpr qsizetype kOutputCharLimit = 50000;
 // 展示层截断仍由 kOutputCharLimit 负责，本上限只界定"读进内存的字节量"。
 constexpr qint64 kReadFileMaxBytes = 200000;
 
+// edit_file 体量上限（字节）：与 read_file 的 kReadFileMaxBytes 同属「挂起审计防御加固」族。
+// 零线程纪律下 edit_file 必须整文件读入，且要做多次整串拷贝（UTF-8 往返等价预检、
+// 行尾两级匹配的归一化与还原），数百 MB 文件会冻结主线程秒级——read_file 已因此加了限量读，
+// edit_file 不能反而无界。超限直接拒绝编辑并回可判定错误，不尝试部分读写（部分写会毁文件）。
+// 取值远大于任何真实源文件/文档，只拦「LLM 指到巨型文件」这类异常，不误伤正常编辑。
+constexpr qint64 kEditFileMaxBytes = 5 * 1024 * 1024;
+
 // write_file 覆盖已存在文件时的行尾探测读入字节数：只为统计主导行尾（CRLF vs 裸 LF），
 // 不需全文——大文件整体读进内存纯属浪费。64KB 足以覆盖任何真实文件的行尾样本；
 // 已知边界：窗口内一个换行都没有（超长单行文件）时判为 LF，见 runWriteFileIn 注释。

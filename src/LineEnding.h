@@ -56,15 +56,38 @@ inline QString apply(const QString &text, Style style)
     return out;
 }
 
+// 命中次数统计（不重叠计数，与 replaceOnce 的两级匹配同口径：在哪个域命中就在哪个域计数）。
+// 用途：edit_file 的歧义拒绝——old_string 在文件里出现多次时，「替换第一处」改的是哪一处
+// 取决于文件里恰好先出现哪个，模型无从判断，静默改错位置比失败更危险。
+// firstIndex 由调用方传入（即已求出的首次命中位置），避免重复扫一遍前缀。
+inline int countOccurrences(const QString &haystack, const QString &needle, int firstIndex)
+{
+    if (needle.isEmpty())
+        return 1; // 空 needle 不参与计数：indexOf("") 恒 0 会死循环，调用方已先行拒绝空 old_string
+    int count = 1;
+    int from = firstIndex + needle.size();
+    while (from <= haystack.size())
+    {
+        const int next = haystack.indexOf(needle, from);
+        if (next < 0)
+            break;
+        ++count;
+        from = next + needle.size();
+    }
+    return count;
+}
+
 // 单次替换（对齐 lcc str.replace(old, new, 1) 的「只替换第一处」语义），两级匹配：
 //   ① 先按文件主导行尾渲染 old/new 后在**原文**匹配——命中则只动匹配区间，其余字节逐字保留，
 //      diff 无噪声（这是绝大多数情形：文件行尾本身统一）；
 //   ② 失配再退到 LF 归一化全文匹配（混合行尾文件才走到这），写回时整文件按主导行尾归一，
 //      顺带把误入的裸 LF 收敛掉，属可接受副作用。
-// 命中与否经 matched 出参回传（nullptr 容错，与 SessionStore 的 error 出参同纪律）；
-// 未命中时返回值无意义，调用方须折叠成可判定错误文本（B1 约定），不得静默当作成功。
+// 出参（均 nullptr 容错，与 SessionStore 的 error 出参同纪律）：
+//   matched    —— 是否命中；未命中时返回值无意义，调用方须折叠成可判定错误文本（B1 约定）
+//   matchCount —— 命中次数（0 = 未命中）。调用方据此拒绝歧义编辑：>1 时不得静默替换第一处，
+//                 须回可判定错误要求补上下文使其唯一（本仓对 lcc 语义的有意偏离，见 runEditFileIn）
 inline QString replaceOnce(const QString &text, const QString &oldString, const QString &newString,
-                           bool *matched)
+                           bool *matched, int *matchCount)
 {
     const Style style = dominant(text);
 
@@ -74,6 +97,8 @@ inline QString replaceOnce(const QString &text, const QString &oldString, const 
     {
         if (matched)
             *matched = true;
+        if (matchCount)
+            *matchCount = countOccurrences(text, oldRendered, rawIndex);
         QString edited = text;
         edited.replace(rawIndex, oldRendered.size(), apply(newString, style));
         return edited;
@@ -86,11 +111,15 @@ inline QString replaceOnce(const QString &text, const QString &oldString, const 
     {
         if (matched)
             *matched = false;
+        if (matchCount)
+            *matchCount = 0;
         return QString();
     }
-    normalized.replace(index, oldLf.size(), toLf(newString));
     if (matched)
         *matched = true;
+    if (matchCount)
+        *matchCount = countOccurrences(normalized, oldLf, index);
+    normalized.replace(index, oldLf.size(), toLf(newString));
     return apply(normalized, style);
 }
 

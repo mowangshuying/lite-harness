@@ -1,6 +1,7 @@
 # 手工冒烟回归清单
 
-> 沉淀历轮验收场景为可重复执行的手工回归清单。本仓无自动化测试/lint（CI 仅做干净环境构建），构建+运行+目测即验收手段。
+> 沉淀历轮验收场景为可重复执行的手工回归清单。自动化测试仅覆盖 `tests/`（当前 `LineEnding.h` 行尾口径，`ctest --test-dir build -C Release --output-on-failure` 跑），无 lint；其余仍靠构建+运行+目测验收。
+
 > **用法**：按改动面选组执行——P0 每次 src/ 改动必跑；P1 按受影响域跑；P2 里程碑/发版前抽查。
 > **基线环境**：Qt 6.9.0 msvc2022_64 + MSVC 2022 + CMake，仅 Windows；模型服务凭 `settings.ini` 键 `apiBaseUrl` / `apiToken`（主窗口构造期 `QOpenAi::initFromSettings()` 读取），模型下拉取 `modelOptions` / `defaultModel`（内置首项 `qwen3.8-flash`）。
 > **配置存储**：exe 同目录 `settings.ini`（`AppSettings::ini()` 单源，QSettings IniFormat）——注册表方案已随用户裁决废弃，禁再引入默认构造 `QSettings`。下文 `S` 指上下文上限字符数（settings.ini `contextCharLimit`）；`T` 指派生 token 预算（`contextTokenBudget()` ≈ S/4，触发与 UI 均此口径）；`T′` 指 T 扣除 system+tools+注入 overhead 后的会话体预算。
@@ -41,7 +42,10 @@
 - [ ] 子代理（`task`）内 bash 失败同样可判定 → 非零退出码回喂带 `Error: command exited with status N:` 前缀（与主循环前台/后台共用 `formatBashResult`）；PowerShell 起不来由 `errorOccurred` 显式收口回 `Error: bash 启动失败…`；不得把失败洗白成裸输出或 `(no output)`（曾如此）；取消后仍静默丢弃输出、`onToolFinished` 恒一次
 - [ ] `edit_file` 行尾两级匹配 → CRLF 文件上用**从 `read_file` 输出抄来的 LF 多行** `old_string` 能命中（曾必然报 text not found）；写回后全文件无裸 LF（不产出混合行尾）；LF 文件保持 LF 不被转成 CRLF；单行替换与「只替换第一处」语义不退化；混合行尾文件走 LF 归一化回退、写回按主导行尾归一
 - [ ] `edit_file` 编码防线 → 非 UTF-8 文件（如 GBK 源文件）返回可判定错误拒绝编辑，**不得**写回把非法字节永久替换为 U+FFFD；带 UTF-8 BOM 的文件既能正常编辑（`fromUtf8` 会吃 BOM，守卫须按去 BOM 后的正文比较，否则误拒）、写回后 BOM 原样保留（不被静默删除）
-- [ ] `write_file` 行尾保真 → 覆盖已存在的 CRLF 文件时沿用 CRLF（模型给的 content 天然是 LF，直写会翻转整文件行尾、产出全文件 diff 噪声）；新建文件按 content 原样落盘不臆造行尾；主导行尾只读开头 `kEndingProbeBytes`（64KB）窗口判定，已知边界：窗口内无换行的超长单行文件判为 LF
+- [ ] `edit_file` 三道防线 → ① 空 `old_string` 返回可判定错误拒绝编辑（**不得**把 `new_string` 静默前插到文件开头）；② 超过 `kEditFileMaxBytes`（5MB）的文件拒绝编辑并回体量错误（**不得**整文件读入冻结主线程，也不得部分读写毁文件）；③ `old_string` 在文件中命中多处 → 返回「命中 N 处，拒绝编辑（请补充上下文使其唯一）」，**不得**静默替换第一处（有意偏离 lcc `str.replace(old,new,1)` 语义）
+- [ ] 单元测试 → `ctest --test-dir build -C Release --output-on-failure` 全绿（产物 `build/tests/lite-harness-tests.exe`，需 Qt bin 在 PATH 供 `Qt6Core.dll`）；测试 exe **不进** CPack 包（输出目录与 `bin/` 分开，staging 只取 `bin/`）
+- [ ] `write_file` 行尾保真 → 覆盖已存在的 CRLF 文件时沿用 CRLF
+（模型给的 content 天然是 LF，直写会翻转整文件行尾、产出全文件 diff 噪声）；新建文件按 content 原样落盘不臆造行尾；主导行尾只读开头 `kEndingProbeBytes`（64KB）窗口判定，已知边界：窗口内无换行的超长单行文件判为 LF
 
 ## 四、P1 设置与数据路径
 
@@ -109,7 +113,8 @@
 - [ ] 打包 `cpack --config build/CPackConfig.cmake -B build` → 出 `build/lite-harness-s<版本>-win64.zip`（约 54MB/75 条目）；`--config` 必带，否则报 generator not specified；cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）
 - [ ] 包内布局 → 顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + `qt.conf`（Prefix=..），根级 `plugins/` + `translations/`；无 FluentUI 泄漏物（`bin/Gallery.exe`、`include/`、`lib/`、`share/`、重复 Qt 运行时）——根级 `install(CODE)` 清理必跑在子目录规则之后
 - [ ] 解压到干净机器冒烟 → `<顶层目录>/bin/lite-harness.exe` 可启动；配好 `settings.ini` 的 `apiBaseUrl` / `apiToken` 后可完整对话；本链默认携带 VC 运行库（windeployqt 未传 `--no-compiler-runtime`），故缺 Redist 起不来不再是预期边界
-- [ ] push / PR → GitHub Actions `Windows-Qt6.9.0.yml` 触发干净环境全量 **Release** 构建 + cpack 打包，绿灯即验收；paths 白名单外（如本 docs 改动）不触发
+- [ ] push / PR → GitHub Actions `Windows-Qt6.9.0.yml` 触发干净环境全量 **Release** 构建 + `ctest` 单测 + cpack 打包，绿灯即验收；paths 白名单外（如本 docs 改动）不触发；`tests/**` 已在白名单内（改测试也触发验收）
+
 - [ ] tag `v*` / `s*` 推送 → 同一 workflow 把 zip 上传为该 tag 的 GitHub Release 资产
 - [ ] CI 零凭证读码 → workflow 内无任何 token/secret 硬编码或引用
 - [ ] 旧就地 `deploy` 目标（windeployqt 自定义目标）已摘除，**勿恢复双轨**：CPack ZIP 是唯一部署/打包路径，不要再验 `--target deploy` 或往 `dist/` 拷产物

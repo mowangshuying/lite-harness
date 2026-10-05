@@ -199,6 +199,20 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     if (abs.isEmpty())
         return err;
 
+    // 空 old_string 拒绝：indexOf("") 恒返回 0，原语义会把 new_string 静默前插到文件开头
+    // （模型漏填参数即毁文件头部），属明显误用，先行短路不读盘
+    if (oldString.isEmpty())
+        return QStringLiteral("Error: old_string 为空，拒绝编辑（会在 %1 开头静默插入 new_string）").arg(path);
+
+    // 体量防线（对齐 read_file 的 kReadFileMaxBytes 纪律）：整文件读入 + 多次整串拷贝在
+    // 零线程下会冻结主线程，超限直接拒绝，不尝试部分读写
+    const qint64 fileSize = QFileInfo(abs).size();
+    if (fileSize > AgentConst::kEditFileMaxBytes)
+        return QStringLiteral("Error: %1 超过 edit_file 体量上限（%2 > %3 字节），拒绝编辑")
+            .arg(path)
+            .arg(fileSize)
+            .arg(AgentConst::kEditFileMaxBytes);
+
     QFile file(abs);
     if (!file.open(QIODevice::ReadOnly))
         return QStringLiteral("Error:%1").arg(file.errorString());
@@ -228,11 +242,22 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     // read_file 交还模型的是 LF 归一化文本，直接拿原文匹配会让多行 old_string 在 CRLF
     // 文件上必然失配，而 LF new_string 原样插入又会混入裸 LF
     bool matched = false;
-    const QString edited = LineEnding::replaceOnce(text, oldString, newString, &matched);
+    int matchCount = 0;
+    const QString edited = LineEnding::replaceOnce(text, oldString, newString, &matched, &matchCount);
     if (!matched)
     {
         file.close();
         return QStringLiteral("Error: text not found in %1").arg(path);
+    }
+    // 歧义拒绝（**有意偏离** lcc str.replace(old, new, 1) 的静默替换第一处）：命中多处时
+    // 改哪一处取决于文件里恰好先出现哪个，模型无从判断，静默改错位置比失败更危险
+    // （曾按 lcc 语义替换第一处）。回可判定错误并要求补上下文使其唯一，交模型自行重试。
+    if (matchCount > 1)
+    {
+        file.close();
+        return QStringLiteral("Error: old_string 在 %1 中命中 %2 处，拒绝编辑（请补充上下文使其唯一）")
+            .arg(path)
+            .arg(matchCount);
     }
 
     // 保持"读全文→替换→写回"语义，仅写回改原子（QSaveFile）：防止写回中途失败毁原文件；

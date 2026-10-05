@@ -1,5 +1,7 @@
 # 结构参考 3rdparty/FluentUI/.github/workflows/Windows-Qt6.9.0.yml（蓝本），按本仓实际裁剪：
-# - 本仓无测试/lint，CI 验收 = 干净环境全量 configure + Release build + CPack 出包成功
+# - CI 验收 = 干净环境全量 configure + Release build + ctest 单测 + CPack 出包成功
+#   （单测只覆盖纯函数，见 tests/；测试失败即中止，不让坏产物进 zip）
+
 # - Windows-only / MSVC 2022 x64 / Qt 6.9.0 单点，不铺版本矩阵
 # - tag（v*/s*）推送时末尾步骤把 zip 上传为该 tag 的 GitHub Release（蓝本 New Release 同款分流）
 name: Windows-Qt6.9.0
@@ -18,6 +20,7 @@ on:
       - 'stylesheet/**'
       - 'res/**'
       - 'i18n/**'
+      - 'tests/**'
       - '3rdparty/**'
       - '.github/workflows/Windows-Qt6.9.0.yml'
   pull_request:
@@ -29,9 +32,11 @@ on:
       - 'stylesheet/**'
       - 'res/**'
       - 'i18n/**'
+      - 'tests/**'
       - '3rdparty/**'
       - '.github/workflows/Windows-Qt6.9.0.yml'
 jobs:
+
   build:
     name: Build
     # upload-release-action 上传 Release 资产所需；显式声明防仓库级设置收紧后静默 403
@@ -85,6 +90,14 @@ jobs:
           cmake -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_PREFIX_PATH=$prefix"
           cmake --build build --config Release --parallel
           Get-Item build\bin\lite-harness.exe
+
+      # 单元测试（ctest）：跑在 Release 构建之后、打包之前——测试失败即中止流程，
+      # 不让坏产物进 zip。测试 exe 输出在 build/tests/（与 bin/ 分开，不进 CPack staging）；
+      # Qt6Core.dll 由 install-qt-action 注入的 PATH 提供，无需额外部署。
+      - name: Unit tests (ctest)
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
 
       # CPack ZIP（AGENTS.md「打包」节实证链）：--config 必带否则报 generator not specified；
       # cpack 不触发编译，staging 取上一步 Release 产物 build/bin/lite-harness.exe。

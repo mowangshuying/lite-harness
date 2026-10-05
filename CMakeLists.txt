@@ -108,7 +108,35 @@ target_link_libraries(${TGT} PRIVATE
     Qt6::Network
 )
 
+# ---- 单元测试（ctest）----
+# 只测纯函数（当前：LineEnding.h 行尾口径），不引 Qt6::Test/moc——测试对象无信号槽需求，
+# 少一个组件依赖与 DLL 负担，本地 cl 与 CI 都能直接起来（取舍理由见 tests/TestHarness.h 顶部）。
+# 输出目录与主 exe 分开（build/tests 而非 build/bin）：CPack 的 staging 与根级 install(CODE)
+# 清理都围绕 bin/ 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删。
+option(LITE_TESTS "Build lite-harness unit tests (ctest)" ON)
+if (LITE_TESTS)
+	enable_testing()
+	file(GLOB test_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+	add_executable(lite-harness-tests ${test_src})
+	set_target_properties(lite-harness-tests PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
+		RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_BINARY_DIR}/tests"
+		RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_BINARY_DIR}/tests"
+	)
+	# src/ 入搜索路径：测试直接 include 生产头（LineEnding.h 等 header-only 单源），
+	# 测的是真实编译产物而非复制出来的算法副本
+	target_include_directories(lite-harness-tests PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/src"
+		"${CMAKE_CURRENT_SOURCE_DIR}/tests"
+	)
+	# 与主目标同款 /W4 /utf-8；Qt6::Core 由上方 Widgets 的依赖传递保证可用，无需再 find_package
+	target_compile_options(lite-harness-tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
+	target_link_libraries(lite-harness-tests PRIVATE Qt6::Core)
+	add_test(NAME lite-harness-tests COMMAND lite-harness-tests)
+endif()
+
 # ---- CPack packaging (the single deployment/packaging path) ----
+
 # The old in-place 'deploy' windeployqt custom target was removed as
 # redundant; this install+CPack chain is now the only way to produce a
 # distributable output. Pipeline: cpack -B build stages into an internal tree

@@ -107,7 +107,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `ThemeAware.h` | 「加载 QSS + 订阅 themeChanged + 重载」样板单源 `bind(qss, widget, extraRefresh)` |
 | `NavItem.h` | `NavKey` 导航/堆叠键单源 |
 | `AgentLoopInternal.h` | `AgentLoopDetail` 跨 TU 内部工具**声明**单源（§4） |
-| `LineEnding.h` | 文本文件行尾口径单源：`dominant`（主导行尾判定，平局偏 CRLF）/ `toLf`（匹配域归一，孤立 CR 不动）/ `apply`（写回域还原，幂等）/ `replaceOnce`（两级匹配单次替换）。`edit_file` 与 `write_file` 共用，杜绝「read_file 交还 LF 文本、edit_file 按原文字节匹配」导致的多行失配与混合行尾 |
+| `LineEnding.h` | 文本文件行尾口径单源：`dominant`（主导行尾判定，平局偏 CRLF）/ `toLf`（匹配域归一，孤立 CR 不动）/ `apply`（写回域还原，幂等）/ `replaceOnce`（两级匹配单次替换）。`edit_file` 与 `write_file` 共用，杜绝「read_file 交还 LF 文本、edit_file 按原文字节匹配」导致的多行失配与混合行尾。`countOccurrences` 报命中次数（经 `replaceOnce` 的 `matchCount` 出参，与 `matched` 同为 nullptr 容错），供 `edit_file` 拒绝歧义编辑 |
 
 ---
 
@@ -123,7 +123,8 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopRequest.cpp` | 412 | 一次 LLM 请求回合：压缩前导 → 流式请求 → 工具批推进 → 记忆沉淀链 | `startChatRequest`、`doStartChatRequest`、`applyCompactPipelineAsync`、`continueWithToolResults`、`runNextTool`、`startMemoryChain` |
 | `AgentLoopPrompt.cpp` | 374 | system prompt 六段组装 + 每轮刷新首位 system + 工具 function 定义（**禁翻区**，`QStringLiteral` 不包 `tr()`） | `makeSystemPrompt`、`rebuildSystemPromptMessage`、`createToolsDefinition` |
 | `AgentLoopTools.cpp` | 315 | 工具分发：`executeTool` 分流、handler 表、统一收口 `onToolFinished`、成败判定单源 | `executeTool`、`onToolFinished`、`isToolFailure`、`AgentLoopDetail` 工具段定义 |
-| `AgentLoopFileTools.cpp` | 334 | 沙箱文件工具（同步本地 IO）：逃逸判定 + read/write/edit/glob，全静态，宿主与子代理各传各的 workDir；edit/write 的行尾与编码防线见 `LineEnding.h` | `safePathIn`、`runReadFileIn`、`runWriteFileIn`、`runEditFileIn`、`runGlobIn` |
+| `AgentLoopFileTools.cpp` | 355 | 沙箱文件工具（同步本地 IO）：逃逸判定 + read/write/edit/glob，全静态，宿主与子代理各传各的 workDir；edit/write 的行尾与编码防线见 `LineEnding.h`；edit 另有三道防线（空 `old_string` 拒绝 / 体量上限 `kEditFileMaxBytes` 拒绝 / 多处命中歧义拒绝） |
+ `safePathIn`、`runReadFileIn`、`runWriteFileIn`、`runEditFileIn`、`runGlobIn` |
 | `AgentLoopBash.cpp` | 159 | bash 异步执行链与后台任务结果收割 | `executeBashAsync`、`injectBackgroundResults` |
 | `AgentLoopPermission.cpp` | 142 | 权限门：硬拒绝黑名单、破坏性命令升级判定、ASK 规则、用户裁决续跑 | `checkDenyList`、`checkPermissionRules`、`resolvePermission`、`AgentLoopDetail::bashDenyList` 定义 |
 | `AgentLoopHooks.cpp` | 163 | 生命周期钩子注册表：注册顺序即执行顺序，四个 trigger（UserPromptSubmit/PreToolUse/PostToolUse/Stop）**首个非空返回短路** | `registerBuiltinHooks`（内置：`context_inject` / `permission` / `log_before` / `log_after`）、四个 `trigger*Hooks` |
@@ -276,9 +277,10 @@ SubAgent::progressEmitted(turnNo, toolName, summary) → 直连 AgentLoop::subag
   `3rdparty/FluentUI` 是子目录，`3rdparty/sqlite*` 与 `3rdparty/lcc` **不进构建图**。
 - 应用数据全部内嵌资源：QSS → `:/stylesheet/`、图标 → `:/res/`、翻译 qm → `:/i18n/`。
   因此出包 = exe + Qt 运行时 + VC 运行库（CPack ZIP 唯一路径）。
-- CI（`.github/workflows/Windows-Qt6.9.0.yml`）**没有测试/lint 步骤**：干净环境全量 configure +
-  Release 全目标构建 + cpack 出 zip 即验收；tag `v*`/`s*` 末尾上传 GitHub Release。
+- CI（`.github/workflows/Windows-Qt6.9.0.yml`）**无 lint 步骤**：干净环境全量 configure +
+  Release 全目标构建 + `ctest` 单测 + cpack 出 zip 即验收；tag `v*`/`s*` 末尾上传 GitHub Release。
   必须全目标构建（勿 `--target lite-harness`），原因见 AGENTS.md「构建」节。
+  单测跑在构建之后、打包之前——测试失败即中止流程，不让坏产物进 zip。
 
 ---
 
@@ -313,10 +315,13 @@ SubAgent::progressEmitted(turnNo, toolName, summary) → 直连 AgentLoop::subag
    `MessageBubbleWidget.cpp` 836、`ChatSessionPage.cpp` 722、`TaskStore.cpp` 684、
    `QOpenAi.cpp` 668、`CompactManager.cpp` 659、`SettingsPage.cpp` 652、
    `CronSchedulerManager.cpp` 631。
-5. **无自动化测试**：`tests/` 不存在，`CMakeLists.txt` 无 `add_test`/`enable_testing`，CI 不跑测试。
-   因此重构的验证手段只有「编译期等价 + 冒烟运行 + 移动代码逐字一致」，行为回归**不可证**。
-   若要补，最小切口是给已无 GUI 依赖的纯函数（`AgentLoopDetail::toolSummary` / `parseToolCall` /
-   `BashRunner::dangerWarning` / `isToolFailure`）建一个 `Qt6::Test` 单测目标。
+5. **自动化测试刚起步**：`tests/` + `enable_testing()`/`add_test` 已落地（`LITE_TESTS` 默认 ON，
+   产物 `build/tests/lite-harness-tests.exe`，CI 跑 `ctest`），但当前只覆盖 `LineEnding.h` 一个纯函数头。
+   其余改动的验证手段仍是「编译期等价 + 冒烟运行 + 移动代码逐字一致」，行为回归大面积**不可证**。
+   下一批最小切口是已无 GUI 依赖的纯函数：`AgentLoopDetail::toolSummary` / `parseToolCall` /
+   `BashRunner::dangerWarning` / `isToolFailure` / cron 表达式匹配 / token 估算 / frontmatter 解析——
+   每个都是「加一个 `tests/tst_<模块>.cpp` + `tests/main.cpp` 里一行调用」，GLOB 收集无需改 CMakeLists。
+   刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
 
 ---
 
