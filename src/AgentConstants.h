@@ -168,6 +168,11 @@ constexpr qsizetype kOutputCharLimit = 50000;
 // 展示层截断仍由 kOutputCharLimit 负责，本上限只界定"读进内存的字节量"。
 constexpr qint64 kReadFileMaxBytes = 200000;
 
+// write_file 覆盖已存在文件时的行尾探测读入字节数：只为统计主导行尾（CRLF vs 裸 LF），
+// 不需全文——大文件整体读进内存纯属浪费。64KB 足以覆盖任何真实文件的行尾样本；
+// 已知边界：窗口内一个换行都没有（超长单行文件）时判为 LF，见 runWriteFileIn 注释。
+constexpr qint64 kEndingProbeBytes = 65536;
+
 // ChatStream 总时长哨兵（毫秒，挂起审计防御加固：对齐同文件 AsyncRequest 的总量防线）：
 // idle 静默超时每收字节即重置，杀不死"慢而不断"的流——上游持续发字节（间隔 < idle 窗口）
 // 却永不发 [DONE]/finish_reason 时，主链回合永不终结。总量上限按主链长回复场景取 30 分钟；

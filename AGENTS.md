@@ -44,6 +44,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **AgentConstants.h** — 模型清单（settings.ini 键 `modelOptions` 逗号分隔、`defaultModel` 指定缺省项，未配置/非法回落内置 `kBuiltinModelOptions`；单点取值 `modelOptions()`/`defaultModel()`，**读值必须经本头内 `iniTextValue()`**——裸逗号串在 ini 是 QSettings 的列表语法，`value().toString()` 会得空串即「配置了却不显示」，列表形态要逐元素取原文再按逗号拆，严禁再裸用 `.toString()`）、kMaxTokens、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results` — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被 settings.ini 覆盖，非硬约束）。
 - **LayoutConstants.h** — 消息列宽/边距（NewChatPage/ChatSessionPage/ChatMsgEdit 同列对齐）。
 - **NavItem.h** — 导航键常量（NavKey）+ NavItem（带 removeChildItem）。**ToolNames.h** — 18 工具名。**ToolTagKind.h** — 工具→样式标签（write/run/search/read/plan/delegate/other），经动态属性喂给 QSS 选择器。
+- **LineEnding.h** — 文本文件行尾归一单源（header-only 纯函数）：`dominant` 主导行尾判定（CRLF 数 ≥ 裸 LF 数且非零判 CRLF，平局偏 CRLF）/ `toLf` 匹配域归一 / `apply` 写回域还原（幂等，不产生 `\r\r\n`）/ `replaceOnce` 两级匹配单次替换。**纪律：匹配域归一到 LF、写回域按文件主导行尾还原**——`read_file` 以 `QTextStream` 逐行读再用 `'\n'` join，交还模型的永远是 LF 文本，而落盘文件在本仓（`core.autocrlf=true`）多为 CRLF；`edit_file` 若拿原始字节直接匹配，多行 `old_string` 必然失配（报 text not found），LF `new_string` 原样插入又会混入裸 LF。孤立 CR 不折叠（不误伤正文 CR 字面量）。
 
 ### UI 层
 

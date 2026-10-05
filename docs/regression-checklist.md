@@ -39,6 +39,9 @@
 - [ ] 压缩请求（prepare/批尾/反应式共用 sideRequest）进行中按停止 → 历史不被摘要替换（取消后 done 永久静默）
 - [ ] 任意工具失败（read_file 不存在的文件等）→ 仅折叠为 tool_result 字符串交还 LLM，全程不抛异常、不弹窗
 - [ ] 子代理（`task`）内 bash 失败同样可判定 → 非零退出码回喂带 `Error: command exited with status N:` 前缀（与主循环前台/后台共用 `formatBashResult`）；PowerShell 起不来由 `errorOccurred` 显式收口回 `Error: bash 启动失败…`；不得把失败洗白成裸输出或 `(no output)`（曾如此）；取消后仍静默丢弃输出、`onToolFinished` 恒一次
+- [ ] `edit_file` 行尾两级匹配 → CRLF 文件上用**从 `read_file` 输出抄来的 LF 多行** `old_string` 能命中（曾必然报 text not found）；写回后全文件无裸 LF（不产出混合行尾）；LF 文件保持 LF 不被转成 CRLF；单行替换与「只替换第一处」语义不退化；混合行尾文件走 LF 归一化回退、写回按主导行尾归一
+- [ ] `edit_file` 编码防线 → 非 UTF-8 文件（如 GBK 源文件）返回可判定错误拒绝编辑，**不得**写回把非法字节永久替换为 U+FFFD；带 UTF-8 BOM 的文件既能正常编辑（`fromUtf8` 会吃 BOM，守卫须按去 BOM 后的正文比较，否则误拒）、写回后 BOM 原样保留（不被静默删除）
+- [ ] `write_file` 行尾保真 → 覆盖已存在的 CRLF 文件时沿用 CRLF（模型给的 content 天然是 LF，直写会翻转整文件行尾、产出全文件 diff 噪声）；新建文件按 content 原样落盘不臆造行尾；主导行尾只读开头 `kEndingProbeBytes`（64KB）窗口判定，已知边界：窗口内无换行的超长单行文件判为 LF
 
 ## 四、P1 设置与数据路径
 

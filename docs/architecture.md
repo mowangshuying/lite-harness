@@ -30,7 +30,7 @@ L5 引擎/传输     QOpenAi · BashRunner · CompactManager · MemoryManager ·
                  CronSchedulerManager · BackgroundTasksManager · SessionStore
                         ↓
 L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · AppSettings.h
-                 I18n · ThemeAware · ToolTagKind.h · AgentLoopInternal.h
+                 I18n · ThemeAware · ToolTagKind.h · AgentLoopInternal.h · LineEnding.h
 ```
 
 **两条铁律（本仓最重要的两条边方向）**
@@ -107,6 +107,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `ThemeAware.h` | 「加载 QSS + 订阅 themeChanged + 重载」样板单源 `bind(qss, widget, extraRefresh)` |
 | `NavItem.h` | `NavKey` 导航/堆叠键单源 |
 | `AgentLoopInternal.h` | `AgentLoopDetail` 跨 TU 内部工具**声明**单源（§4） |
+| `LineEnding.h` | 文本文件行尾口径单源：`dominant`（主导行尾判定，平局偏 CRLF）/ `toLf`（匹配域归一，孤立 CR 不动）/ `apply`（写回域还原，幂等）/ `replaceOnce`（两级匹配单次替换）。`edit_file` 与 `write_file` 共用，杜绝「read_file 交还 LF 文本、edit_file 按原文字节匹配」导致的多行失配与混合行尾 |
 
 ---
 
@@ -122,7 +123,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopRequest.cpp` | 412 | 一次 LLM 请求回合：压缩前导 → 流式请求 → 工具批推进 → 记忆沉淀链 | `startChatRequest`、`doStartChatRequest`、`applyCompactPipelineAsync`、`continueWithToolResults`、`runNextTool`、`startMemoryChain` |
 | `AgentLoopPrompt.cpp` | 374 | system prompt 六段组装 + 每轮刷新首位 system + 工具 function 定义（**禁翻区**，`QStringLiteral` 不包 `tr()`） | `makeSystemPrompt`、`rebuildSystemPromptMessage`、`createToolsDefinition` |
 | `AgentLoopTools.cpp` | 315 | 工具分发：`executeTool` 分流、handler 表、统一收口 `onToolFinished`、成败判定单源 | `executeTool`、`onToolFinished`、`isToolFailure`、`AgentLoopDetail` 工具段定义 |
-| `AgentLoopFileTools.cpp` | 288 | 沙箱文件工具（同步本地 IO）：逃逸判定 + read/write/edit/glob，全静态，宿主与子代理各传各的 workDir | `safePathIn`、`runReadFileIn`、`runWriteFileIn`、`runEditFileIn`、`runGlobIn` |
+| `AgentLoopFileTools.cpp` | 334 | 沙箱文件工具（同步本地 IO）：逃逸判定 + read/write/edit/glob，全静态，宿主与子代理各传各的 workDir；edit/write 的行尾与编码防线见 `LineEnding.h` | `safePathIn`、`runReadFileIn`、`runWriteFileIn`、`runEditFileIn`、`runGlobIn` |
 | `AgentLoopBash.cpp` | 159 | bash 异步执行链与后台任务结果收割 | `executeBashAsync`、`injectBackgroundResults` |
 | `AgentLoopPermission.cpp` | 142 | 权限门：硬拒绝黑名单、破坏性命令升级判定、ASK 规则、用户裁决续跑 | `checkDenyList`、`checkPermissionRules`、`resolvePermission`、`AgentLoopDetail::bashDenyList` 定义 |
 | `AgentLoopHooks.cpp` | 163 | 生命周期钩子注册表：注册顺序即执行顺序，四个 trigger（UserPromptSubmit/PreToolUse/PostToolUse/Stop）**首个非空返回短路** | `registerBuiltinHooks`（内置：`context_inject` / `permission` / `log_before` / `log_after`）、四个 `trigger*Hooks` |

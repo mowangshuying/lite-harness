@@ -5,6 +5,7 @@
 
 #include "AgentConstants.h"
 #include "BashRunner.h"
+#include "LineEnding.h" // 行尾归一单源：edit_file 两级匹配 / write_file 覆盖保真（read_file 交还 LF 文本）
 
 #include <QDir>
 #include <QFile>
@@ -156,12 +157,28 @@ QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &arg
     if (!QDir().mkpath(QFileInfo(abs).dir().absolutePath()))
         return QStringLiteral("Error:cannot create directory:%1").arg(QFileInfo(abs).dir().absolutePath());
 
+    // 行尾保真：覆盖已存在文件时沿用其主导行尾（模型给的 content 天然是 LF，直写会把整个
+    // CRLF 文件翻转成 LF，产出全文件 diff 噪声）；新建文件按 content 原样落盘，不臆造行尾。
+    // 只读开头 kEndingProbeBytes 字节做统计样本，不为探测行尾把大文件整体读进内存；
+    // 已知边界：开头窗口内一个换行都没有（超长单行文件）时判为 LF，属可接受偏差。
+    QString rendered = content;
+    if (QFile::exists(abs))
+    {
+        QFile probe(abs);
+        if (probe.open(QIODevice::ReadOnly))
+        {
+            const QString head = QString::fromUtf8(probe.read(AgentConst::kEndingProbeBytes));
+            probe.close();
+            rendered = LineEnding::apply(content, LineEnding::dominant(head));
+        }
+    }
+
     // 原子写防止中途失败毁目标文件（旧 QFile Truncate 在磁盘满/崩溃时留下半截内容），
     // 对齐同文件 persistHistory 的 QSaveFile 纪律；失败时 cancelWriting 丢弃临时文件不伤目标
     QSaveFile file(abs);
     if (!file.open(QIODevice::WriteOnly))
         return QStringLiteral("Error: %1").arg(file.errorString()); // lcc run_write 带空格（G3）
-    const QByteArray bytes = content.toUtf8();
+    const QByteArray bytes = rendered.toUtf8();
     if (file.write(bytes) != bytes.size() || !file.commit()) {
         const QString reason = file.errorString();
         file.cancelWriting(); // 丢弃临时文件并关闭句柄，目标路径不受影响
@@ -185,19 +202,44 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     QFile file(abs);
     if (!file.open(QIODevice::ReadOnly))
         return QStringLiteral("Error:%1").arg(file.errorString());
-    const QString text = QString::fromUtf8(file.readAll());
+    const QByteArray raw = file.readAll();
 
-    // 只替换第一处（对齐 str.replace(old, new, 1)）
-    const int index = text.indexOf(oldString);
-    if (index < 0)
+    // BOM 显式摘出（实测：QString::fromUtf8 会吃掉前导 UTF-8 BOM，解码结果首字符即正文）。
+    // 不摘出会有两个后果：① 编码守卫拿含 BOM 的 raw 与已去 BOM 的 toUtf8() 比较恒不等，
+    // 带 BOM 的合法源文件被误判为「非 UTF-8」而拒绝编辑；② 写回时 BOM 被静默删除——对以
+    // BOM 标注编码的源文件（中文 Windows / MSVC 常见）属越界修改。故此处摘出、写回时原样补回，
+    // 守卫按去 BOM 后的正文字节比较。
+    static const QByteArray kUtf8Bom = QByteArray("\xef\xbb\xbf", 3);
+    const bool hadBom = raw.startsWith(kUtf8Bom);
+    const QByteArray body = hadBom ? raw.mid(kUtf8Bom.size()) : raw;
+    const QString text = QString::fromUtf8(body);
+
+    // 编码防线：fromUtf8 把非法字节解码成 U+FFFD，写回即永久损坏原文件且全程无告警
+    // （中文 Windows 上的 GBK 源文件属现实场景）。往返字节不等价 → 判定非 UTF-8，拒绝编辑
+    // 并回可判定错误（B1 约定），不静默毁文件。
+    if (text.toUtf8() != body)
+    {
+        file.close();
+        return QStringLiteral("Error: %1 不是合法 UTF-8，拒绝编辑（写回会把非法字节永久替换为 U+FFFD）")
+            .arg(path);
+    }
+
+    // 只替换第一处（对齐 str.replace(old, new, 1)）；行尾两级匹配单源于 LineEnding.h——
+    // read_file 交还模型的是 LF 归一化文本，直接拿原文匹配会让多行 old_string 在 CRLF
+    // 文件上必然失配，而 LF new_string 原样插入又会混入裸 LF
+    bool matched = false;
+    const QString edited = LineEnding::replaceOnce(text, oldString, newString, &matched);
+    if (!matched)
+    {
+        file.close();
         return QStringLiteral("Error: text not found in %1").arg(path);
-    QString edited = text;
-    edited.replace(index, oldString.size(), newString);
+    }
 
     // 保持"读全文→替换→写回"语义，仅写回改原子（QSaveFile）：防止写回中途失败毁原文件；
     // 先 close 读句柄，避免 Windows 下 commit 的重命名被自身打开句柄阻塞
     file.close();
-    const QByteArray bytes = edited.toUtf8();
+    // BOM 原样补回（见读入处注释）：编辑只应改动匹配区间，不得顺带删掉文件的编码标记
+    const QByteArray bytes = hadBom ? (kUtf8Bom + edited.toUtf8()) : edited.toUtf8();
     QSaveFile out(abs);
     if (!out.open(QIODevice::WriteOnly))
         return QStringLiteral("Error:%1").arg(out.errorString());
