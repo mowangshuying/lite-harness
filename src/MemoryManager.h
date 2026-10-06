@@ -17,7 +17,7 @@ namespace QOpenAi { class AsyncRequest; }
  * 提供，含 .lite-harness 或按会话隔离的 .lite-harness/sessions/<id>；MEMORY.md 索引 +
  * <slug>.md 记录文件，
  * 记录带极简 frontmatter，键序固定 name/description/type）。三大公共入口语义与 lcc 一致
- * （异步化迁移后 Async 版为唯一路径，设计文档 docs/doc.md 第五部分「异步链实施规格」）：
+ * （异步化迁移后 Async 版为唯一路径，现行契约 docs/doc.md 第五部分「异步链现状契约」§3）：
  *   - loadMemoriesAsync：召回——LLM 从目录中挑选与最近请求相关的记录（失败回落关键词打分），
  *     拼接为 JSON 文本注入 system prompt 尾段；
  *   - extractMemoriesAsync：对话自然结束后的沉淀提取（scope==persistent 门槛 + 临时标记 + 三重去重）；

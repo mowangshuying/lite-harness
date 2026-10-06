@@ -16,12 +16,15 @@
 |---|---|---|---|
 | [第二部分 · 模块结构总览](#architecture) | **结构与依赖边**：六层清单、AgentLoop 家族 13 个 TU 的职责地图、一条消息的完整数据流、运行时目录布局、单源纪律一览、已知分层异常、新增代码落位决策树 | 活文档（权威） | 增删 `src/` 模块、改各 TU 分工、改 `AgentLoopInternal.h` 符号归属必须同步 |
 | [第三部分 · 手工冒烟回归清单](#checklist) | **历轮验收场景沉淀**：十组 P0/P1/P2 勾选项 | 活文档（发版必跑） | 每条对应一个已实现行为；实现变了要改条目，**只记现状、不记愿望** |
-| [第四部分 · 交互 UI 设计逻辑](#ui) | **交互设计原理**：折叠式渐进披露（思考块 / 工具卡 / 整体编排）为什么这么设计 | 活文档（设计说明） | 只讲原理，不逐控件枚举；权限卡 / 侧栏 / 子代理进度卡等新范式尚未收录 |
-| [第五部分 · 异步链实施规格](#async) | **一次性实施规格**：memory/compact 阻塞链异步化（六阻塞点 → 全异步，@oracle 第四轮） | 已落地，按定稿存档 | §8「落地状态」是唯一结论层；正文行号锚定迁移前的旧 2063 行 `AgentLoop.cpp`，**已不可回查** |
-| [第六部分 · 早期会话页草图](#sketch) | 早期聊天会话页设计草图 | **已过时** | 组件面与交互面均与现实现不符，只作设计演化留痕，不作任何依据 |
+| [第四部分 · 交互 UI 设计逻辑](#ui) | **交互设计原理**：折叠式渐进披露的公共骨架与各类卡片（思考块 / 工具卡 / 权限卡 / 待办卡 / 子代理进度 / 记忆与压缩卡 / 侧栏 / 历史回放）为什么这么设计 | 活文档（设计说明） | 只讲原理与契约，不逐控件枚举 API；新增一类卡片/一种进行态时补一节，别在源码注释里另写一套原理 |
+| [第五部分 · 异步链现状契约](#async) | **memory / compact 侧链的现行契约**：全异步不变量、`AsyncRequest` 语义、三条记忆链与压缩变体、`stop()` 收口顺序、UI 侧接线 | 活文档（改侧链契约必须同步） | 原「异步化实施规格」已落地，其迁移前现状表 / API 草案 / 分阶段计划 / 工作量估算**已删除**（正文行号锚定拆分前的旧 2063 行 `AgentLoop.cpp`，100% 不可回查）；历史决策与偏离登记只留 §7 |
 
 别名（下文引用一律用别名）：**结构篇** = 第二部分，**清单篇** = 第三部分，**交互篇** = 第四部分，
-**异步篇** = 第五部分，**草图篇** = 第六部分。
+**异步篇** = 第五部分。
+
+> **已移除的部分**：原第六部分「早期会话页草图」（合并时即标注已过时，组件面与交互面均与现实现不符：
+> 无气泡左对齐 / `clearMessages` 清空 / 只 3 个新文件，与今天的 `MessageBubbleWidget` 时间线、
+> `startNewSession` 换页、40 个源文件完全对不上）已于本轮删除，设计演化留痕看 git 历史，不在本文。
 
 ### 1.2 该读哪部分（按问题查）
 
@@ -34,20 +37,22 @@
 | 找会话数据落在磁盘哪个文件、目录名能不能改 | 结构篇 §6 + `AGENTS.md`「数据与路径」 |
 | 改一个阈值，先确认它是不是单源 | 结构篇 §8 单源纪律一览 |
 | 提交前该跑哪些验收场景 | 清单篇（按改动面选组） |
-| 理解工具卡 / 思考块为什么折叠、何时展开 | 交互篇 |
+| 理解工具卡 / 思考块为什么折叠、何时展开 | 交互篇 §1–§6 |
+| 加一类新卡片（权限 / 待办 / 进度 / 结果卡）该怎么挂 | 交互篇 §7–§13 |
 | 发版、打 tag、写 Release 简介 | `AGENTS.md`「发布（tag 与 Release）」 |
-| 想知道异步链当初为什么这么拆 | 异步篇（读 §0 / §8，别读行号） |
+| 侧链能不能回退成阻塞写法、`stop()` 为什么要按那个顺序收口 | 异步篇 §1 / §5；历史决策与偏离登记看异步篇 §7 |
 
 > **`§n` 的口径**：各部分保留自己原来的小节编号，`§n` **恒指同一部分内**的第 n 节；跨部分引用一律写成
-> 「结构篇 §5」「异步篇 §3.1」这种带部分名的形式，不存在全局连续编号。
+> 「结构篇 §5」「异步篇 §2」这种带部分名的形式，不存在全局连续编号。
 
 ### 1.3 同步纪律
 
 1. **冲突优先级：代码 > `AGENTS.md` > 结构篇 > 其余。** 发现文档与代码矛盾，以代码为准并**当场修文档**——
    只写一句「以代码为准」了事，正是失真得以积累的原因。
-2. **行号锚点会腐化。** 本文大量结论标注 `文件:行号`，改动源文件后凡被触及的锚点都要重测。异步篇是反面
-   样本：一次拆分（旧 `AgentLoop.cpp` 2063 行 → 13 个 TU）让全文锚点 100% 失效，靠它自己的 §8 存档说明
-   才没误导读者。
+2. **行号锚点会腐化。** 本文大量结论标注 `文件:行号`，改动源文件后凡被触及的锚点都要重测。反面样本是原
+   异步化实施规格：一次拆分（旧 `AgentLoop.cpp` 2063 行 → 13 个 TU）让它全文的行号锚点 100% 失效，长期
+   靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
+   （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
    （`s12.6`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
@@ -569,7 +574,8 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ```
 
 - 输入框提交后，对话流中新增一轮交互
-- 用户消息以气泡/卡片形式固定在右侧或顶部
+- 用户消息以**右对齐气泡**固定在对话流中（`MessageBubbleWidget` 按 role 分流：User 内容右对齐、
+  Assistant 占满整行左对齐）；助手侧的一切进展都挂在**同一个气泡的时间线**上，而非另起浮层
 - Agent 响应区域开始流式渲染；首个内容/思考/工具事件到达时占位即清除
 
 ### 2. 思考（Thinking）— 可折叠
@@ -640,6 +646,68 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - **状态驱动 UI**：pending → running → success/error，每个状态有对应的视觉表现
 - **层级清晰**：思考（内部）→ 工具（过程）→ 回复（结果），三层分离
 
+### 7. 权限审批卡（PermissionCard）— 内联、拒绝优先
+
+```
+[需要权限确认]                        ← 标题行
+[bash] 请求执行：rm -f build/...      ← 工具名标签 + 动作词条 + 参数摘要
+[风险原因：疑似破坏性命令]  [拒绝] [允许]   ← 拒绝在左且持默认焦点
+──────────────────────────────────
+[✓ 已允许 bash 请求执行：rm -f …]      ← 裁决后主体收起，只留一行留痕
+```
+
+- **安全默认**：拒绝按钮持默认焦点（回车即拒绝）。焦点设置延到 `QTimer::singleShot(0)`——卡片刚构造时尚未入布局可见，此刻 `setFocus()` 会失效。
+- **裁决即收起**：`resolve()` 置 `m_resolved` 幂等门闩 → 两按钮禁用 → 发 `userResolved(bool)` → 主体隐藏、改显单行留痕（`✓ 已允许` / `✕ 已拒绝`，图标 `outcome` 动态属性喂 QSS 着色）。留痕行按当前块宽**中部省略**，tooltip 保全文。
+- **外部收口不发信号**：用户 stop 导致后端自动拒绝时走同一留痕形态（`applyTrace(false)`），但**不**再发 `userResolved`——否则会二次驱动后端。
+- **理由文案 EN→ZH 映射单源**：后端回传的英文 reason 经 `PermissionCard.cpp` 的映射表转中文（「Writing outside workspace」→「正在尝试访问工作区之外的路径」、「Potentially destructive command」→「疑似破坏性命令」）。**新增 reason 必须同步该表**，否则用户看到裸英文。
+- **挂载位置**：有当前气泡则 `appendPermissionCard` 嵌进时间线；无气泡（回合外到达）则挂滚动区主布局兜底。子代理的权限询问经 `SubAgent::permissionRequired` 直连转发为宿主同一信号，故审批体验与主循环完全一致（同时至多一方待决，串行队列天然保证）。
+
+### 8. 待办卡（TodoCard）— 时点快照，无进行态
+
+- 头部 `[任务清单] …… [done/total] [▼]`，与 ToolBlock 同款实色底与圆角；计数 tooltip「已完成 %1/%2」。
+- 行状态用**文本字形**而非图标：`●` 进行中 / `✓` 完成 / `○` 待办，颜色由 QSS 行状态选择器控制。
+- **快照语义**：`todo_write` 无状态，每次成功即以本次全量清单发 `todoUpdated`，UI 侧新建一张卡而非原地改表——历史里因此留下「计划演进」的每个时点，而非只有最终态。
+- 它是 `CollapsibleBlock` 家族里**唯一没有进行态**的子类：`liveText()` 落到基类默认空串，轮播定时器对它不启动。
+- 标题「任务清单」属常驻文案，`changeEvent(LanguageChange)` 里重取 `tr()`（i18n 第八轮）。
+
+### 9. 会话侧栏（SessionSidebar）— 回合级状态常驻可见
+
+- 与气泡时间线**互补**：气泡流是"发生过什么"（会滚走），侧栏是"现在什么状态"（常驻）——标题 / 模型 / 工作目录 / 上下文占用条 / 状态灯 / 待办清单 / 页脚版本。
+- **纯视图**：不订阅 `AgentLoop`，全部由 `ChatSessionPage` 调 setter 推入（`setSessionMeta`/`setWorkDir`/`setContextUsage`/`setRunning`/`setPermissionPending`/`setTodos`）。占用条数值取内核单源 `AgentLoop::estimatedContextTokens()`，UI 不另算一套。
+- 状态灯三态合一：运行中 / 待决权限（审批卡挂起时点亮，提示"在等你"）/ 空闲。
+- 收起后由右上角**浮动展开钮**恢复：该钮是页面直接子件、手动几何 + `raise()`，`resizeEvent` 与 `setSidebarVisible` 都重摆位（保证出现瞬间即对位）；偏好落 settings.ini 键 `sidebarVisible`，读值放在布局收尾令首帧即按最终态钳宽。
+
+### 10. 子代理进度卡 — `task` 卡的 live 形态与滑窗
+
+- `task` 工具执行时先挂 `startTaskLive()`（标题「子代理执行中」），子代理每完成一轮经 `subagentProgress` → `appendSubagentProgress(turnNo, toolName, summary)` 追加一行。
+- **滑窗丢最旧**：行数上限 `AgentConst::kSubagentProgressMaxLines = 60`，超限丢头部并在日志顶部常驻一条「…更早 %1 条进度已省略」——提示行只有一条、永不重复（整体重组写法）。
+- 折叠态也可见进展：头部关键参数位同步为最新一行（tooltip 全文，按块宽中部省略）。
+- **终态仍由 `toolOutputReady("task")` 唯一收口**：进度行只是过程留痕，绝不替代结果卡；取消/停止走 `finishTaskLiveAborted()` → `applyOutcome("stopped", ■)`（灰方块＝无结果终态，与常规卡同纪律）。
+
+### 11. 记忆卡与压缩卡 — 复用同一 `toolOutputReady` 通道
+
+- 两者都**不新增公共信号**：`CompactManager` / `MemoryManager` 各持一个 card sink，把内部事件（压缩档位达成、记忆 stored/consolidated）经宿主注入的四参 `toolOutputReady(toolName, summary, output, ok)` 出口发出，`toolName` 固定 `"compact"` / `"memory"`，成败仍走 `isToolFailure` 单源判定。
+- 好处：UI 侧只需接一条信号即可渲染，历史里也天然与工具卡同构（回放同口径）；代价：`memory` 卡有相位丢失风险，见下。
+- **记忆 live 卡**：`memoryPhaseStarted` 挂出（`appendMemoryProgress`）、`memoryChainFinished` 收尾（`finishStreaming` + 释放 `m_memoryBubble`）。
+- **M1 相位闸**：`toolOutputReady("memory")` 到达时若 `m_memoryBubble` 已空（清屏 / 双回合交叠丢相位），**静默丢弃该卡**——记忆数据早已落盘 `.memory/`，此卡纯 UI 留痕，兜底成独立气泡反而在清空后的视图里造孤儿。
+
+### 12. 历史回放与实时链路同口径
+
+- 回放三处调用点与实时链路**同参传法**：`startStreaming(tr("处理中…"))` 占位 → `appendHistoryThinkingText(reasoning)` → `appendToolExecution(...)`；回放是同步填满，占位无滞留窗口。
+- 工具摘要与成败判定**共用单源**：回放走 `AgentLoopDetail::toolSummary` + `AgentLoop::isToolFailure`，与实时链路一字不差——靠 `ChatSessionPage` 直接 include 内核内部头 `AgentLoopInternal.h`（`friend` 授权的有意例外，见结构篇 §9 异常 2）。
+- 因此「重启后看到的」与「当时看到的」必然一致；任何只改实时侧的渲染改动都会在回放里露馅。
+
+### 13. 折叠骨架的三条公共纪律（CollapsibleBlock）
+
+| 纪律 | 口径 |
+|---|---|
+| 头部几何 | 固定高 `kHeaderHeight = 32`，手型光标；底色由 QSS 决定，几何公式与 `setContentHeight` 共用同一常量 |
+| 展开动画 | 懒建 `contentHeight` 属性动画，300ms OutCubic，`finished` 复位 `m_animating`；`setContentHeight` 内同步向上遍历父链逐帧 resize |
+| live 进行态 | 400ms 一个相位的圆点轮播（0..3 循环）；**进行时长复用同一定时器**（`liveElapsedSeconds()`，起表点在 `startLiveTimer`），不另起 1s 定时器；时长只进标题不进正文，故不触发正文测量 / 高度动画 / 自动滚动 |
+
+基类构造**禁调虚函数**，子类须在构造尾再 `bind` 主题；无进行态的子类把 `liveText()` 落到基类默认空串即可。
+
+
 ---
 
 这套设计的核心思路是：**让非技术用户看到简洁的对话流，同时让技术用户能深入每一步的细节**——通过折叠/展开机制同时服务两类需求。
@@ -647,257 +715,118 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ---
 
 <a id="async"></a>
-## 第五部分 · memory/compact 阻塞链异步化 — 实施规格（已落地存档）
+## 第五部分 · 异步链现状契约（memory / compact 侧链）
 
-状态：✅ 已全部落地（P1 1256d51 / P2 9563901 / P3 dc73367 / P4 7e83012，审查修复 777a18c，见 §8）。原文按定稿存档，§1 现状表描述的是迁移前代码。
-行号基于 HEAD=0162430 时代码，实施时以实际代码为准。
+> 原「异步化实施规格」已全量落地，其迁移前现状表、API 草案、分阶段计划与工作量估算**均已失效并删除**
+> （正文行号锚定拆分前那份 2063 行的 `AgentLoop.cpp`，100% 不可回查）。本部分按**当前代码**重写，
+> 只保留仍然成立的契约；历史决策与实现偏离登记见 §7。
 
-### 0. 事实基线（oracle 读码纠偏）
+### 1. 全异步不变量（禁回退阻塞）
 
-- 无「130s singleShot」：实际 `blockingTimeout=120000`（QOpenAi.cpp:28）+ 嵌套循环内 QTimer 总超时（:107-116）+ `streamIdleTimeout=60000` 每收字节重置（:273-276）。
-- CompactManager 无 onComplete/onBusy 回调形态：prepare 为同步 void（:567-580），"busy 路径"实为 AgentLoop::applyCompactPipeline（AgentLoop.cpp:752-754）同步调用 + m_running 卫兵。
+- **全仓零嵌套事件循环**：`blockingRequest` / `blockingCreate` / `BlockingSession` / `BlockingGate` /
+  `setBlockingTimeout` 及同步版记忆三方法、`applyCompactPipeline` 已全部删除，grep 无残留（唯一命中是
+  `SubAgent.h` 里"无嵌套 QEventLoop"的说明注释）。
+- **零线程原则**不破：轮询/异步一律 `QTimer` + `QProcess` 信号，不起线程。
+- **禁发送唯一来源**是会话级 `AgentLoop::runningChanged(bool)`（多会话天然隔离），不再有全局网关。
+- 红线：`run()` 内的 `setRunning(true)` 必须**同步置位**、先于任何异步与任何 `run()` 卫兵；写入一律经
+  `setRunning`（同点发射 `runningChanged`，同值不发射，防漏发）。消费方**不得**在
+  `runningChanged(false)` 的栈内启动新回合。
 
-### 1. 六阻塞点全景（现状）
-
-| # | 位置 | 链 |
-|---|---|---|
-| ① | run() :589 → m_memory.loadMemories → selectRelevantMemories（MemoryManager :676-727）→ blockingCreate | 召回，嵌套循环上限 120s |
-| ② | startChatRequest :606 → applyCompactPipeline :752 → CompactManager::prepare→compactHistory :524→summarizeHistory :452→create | 压缩（唯一网络步骤） |
-| ③ | messageFinished 终局 :680 extractMemories（:757-843→blockingCreate :790） | 沉淀 |
-| ④ | :682 consolidateMemories（:845-985→blockingCreate :879，破坏段 :926-977 同步原子） | 整理；③④连续阻塞使 finished 延迟最长 2×120s |
-| ⑤ | error 反应式压缩 :708-739：reactiveCompact :723 → 卫兵 :726 → applyCompressedConversation :728 → 重发 :732 | |
-| ⑥ | runNextTool 批尾 :834-843 compactHistory → 卫兵 :840 → persistHistory :848 → startChatRequest :853 | 顺序红线 :831-833：reminder→results→压缩替换不可交换 |
-
-cron 契约：tryDeliverCron :2004-2034 仅 !m_running 交付（:2008），emit scheduledUserMessage 同栈直连后回读 m_running（:2025-2032）——依赖 run() :561 同步置位 m_running=true。
-SubAgent :130 纯异步，零改动。
-
-### 2. 目标时序
-
-**召回（①）**：run() 同步段不变（m_running=true 位置 :561 红线不动）→ 异步召回（AsyncRequest）→ 回调内 `if(!m_running) return;` → parse/失败走关键词兜底（MemoryManager :707）或空注入 → rebuildSystemPromptMessage → startChatRequest。召回回调→startChatRequest 是唯一续延路径。
-
-**沉淀/整理（③④）→ finished 之后 fire-and-forget**：终局重排为 cron finalize→m_running=false→persistHistory→emit finished→emit memoryPhaseStarted→startMemoryChain()。每 AgentLoop 一个单槽队列（m_memoryChainActive + m_memoryChainPending）：链在跑则置 pending 返回；chainDone 时若 pending 且 !m_running 立即起下一条、若 pending 且 m_running 则丢弃（尽力而为）。同会话 extract→consolidate 严格串行；与新一轮召回并发可接受（召回只读、extract 追加写、consolidate 破坏段同步原子，单线程文件视图一致）。
-
-**压缩（②⑤⑥）→ sendChat 前完成的续延风格**：统一拆为「同步前置段 → 异步 summarize → 回调内同步后置段 + 卫兵 + 原续延」。② applyCompactPipelineAsync(next)：四段本地管线同步跑，仅 compactHistory 触发时挂起；⑤ reactiveCompactAsync：writeTranscript+retreatToolBatch 同步→异步 summarize→回调卫兵→原序 :728-732；⑥ compactHistoryAsync：卫兵→persistHistory→startChatRequest，红线 :831-833 不动。侧链从不增量改 m_messages，只在既有检查点整体替换 → 配对协议安全。
-
-### 3. API 草案
-
-#### 3.1 QOpenAi::AsyncRequest（P0）
-```cpp
-class AsyncRequest : public QObject {  // namespace QOpenAi 内
-    Q_OBJECT
-public:
-    // 一次性异步文本请求：内部复用 ChatStream（流式组装），只提取正文 content。
-    // done 恰好调用一次；error 空串=成功；超时/取消/配置缺失折叠为 error 字符串。
-    // totalTimeoutMs 对齐原 blockingTimeout（默认 120000；<=0 仅依赖 ChatStream idle 超时）。
-    static AsyncRequest *sendText(const QJsonObject &input, QObject *parent,
-                                  std::function<void(const QString &content, const QString &error)> done,
-                                  int totalTimeoutMs = 120000);
-    void cancel();  // 取消后 done 永久静默；deleteLater 自清理
-private:
-    // ChatStream* m_stream（子对象）；QTimer m_totalTimer；bool m_done 防重入（镜像 ChatStream :502）
-};
-```
-选择复用 ChatStream 而非加 stream=false：两侧链只消费 content，ChatStream 自带重试（:474-490）/idle 超时/配置缺失延迟 error（:241-245）/析构 abort reply（:547-555）。调用方持 QPointer<AsyncRequest> 即安全。
-
-#### 3.2 MemoryManager 异步三方法（非 QObject 形态保留，回调注入风格一致）
-```cpp
-void loadMemoriesAsync(const QVector<QJsonObject> &conversation, QObject *ctx,
-                       std::function<void(const QString &recalled)> done) const;   // 内部已兜底，done 恒收到可用文本（可空）
-void extractMemoriesAsync(const QVector<QJsonObject> &conversation, QObject *ctx,
-                          std::function<void(int stored)> done) const;              // 0=跳过/失败
-void consolidateMemoriesAsync(const QVector<QJsonObject> &conversation, QObject *ctx,
-                              std::function<void(int consolidated)> done) const;    // 阈值未达/失败恒 0 不起 LLM
-```
-ctx=生命周期锚：AsyncRequest::sendText(..., ctx, ...) + connect 带 context。内部拆「prompt 构建段/结果处理段」为私有同步方法，LLM 夹中间走 AsyncRequest；写文件段 :808-841、替换段 :926-984 原样保留同步。同步版三方法迁移期共存，P4 删。
-
-#### 3.3 CompactManager Async 变体
-```cpp
-using CompactDone = std::function<void()>;  // 恒调用一次；失败内部折叠 "(empty summary)"（:471-485 语义不变）
-void prepareAsync(..., QObject *ctx, std::function<void(bool changed)> done) const;  // changed=true 表示发生 compactHistory 级替换
-void compactHistoryAsync(..., QObject *ctx, CompactDone done) const;
-void reactiveCompactAsync(..., QObject *ctx, CompactDone done) const;
-```
-拆分点唯一：summarizeHistory 改 summarizeHistoryAsync(input, ctx, done(summaryText))，失败回调空串→占位降级。前四段纯本地管线不动。
-
-#### 3.4 AgentLoop 新增
-```cpp
-QPointer<QObject> m_sideRequest;    // 召回/压缩共用（m_running 期间同一时刻至多一条前链）
-QPointer<QObject> m_memoryRequest;  // 记忆链（finished 后独立于主链生命周期）
-bool m_memoryChainActive = false;
-bool m_memoryChainPending = false;
-// 新信号：
-void memoryChainFinished();   // ChatSessionPage 关记忆 live 卡
-void runningChanged(bool);    // 会话级禁发送（替代全局 BlockingGate）
-```
-stop()（:2036-2085）cancel m_currentStream 后追加 cancel m_sideRequest；m_memoryRequest 不 cancel（fire-and-forget，注释明示）。析构无需改：QPointer 对象 parent 到 this，ChatStream 析构自动 abort。新私有槽 startMemoryChain()/onMemoryChainDone() 承载 §2 队列。
-
-#### 3.5 ChatSessionPage 两处
-- finished handler（:116-131）：memoryPhaseStarted~memoryChainFinished 窗口内跳过 m_currentBubble 置空（:122-126），memoryChainFinished 里 finishStreaming+置空；消除 :168-171 独立噪声气泡兜底（窗口外到达仍接受兜底）。
-- 订阅 runningChanged → 本页 ChatMsgEdit 禁发送（会话级，替代全局 Gate）。
-
-### 4. 分阶段计划
-
-| 阶段 | 内容 | 文件 | 规模 | 验证 |
-|---|---|---|---|---|
-| P0 | AsyncRequest，零接入 | QOpenAi.h/.cpp | +100 | 构建过、现有行为零变化 |
-| P1 | 召回异步化 + stop cancel m_sideRequest | AgentLoop、MemoryManager | ~120 改 | 记忆注入时序不变；召回中停止→不发请求；断网→兜底照常开聊；cron 契约回归 |
-| P2 | 沉淀/整理 fire-and-forget + 信号 + 页面接线 | AgentLoop、MemoryManager、ChatSessionPage | ~210 改 | finished 即达、输入即用；记忆卡挂原气泡；pending 单槽不叠加；页面析构无崩溃 |
-| P3 | 压缩三处续延化（最大阶段） | CompactManager、AgentLoop | ~250 改 | 50k 自动压缩/批尾压缩/溢出反应式三路径回归；红线 :831-833 不破；压缩中 stop→历史不替换 |
-| P4 | 清理：删 blockingRequest/create/blockingCreate/BlockingSession/BlockingGate/setBlockingTimeout + 同步版三方法 + ChatMsgEdit Gate 接线 | QOpenAi、MemoryManager、CompactManager、ChatMsgEdit | 净删 ~150-200 | grep 全仓无 blockingRequest/QEventLoop 嵌套残留 |
-
-### 5. BlockingGate 处置：P4 整体废除
-- 禁发送 → runningChanged(bool) 页面级（覆盖整个回合含召回期，比 Gate 只覆盖等待窗口更完整；多会话天然隔离，修掉现全局误禁缺陷；且修复今 m_running 期间输入不禁 only 事后弹 error 的缺口）。
-- 应用级 WaitCursor → 废除（GUI 线程不再被劫持，等待期本就该可浏览/切页/停止）。
-- P1-P3 迁移期 Gate 保留服务未迁移链，P3 后调用方归零，P4 一次删净（QOpenAi.h:62-100、QOpenAi.cpp:599-643、ChatMsgEdit.cpp:113-122）。
-
-### 6. 风险清单与对策
-
-1. 重入：run() 侧链飞行中被再入（cron 同栈回读）→ m_running=true 同步置于任何 await 前（:561 不动），重入卫兵 :555-558 保留，注释标契约。
-2. done 双触发（error/finished 竞态）→ AsyncRequest m_done 首终态触发其余吞掉，cancel 后永久静默。
-3. 页面析构链未完 → 全 AsyncRequest parent 到 AgentLoop；ctx+connect context；析构 abort。
-4. 超时平移 → totalTimeoutMs=120000 singleShot→cancel→done(空,"超时")→各链既有降级路径接住；idle 超时 ChatStream 自带双保险。
-5. 记忆卡气泡错位 → §3.5 窗口保留；边缘接受兜底。
-6. cron 与记忆链并发 → 接受（单线程文件视图一致）；不 gate cron，注释记决策。
-7. stop 语义分裂 → stop cancel m_sideRequest；续延回调首行 if(!m_running) return;（平移 :726/:754/:840 模式）；记忆链不 cancel。
-8. NAM 6 连接/主机上限 → 个位数会话远低于，文档登记，不做限流（YAGNI）。
-9. 配对协议 → 侧链只在检查点整体替换；P3 验证含三压缩路径+多工具批次回归。
-10. persistHistory 顺序 → 新序 persistHistory→finished→记忆链；.memory 与 history.json 独立文件域，崩溃窗口最坏丢记忆不丢历史（优于现状），注释记录。
-
-### 7. 工作量
-P0 0.5d / P1 0.5-1d / P2 1d / P3 1-1.5d / P4 0.5d，合计 3.5-4.5 天，净增约 +260 行。无自动测试，验证以构建+手工场景清单。
-
-### 8. 落地状态（落账，2026-09）
-- P1 召回链异步化：已落地（commit 1256d51）。
-- P2 沉淀/整理链异步化（含 runningChanged/memoryChainFinished 信号与页面接线）：已落地（commit 9563901）。
-- P3 压缩三处续延化：已落地（commit dc73367）。
-- P4 清理归零：已落地（本次提交）——blockingRequest / CategoryChat::create / CategoryCompletion::create / blockingCreate 族 / BlockingGate / BlockingSession / setBlockingTimeout 及同步版三方法、applyCompactPipeline、ChatMsgEdit Gate 接线全部删除；grep 全仓无阻塞族残留；禁发送唯一来源为 runningChanged 会话级信号。
-- 实现偏离登记：§3.2 草案三个 Async 方法为 void，实际均返回 `QOpenAi::AsyncRequest *`（宿主句柄记账/取消所需，短路路径返回 nullptr）；consolidateMemoriesAsync 实际签名无 conversation 参数（整理链不消费对话）；§3.3 草案 prepareAsync 原地引用收 conversation，实际按值传入、done 按值交付最终 conversation（挂起跨 await 后调用方栈引用有悬挂风险，按值更安全）。三处均为实现优于草案的修正（审查 L5 补记）。
-- 审查后修复（独立审查结论 0 Critical/0 High/1 Medium/5 Low）：M1 记忆结果卡加相位闸——`toolOutputReady("memory")` 在 m_memoryBubble 为空（清屏/交叠丢相位）时静默丢弃，不再生成孤儿兜底气泡（数据已落盘，纯 UI 留痕）；L1 双回合交叠窄窗口（pending 链不重发 memoryPhaseStarted、旧链 finished 抢先定稿新气泡）登记为已知限制，修它需给信号加世代参数，收益不配成本；L2-L4 陈旧注释/缩进/行号引用修正。
-
----
-
-<a id="sketch"></a>
-## 第六部分 · 聊天会话页面设计方案（早期草图，已过时）
-
-⚠ 已过时：本部分为早期设计草图，现状以代码与 `AGENTS.md`、本文结构篇为准（2026-09）
-
-### 页面架构
-
-```
-┌──────────┬──────────────────────────────────────────┐
-│  NavView │  FluStackedLayout                        │
-│          │  ┌─────────────────────────────────────┐ │
-│ New Chat │  │  NewChatPage (空状态)                │ │
-│          │  │  - Logo + 欢迎语 + ChatMsgEdit      │ │
-│ Settings │  └─────────────────────────────────────┘ │
-│          │  ┌─────────────────────────────────────┐ │
-│          │  │  ChatSessionPage (会话中)            │ │
-│          │  │  ┌─────────────────────────────────┐│ │
-│          │  │  │  FluVScrollView (消息列表)       ││ │
-│          │  │  │  ┌─────────────────────────────┐││ │
-│          │  │  │  │  用户消息 (右对齐气泡)       │││ │
-│          │  │  │  │  AI回复 (左对齐，无气泡)     │││ │
-│          │  │  │  │  ...                        │││ │
-│          │  │  │  └─────────────────────────────┘││ │
-│          │  │  └─────────────────────────────────┘│ │
-│          │  │  ┌─────────────────────────────────┐│ │
-│          │  │  │  ChatMsgEdit (输入框)            ││ │
-│          │  │  └─────────────────────────────────┘│ │
-│          │  └─────────────────────────────────────┘ │
-└──────────┴──────────────────────────────────────────┘
-```
-
-### 设计风格
-
-参照 Ollama 风格：
-
-```
-┌─────────────────────────────────────────┐
-│                                    用户  │ ← 右侧气泡，主题色背景
-│                                         │
-│ AI 回复内容直接显示在这里，               │ ← 无气泡、无头像
-│ 支持 Markdown，左对齐                     │
-│                                         │
-│                                    用户  │
-│                                         │
-│ 另一条回复...                             │
-└─────────────────────────────────────────┘
-```
-
-### 新增文件
-
-| 文件 | 说明 |
-|------|------|
-| `ChatSessionPage.cpp/h` | 聊天会话页面 |
-| `MessageBubbleWidget.cpp/h` | 消息气泡组件 |
-| `stylesheet/*/ChatSessionPage.qss` | 主题样式 (3套) |
-
-### 核心组件
-
-#### MessageBubbleWidget
+### 2. `QOpenAi::AsyncRequest` 契约
 
 ```cpp
-class MessageBubbleWidget : public FluWidget {
-    enum Role { User, Assistant };
-    
-    QVBoxLayout* m_layout;
-    QTextBrowser* m_content;    // Markdown 渲染
-    
-public:
-    void setContent(const QString& markdown) {
-        m_content->setMarkdown(markdown);
-    }
-};
+static AsyncRequest *sendText(const QJsonObject &input, QObject *parent,
+                              std::function<void(const QString &content, const QString &error)> done,
+                              int totalTimeoutMs = 120000);
+void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
 ```
 
-**样式对比：**
+- 复用 `ChatStream` 的流式组装、只提取正文 `content`：白得重试 / idle 静默超时 / 配置缺失延迟 error /
+  析构 abort reply 四件，无需另写一套。
+- **`done` 恒恰好一次**：终态唯一出口 `fireDone`，`m_done` 首到门闩 → 停表 + 取消流 → 交付 → `deleteLater`。
+  已终态后再 `cancel()` 经门闩天然无操作。
+- **双超时防线**：`totalTimeoutMs`（默认 120000，沿用迁移前阻塞链总时限）是总量哨兵，专杀"idle 因持续
+  收字节被重置而杀不死的慢而不断流"；`<=0` 表示只依赖 idle 超时。
+- 失败一律折叠为 `error` 字符串交还调用方，不抛异常。
 
-| Role | 背景 | 对齐 | 头像 | 边框/圆角 |
-|------|------|------|------|-----------|
-| User | 主题色 | 右对齐 | 无 | 圆角气泡 |
-| Assistant | 透明 | 左对齐 | 无 | 无 |
+### 3. `MemoryManager` 三条异步链
 
-#### ChatSessionPage
+| 方法 | 契约 |
+|---|---|
+| `loadMemoriesAsync(conversation, ctx, done)` | 召回：LLM 从目录挑选与最近请求相关的记录，失败回落关键词打分；`done` 恒收到可用文本（可为空） |
+| `extractMemoriesAsync(conversation, ctx, done)` | 沉淀：`done(stored)`，0 = 跳过/失败；`scope==persistent` 门槛 + 临时标记 + 三重去重 |
+| `consolidateMemoriesAsync(ctx, done)` | 整理：**无 conversation 参数**（整理链不消费对话）；阈值未达/失败恒 0 且不起 LLM；快照-删-写段跨 LLM 等待之后仍完整执行 |
 
-```cpp
-class ChatSessionPage : public BasePage {
-    QVBoxLayout* m_mainLayout;
-    FluVScrollView* m_scrollView;  // 消息列表
-    ChatMsgEdit* m_inputEdit;      // 底部输入框
-    
-public:
-    void addMessage(Role role, const QString& content);
-    void scrollToBottom();
-    void clearMessages();
-};
+- 三者均返回 `QOpenAi::AsyncRequest *`（宿主句柄记账/取消所需），本地短路路径同步交付后返回 `nullptr`。
+- `ctx` 是生命周期锚：请求 parent 到 `ctx`，`ctx` 析构即链作废、`done` 永久静默。
+- 拆分方式：prompt 构建段 / 结果处理段留作私有同步方法，LLM 那一跳走 `AsyncRequest`；写文件段与替换段
+  仍是同步原子段（单线程文件视图一致）。
+
+### 4. `CompactManager` 异步变体与唯一拆分点
+
+- 公开三入口：`prepareAsync`（五级管线，仅触发全量压缩时挂起）、`compactHistoryAsync`（批尾主动压缩）、
+  `reactiveCompactAsync`（溢出反应式）。**均返回 `AsyncRequest *`**，`done` 恒一次。
+- **拆分点唯一**：`summarizeHistory` → `summarizeHistoryAsync`（私有），失败交付空串、内部补
+  `(empty summary)` 占位——降级语义与迁移前逐字一致。前四段纯本地管线不动。
+- `prepareAsync` 按值收 `conversation`、`done` 按值交付最终 conversation（挂起跨 await 后调用方栈引用
+  有悬挂风险）；`changed` 判定为"最终态与入参不等价"。
+- 入口门槛用宿主锚定的 `conversationTokens`，段内退出判定用管线自身对 conversation 的即时
+  `estimateTokens`——两口径可能微偏，入口判超而各段都判达标时**不强推** compactHistory，靠反应式 400
+  兜底，防摘要空转抖动。侧链从不增量改 `m_messages`，只在既有检查点整体替换 → tool_use/tool_result
+  配对协议安全。
+
+### 5. `AgentLoop` 侧链槽位与 `stop()` 收口顺序
+
+**两个独立句柄槽**（均 `QPointer<QObject>`、parent 到 `this` 随析构自动作废）：
+
+- `m_sideRequest`：**召回 + 三条压缩链共用**（`m_running` 期间同一时刻至多一条前链）。取消时
+  `qobject_cast<QOpenAi::AsyncRequest*>` 而非 `static_cast`——同槽异构，转型空即无请求在途。
+- `m_memoryRequest`：记忆沉淀链**分槽**，`stop()` 对它既不 cancel 也不清空。理由：前链（召回）是"本回合
+  还没开始"的门槛，停则回合作废；记忆链是 `finished` 之后的 fire-and-forget 尾巴，与用户停止意图无关，
+  cancel 落在写段之前只会白丢沉淀成果（尽力而为语义下无补偿路径）。
+- 记忆链单槽队列：`m_memoryChainActive` + `m_memoryChainPending`（链在跑则置 pending 返回，至多补一次）；
+  收口时清 active/句柄 → `emit memoryChainFinished` → 若 pending 且 `!m_running` 立即起下一条。
+
+**`stop()` 收口顺序（不可交换，`AgentLoop.cpp:253-339`）**：
+
+```
+卫兵 !m_running → return
+① cancelSubAgent()            级联取消，合成 "(cancelled)" 配对回填
+② 待决权限视为 deny            直写 "Permission denied"，不经 onToolFinished（不续跑、不发展示信号）
+③ 半途工具批收口              flush m_toolResultsReady → 为 m_pendingToolCalls 每条合成 "(stopped)" → 清两队列
+④ m_activeProcesses 逐个 kill  其 finished 因 m_running=false 不再继续
+⑤ m_currentStream cancel + disconnect + deleteLater
+⑥ m_sideRequest cast→cancel    压缩中停止 → 历史不被替换（P3 验证点）
+⑦ m_cron.finalizeInFlightDelivery(false)   在途 cron 批回队，下个空闲 tick 重投
+⑧ setRunning(false) → persistHistory() → emit error("已停止。")
 ```
 
-### Markdown 支持
+- ③ 的必要性：带 `tool_calls` 的 assistant 消息已入历史，不补齐则 tool 配对断裂，`persistHistory` 会把
+  坏历史落盘、下一回合收到上游 400。①②③的次序是"各自负责在途调用的收口，③ 只兜已完成未回填 +
+  未开始两类队列态"。
+- **停止不杀 cron 运行时**：调度器存续，仅交付暂停于 `m_running` 卫兵（在此停掉调度会让 durable 任务
+  跨会话永久停摆）。
 
-使用 `QTextBrowser::setMarkdown()` 原生渲染：
+### 6. UI 侧接线
 
-- ✅ 标题、列表、粗体、斜体
-- ✅ 链接
-- ✅ 行内代码
-- ✅ 表格 (Qt 6.4+)
-- ⚠️ 代码块：灰色背景，无语法高亮
+- `runningChanged(true)` → `ChatMsgEdit::setTurnBusy` 把发送钮切成停止形态并禁输入（早于 `run()` 卫兵）；
+  `runningChanged(false)` → 复位忙态与审批灯。
+- `memoryPhaseStarted` / `memoryChainFinished` 挂出与收尾记忆 live 卡；`toolOutputReady("memory")` 受
+  M1 相位闸约束（见交互篇 §11）。
+- 记忆链尾巴期间 `runningChanged` 已为 false、输入不禁——链只写 `.memory/`，不碰会话历史。
 
-### LiteHarness 修改
+### 7. 落地状态与实现偏离登记（历史）
 
-1. 移除 History Sessions 导航项
-2. 注册 ChatSessionPage 到 `m_sLayout`
-3. 连接 NewChatPage 发送信号 → 切换到 ChatSessionPage
-
-### 交互流程
-
-1. 用户在 NewChatPage 输入消息，点击发送
-2. 切换到 ChatSessionPage
-3. 调用 `addMessage(User, content)` 添加用户消息
-4. 调用 `addMessage(Assistant, response)` 添加回复
-5. 后续对话在此页面继续
-
-### 优势
-
-- **简洁**：仅 2 个新组件，无 Model/Delegate 复杂性
-- **灵活**：每个气泡是独立 Widget，易于扩展
-- **原生**：直接使用 FluentUI 的 FluVScrollView，风格统一
+- 四阶段全部落地：P1 召回链 `1256d51` / P2 沉淀整理链 + `runningChanged`、`memoryChainFinished` 接线
+  `9563901` / P3 压缩三处续延化 `dc73367` / P4 阻塞族清理归零 `7e83012`，审查修复 `777a18c`。
+- **实现优于原草案的三处修正**（原 API 草案正文已删，此处留结论以免有人照草案回退签名）：
+  ① 记忆三方法草案为 `void`，实际均返回 `AsyncRequest *`；② `consolidateMemoriesAsync` 实际无
+  `conversation` 参数；③ `prepareAsync` 草案原地引用，实际按值传入、按值交付。
+- 审查结论 0 Critical / 0 High / 1 Medium / 5 Low：M1 记忆结果卡相位闸（已落地，见交互篇 §11）；
+  **L1 登记为已知限制**——双回合交叠的窄窗口里 pending 链不重发 `memoryPhaseStarted`、旧链 `finished`
+  抢先定稿新气泡；修它需给信号加世代参数，收益不配成本。
+- **源码注释里的「设计文档 §x.y」是历史出处标记**（约 20 余处，散在 `AgentLoop*` / `MemoryManager*` /
+  `CompactManager*` / `ChatSessionPage*` / `ChatMsgEdit.h` / `QOpenAi*`）：它们指向已删除的原规格正文，
+  **不可回查、也不必逐处改写**——前面的「异步化 P1/P2/P3/P4」阶段名才是有效线索。现行契约按本部分
+  对应小节读：原 §2.x（现状与目标时序）→ 本部分 §1；原 §3.1（AsyncRequest）→ §2；原 §3.2（记忆三链）
+  → §3；原 §3.3（压缩）→ §4；原 §3.4 / §6-7（阶段计划与取消语义）→ §5；原 §3.5a/§3.5b（UI 接线）→ §6。
