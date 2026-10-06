@@ -12,7 +12,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **单元测试:** `tests/` + ctest，见下独立节「测试（tests/ + ctest）」；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目 install 规则 configure 期即注册进全树安装清单，单目标构建缺 gallery.exe/cmark.exe 会让 cpack `file(INSTALL)` 硬错误中止（s12.2 两条 run 实证），全量编出后由根级清理剥除。`v*`/`s*` tag 推送触发同一流水线并在末尾经 svenstaro/upload-release-action 把 zip 上传为该 tag 的 GitHub Release——官方语义：paths 过滤不拦 tag；`branches` 与 `tags` 必须显式同写，只写 tags 会静默丢掉分支验收流）
-- **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/regression-checklist.md`（P0/P1/P2 按改动面选组，提交前跑对应组）
+- **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/doc.md` 第三部分「手工冒烟回归清单」（锚点 `#checklist`；P0/P1/P2 按改动面选组，提交前跑对应组）
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）。`3rdparty/sqlite`（vendored sqlite3）目录残留但同样从不进构建图。
 - **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s12.6-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
@@ -37,7 +37,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
 - **覆盖现状（勿高估）:** 目前**只有 `LineEnding.h` 一个头有测试**（`tests/tst_lineending.cpp`）。其余
-  改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/regression-checklist.md`」，大面积行为回归**不可证**。
+  改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」，大面积行为回归**不可证**。
   下一批最小切口（均已无 GUI 依赖）：`AgentLoopDetail::toolSummary` / `parseToolCall` /
   `AgentLoop::isToolFailure` / `BashRunner::dangerWarning` / cron 表达式匹配 /
   `AgentConst::estimateTokens` / SKILL.md frontmatter 解析。
@@ -46,8 +46,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 > 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 13 个 TU 的职责地图、
 > `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
-> 异常与技术债、新增代码落位决策树**见 [docs/architecture.md](docs/architecture.md)——改结构须同步它。
-> 本仓各篇文档的权威等级、「该读哪篇」与同步纪律见 [docs/README.md](docs/README.md)。
+> 异常与技术债、新增代码落位决策树**见 [docs/doc.md](docs/doc.md) 第二部分「模块结构总览」（锚点 `#architecture`）——改结构须同步它**。
+> 本仓文档的权威等级、「该读哪篇」与同步纪律见同文件**第一部分（锚点 `#index`）**。
 
 ### Agent 核心链
 
@@ -128,7 +128,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s12.6`），
   代码里**不得**再硬编码版本号（口径详见「国际化」节末「版本号单源」条）。
   `project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
-  **但「只改一行」只对行为成立**：README / AGENTS / architecture / regression-checklist 与若干
+  **但「只改一行」只对行为成立**：README / AGENTS / `docs/doc.md`（结构篇与清单篇）与若干
   源码注释把当前版本号当**示例**写死了（s12.6 这次实测 21 处、跨 7 文件），改完 `project VERSION`
   必须跑 `git grep -n "12\.6" -- . ':(exclude)3rdparty' ':(exclude)build'` 逐处同步，
   否则文档与现实矛盾、下一轮读文档的人无从判断哪个是当前版本。
@@ -139,7 +139,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   ② 本地全量 Release 构建（勿 `--target`，原因见
 
   「构建」节）+ `ctest` 全绿 + `cpack` 出包，核对 zip 名已带新版本号 → ③ 跑
-  `docs/regression-checklist.md` 的 P0（+ 按改动面选 P1）→ ④ 提交（日志写明版本 bump）→
+  `docs/doc.md` 清单篇（第三部分）的 P0（+ 按改动面选 P1）→ ④ 提交（日志写明版本 bump）→
   ⑤ **`git tag -a`（必须附注）** 后 `git push origin s<版本>`。轻量 tag 会被 CI 的
   `Read tag annotation as release notes` 步骤显式 throw，不产出空简介 Release。
 
