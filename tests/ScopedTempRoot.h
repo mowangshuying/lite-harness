@@ -60,6 +60,12 @@ public:
         if (m_cleanRoot.isEmpty() || m_cleanRoot == QStringLiteral("."))
             return; // clean 后仍空/相对当前目录（如 root 写成 ""、"."、cwd 相对串）——
                     // 这类值一旦流入 QDir(path).removeRecursively() 就是事故形态，直接判无效。
+        // m2（gate① R2 收紧）：析构的 rootShapeOk 守卫前移到构造侧——root 必须
+        // 以 /tmp-test 结尾（大小写不敏感）才继续。不满足 → 无效态：不建、不
+        // mkpath、不删；套件走 SKIP 通道。原「污染不删（LEAK WARNING）」场景
+        // 由此升级为「干净跳过」。析构守卫逐字保留作纵深防御（合规对象恒通过）。
+        if (!m_cleanRoot.endsWith(QStringLiteral("/tmp-test"), Qt::CaseInsensitive))
+            return;
         static quint64 s_seq = 0; // 类内定义（天然 inline）的函数级 static：跨 TU 唯一实体，无需定义文件
 #if defined(Q_OS_WINDOWS)
         const qint64 pid = _getpid();

@@ -17,6 +17,8 @@
 #include <QVector>
 #include <QDebug>
 
+#include <algorithm> // s13：leasesPointingAt 的 owner 字典序输出（std::sort）
+
 namespace {
 
 // ---- lcc s10 任务图文本层工具（python 语义近似，各处偏差登记）----
@@ -715,15 +717,17 @@ QString TaskStore::runCompleteTask(const QJsonObject &args) const
 // 人类 CLI，lite 单宿主进程不移植；D7：台账纯内存，进程重启即作废=fail-closed）。
 // ============================================================================
 
-bool TaskStore::setWorktree(const QString &taskId, const QString &path, QString *error) const
+bool TaskStore::setWorktree(const QString &taskId, const QString &worktreeName, QString *error) const
 {
     // s13 worktree 绑定的宿主侧入口（P2 WorktreeManager 创建成功路径将来调用；解绑=clearWorktree）。
     // 有意偏离 lcc：lcc 把绑定动作内嵌于 create_worktree/claim 流程，lite 暴露独立内核 API 供 P2/P3 接线。
-    // 不设状态门——path 合法性是 P2 校验职责，本处只负责持久化（load→set→save）。
+    // 不设状态门（C3 钉桩：in_progress/completed 均可绑）——worktreeName 合法性（正则命名约束、
+    // 在册校验）是 P2 职责（lcc worktree_manager.py:304 存 name），本处只负责持久化（load→set→save）。
+    // gate① M1：形参原误名 path——本字段存的是 worktree 名字，name→路径推导归 P2::worktreePath。
     Task task;
     if (!loadTask(taskId, &task, error))
         return false;
-    task.worktree = path;
+    task.worktree = worktreeName;
     return saveTask(task, error);
 }
 
@@ -737,12 +741,15 @@ bool TaskStore::clearWorktree(const QString &taskId, QString *error) const
     return saveTask(task, error);
 }
 
-bool TaskStore::resolveTaskCwd(const QString &taskId, QString *cwd, QString *error) const
+bool TaskStore::resolveTaskCwd(const Task &task, QString *cwd, QString *error) const
 {
     // lcc _task_cwd :147-156 的 lite 收敛形（偏差⑦后半：worktree_validator 折进 resolver 错误通道）。
-    if (m_cwdResolver) {
+    // gate① M4 早退（lcc :147 `if task.worktree:` 真值判断形）：未绑定任务不进 resolver，
+    // 直接走回落链——「未绑定不起子进程」是热路径性能语义（P2 的 resolver 背后是 git 命令，
+    // 每个未绑任务都调用 = 每 claim 白跑一次 rev-parse）。实参给快照（P2 解析须看 worktree 名字）。
+    if (m_cwdResolver && !task.worktree.isEmpty()) {
         QString resolverError;
-        const QString resolved = m_cwdResolver(taskId, &resolverError);
+        const QString resolved = m_cwdResolver(makeSnapshot(task), &resolverError);
         if (!resolverError.isEmpty()) {
             // fail-closed：resolver 置错 = 不可解（如 worktree 绑定破损），错误原文上交调用方
             if (error)
@@ -849,10 +856,11 @@ bool TaskStore::claimTask(const QString &taskId, const QString &owner, QString *
         *result = QStringLiteral("Blocked by: %1").arg(pythonListRepr(deps));
         return true;
     }
-    // 门⑥：cwd 可解（lcc _task_cwd；resolver 置错即拒，任务保持 pending 不写盘、不建租约）
+    // 门⑥：cwd 可解（lcc _task_cwd；未绑定走 M4 早退直接回落；已绑定 resolver 置错即拒，
+    // 任务保持 pending 不写盘、不建租约）
     QString cwd;
     QString cwdError;
-    if (!resolveTaskCwd(taskId, &cwd, &cwdError)) {
+    if (!resolveTaskCwd(task, &cwd, &cwdError)) {
         *result = QStringLiteral("Cannot claim %1: %2").arg(taskId, cwdError);
         return true;
     }
@@ -893,9 +901,9 @@ bool TaskStore::completeTask(const QString &taskId, const QString &owner, QStrin
                       .arg(taskId, task.owned ? task.owner : QStringLiteral("None"), owner);
         return true;
     }
-    if (m_planGateCheck) { // 计划审批否决（lcc plan_gate_check；偏差⑥按 taskId 判定）
+    if (m_planGateCheck) { // 计划审批否决（lcc plan_gate_check；偏差⑥·M5：(owner, taskId) 双值判定）
         QString reason;
-        if (!m_planGateCheck(taskId, &reason)) {
+        if (!m_planGateCheck(owner, taskId, &reason)) {
             *result = reason; // 可为空串=静默否决（lcc 空串拒口径同款）；任务保持 in_progress 不动
             return true;
         }
@@ -905,7 +913,7 @@ bool TaskStore::completeTask(const QString &taskId, const QString &owner, QStrin
         // 有意偏离 lcc：自愈不递增版本、不触发 advanced 回调——版本推进=真实换工，自愈不算（P2 防 TOCTOU 语义纯净）。
         QString healedCwd;
         QString cwdError;
-        if (!resolveTaskCwd(taskId, &healedCwd, &cwdError)) {
+        if (!resolveTaskCwd(task, &healedCwd, &cwdError)) {
             *result = QStringLiteral("Task %1 cannot complete: %2").arg(taskId, cwdError);
             return true; // 业务通道：可判定文本；任务保持 in_progress、租约保持缺失
         }
@@ -1003,7 +1011,10 @@ bool TaskStore::releaseTeammateAssignment(const QString &owner, QString *error)
     } else if (!probeError.isEmpty()) {
         diskError = probeError; // 台账不可读：同样放行内存清理，如实报 false
     }
-    // finally 段（无条件）：清租约 + 通知（lcc :428-431——即使降级抛异常也要走完）
+    // finally 段（无条件）：清租约 + 通知（lcc :428-431——即使降级抛异常也要走完）。
+    // 偏差④（gate① M6 复注）：lcc :429 此处也 advance_assignment_version，lite 两个释放点统一
+    // 不递增、不触发 advanced——fix-4 的 plan gate 复位与 work_version 陈旧推进只挂
+    // onAssignmentReleased（本函数与 releaseCompletedAssignment 的末尾通知即是唯一挂点）。
     m_assignments.remove(owner);
     if (m_onAssignmentReleased)
         m_onAssignmentReleased(owner);
@@ -1012,7 +1023,8 @@ bool TaskStore::releaseTeammateAssignment(const QString &owner, QString *error)
     return diskError.isEmpty();
 }
 
-void TaskStore::setPlanGateCheck(std::function<bool(const QString &taskId, QString *reason)> gate)
+void TaskStore::setPlanGateCheck(
+    std::function<bool(const QString &owner, const QString &taskId, QString *reason)> gate)
 {
     m_planGateCheck = std::move(gate);
 }
@@ -1027,7 +1039,8 @@ void TaskStore::setOnAssignmentReleased(std::function<void(const QString &owner)
     m_onAssignmentReleased = std::move(cb);
 }
 
-void TaskStore::setCwdResolver(std::function<QString(const QString &taskId, QString *error)> resolver)
+void TaskStore::setCwdResolver(
+    std::function<QString(const TaskSnapshot &task, QString *error)> resolver)
 {
     m_cwdResolver = std::move(resolver);
 }
@@ -1051,4 +1064,136 @@ QString TaskStore::runCompleteTaskLeased(const QJsonObject &args, const QString 
     if (!completeTask(taskId, owner, &result, &error))
         return QStringLiteral("Error: ") + error;
     return result;
+}
+
+// ============================================================================
+// s13 Lane A（gate① 修复轮 R2 补齐）：跨模块快照视图 + 租约查询（lcc s13 34775c8
+// task_manager.py list() :267-274 / scan_unclaimed_tasks :435-446；
+// worktree_manager.py assignment_cwd :190-212 / remove 门④ :348-349）
+// ============================================================================
+
+TaskStore::TaskSnapshot TaskStore::makeSnapshot(const Task &task)
+{
+    // Task（私有嵌套）→ TaskSnapshot（公共跨模块形）的字段裁剪单源：
+    // owned=false 折叠为空串 owner（lcc None 同款，偏差⑦单态口径——消费方判真用 !isEmpty()）
+    TaskSnapshot snapshot;
+    snapshot.id = task.id;
+    snapshot.subject = task.subject;
+    snapshot.status = task.status;
+    snapshot.owner = task.owned ? task.owner : QString();
+    snapshot.worktree = task.worktree;
+    return snapshot;
+}
+
+bool TaskStore::listTaskSnapshots(QVector<TaskSnapshot> *snapshots, QString *error) const
+{
+    // gate① M3：程序化全量导出。错误口径对齐 lcc task_manager.py list() :267-274 现行为——
+    // 内容损坏文件 load 崩直接上抛（lite 经 *error + false 折叠），不跳过；
+    // 「文件名不合 ID 正则的脏文件跳过」沿用 listTasks 既有登记的 lite 防御偏差，同口径。
+    QVector<Task> all;
+    if (!listTasks(&all, error))
+        return false;
+    snapshots->clear();
+    snapshots->reserve(all.size());
+    for (const Task &task : all)
+        snapshots->append(makeSnapshot(task));
+    return true;
+}
+
+bool TaskStore::leasesPointingAt(const QString &dirPath, QStringList *owners) const
+{
+    // gate① M3：lcc worktree remove 门④（worktree_manager.py :348-349
+    // `Path(a["cwd"]).resolve() == path.resolve()`）的 lite 词法形——两侧 QDir::cleanPath
+    // 归一后比较；canonical 复校（符号链接/junction 绕行防御）由 fix-3 在消费点补做，
+    // 此处不跑 git/QProcess（本类零外部进程纪律）。
+    // 大小写不敏感比较（Windows 路径语义）：宁可多命中=多拒绝销毁，也不漏拦——fail-safe 方向。
+    const QString normalized = QDir::cleanPath(dirPath);
+    QStringList hits;
+    for (auto it = m_assignments.constBegin(); it != m_assignments.constEnd(); ++it) {
+        if (QDir::cleanPath(it->cwd).compare(normalized, Qt::CaseInsensitive) == 0)
+            hits.append(it.key());
+    }
+    hits.sort(); // QHash 遍历序不定 → 字典序输出保可钉桩
+    if (owners)
+        *owners = hits;
+    return !hits.isEmpty();
+}
+
+bool TaskStore::assignmentCwd(const QString &owner, QString *cwd, QString *error)
+{
+    // lcc worktree_manager.py assignment_cwd :190-212 热路径的 lite 形（gate① M2）：
+    // 「内存租约当缓存、磁盘当真相」。分支序与 lcc 逐一对应。
+    const auto it = m_assignments.constFind(owner);
+    if (it == m_assignments.constEnd()) {
+        if (owner == QStringLiteral("agent")) {
+            // ① lcc :193-194：Lead 无租约 = 在主工作目录干活，回落链同款（workDirSink→sessionRootSink）
+            if (cwd)
+                *cwd = m_workDirSink ? m_workDirSink() : m_sessionRootSink();
+            return true;
+        }
+        // ② lcc :196：队友无租约 = 无处路由，fail-closed（lcc raise，lite error 通道形）
+        if (error)
+            *error = QStringLiteral("No active assignment for %1").arg(owner);
+        return false;
+    }
+    const Lease lease = *it;
+    // ③ 现读盘校验（lcc :197-200）：租约任务不可读 → fail-closed 上抛
+    Task task;
+    if (!loadTask(lease.taskId, &task, error))
+        return false;
+    const bool statusActive = task.status == QStringLiteral("in_progress")
+                              || task.status == QStringLiteral("completed");
+    if (!statusActive || !task.owned || task.owner != owner) {
+        // lcc :199-200：completed 放行配合「回合边界才退租」（同回合工具仍要 cwd 路由）；
+        // 其余状态/归属不符 = 台账过期，任务已被外部改写
+        if (error)
+            *error = QStringLiteral("Assignment for %1 is no longer active").arg(owner);
+        return false;
+    }
+    // lcc :201-207：绑定态经 task_worktree_cwd 解析、破损即错（lite 偏差⑦收敛进 resolver 的
+    // *error 通道，"Worktree '<name>' binding is broken for task <id>" 文本由 fix-3 置入）；
+    // 未绑定走 M4 早退回落。resolveTaskCwd 两态全覆盖，无需在此另判。
+    QString resolved;
+    QString resolveError;
+    if (!resolveTaskCwd(task, &resolved, &resolveError)) {
+        if (error)
+            *error = resolveError;
+        return false;
+    }
+    if (resolved != lease.cwd) {
+        // lcc :210-211：计算值 ≠ 台账值 → 自愈回写。有意语义钉死（防 fix-4 误推）：
+        // 不 advance_assignment_version、不触发 onAssignmentAdvanced——版本推进唯一挂点
+        // 是 claim 换工（advanceAssignmentVersion），陈旧推进唯一挂点是 onAssignmentReleased。
+        Lease healed = lease;
+        healed.taskId = task.id;
+        healed.cwd = resolved;
+        m_assignments[owner] = healed;
+    }
+    if (cwd)
+        *cwd = resolved;
+    return true;
+}
+
+bool TaskStore::scanUnclaimedTasks(QVector<TaskSnapshot> *tasks, QString *error) const
+{
+    // lcc task_manager.py scan_unclaimed_tasks :435-446（移植自 s3 L1417-1428 的 lcc 注）：
+    // 纯侦察只读——pending 且无主且依赖就绪且 cwd 可解 → 候选快照清单。不改任何状态，
+    // 认领是下一步的事（届时走 claimTask 六门复验）。lcc 的 can_start(task.id) 逐条重载在
+    // lite 用已读 task 直接算 incompleteDependencies（口径等价——canStart 体内即此调用）。
+    tasks->clear();
+    QVector<Task> all;
+    if (!listTasks(&all, error))
+        return false;
+    for (const Task &task : all) {
+        if (task.status != QStringLiteral("pending") || task.owned)
+            continue;
+        if (!incompleteDependencies(task).isEmpty())
+            continue;
+        QString cwd;
+        QString cwdError;
+        if (!resolveTaskCwd(task, &cwd, &cwdError))
+            continue; // lcc `if not error` 同款：worktree 破损任务不进候选（侦察静默跳过，不报错）
+        tasks->append(makeSnapshot(task));
+    }
+    return true;
 }

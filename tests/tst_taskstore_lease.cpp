@@ -229,6 +229,28 @@ static void testWorktreeFieldCompat()
     TestHarness::check(
         store.runGetTask(idArgs(badId)).startsWith(QStringLiteral("Error: Invalid task file contents")),
         "数值型 worktree 判 Invalid");
+
+    // C3（Oracle m1 钉桩）：setWorktree 不设状态门——in_progress / completed 任务同样可绑定
+    //（绑定合法性校验归 P2 WorktreeManager 职责，本内核只负责持久化 load→set→save）
+    const QString liveJob = newTaskId(store, QStringLiteral("live-job"));
+    {
+        QString e;
+        bool lok = false;
+        claimKernel(store, liveJob, QStringLiteral("gwen"), &lok, &e);
+    }
+    TestHarness::check(store.setWorktree(liveJob, QStringLiteral("wt_live"), &error)
+                           && store.runGetTask(idArgs(liveJob)).contains(
+                                  QStringLiteral("\"worktree\": \"wt_live\"")),
+                       "setWorktree(C3): in_progress 任务无状态门");
+    {
+        QString e;
+        bool cok = false;
+        completeKernel(store, liveJob, QStringLiteral("gwen"), &cok, &e);
+    }
+    TestHarness::check(store.setWorktree(liveJob, QStringLiteral("wt_done"), &error)
+                           && store.runGetTask(idArgs(liveJob)).contains(
+                                  QStringLiteral("\"worktree\": \"wt_done\"")),
+                       "setWorktree(C3): completed 任务无状态门");
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +311,13 @@ static void testClaimSixGates()
         claimKernel(store, ownedFixture, QStringLiteral("carol"), &ok, &error);
     TestHarness::check(ok && gate2Text == QStringLiteral("Task %1 is already owned by bob").arg(ownedFixture),
                        "claim 门②: 有主任务拒绝并点名现主");
+    // C1（Oracle 补桩）：门②不比较 claim 者——owner==现主自认领同样被拒
+    //（锚 lcc claim_task :318 `if task.owner:` 真值判断，与 claim 者是谁无关；lcc 报告 M 系列 C1）
+    const QString selfClaimText =
+        claimKernel(store, ownedFixture, QStringLiteral("bob"), &ok, &error);
+    TestHarness::check(ok && selfClaimText
+                           == QStringLiteral("Task %1 is already owned by bob").arg(ownedFixture),
+                       "门②(C1): 自认领（claim 者==现主）同样拒绝");
 
     // 成功路径（首claim）：租约建立、版本 0→1、advanced 回调、磁盘 in_progress+owner、
     // 承重文本 'Claimed <id> (<subject>)'（s13 带括号形态）
@@ -349,11 +378,16 @@ static void testClaimSixGates()
                        "门⑤: 依赖未清 → Blocked by: [python list repr]");
 
     // 门⑥：cwd 不可解（resolver 报错）→ 业务文本、任务保持 pending、不建租约
-    store.setCwdResolver([](const QString &taskId, QString *err) {
-        *err = QStringLiteral("worktree 'gone' is not available for task %1").arg(taskId);
+    // M4 改造：resolver 收 TaskSnapshot；且 lite 早退语义（对齐 lcc _task_cwd :148 真值门）
+    // ——未绑定 worktree 的任务不触 resolver。夹具先绑定再 claim，才能走 resolver 错误通道
+    //（断言期望文本不变）。
+    store.setCwdResolver([](const TaskStore::TaskSnapshot &task, QString *err) {
+        *err = QStringLiteral("worktree 'gone' is not available for task %1").arg(task.id);
         return QString();
     });
     const QString unresolvable = newTaskId(store, QStringLiteral("unresolvable-job"));
+    TestHarness::check(store.setWorktree(unresolvable, QStringLiteral("gone"), &error),
+                       "前置: 门⑥夹具绑定 worktree（M4 早退后 resolver 仅对已绑定任务触发）");
     const QString gate6Text =
         claimKernel(store, unresolvable, QStringLiteral("erin"), &ok, &error);
     TestHarness::check(ok && gate6Text.startsWith(QStringLiteral("Cannot claim "))
@@ -365,9 +399,13 @@ static void testClaimSixGates()
                            QStringLiteral("\"status\": \"pending\"")),
                        "门⑥: 失败后任务保持 pending");
 
-    // resolver 供值优先于回落链
-    store.setCwdResolver([](const QString &, QString *) { return QStringLiteral("C:/fake/wt_x"); });
+    // resolver 供值优先于回落链（M4：需已绑定 worktree 方触 resolver——夹具先绑定）
+    store.setCwdResolver([](const TaskStore::TaskSnapshot &, QString *) {
+        return QStringLiteral("C:/fake/wt_x");
+    });
     const QString resolved = newTaskId(store, QStringLiteral("resolved-job"));
+    TestHarness::check(store.setWorktree(resolved, QStringLiteral("wt_x"), &error),
+                       "前置: resolver 供值夹具绑定 worktree");
     claimKernel(store, resolved, QStringLiteral("erin"), &ok, &error);
     TestHarness::check(ok && store.leaseFor(QStringLiteral("erin"))->cwd == QStringLiteral("C:/fake/wt_x"),
                        "resolver 供值 → 租约 cwd 取 resolver 结果");
@@ -456,24 +494,30 @@ static void testCompleteAndReleaseJourney()
     error.clear();
 
     // planGateCheck 否决 complete：任务不动、租约保留、否决原因即返回文本
+    // R2-M5：签名升级为 (owner, taskId, reason) 双值——lcc plan_gate_check(owner) 按队友
+    // 键控（ProtocolState 以 owner 索引），gate 报告裁决 lite 侧 owner+taskId 都给出
     QString gateSawTask;
-    store.setPlanGateCheck([&gateSawTask](const QString &taskId, QString *reason) {
-        gateSawTask = taskId;
-        *reason = QStringLiteral("Plan approval required");
-        return false;
-    });
+    QString gateSawOwner;
+    store.setPlanGateCheck(
+        [&gateSawTask, &gateSawOwner](const QString &owner, const QString &taskId, QString *reason) {
+            gateSawOwner = owner;
+            gateSawTask = taskId;
+            *reason = QStringLiteral("Plan approval required");
+            return false;
+        });
     QString vetoResult;
     TestHarness::check(store.completeTask(t1, kAgent, &vetoResult, &error) && error.isEmpty()
                            && vetoResult == QStringLiteral("Plan approval required")
                            && gateSawTask == t1,
                        "planGateCheck 否决: 原因文本作业务返回");
+    TestHarness::check(gateSawOwner == kAgent, "planGateCheck(M5): owner 实参=租约键");
     TestHarness::check(store.runGetTask(idArgs(t1)).contains(
                            QStringLiteral("\"status\": \"in_progress\"")),
                        "planGateCheck 否决: 任务保持 in_progress");
     TestHarness::check(store.leaseFor(kAgent).has_value(), "planGateCheck 否决: 租约保留");
 
     // 空 reason 否决（lcc：非 None 即拒，空串同样拒）→ 空返回文本
-    store.setPlanGateCheck([](const QString &, QString *reason) {
+    store.setPlanGateCheck([](const QString &, const QString &, QString *reason) {
         reason->clear();
         return false;
     });
@@ -562,6 +606,25 @@ static void testCompleteAndReleaseJourney()
     const QString done3 = completeKernel(store, t3, kAgent, &ok, &error);
     TestHarness::check(ok && done3.contains(QStringLiteral("\nUnblocked: job-four")),
                        "complete 解锁链: '\\nUnblocked: …' 段落");
+
+    // C4（焦点 C）：释放点租约任务不可读 → false + error 上抛、内存租约保留
+    //（fail-closed 不盲清台账——Oracle 报告 m3 锚，lcc release_completed_assignment
+    // 的 load 失败上抛在 lite 折叠为 error 通道）
+    TestHarness::check(store.releaseCompletedAssignment(kAgent, &error),
+                       "前置: 释放 t3（已 completed，可释放）");
+    const QString t5 = newTaskId(store, QStringLiteral("doomed-job"));
+    claimKernel(store, t5, kAgent, &ok, &error);
+    TestHarness::check(ok, "前置: agent claim t5（租约指向 t5）");
+    TestHarness::check(writeRawTask(root, t5, QStringLiteral("{ not json")),
+                       "前置: 毁掉 t5 盘上文件（claim 时可读、事后损坏）");
+    error.clear();
+    const bool c4Release = store.releaseCompletedAssignment(kAgent, &error);
+    TestHarness::check(!c4Release && !error.isEmpty()
+                           && error.contains(QStringLiteral("Invalid task file contents")),
+                       "release(C4): 租约任务不可读 → false + error 上抛");
+    TestHarness::check(store.leaseFor(kAgent).has_value()
+                           && store.leaseFor(kAgent)->taskId == t5,
+                       "C4: 租约保留（fail-closed 不盲清）");
 }
 
 // ---------------------------------------------------------------------------
@@ -602,11 +665,36 @@ static void testLeaseSelfHeal()
     TestHarness::check(store.assignmentVersion(kAgent) == 0 && rec.advanced == 0,
                        "自愈: 不递增版本、不发 advanced（偏离登记钉桩）");
 
+    // C2（焦点 C）：已绑 worktree + resolver 供值时的租约自愈基线——自愈重建的
+    // 租约 cwd 取 resolver 返回值（快照入参，R2-M4 签名），并继续钉桩
+    // 「自愈不 bump、不 advanced」（lcc worktree_manager.py:211 回写不调 advance 同源）
+    const QString c2 = newTaskId(store, QStringLiteral("c2-job"));
+    TestHarness::check(store.setWorktree(c2, QStringLiteral("wt_c2"), &error),
+                       "前置: C2 夹具绑定 worktree");
+    store.runClaimTask(idArgs(c2)); // legacy 旁路：磁盘 in_progress/agent，租约仍指 t1
+    store.setCwdResolver([](const TaskStore::TaskSnapshot &task, QString *) {
+        return task.worktree == QStringLiteral("wt_c2") ? QStringLiteral("C:/fake/wt_c2")
+                                                        : QStringLiteral("C:/fake/unexpected");
+    });
+    const QString c2Done = completeKernel(store, c2, kAgent, &ok, &error);
+    TestHarness::check(ok && c2Done.startsWith(QStringLiteral("Completed ")),
+                       "C2: kernel complete 对绑定任务成功（resolver 供值）");
+    const std::optional<TaskStore::Lease> c2Lease = store.leaseFor(kAgent);
+    TestHarness::check(c2Lease.has_value() && c2Lease->taskId == c2
+                           && c2Lease->cwd == QStringLiteral("C:/fake/wt_c2"),
+                       "自愈(C2): 绑定任务经 resolver 重建 cwd");
+    TestHarness::check(store.assignmentVersion(kAgent) == 0 && rec.advanced == 0,
+                       "C2: 自愈路径不 bump 不 advanced（钉桩）");
+
     // 自愈失败（resolver 报错）→ 业务文本、租约缺失、磁盘不动
     TaskStore storeB([root] { return root; });
     const QString t2 = newTaskId(storeB, QStringLiteral("broken-job"));
     storeB.runClaimTask(idArgs(t2));
-    storeB.setCwdResolver([](const QString &, QString *err) {
+    // R2-M4 早退：resolver 仅对已绑定 worktree 的任务进入——夹具必须先绑定，
+    // 否则未绑定任务直接走 workDir 回落、错误分支永不可达（前置属签名改造同批预期适配）
+    TestHarness::check(storeB.setWorktree(t2, QStringLiteral("gone"), &error),
+                       "前置: 自愈失败夹具绑定 worktree（M4 早退后未绑定任务不进 resolver）");
+    storeB.setCwdResolver([](const TaskStore::TaskSnapshot &, QString *err) {
         *err = QStringLiteral("binding is broken");
         return QString();
     });
@@ -699,8 +787,30 @@ static void testReleaseTeammateJourney()
     TestHarness::check(storeB.releaseTeammateAssignment(QStringLiteral("worker3"), &error),
                        "重启后 release: 不依赖内存租约仍执行");
     TestHarness::check(storeB.runGetTask(idArgs(w3Task)).contains(
-                           QStringLiteral("\"status\": \"pending\"")),
+                            QStringLiteral("\"status\": \"pending\"")),
                        "重启后 release: 磁盘 in_progress 仍被降级 pending");
+
+    // C5（焦点 C）：releaseTeammateAssignment 的 diskError 传播——台账里存在损坏
+    // 文件 → ownerInProgressTask 借道 listTasks 读失败（probeError）→ 返回 false +
+    // error 上抛，但 finally 语义仍清空内存租约并触发 released（内存清理必达，
+    // 否则死 owner 永久占名——lcc :419-431 finally 结构）
+    const QString w4Task = newTaskId(store, QStringLiteral("w4-task"));
+    claimKernel(store, w4Task, QStringLiteral("worker4"), &ok, &error);
+    TestHarness::check(ok, "前置: worker4 claim 成功（内存租约已建）");
+    TestHarness::check(writeRawTask(root, QStringLiteral("task_00000098"),
+                                    QStringLiteral("{ not json")),
+                       "前置: 向台账插入损坏文件（触发 listTasks 读失败）");
+    error.clear();
+    const int beforeC5 = rec.released;
+    const bool c5 = store.releaseTeammateAssignment(QStringLiteral("worker4"), &error);
+    TestHarness::check(!c5 && !error.isEmpty()
+                           && error.contains(QStringLiteral("Invalid task file contents")),
+                       "releaseTeammate(C5): 台账不可读 → false + error 传播");
+    TestHarness::check(!store.leaseFor(QStringLiteral("worker4")).has_value(),
+                       "C5: finally 仍清空内存租约");
+    TestHarness::check(rec.released == beforeC5 + 1
+                           && rec.releasedOwner == QStringLiteral("worker4"),
+                       "C5: 内存清理成功仍发 released 回调");
 }
 
 // ---------------------------------------------------------------------------
@@ -782,7 +892,7 @@ static void testFoldedWrappers()
     TestHarness::check(store.releaseCompletedAssignment(kAgent, nullptr), "前置: 释放 t1");
     const QString t2 = newTaskId(store, QStringLiteral("fold-two"));
     store.runClaimTaskLeased(idArgs(t2), kAgent);
-    store.setPlanGateCheck([](const QString &, QString *reason) {
+    store.setPlanGateCheck([](const QString &, const QString &, QString *reason) {
         *reason = QStringLiteral("Plan still pending approval");
         return false;
     });

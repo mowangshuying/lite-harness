@@ -262,6 +262,29 @@ inline const QString kToolResultsDirName =
 inline const QString kMemoryDirName = QStringLiteral(".memory"); // 记忆存储（MEMORY.md 索引 + slug 记录）
 inline const QString kMailboxesDirName = QStringLiteral(".mailboxes"); // 团队消息总线邮箱（一人一个 JSONL，lcc s13）
 
+// ---- 队友保留名单源（lcc message_bus.py:17 RESERVED_TEAMMATE_NAMES={"lead","agent"}，
+// 原注释「供 Lane B/C/D 复用」——gate① M7 收口进本头，casefold 比较）----
+// **双重语义提醒**（fix-4 须在侧别分清，勿混用）：
+//  · "lead"  = 消息总线保留收件名——Lead 的邮箱名，队友不得占用（spawn 侧拒用）；
+//  · "agent" = 双重身份——既是邮箱保留名（同上拒 spawn），又是 TaskStore Lead owner 键
+//    （无租约回落 workDir 的 owner 判定，TaskStore 租约/释放语义，与本名单无关）。
+// 本轮只立单源：MessageBus 路径三关**不**查保留名（lcc 同款，本类只 fail-closed 路径），
+// 真正的拒 spawn 校验在 fix-4 AgentTeamsManager 侧消费本单源。
+inline const QStringList kReservedTeammateNames = {
+    QStringLiteral("lead"), QStringLiteral("agent"),
+};
+
+inline bool isReservedTeammateName(const QString &name)
+{
+    // casefold 口径：lcc python `name.lower() in RESERVED` 的等价物（名单仅 ASCII，
+    // Qt::CaseInsensitive 足够；邮箱名正则本身大小写敏感，比较只在保留名判定处放宽）
+    for (const QString &reserved : kReservedTeammateNames) {
+        if (name.compare(reserved, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
 // ---- glob 工具（runGlobIn）有界化参数 ----
 // runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：
 // 原 QDirIterator 无上限且进入 .git/build 等巨型目录，大仓库直接冻结 UI。

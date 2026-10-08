@@ -1,13 +1,13 @@
 #include "MessageBus.h"
 
 #include "AgentConstants.h" // 邮箱目录名单源（kMailboxesDirName）
+#include "AgentPathGuard.h"  // 名字正则与路径包含守护单源（gate① M7：从本文件匿名 ns 提出，供 Lane B/C/D 复用）
 
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
-#include <QRegularExpression>
 
 // ============================================================================
 // lcc s13 34775c8 message_bus.py 移植。一人一个 .jsonl 邮箱，追加写 + 破坏性读取。
@@ -15,34 +15,6 @@
 // 本类全同步 IO，锁与 wait_for_messages（阻塞条件等待）不移植——唤醒由宿主 QTimer
 // 轮询 hasPending 门铃实现（见 D1/D9）。路径校验逐字对齐 _path 三关。
 // ============================================================================
-
-namespace {
-
-// lcc VALID_AGENT_NAME（message_bus.py:14）：fullmatch 防 "abc/../evil" 前缀合法后缀越狱。
-// 字符集不含 '.' 与 '/'，故 '.'/'..'/'a/b' 一律在①关即拒。
-bool isValidAgentName(const QString &name)
-{
-    static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"));
-    const QRegularExpressionMatch m = re.match(name);
-    // python fullmatch 等价：锚定命中 + 捕获段恰覆盖全串（规避 PCRE $ 允许末尾换行的怪癖，
-    // 与 isTaskIdFull 同款纪律）
-    return m.hasMatch() && m.capturedStart(0) == 0 && m.capturedLength(0) == name.size();
-}
-
-// python Path.is_relative_to 的词法等价：入参均已 QDir::cleanPath 归一（正斜杠、无冗余段）。
-// 用前缀比较而非 canonicalFilePath——后者要求文件存在且解析符号链接，而 send 时邮箱/目录尚未
-// 落地。名字正则已禁路径分隔符，sessionRoot 为宿主可信值，词法包含校验足以拦越狱（登记偏差：
-// lcc resolve() 另做符号链接归一，此处仅词法，纵深防御仍覆盖任务书三重校验）。
-bool isWithinPath(const QString &child, const QString &parent)
-{
-    if (child == parent)
-        return true;
-    if (parent.endsWith(QLatin1Char('/')))
-        return child.startsWith(parent);
-    return child.startsWith(parent + QLatin1Char('/'));
-}
-
-} // namespace
 
 MessageBus::MessageBus(std::function<QString()> sessionRootSink)
     : m_sessionRootSink(std::move(sessionRootSink))
@@ -63,9 +35,12 @@ QString MessageBus::lastError() const
 
 bool MessageBus::resolveMailboxPath(const QString &name, QString *path, QString *error) const
 {
-    // 三关 fail-closed（宁报错不猜，照 lcc _path :38-50）
+    // 三关 fail-closed（宁报错不猜，照 lcc _path :38-50）。
+    // 名字正则与路径包含 helper 单源于 AgentPathGuard.h（gate① M7 提出，供 Lane B/C/D 复用）。
+    // 偏差 m1（P3 收口，safePathIn 议程）：此处两关均词法口径，不解析符号链接/junction——
+    // AgentPathGuard::isWithinPathCanonical 为其复校预留件。
     // ① 收件人名正则（VALID_AGENT_NAME fullmatch）
-    if (!isValidAgentName(name)) {
+    if (!AgentPathGuard::isValidAgentName(name)) {
         *error = QStringLiteral("MessageBus: invalid mailbox name '%1' (must match [A-Za-z0-9_-]{1,64})")
                      .arg(name);
         return false;
@@ -73,13 +48,13 @@ bool MessageBus::resolveMailboxPath(const QString &name, QString *path, QString 
     // ② 邮箱目录必须在会话根内
     const QString cleanRoot = QDir::cleanPath(m_sessionRootSink());
     const QString cleanDir = QDir::cleanPath(mailboxesDir());
-    if (!isWithinPath(cleanDir, cleanRoot)) {
+    if (!AgentPathGuard::isWithinPath(cleanDir, cleanRoot)) {
         *error = QStringLiteral("MessageBus: mailbox directory escapes session root");
         return false;
     }
     // ③ 解析后的文件路径必须仍在邮箱根下
     const QString file = QDir::cleanPath(cleanDir + QLatin1Char('/') + name + QStringLiteral(".jsonl"));
-    if (!isWithinPath(file, cleanDir)) {
+    if (!AgentPathGuard::isWithinPath(file, cleanDir)) {
         *error = QStringLiteral("MessageBus: mailbox path escapes directory '%1'").arg(name);
         return false;
     }
@@ -169,11 +144,14 @@ QVector<BusMessage> MessageBus::drain(const QString &name)
     file.close();
 
     // 破坏性读取：读文件 + unlink 一步走（at-most-once，无 ack）。取走即清空整个 jsonl。
+    // M8 编排者裁决=① fail-closed（对齐 lcc message_bus.py:52-59：unlink 失败异常上抛→本批
+    // 不投递、信箱保留、下次重试）：remove 失败 → 置 lastError 并返回空批，已解析批丢弃、
+    // 信箱原样保留，靠宿主心跳下一拍重试投递——协议层投递次数是引擎职责，至多一次由引擎
+    // 兜底，不外包装给调用方。
     if (!file.remove()) {
-        // 偏差：lcc unlink 失败会 raise；lite 已把消息取到内存（投递事实成立），仅在 lastError
-        // 记账，不回滚。正常临时目录可写，此路罕见。
         m_lastError = QStringLiteral("MessageBus: mailbox unlink failed: %1 (%2)")
                           .arg(path, file.errorString());
+        return QVector<BusMessage>();
     }
 
     const QList<QByteArray> lines = data.split('\n');

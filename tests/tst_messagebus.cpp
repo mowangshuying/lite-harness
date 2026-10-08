@@ -1,5 +1,6 @@
 // MessageBus 单测（lcc s13 移植）：send→drain 往返、至多一次投递、hasPending 三态、
-// 三重 fail-closed 路径校验、畸形行防毒（D9-defensive）、追加顺序与默认参。
+// 三重 fail-closed 路径校验、畸形行防毒（D9-defensive）、unlink 失败 fail-closed（M8）、
+// 追加顺序与默认参。
 // 套件临时根经 ScopedTempRoot（受 LITE_TEST_TMPROOT 环境变量管辖，禁用裸 QDir::tempPath
 // 自清理——曾有姊妹套件失控清理酿成事故）；未配置则整组 SKIP 返回 0。
 
@@ -106,6 +107,35 @@ void testDrainEmptyNotError(const QString &root)
     const QVector<BusMessage> msgs = bus.drain(QStringLiteral("nowhere"));
     TestHarness::check(msgs.isEmpty(), "drain: absent mailbox yields empty");
     TestHarness::check(bus.lastError().isEmpty(), "drain: absent mailbox is not an error");
+}
+
+// ③b unlink 失败 = fail-closed（M8 编排者裁决=①）：另一句柄占住邮箱使 remove 失败时，
+// 本批不投递（返回空批）、lastError 置错、信箱保留（hasPending 仍 true，靠心跳下一拍重试）。
+// 构造可行性：Qt QFile 在 Windows 下以「不共享」方式开句柄（实证：同类场景 send 的 append
+// open 都会被 sharing violation 拒），故第二个只读句柄占住文件即可让 file.remove() 失败。
+// 若本构造被平台放行（remove 竟成功），如实判 FAIL 交编排者裁决，不假造通过。
+void testDrainUnlinkFailClosed(const QString &root)
+{
+    MessageBus bus = makeBus(root);
+    TestHarness::check(bus.send(QStringLiteral("a"), QStringLiteral("busy"), QStringLiteral("x")),
+                       "unlink-fail: setup send ok");
+
+    QFile blocker(mailboxPath(root, QStringLiteral("busy")));
+    const bool held = blocker.open(QIODevice::ReadOnly);
+    TestHarness::check(held, "unlink-fail: setup holds an open read handle on mailbox");
+    if (!held)
+        return; // 夹具未成（如文件被意外占用/权限异常），不跑后续断言
+
+    const QVector<BusMessage> msgs = bus.drain(QStringLiteral("busy"));
+    TestHarness::check(msgs.isEmpty(),
+                       "unlink-fail: parsed batch discarded (fail-closed, not silently delivered)");
+    TestHarness::check(!bus.lastError().isEmpty(), "unlink-fail: lastError set");
+    TestHarness::check(QFile::exists(mailboxPath(root, QStringLiteral("busy"))),
+                       "unlink-fail: mailbox retained for heartbeat retry");
+    TestHarness::check(bus.hasPending(QStringLiteral("busy")),
+                       "unlink-fail: doorbell still armed (retry path alive)");
+    // 句柄仍被 blocker 占住：此处故意不 drain 重试（remove 必再失败，语义已由上面断言钉死）
+    blocker.close();
 }
 
 // ④ 坏名字三重校验：send/drain/hasPending 一律拒绝并置 lastError；64 字符边界通过；from 不校验
@@ -223,6 +253,7 @@ int tst_messagebus()
     testSendDrainRoundTrip(root);
     testHasPendingThreeStates(root);
     testDrainEmptyNotError(root);
+    testDrainUnlinkFailClosed(root);
     testBadNamesRejected(root);
     testMalformedLinesSkipped(root);
     testAppendOrder(root);

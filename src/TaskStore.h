@@ -52,12 +52,15 @@
  *   偏3 租约版 claim 成功文案按 s13 逐字 'Claimed <id> (<subject>)'（带括号）；无括号旧文案只
  *       存在于遗留非租约路径。承重契约：lcc spawn/pull 通道以 startswith("Claimed ") 判成功
  *       （agent_teams_manager 跨模块字符串契约），两种形态均满足该前缀。
- *   偏4 release_completed_assignment 不递增换工版本、不触发 advanced 回调（lcc :411 释放时
- *       advance_assignment_version——lane 裁决有意省略：lite 版本只在 claim 换工时递增，
- *       P2 的 plan gate 复位接线须按此语义）。
+ *   偏4 lite 两个释放点（release_completed_assignment / release_teammate_assignment）均不递增
+ *       换工版本、不触发 advanced 回调（lcc :411/:429 两处都 advance_assignment_version——
+ *       lane 有意偏离：版本只在 claim 换工时递增，释放后 claim 门③自然放行，无需另推版本）。
+ *       gate① M6 复注钉牢：**fix-4 的 plan gate 复位与 work_version 陈旧推进只挂
+ *       onAssignmentReleased**，不得假设「释放伴随版本递增/advanced」（组4/组6 钉桩断言为证）。
  *   偏5 onAssignmentAdvanced 回调签名多带 taskId（lcc on_assignment_advanced(owner) 仅 owner）。
- *   偏6 planGateCheck 回调按 taskId 判定（lcc plan_gate_check(owner) 按 owner——lite 让宿主
- *       从租约台账反查更直白，P2 接线者知悉）。
+ *   偏6 planGateCheck 按 (owner, taskId) 双值判定（lcc plan_gate_check(owner) 仅 owner——
+ *       gate① M5 裁决：P2 的 ProtocolState 身份快照校验需要 owner 键门的同屏 taskId 实参，
+ *       双值下发免去宿主反查台账的竞态窗口）。
  *   偏7 Task::worktree 用单态 QString（空串 ≡ python None，判真语义 !isEmpty() 与 lcc
  *       `if task.worktree` 一致）；lcc 为 str|None 两态。worktree_validator/cwd_resolver 两个
  *       lcc 回调在 lite 收敛为单一 cwdResolver（校验折进解析：解析不动即报错 fail-closed）。
@@ -70,6 +73,19 @@ public:
     {
         QString taskId;
         QString cwd;
+    };
+
+    // s13 跨模块任务视图（gate① M3）：P2/P3 的程序化消费一律取本结构（经
+    // listTaskSnapshots/scanUnclaimedTasks 导出），禁刮 runListTasks/runGetTask 的人类可读
+    // 文本——那是模型面契约，形态可随文案迭代破坏。字段为 Task 的对外子集（worktree 存名字，
+    // 见 setWorktree 注释）；description/blockedBy/timestamp 暂无跨模块消费需求，不加。
+    struct TaskSnapshot
+    {
+        QString id;
+        QString subject;
+        QString status;
+        QString owner;    // 空串 ≡ 无主（lcc None——偏差⑦单态口径）
+        QString worktree; // worktree 名字；空串 ≡ 未绑定（lcc None）
     };
 
     // sessionRootSink 惰性取宿主会话数据根（仿 CronSchedulerManager 等注入法，见类头注释）
@@ -87,9 +103,12 @@ public:
     QString runClaimTask(const QJsonObject &args) const;     // 遗留非租约路径（向后兼容铁律）
     QString runCompleteTask(const QJsonObject &args) const;  // 遗留非租约路径（向后兼容铁律）
 
-    // ── s13 Lane A：worktree 绑定（P2 WorktreeManager 将调用；本类不触碰 git，仅存路径字符串）──
-    // 绑定/解绑无状态门（lcc set_worktree 同款：校验属 P2 领地）；clearWorktree 即置 null。
-    bool setWorktree(const QString &taskId, const QString &path, QString *error) const;
+    // ── s13 Lane A：worktree 绑定（P2 WorktreeManager 将调用；本类不触碰 git，仅存 worktree 名字）──
+    // 绑定/解绑无状态门（lcc set_worktree 同款：名字合法性/在册校验属 P2 领地——C3 钉桩）；
+    // clearWorktree 即置 null（空串 ≡ lcc None = 在主工作目录干活）。
+    // gate① M1 修正：绑的是 worktree **名字**不是路径——lcc worktree_manager.py:304 存 name，
+    // 台账/解析全按 name 键查（:169-172/:176-179）；name→路径的推导归 P2::worktreePath。
+    bool setWorktree(const QString &taskId, const QString &worktreeName, QString *error) const;
     bool clearWorktree(const QString &taskId, QString *error) const;
 
     // ── s13 Lane A：租约内核（lcc claim_task :312-349 / complete_task :354-396）──
@@ -107,7 +126,7 @@ public:
     //    release_teammate_assignment :419）──
     // 仅当租约指向的任务确已 completed 且 owner 相符时清租约并触发 onAssignmentReleased；
     // 其余情形（无租约/未完成/不可读）返回 false 并给出可判定 error 文案，租约保留（幂等安全，
-    // 调用方按 false=无需处理即可，不区分原因）。偏差④：不递增版本。
+    // 调用方按 false=无需处理即可，不区分原因）。偏差④：不递增版本、不触发 advanced（两释放点统一）。
     bool releaseCompletedAssignment(const QString &owner, QString *error);
     // 队友死亡/退出清理：磁盘遗留 in_progress 任务降级 pending、owner 清空；随后
     // 【无条件】清内存租约 + 触发 onAssignmentReleased（lcc try/finally 语义：内存清理必须
@@ -119,20 +138,59 @@ public:
     std::optional<Lease> leaseFor(const QString &owner) const;
     int assignmentVersion(const QString &owner) const; // 无台账记录 = 0
 
+    // 全量快照导出（gate① M3）：复用私有 listTasks——内容损坏文件经 *error 上抛不跳过
+    //（对齐 lcc task_manager.py list() :267-274 现行为：load 崩直接上抛；「文件名不合 ID
+    // 正则的脏文件跳过」是 listTasks 既有登记的 lite 防御偏差，同口径沿用）。
+    // error=nullptr 时错误仍靠 false 判定（nullptr 容错本仓 uniform）。
+    bool listTaskSnapshots(QVector<TaskSnapshot> *snapshots, QString *error = nullptr) const;
+
+    // 租约 cwd 指向某目录的 owner 反查（gate① M3；lcc worktree remove 门④ :348-349
+    // `Path(a["cwd"]).resolve()==path.resolve()` 的 lite 词法形——QDir::cleanPath 归一后
+    // 比较，canonical 复校（符号链接/junction 绕行）留 fix-3 消费点补做。本语义留在
+    // TaskStore 单源的理由：remove 门④「拒绝销毁磁盘代码」的最后一道防线数据主人在此）。
+    // 纯 const 查询；命中 owner 依字典序追加进 *owners（可为 nullptr=只判有无）。
+    bool leasesPointingAt(const QString &dirPath, QStringList *owners) const;
+
+    // 租约 cwd 热路径（gate① M2；lcc worktree_manager.py assignment_cwd :190-212，
+    // 「内存租约当缓存、磁盘当真相」）三分支：
+    //   ① 无租约且 owner == "agent"（Lead 保留键）→ 回落链 workDirSink → sessionRootSink（lcc :193-194）；
+    //   ② 无租约且 owner 为队友 → false + "No active assignment for <owner>" fail-closed（:196）；
+    //   ③ 有租约 → 现读盘校验：status ∈ {in_progress, completed} 且 task.owner == owner，否则
+    //      false + "Assignment for <owner> is no longer active"（:199-200，completed 放行配合回合
+    //      边界退租）；任务绑定了 worktree 时经 resolveTaskCwd 走 resolver，不可解报错
+    //      （lcc "Worktree '<name>' binding is broken" 文本由 fix-3 的 resolver 置 *error 承接——
+    //      偏差⑦ validator 折进解析）；未绑定走回落链。
+    // 计算值 ≠ 台账 cwd 时自愈回写台账，且【不递增版本、不触发 advanced】（lcc :210-211 直接
+    // 回写 assignments[owner] 而不调 advance_assignment_version——此边界语义归 fix-4：
+    // 挂 plan gate 复位/work_version 推进的只有 claim 换工与释放回调，自愈回写两者皆无）。
+    // 因分支③含自愈回写，本函数非 const。
+    bool assignmentCwd(const QString &owner, QString *cwd, QString *error);
+
+    // 队友拉活侦察（gate① §3-4；lcc scan_unclaimed_tasks :435-446）：纯侦察只读——pending
+    // 且无主且依赖就绪且 cwd 可解（resolveTaskCwd 出错的「worktree 破损」任务不计入候选，
+    // lcc `if not error` 同款），产出快照列表。不改任何状态；认领是下一步的事（走 claimTask 六门）。
+    bool scanUnclaimedTasks(QVector<TaskSnapshot> *tasks, QString *error) const;
+
     // ── s13 Lane A：可注入回调（P3 宿主接线；默认空 = 透传放行 / cwd 回落）──
     // 完成前置否决门（lcc plan_gate_check）：返回 false = 否决，reason 原样作为业务文本回传
-    // （可为空串=静默否决，lcc 空串拒口径同款）。偏差⑥：按 taskId 判定。
-    void setPlanGateCheck(std::function<bool(const QString &taskId, QString *reason)> gate);
+    // （可为空串=静默否决，lcc 空串拒口径同款）。偏差⑥（M5 改形）：按 (owner, taskId) 双值判定。
+    void setPlanGateCheck(
+        std::function<bool(const QString &owner, const QString &taskId, QString *reason)> gate);
     // claim 成功换工时通知（lcc :356-368 换工复位 plan gate 的挂点）。偏差⑤：带 taskId。
     void setOnAssignmentAdvanced(std::function<void(const QString &owner, const QString &taskId)> cb);
     // 两个释放点清租约后通知。
     void setOnAssignmentReleased(std::function<void(const QString &owner)> cb);
-    // cwd 解析（P2 将接 WorktreeManager::assignmentCwd；lcc worktree_validator +
-    // worktree_cwd_resolver 收敛为单一回调——偏差⑦后半）。约定：置 *error 非空 = 不可解
+    // cwd 解析（P2 将接 WorktreeManager::taskWorktreeCwd——lcc worktree_validator +
+    // worktree_cwd_resolver 收敛为单一回调，偏差⑦后半；lcc task_worktree_cwd :169-172 按
+    // task.worktree 名字查注册表，故实参为任务快照）。约定：置 *error 非空 = 不可解
     // （fail-closed，claim 报 "Cannot claim <id>: <error>"、complete 报
     // "Task <id> cannot complete: <error>"）；返回空串 = 本回调不解析，TaskStore 走回落链
     // （workDirSink → sessionRootSink）。
-    void setCwdResolver(std::function<QString(const QString &taskId, QString *error)> resolver);
+    // gate① M4 改形：入参 taskId → const TaskSnapshot &（解析须看 worktree 绑定态）；
+    // 且 lcc _task_cwd :147-156 的「未绑定任务不起解析、直接回落工作目录」早退语义实现在
+    // 本类调用点（resolveTaskCwd 内）：worktree 为空的任务根本不会进 resolver——
+    // 未绑定不起子进程（git rev-parse）是热路径性能语义。
+    void setCwdResolver(std::function<QString(const TaskSnapshot &task, QString *error)> resolver);
 
     // ── s13 Lane A：折叠版工具 handler（P3 团队侧接线用；owner 由宿主传入，Lead 用 "agent"）──
     // 内核 false → "Error: " + error；true → result 逐字（claim 成功文本以 "Claimed " 开头，
@@ -191,13 +249,17 @@ private:
     // ── s13 Lane A 私有辅助 ──
     // 换工版本递增 + advanced 回调触发（lcc advance_assignment_version :136-142；偏差⑤），返回新版本
     int advanceAssignmentVersion(const QString &owner, const QString &taskId);
-    // cwd 解析（lcc _task_cwd :147-156 的 lite 收敛形——偏差⑦后半）：resolver 置错→false
-    // （fail-closed）；resolver 返回非空→采纳；否则回落 workDirSink → sessionRootSink
-    bool resolveTaskCwd(const QString &taskId, QString *cwd, QString *error) const;
+    // cwd 解析（lcc _task_cwd :147-156 的 lite 收敛形——偏差⑦后半）：**M4 早退**——
+    // task.worktree 为空（未绑定）→ 不调 resolver，直接回落 workDirSink → sessionRootSink；
+    // 已绑定 → resolver(快照)：置错→false（fail-closed）、返回非空→采纳、空串→走回落链。
+    // 入参为已读盘 Task（调用方 claim/complete/scan/assignmentCwd 均先 load，免二次读盘）。
+    bool resolveTaskCwd(const Task &task, QString *cwd, QString *error) const;
     // 磁盘上属于该 owner 的 in_progress 任务（lcc _owner_in_progress :159-161）。
     // 三态：true=找到（*task 置入）；false 且 error 空=未找到；false 且 error 非空=台账不可读
     //（调用方必须 fail-closed，不得当作“未找到”）。
     bool ownerInProgressTask(const QString &owner, Task *task, QString *error) const;
+    // Task → TaskSnapshot 裁剪（gate① M3；owned=false 折叠为空串 owner，lcc None 同款单态形）
+    static TaskSnapshot makeSnapshot(const Task &task);
 
     std::function<QString()> m_sessionRootSink; // 宿主会话数据根惰性获取（见类头注释）
     std::function<QString()> m_workDirSink;     // s13：cwd 回落链的工作目录段（P3 补传，默认可空）
@@ -207,8 +269,8 @@ private:
     QHash<QString, int> m_assignmentVersions;   // owner → 换工版本（陈旧审批防 TOCTOU 用，P2 消费）
 
     // s13 Lane A 回调（默认空，见公共 setter 注释）
-    std::function<bool(const QString &taskId, QString *reason)> m_planGateCheck;
+    std::function<bool(const QString &owner, const QString &taskId, QString *reason)> m_planGateCheck;
     std::function<void(const QString &owner, const QString &taskId)> m_onAssignmentAdvanced;
     std::function<void(const QString &owner)> m_onAssignmentReleased;
-    std::function<QString(const QString &taskId, QString *error)> m_cwdResolver;
+    std::function<QString(const TaskSnapshot &task, QString *error)> m_cwdResolver;
 };

@@ -61,6 +61,9 @@ public:
     // 破坏性整读（read）：读后即 unlink 整个 jsonl（at-most-once，无 ack）。不存在返回空且不记错误
     //（lcc read 语义：无文件=无信，非异常）。畸形行（非法 JSON / 缺键）跳过不炸账——
     // D9-defensive，有意偏离 lcc（python json.loads 会 raise 卡死邮箱，我们防毒邮箱）。
+    // unlink 失败（M8 裁决=① fail-closed，对齐 lcc 异常上抛形态）：置 lastError 且返回**空批**，
+    // 已解析批丢弃、信箱保留，靠宿主心跳下一拍重试投递——至多一次由引擎兜底；调用方仍应查
+    // lastError 记账。
     QVector<BusMessage> drain(const QString &name);
 
     // 最近一次失败的折叠串（成功/无操作后为空）
