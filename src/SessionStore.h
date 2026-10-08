@@ -97,6 +97,26 @@ public:
         warnIfSaveFailed(saveIndex(root, entries), root, QStringLiteral("upsert(追加)"));
     }
 
+    // 仅续活单条会话索引项：命中 dataId 就刷新 lastActiveMs 并回写，未命中静默跳过（不新建
+    // 条目——登记由 LiteHarness::createSession 负责）。AgentLoop::persistHistory 每批落盘后
+    // 调用；与 upsertEntry 的「只更新不新建」分支同源，收敛调用方手写的遍历+回写（曾是第二份实现）。
+    static void touchEntry(const QString &root, const QString &dataId)
+    {
+        if (dataId.isEmpty())
+            return;
+        QJsonArray entries = loadIndex(root);
+        for (int i = 0; i < entries.size(); ++i)
+        {
+            QJsonObject obj = entries.at(i).toObject();
+            if (obj.value(QStringLiteral("dataId")).toString() != dataId)
+                continue;
+            obj[QStringLiteral("lastActiveMs")] = QDateTime::currentMSecsSinceEpoch();
+            entries[i] = obj;
+            warnIfSaveFailed(saveIndex(root, entries), root, QStringLiteral("touch(续活)"));
+            return;
+        }
+    }
+
     // 删除单条会话索引项：命中 dataId 则移出并回写，返回 true；未命中返回 false（不写盘）。
     // 仅管索引条目，会话数据目录 sessions/<id>（含 history.json）由调用方决定是否清理。
     static bool removeEntry(const QString &root, const QString &dataId)

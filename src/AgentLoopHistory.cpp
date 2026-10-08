@@ -11,7 +11,6 @@
 #include <QFileInfo>
 #include <QSet>
 #include <QPair>
-#include <QDateTime>
 #include <QSaveFile>
 #include <QJsonArray>
 
@@ -51,22 +50,11 @@ void AgentLoop::persistHistory()
         return;
     }
 
-    // 索引仅刷新已存在条目的 lastActiveMs（未登记则跳过，语义与 upsert 的"只更新不新建"分支一致）
-    const QString storeRoot = QDir(m_workDir).filePath(QStringLiteral(".lite-harness"));
-    QJsonArray index = SessionStore::loadIndex(storeRoot);
-    bool found = false;
-    for (int i = 0; i < index.size(); ++i)
-    {
-        QJsonObject entry = index.at(i).toObject();
-        if (entry.value(QStringLiteral("dataId")).toString() != m_sessionDataId)
-            continue;
-        entry[QStringLiteral("lastActiveMs")] = QDateTime::currentMSecsSinceEpoch();
-        index[i] = entry;
-        found = true;
-        break;
-    }
-    if (found)
-        SessionStore::saveIndex(storeRoot, index);
+    // 索引仅刷新已存在条目的 lastActiveMs（未登记则跳过，语义与 upsert 的"只更新不新建"分支一致）。
+    // 索引根固定为进程当前目录，与 LiteHarness 的登记/恢复/删除同源（rootDirFor 单源派生）：
+    // workDir 只是条目字段，用它派生会在「发起页选了自定义工作目录」的会话上读到不存在的
+    // index.json，found 恒 false 令续活静默失效。遍历+回写已下沉 SessionStore::touchEntry。
+    SessionStore::touchEntry(SessionStore::rootDirFor(QDir::currentPath()), m_sessionDataId);
 }
 
 // 从磁盘恢复历史到 m_messages：保留 [0] 系统消息，追加落盘消息，恢复模型。

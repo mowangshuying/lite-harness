@@ -113,6 +113,31 @@ inline int maxToolIterationsValue()
     return static_cast<int>(stored);
 }
 
+// ---- 网络重试次数（429 / 5xx 指数退避）----
+// QOpenAi 的重试上限。原默认 0 且全仓无 setMaxRetries 调用方，退避链路运行时不可达；
+// 现由 QOpenAi::initFromSettings 读本键注入。校验界 [0,5]：下界 0 保留「不重试」语义
+// （用户裁决），上界防手工改配置把单回合拖成分钟级等待（退避 1s,2s,4s…，5 次累计约 31s）。
+constexpr int kMaxRetriesDefault = 2; // 未设置时的默认重试次数（用户裁决值）
+constexpr int kMaxRetriesMin = 0;     // 校验下界（0 = 关闭重试）
+constexpr int kMaxRetriesMax = 5;     // 校验上界
+inline const QString kMaxRetriesKey = QStringLiteral("maxRetries");
+
+// 重试次数单点取值：settings.ini 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律）。
+// 消费方：QOpenAi::initFromSettings（启动注入）；缺失、非整数、越界一律回退默认值。
+inline int maxRetriesValue()
+{
+    QSettings settings = AppSettings::ini();
+    bool ok = false;
+    const qlonglong stored = settings.value(kMaxRetriesKey).toLongLong(&ok);
+    if (!ok || stored < kMaxRetriesMin || stored > kMaxRetriesMax)
+        return kMaxRetriesDefault;
+    return static_cast<int>(stored);
+}
+
+// PostToolUse large_output 提醒阈值（字符数，lcc 语义独立于 kOutputCharLimit 截断上限：
+// 截断发生在 BashRunner/工具侧，此处是"未截断的超长输出"给模型的额外提醒门槛）
+constexpr qsizetype kLargeOutputThreshold = 100000;
+
 // todo_write 清单项数上限（schema maxItems，超限交模型重试）
 constexpr int kTodoMaxItems = 20;
 
@@ -142,6 +167,18 @@ constexpr qsizetype kOutputCharLimit = 50000;
 // 只能限量读）。超限只读开头 kReadFileMaxBytes 字节并在返回文本尾部附截断说明；
 // 展示层截断仍由 kOutputCharLimit 负责，本上限只界定"读进内存的字节量"。
 constexpr qint64 kReadFileMaxBytes = 200000;
+
+// edit_file 体量上限（字节）：与 read_file 的 kReadFileMaxBytes 同属「挂起审计防御加固」族。
+// 零线程纪律下 edit_file 必须整文件读入，且要做多次整串拷贝（UTF-8 往返等价预检、
+// 行尾两级匹配的归一化与还原），数百 MB 文件会冻结主线程秒级——read_file 已因此加了限量读，
+// edit_file 不能反而无界。超限直接拒绝编辑并回可判定错误，不尝试部分读写（部分写会毁文件）。
+// 取值远大于任何真实源文件/文档，只拦「LLM 指到巨型文件」这类异常，不误伤正常编辑。
+constexpr qint64 kEditFileMaxBytes = 5 * 1024 * 1024;
+
+// write_file 覆盖已存在文件时的行尾探测读入字节数：只为统计主导行尾（CRLF vs 裸 LF），
+// 不需全文——大文件整体读进内存纯属浪费。64KB 足以覆盖任何真实文件的行尾样本；
+// 已知边界：窗口内一个换行都没有（超长单行文件）时判为 LF，见 runWriteFileIn 注释。
+constexpr qint64 kEndingProbeBytes = 65536;
 
 // ChatStream 总时长哨兵（毫秒，挂起审计防御加固：对齐同文件 AsyncRequest 的总量防线）：
 // idle 静默超时每收字节即重置，杀不死"慢而不断"的流——上游持续发字节（间隔 < idle 窗口）

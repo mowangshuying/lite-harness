@@ -57,7 +57,7 @@ private:
     Private *d;
 };
 
-// ---- 一次性异步文本请求（异步链迁移 P0，规格 docs/async-chain-design.md §3.1）----
+// ---- 一次性异步文本请求（异步链迁移 P0，契约 docs/doc.md 第五部分 §2）----
 //
 // 为什么要它：记忆召回/沉淀/整理与压缩摘要等侧链在异步迁移前走嵌套事件循环的
 // 阻塞链，GUI 线程被同步等待劫持。
@@ -74,7 +74,7 @@ private:
 //   - parent 即生命周期锚：锚析构 = 请求作废（回调丢弃、ChatStream 析构 abort 在途 reply）。
 //
 // 迁移落账：P1 召回链、P2 沉淀/整理链、P3 压缩链已改走本类；阻塞族与其配套的
-// 等待期禁发送网关已于 P4 整体删除（设计文档 docs/async-chain-design.md §4/§5 与文末落账节）。
+// 等待期禁发送网关已于 P4 整体删除（现行不变量见 docs/doc.md 第五部分 §1，收口顺序见 §5）。
 class AsyncRequest : public QObject
 {
     Q_OBJECT
@@ -132,7 +132,8 @@ QString url();
 void setToken(const QString &token);
 QString token();
 
-// 设置 / 获取最大重试次数（仅 5xx / 429，指数退避；默认 0 不重试）
+// 设置 / 获取最大重试次数（仅 5xx / 429，指数退避；默认 AgentConst::kMaxRetriesDefault，
+// 启动由 initFromSettings 读 settings.ini 的 maxRetries 键注入，校验界见 AgentConstants.h）
 void setMaxRetries(int retries);
 int maxRetries();
 

@@ -23,7 +23,7 @@ public:
     QNetworkAccessManager manager;
     QString url;
     QString token;
-    int maxRetries = 0;          // 最大重试次数（仅 5xx / 429），默认 0 不重试
+    int maxRetries = AgentConst::kMaxRetriesDefault; // 最大重试次数（仅 5xx / 429）；启动由 initFromSettings 读 settings.ini 覆盖
     int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
     // 流式总时长哨兵（毫秒）：idle 每收字节即重置，杀不死"慢而不断"的流（持续有字节、
     // 永不发 [DONE]），需总量防线——与 AsyncRequest 的总超时同机制；取值进 AgentConstants.h
@@ -49,6 +49,38 @@ int retryDelayMs(int retryNumber)
 {
     const int exponent = qBound(0, retryNumber - 1, 6);
     return 1000 * (1 << exponent);
+}
+
+// 服务端错误体解析（4xx 硬错误与 5xx/429 重试耗尽两条路径共用）：合并全部残体来源
+// ——pendingFrame 存已成行但未遇帧边界派发的行（错误体单行带尾部 '\n' 时全文在此）、
+// buffer 存未成行残段、readAll 取尚未交付的尾巴（故须在 cleanupReply 前调用）。
+// 修3 结论沿用：errorString() 对 4xx 常是 "Unknown error"，可判定信息只在响应体里。
+// JSON 体取 error.message（有 code 则附 [code]）；非 JSON 体截 400 字节直呈（utf8 断字符
+// 由替换符兜底，诊断用途可接受）；体为空回退 fallback。
+QString parseErrorDetail(const QByteArray &pendingFrame, const QByteArray &buffer,
+                         QNetworkReply *reply, const QString &fallback)
+{
+    QByteArray body = pendingFrame;
+    if (!body.isEmpty() && !buffer.isEmpty())
+        body += '\n';
+    body.append(buffer);
+    if (reply)
+        body.append(reply->readAll());
+    const QByteArray errBody = body.trimmed();
+    const QJsonDocument errDoc = QJsonDocument::fromJson(errBody);
+    if (errDoc.isObject())
+    {
+        const QJsonObject errObj = errDoc.object().value(QStringLiteral("error")).toObject();
+        const QString msg = errObj.value(QStringLiteral("message")).toString();
+        const QString code = errObj.value(QStringLiteral("code")).toString();
+        if (!msg.isEmpty())
+            return code.isEmpty() ? msg : msg + QStringLiteral(" [") + code + QStringLiteral("]");
+    }
+    else if (!errBody.isEmpty())
+    {
+        return QString::fromUtf8(errBody.left(400));
+    }
+    return fallback;
 }
 
 // base URL 归一：去掉全部尾部斜杠（endpointFor 与 setUrl 共用，消除两份重复实现）
@@ -450,45 +482,10 @@ void ChatStream::finishStream()
             return;
         }
 
-        // HTTP 状态码分层
-        if (httpStatus >= 400 && httpStatus < 500)
-        {
-            // 4xx 客户端错误：硬错误，不重试。修3：响应体是 reactive 判定的信息源
-            // （context_length_exceeded 等只存在于服务端 JSON 错误体里），errorString()
-            // 对 4xx 常是 "Unknown error"——必须读体并入 error 文本。
-            d->done = true;
-            // 合并全部残体来源（须在 cleanupReply 前读 reply）：pendingFrame 存已成行但未
-            // 遇帧边界派发的行（错误体单行带尾部 '\n' 时全文在此）、buffer 存未成行残段、
-            // readAll 取尚未交付的尾巴。规格骨架只列后两处，加 pendingFrame 防单行体被
-            // 行提取吞掉后合并结果为空、诊断失效。
-            QByteArray body = d->pendingFrame;
-            if (!body.isEmpty() && !d->buffer.isEmpty())
-                body += '\n';
-            body.append(d->buffer);
-            if (d->reply)
-                body.append(d->reply->readAll());
-            const QByteArray errBody = body.trimmed();
-            QString detail = errorMsg;
-            const QJsonDocument errDoc = QJsonDocument::fromJson(errBody);
-            if (errDoc.isObject())
-            {
-                const QJsonObject errObj = errDoc.object().value(QStringLiteral("error")).toObject();
-                const QString msg = errObj.value(QStringLiteral("message")).toString();
-                const QString code = errObj.value(QStringLiteral("code")).toString();
-                if (!msg.isEmpty())
-                    detail = code.isEmpty() ? msg : msg + QStringLiteral(" [") + code + QStringLiteral("]");
-            }
-            else if (!errBody.isEmpty())
-            {
-                // 非 JSON 错误体：截 400 字节直呈（utf8 断字符由替换符兜底，诊断用途可接受）
-                detail = QString::fromUtf8(errBody.left(400));
-            }
-            cleanupReply();
-            // tr 格式串沿用现状，不新增 i18n 条目；detail 为服务端英文原文，关键词匹配依赖它
-            emit error(tr("HTTP %1 错误: %2").arg(httpStatus).arg(detail));
-            return;
-        }
-        else if (isRetryableStatus(httpStatus))
+        // HTTP 状态码分层。可重试判定必须先于 4xx 硬错误：429 落在 [400,500) 区间内，
+        // 原顺序（4xx 分支先行 return）令下方 isRetryableStatus 对 429 永不可达，指数退避
+        // 链路成死代码——而 429 恰是 LLM API 最常见的瞬态错误，必须重试而非直接终结回合。
+        if (isRetryableStatus(httpStatus))
         {
             // 5xx 服务端错误 / 429 限流：指数退避重试
             if (d->retriesLeft > 0)
@@ -497,12 +494,28 @@ void ChatStream::finishStream()
                 scheduleRetry();
                 return;
             }
+            // 重试耗尽：与 4xx 同源读体解析（原只给 errorString()，对 4xx/429 常是
+            // "Unknown error"，限流原因/配额信息全丢），detail 供上层关键词判定与用户诊断
             d->done = true;
+            const QString detail = parseErrorDetail(d->pendingFrame, d->buffer, d->reply, errorMsg);
             cleanupReply();
             emit error(tr("HTTP %1 错误（重试 %2 次后仍失败）: %3")
                            .arg(httpStatus)
                            .arg(c.maxRetries)
-                           .arg(errorMsg));
+                           .arg(detail));
+            return;
+        }
+        else if (httpStatus >= 400 && httpStatus < 500)
+        {
+            // 4xx 客户端错误：硬错误，不重试。修3：响应体是 reactive 判定的信息源
+            // （context_length_exceeded 等只存在于服务端 JSON 错误体里），errorString()
+            // 对 4xx 常是 "Unknown error"——必须读体并入 error 文本。
+            // 残体合并与解析已收敛到 parseErrorDetail（与重试耗尽路径共用，须在 cleanupReply 前读）
+            d->done = true;
+            const QString detail = parseErrorDetail(d->pendingFrame, d->buffer, d->reply, errorMsg);
+            cleanupReply();
+            // tr 格式串沿用现状，不新增 i18n 条目；detail 为服务端英文原文，关键词匹配依赖它
+            emit error(tr("HTTP %1 错误: %2").arg(httpStatus).arg(detail));
             return;
         }
         else
@@ -744,6 +757,9 @@ void initFromSettings()
     const QSettings settings = AppSettings::ini();
     setUrl(settings.value(QStringLiteral("apiBaseUrl")).toString());
     c.token = settings.value(QStringLiteral("apiToken")).toString();
+    // 重试次数同源于 settings.ini（键 maxRetries，默认/校验界见 AgentConst::kMaxRetries*）：
+    // 原默认 0 且全仓无调用方，429/5xx 退避链路运行时不可达
+    setMaxRetries(AgentConst::maxRetriesValue());
     if (c.url.isEmpty() || c.token.isEmpty())
         qWarning() << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
 }
