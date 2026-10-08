@@ -1079,6 +1079,7 @@ TaskStore::TaskSnapshot TaskStore::makeSnapshot(const Task &task)
     TaskSnapshot snapshot;
     snapshot.id = task.id;
     snapshot.subject = task.subject;
+    snapshot.description = task.description; // Gate② FIND-H：任务卡通道透传
     snapshot.status = task.status;
     snapshot.owner = task.owned ? task.owner : QString();
     snapshot.worktree = task.worktree;

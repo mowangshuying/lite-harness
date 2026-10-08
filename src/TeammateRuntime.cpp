@@ -103,11 +103,11 @@ void TeammateRuntime::start()
             finish();
             return;
         }
-        // 有意偏离：lcc :830-833 的 {task.description} 行缺失——TaskSnapshot
-        // （P1/R2 裁决）只带 id/subject/status/owner/worktree，description 不外泄
-        // 是跨模块视图的既定形状。subject 足以定位任务。
-        content += QStringLiteral("\n\n[Assigned task %1] %2\nWork directory: %3")
-                       .arg(assigned->id, assigned->subject, cwd);
+        // Gate② FIND-H 修复（M3 扩形）：恢复 lcc 任务卡 description 行——lcc :829-832
+        // 现文逐字："\n\n[Assigned task {id}] {subject}\n{description}\nWork directory: {cwd}"。
+        // lcc 对空 description 无分支（f-string 直接插值成空行），lite 同形照拼。
+        content += QStringLiteral("\n\n[Assigned task %1] %2\n%3\nWork directory: %4")
+                       .arg(assigned->id, assigned->subject, assigned->description, cwd);
     }
     if (m_requirePlan) {
         content += QStringLiteral(
@@ -187,9 +187,11 @@ void TeammateRuntime::onHeartbeat()
             finish();
             return;
         }
-        // description 行缺失同 start() 处登记（TaskSnapshot 无该字段，P1/R2 裁决）。
-        appendUser(QStringLiteral("[Auto-claimed task %1] %2\nWork directory: %3")
-                       .arg(next->id, next->subject, cwd));
+        // Gate② FIND-H 修复：description 行恢复，逐字对齐 lcc :1015-1021 现文
+        // "[Auto-claimed task {id}] {subject}\n{description}\nWork directory: {cwd}"
+        //（lcc 空 description 同样无分支，照拼空行）。
+        appendUser(QStringLiteral("[Auto-claimed task %1] %2\n%3\nWork directory: %4")
+                       .arg(next->id, next->subject, next->description, cwd));
         leaveIdle();
         m_manager->setTeammateStatus(m_name,
                                      AgentTeamsManager::TeammateStatus::Working);

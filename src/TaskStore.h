@@ -78,11 +78,15 @@ public:
     // s13 跨模块任务视图（gate① M3）：P2/P3 的程序化消费一律取本结构（经
     // listTaskSnapshots/scanUnclaimedTasks 导出），禁刮 runListTasks/runGetTask 的人类可读
     // 文本——那是模型面契约，形态可随文案迭代破坏。字段为 Task 的对外子集（worktree 存名字，
-    // 见 setWorktree 注释）；description/blockedBy/timestamp 暂无跨模块消费需求，不加。
+    // 见 setWorktree 注释）；blockedBy/timestamp 暂无跨模块消费需求，不加。
+    // M3 扩形：Gate② FIND-H 裁决恢复 lcc 任务卡 description 通道
+    //（lcc agent_teams_manager.py :830-831/:1019——原「description 不外泄是既定形状」
+    // 的 P1/R2 判断被 lcc 真码推翻：两处任务卡拼装均消费 description）。
     struct TaskSnapshot
     {
         QString id;
         QString subject;
+        QString description; // 任务正文描述（任务卡通道，lcc Task.description 透传）
         QString status;
         QString owner;    // 空串 ≡ 无主（lcc None——偏差⑦单态口径）
         QString worktree; // worktree 名字；空串 ≡ 未绑定（lcc None）

@@ -902,6 +902,61 @@ static void testFoldedWrappers()
                        "门否决: 原因文本原样、非 'Error:' 通道");
 }
 
+// ---------------------------------------------------------------------------
+// 组9：TaskSnapshot description 透传（Gate② FIND-H 修复钉桩）
+// lcc agent_teams_manager.py :830-831/:1019 实证任务卡消费 description——
+// M3 扩形恢复该通道后，create（带中文+换行的 description，钉 UTF-8/JSON 往返）
+// →listTaskSnapshots/scanUnclaimedTasks 两条导出链必须逐字透传。
+// ---------------------------------------------------------------------------
+static void testSnapshotDescriptionPassthrough()
+{
+    ScopedTempRoot tmp("taskstore-lease");
+    if (!tmp.isValid()) {
+        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        return;
+    }
+    const QString root = tmp.path();
+    TaskStore store([root] { return root; });
+
+    const QString desc = QStringLiteral("修复登录页布局\nsecond line with ASCII & 中文");
+    QJsonObject createArgs;
+    createArgs.insert(QStringLiteral("subject"), QStringLiteral("desc-passthrough-job"));
+    createArgs.insert(QStringLiteral("description"), desc);
+    const QString created = store.runCreateTask(createArgs);
+    static const QRegularExpression idRe(QStringLiteral("task_[0-9a-f]{8}"));
+    const QRegularExpressionMatch idMatch = idRe.match(created);
+    const QString taskId = idMatch.hasMatch() ? idMatch.captured(0) : QString();
+    TestHarness::check(!taskId.isEmpty(), "前置: create 带 description 任务成功");
+
+    QVector<TaskStore::TaskSnapshot> snapshots;
+    QString error;
+    TestHarness::check(store.listTaskSnapshots(&snapshots, &error),
+                       "FIND-H: listTaskSnapshots 可读");
+    bool listed = false;
+    for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
+        if (snapshot.id != taskId)
+            continue;
+        listed = true;
+        TestHarness::check(snapshot.description == desc,
+                           "FIND-H: listTaskSnapshots 快照 description 逐字透传");
+    }
+    TestHarness::check(listed, "前置: listTaskSnapshots 命中目标任务");
+
+    // scanUnclaimedTasks（pending+无主+无依赖即候选）同经 makeSnapshot 带出。
+    QVector<TaskStore::TaskSnapshot> unclaimed;
+    TestHarness::check(store.scanUnclaimedTasks(&unclaimed, &error),
+                       "FIND-H: scanUnclaimedTasks 可读");
+    bool scanned = false;
+    for (const TaskStore::TaskSnapshot &snapshot : unclaimed) {
+        if (snapshot.id != taskId)
+            continue;
+        scanned = true;
+        TestHarness::check(snapshot.description == desc,
+                           "FIND-H: scanUnclaimedTasks 快照 description 逐字透传");
+    }
+    TestHarness::check(scanned, "前置: scanUnclaimedTasks 命中候选任务");
+}
+
 // ============================================================================
 // 套件入口（编排者收口时在 tests/main.cpp 注册调用；本 lane 无权改 main）
 // ============================================================================
@@ -916,5 +971,6 @@ int tst_taskstore_lease()
     testReleaseTeammateJourney();
     testTwoOwnersIndependent();
     testFoldedWrappers();
+    testSnapshotDescriptionPassthrough();
     return TestHarness::failCount() - before;
 }

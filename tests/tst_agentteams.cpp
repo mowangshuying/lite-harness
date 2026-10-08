@@ -1177,6 +1177,10 @@ void testClaimNextTask()
     const std::optional<TaskStore::TaskSnapshot> got = mgr.claimNextTask(QStringLiteral("ann"));
     TestHarness::check(got.has_value() && got->id == t13 && got->subject == QStringLiteral("pool-job"),
                        "自拉活: 候选命中回快照（TaskSnapshot 唯一视图）");
+    // Gate② FIND-H 钉桩：回快照须带 description——TeammateRuntime 自拉活任务卡的取文
+    // 通道（lcc agent_teams_manager.py :1019；newTask 夹具固定写 "desc"）。
+    TestHarness::check(got.has_value() && got->description == QStringLiteral("desc"),
+                       "自拉活: 回快照 description 逐字透传（FIND-H 任务卡通道）");
     const std::optional<TaskStore::Lease> lease = store.leaseFor(QStringLiteral("ann"));
     TestHarness::check(lease.has_value() && lease->taskId == t13
                            && store.assignmentVersion(QStringLiteral("ann")) == 1,
