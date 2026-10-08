@@ -6,11 +6,15 @@
 #include <cstdio>
 
 int tst_lineending();
+int tst_messagebus();
+int tst_taskstore_lease();
 
 int main()
 {
     int failed = 0;
     failed += tst_lineending();
+    failed += tst_messagebus();
+    failed += tst_taskstore_lease();
 
     std::printf("pass=%d fail=%d\n", TestHarness::passCount(), TestHarness::failCount());
     // failed 与 failCount() 应一致；不一致说明有套件漏返回失败数，一并视为不通过

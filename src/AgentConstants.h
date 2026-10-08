@@ -260,6 +260,7 @@ inline const QString kTranscriptsDirName = QStringLiteral(".transcripts"); // �
 inline const QString kToolResultsDirName =
     QStringLiteral(".task_outputs/tool-results"); // 大工具输出卸载（含一级子目录）
 inline const QString kMemoryDirName = QStringLiteral(".memory"); // 记忆存储（MEMORY.md 索引 + slug 记录）
+inline const QString kMailboxesDirName = QStringLiteral(".mailboxes"); // 团队消息总线邮箱（一人一个 JSONL，lcc s13）
 
 // ---- glob 工具（runGlobIn）有界化参数 ----
 // runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：

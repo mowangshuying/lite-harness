@@ -117,7 +117,11 @@ option(LITE_TESTS "Build lite-harness unit tests (ctest)" ON)
 if (LITE_TESTS)
 	enable_testing()
 	file(GLOB test_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
-	add_executable(lite-harness-tests ${test_src})
+	# 被测生产源需显式列出——仅允许 QtCore-only 的引擎进此清单（s13 P1 起）
+	add_executable(lite-harness-tests ${test_src}
+		src/TaskStore.cpp
+		src/MessageBus.cpp
+	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
 		RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_BINARY_DIR}/tests"

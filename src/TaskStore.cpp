@@ -103,10 +103,12 @@ bool isTaskIdFull(const QString &taskId)
 // 控制台 print → qDebug().noquote()（s04 承接 lcc 控制台输出的移植先例）。
 // ============================================================================
 
-TaskStore::TaskStore(std::function<QString()> sessionRootSink)
-    : m_sessionRootSink(std::move(sessionRootSink))
+TaskStore::TaskStore(std::function<QString()> sessionRootSink, std::function<QString()> workDirSink)
+    : m_sessionRootSink(std::move(sessionRootSink)), m_workDirSink(std::move(workDirSink))
 {
 }
+// s13 注：workDirSink 带默认值 nullptr（向后兼容铁律①）——AgentLoop.cpp 单 lambda 构造点
+// 零改动可编译；P3 装配根补传宿主工作目录，供租约 cwd 回落链使用。
 
 QString TaskStore::taskRootDir() const
 {
@@ -162,7 +164,8 @@ QString TaskStore::taskToJsonText(const Task &task) const
 {
     // lcc save/get_task：json.dumps(asdict(task), indent=2)（无尾换行）。
     // QJsonObject 序列化按键名字典序，与 Task 声明序不符 → 手工按
-    // id/subject/description/status/owner/timestamp/blockedBy 顺序输出（偏差登记见 jsonCompactLiteral 注释）
+    // id/subject/description/status/owner/timestamp/blockedBy/worktree 顺序输出（偏差登记见 jsonCompactLiteral 注释；
+    // worktree 为 s13 新增末键，lcc 34775c8 dataclass 声明序同款，空串落 null——向后兼容铁律④）
     QStringList lines;
     lines << QStringLiteral("  \"id\": %1,").arg(jsonStringLiteral(task.id));
     lines << QStringLiteral("  \"subject\": %1,").arg(jsonStringLiteral(task.subject));
@@ -174,7 +177,7 @@ QString TaskStore::taskToJsonText(const Task &task) const
     // lcc python json.dumps(float) 的最短 repr 观感有差异（登记为文本格式偏差：语义等价、可解析回同值）
     lines << QStringLiteral("  \"timestamp\": %1,").arg(QString::number(task.timestamp, 'f', 6));
     if (task.blockedBy.isEmpty()) {
-        lines << QStringLiteral("  \"blockedBy\": []");
+        lines << QStringLiteral("  \"blockedBy\": [],"); // s13：worktree 成为末键，本行补尾逗号
     } else {
         QStringList items;
         items.reserve(task.blockedBy.size());
@@ -182,8 +185,10 @@ QString TaskStore::taskToJsonText(const Task &task) const
             items << QStringLiteral("    %1").arg(jsonStringLiteral(dep));
         lines << QStringLiteral("  \"blockedBy\": [");
         lines << items.join(QStringLiteral(",\n"));
-        lines << QStringLiteral("  ]");
+        lines << QStringLiteral("  ],"); // s13：同上，尾逗号
     }
+    lines << QStringLiteral("  \"worktree\": %1")
+                 .arg(task.worktree.isEmpty() ? QStringLiteral("null") : jsonStringLiteral(task.worktree));
     lines << QStringLiteral("}");
     return QStringLiteral("{\n") + lines.join(QLatin1Char('\n'));
 }
@@ -209,11 +214,15 @@ bool TaskStore::loadTask(const QString &taskId, Task *task, QString *error) cons
         // lite 从严：文本字段必须为 string、owner 为 null|string、blockedBy 为字符串数组，
         // 否则统一归 'Invalid task file contents' 族（登记偏差）。
         // timestamp（lcc c3fe3f2）兼容性有意偏差：lcc Task(**data) 缺 timestamp → 崩，
-        // lite 对存量旧任务文件（6 键、无 timestamp）容错取 0.0、不判 Invalid；键数放宽为 6 或 7：
-        // 6 键（存量）必无 timestamp，7 键必含 timestamp——多一个杂键即判 Invalid（保持
-        // lite 原"多键从严"纪律）；timestamp 键存在时类型必须为数值，否则归入同族 Invalid。
+        // lite 对存量旧任务文件（6 键、无 timestamp）容错取 0.0、不判 Invalid。
+        // worktree（lcc s13 34775c8，dataclass 末字段默认 None）同款容错：缺键视为 null
+        //（向后兼容铁律③——旧任务文件照常可读）。键数公式随之泛化：
+        // 六个必存键 + timestamp/worktree 两个各自可选的键；多一个杂键即判 Invalid（保持
+        // lite 原"多键从严"纪律）；timestamp 键存在时类型必须为数值、worktree 键存在时必须为
+        // null|string，否则归入同族 Invalid。
         const bool hasTs = obj.contains(QStringLiteral("timestamp"));
-        shapeOk = ((obj.size() == 6 && !hasTs) || (obj.size() == 7 && hasTs))
+        const bool hasWt = obj.contains(QStringLiteral("worktree"));
+        shapeOk = (obj.size() == 6 + (hasTs ? 1 : 0) + (hasWt ? 1 : 0))
             && obj.contains(QStringLiteral("id"))
             && obj.contains(QStringLiteral("subject")) && obj.contains(QStringLiteral("description"))
             && obj.contains(QStringLiteral("status")) && obj.contains(QStringLiteral("owner"))
@@ -224,7 +233,9 @@ bool TaskStore::loadTask(const QString &taskId, Task *task, QString *error) cons
             && obj.value(QStringLiteral("status")).isString()
             && (obj.value(QStringLiteral("owner")).isNull()
                 || obj.value(QStringLiteral("owner")).isString())
-            && (!hasTs || obj.value(QStringLiteral("timestamp")).isDouble());
+            && (!hasTs || obj.value(QStringLiteral("timestamp")).isDouble())
+            && (!hasWt || obj.value(QStringLiteral("worktree")).isNull()
+                || obj.value(QStringLiteral("worktree")).isString());
         const QJsonArray deps = obj.value(QStringLiteral("blockedBy")).toArray();
         if (shapeOk && !obj.value(QStringLiteral("blockedBy")).isArray())
             shapeOk = false;
@@ -246,6 +257,9 @@ bool TaskStore::loadTask(const QString &taskId, Task *task, QString *error) cons
             parsed.timestamp = hasTs ? obj.value(QStringLiteral("timestamp")).toDouble() : 0.0;
             for (const QJsonValue &dep : deps)
                 parsed.blockedBy.append(dep.toString());
+            // worktree：缺键或 null → 空串（= 未绑定，在主工作目录干活；偏差⑦单态化，
+            // 判真语义 !isEmpty() 与 lcc `if task.worktree` 一致）；有键取 string
+            parsed.worktree = obj.value(QStringLiteral("worktree")).toString();
         }
     }
     if (!shapeOk) {
@@ -501,10 +515,13 @@ bool TaskStore::listTasks(QVector<Task> *tasks, QString *error) const
     return true;
 }
 
-bool TaskStore::claimTask(const QString &taskId, const QString &owner, QString *result,
-                          QString *error) const
+bool TaskStore::claimTaskUnleased(const QString &taskId, const QString &owner, QString *result,
+                                  QString *error) const
 {
-    // lcc claim_task :176-190：业务性失败（状态不符/被阻塞）是返回文本而非异常 → 走 *result
+    // lcc s10 claim_task :176-190（s10 无租约语义）：业务性失败（状态不符/被阻塞）是返回文本而非异常 → 走 *result
+    // s13 改名登记（铁律②）：lcc s10 原内核更名 claimTask→claimTaskUnleased，行为与文案逐字不变；
+    // s13 的带租约 claimTask（六门）另见本文件尾部 s13 扩展段。
+    // 成功文案 'Claimed <id> <subject>' 无括号——s10 口径，与 s13 带租约版 'Claimed <id> (<subject>)' 有意不同（勿"统一"）。
     Task task;
     if (!loadTask(taskId, &task, error))
         return false;
@@ -527,10 +544,13 @@ bool TaskStore::claimTask(const QString &taskId, const QString &owner, QString *
     return true;
 }
 
-bool TaskStore::completeTask(const QString &taskId, const QString &owner, QString *result,
-                             QString *error) const
+bool TaskStore::completeTaskUnleased(const QString &taskId, const QString &owner, QString *result,
+                                     QString *error) const
 {
-    // lcc complete_task :194-222
+    // lcc s10 complete_task :194-222（s10 无租约/无计划门语义）
+    // s13 改名登记（铁律②）：lcc s10 原内核更名 completeTask→completeTaskUnleased，行为与文案逐字不变；
+    // s13 的带租约 completeTask（planGateCheck 否决 + 租约自愈 + 故意不释放）另见本文件尾部 s13 扩展段。
+    // owner 失配文案 'Task %1 is owned by %2, not %3' 无 s13 后缀 '; cannot complete'——s10 口径，勿"统一"。
     Task task;
     if (!loadTask(taskId, &task, error))
         return false;
@@ -665,20 +685,370 @@ QString TaskStore::runGetTask(const QJsonObject &args) const
 
 QString TaskStore::runClaimTask(const QJsonObject &args) const
 {
+    // 铁律（向后兼容）：单代理工具的 claim 走 s10 无租约内核，行为与事故前逐字一致；
+    // s13 带租约通道是另一对 runClaimTaskLeased/runCompleteTaskLeased（P3 团队工具接线用）。
     const QString taskId = args.value(QStringLiteral("task_id")).toString();
     QString result;
     QString error;
-    if (!claimTask(taskId, QStringLiteral("agent"), &result, &error)) // owner 硬编码 lcc run 层 'agent'
+    if (!claimTaskUnleased(taskId, QStringLiteral("agent"), &result, &error)) // owner 硬编码 lcc run 层 'agent'
         return QStringLiteral("Error: ") + error;
     return result;
 }
 
 QString TaskStore::runCompleteTask(const QJsonObject &args) const
 {
+    // 铁律（向后兼容）：同 runClaimTask，走 s10 无租约内核，文案逐字不变。
     const QString taskId = args.value(QStringLiteral("task_id")).toString();
     QString result;
     QString error;
-    if (!completeTask(taskId, QStringLiteral("agent"), &result, &error))
+    if (!completeTaskUnleased(taskId, QStringLiteral("agent"), &result, &error))
+        return QStringLiteral("Error: ") + error;
+    return result;
+}
+
+// ============================================================================
+// s13 Lane A：租约台账 + worktree 绑定（lcc s13 34775c8 task_manager.py 移植）
+// claim 六门 :312-349 / complete（故意不释放租约）:354-396 /
+// release_completed_assignment :400-414 / release_teammate_assignment :419-431 /
+// advance_assignment_version :136-142 / _task_cwd :147-156 / _owner_in_progress :159-161。
+// 偏差登记全集见 TaskStore.h 类头（D9：lcc :96-131 的 fcntl/msvcrt 跨进程文件锁服务于多进程
+// 人类 CLI，lite 单宿主进程不移植；D7：台账纯内存，进程重启即作废=fail-closed）。
+// ============================================================================
+
+bool TaskStore::setWorktree(const QString &taskId, const QString &path, QString *error) const
+{
+    // s13 worktree 绑定的宿主侧入口（P2 WorktreeManager 创建成功路径将来调用；解绑=clearWorktree）。
+    // 有意偏离 lcc：lcc 把绑定动作内嵌于 create_worktree/claim 流程，lite 暴露独立内核 API 供 P2/P3 接线。
+    // 不设状态门——path 合法性是 P2 校验职责，本处只负责持久化（load→set→save）。
+    Task task;
+    if (!loadTask(taskId, &task, error))
+        return false;
+    task.worktree = path;
+    return saveTask(task, error);
+}
+
+bool TaskStore::clearWorktree(const QString &taskId, QString *error) const
+{
+    // 解绑即置 null（lcc 语义 worktree=None ≡ 在宿主主工作目录干活；lite 单态形=空串，偏差⑦前半）。
+    Task task;
+    if (!loadTask(taskId, &task, error))
+        return false;
+    task.worktree.clear();
+    return saveTask(task, error);
+}
+
+bool TaskStore::resolveTaskCwd(const QString &taskId, QString *cwd, QString *error) const
+{
+    // lcc _task_cwd :147-156 的 lite 收敛形（偏差⑦后半：worktree_validator 折进 resolver 错误通道）。
+    if (m_cwdResolver) {
+        QString resolverError;
+        const QString resolved = m_cwdResolver(taskId, &resolverError);
+        if (!resolverError.isEmpty()) {
+            // fail-closed：resolver 置错 = 不可解（如 worktree 绑定破损），错误原文上交调用方
+            if (error)
+                *error = resolverError;
+            return false;
+        }
+        if (!resolved.isEmpty()) {
+            if (cwd)
+                *cwd = resolved;
+            return true;
+        }
+        // 返回空串 = 本回调对该任务不解析（≡ lcc `if task.worktree` 真值判断不成立），走回落链
+    }
+    // 回落链：workDirSink（宿主工作目录，P3 补传）→ sessionRootSink（未传时的测试/独立形态，铁律①）
+    if (cwd)
+        *cwd = m_workDirSink ? m_workDirSink() : m_sessionRootSink();
+    return true;
+}
+
+bool TaskStore::ownerInProgressTask(const QString &owner, Task *task, QString *error) const
+{
+    // lcc _owner_in_progress :159-161：取磁盘上第一条属于该 owner 的 in_progress 任务。
+    // 三态返回（见头文件注释）：调用方必须区分“未找到”与“台账不可读”，后者须 fail-closed。
+    QVector<Task> all;
+    if (!listTasks(&all, error))
+        return false; // 台账不可读 → *error 非空（lcc list() 崩溃上抛的 lite 折叠形）
+    for (const Task &candidate : all) {
+        if (candidate.status == QStringLiteral("in_progress") && candidate.owned
+            && candidate.owner == owner) {
+            if (task)
+                *task = candidate;
+            return true;
+        }
+    }
+    if (error)
+        error->clear(); // 未找到 ≠ 失败：清 error 区分三态
+    return false;
+}
+
+int TaskStore::advanceAssignmentVersion(const QString &owner, const QString &taskId)
+{
+    // lcc advance_assignment_version :136-142：换工即 +1，令陈旧计划审批失效（P2 防 TOCTOU 消费）。
+    // 偏差⑤：advanced 回调带 taskId（lcc 只传 owner，lite 宿主免二次反查）。
+    const int version = m_assignmentVersions.value(owner, 0) + 1;
+    m_assignmentVersions[owner] = version;
+    if (m_onAssignmentAdvanced)
+        m_onAssignmentAdvanced(owner, taskId);
+    return version;
+}
+
+std::optional<TaskStore::Lease> TaskStore::leaseFor(const QString &owner) const
+{
+    const auto it = m_assignments.constFind(owner);
+    if (it == m_assignments.constEnd())
+        return std::nullopt;
+    return *it;
+}
+
+int TaskStore::assignmentVersion(const QString &owner) const
+{
+    return m_assignmentVersions.value(owner, 0); // 无台账记录 = 0
+}
+
+bool TaskStore::claimTask(const QString &taskId, const QString &owner, QString *result, QString *error)
+{
+    // lcc s13 claim_task :312-349：六门依 lcc 顺序逐门检查；业务性失败经 *result 返回可判定文本
+    //（return true，lcc 以 return 而非 raise 表达），读盘/校验失败经 *error（return false，run 层折叠）。
+    Task task;
+    if (!loadTask(taskId, &task, error)) // 门①：任务存在且可读可解析
+        return false;
+    if (task.status != QStringLiteral("pending")) {
+        *result = QStringLiteral("Task %1 is %2, cannot claim").arg(taskId, task.status);
+        return true;
+    }
+    if (task.owned) { // 门②：无主
+        *result = QStringLiteral("Task %1 is already owned by %2").arg(taskId, task.owner);
+        return true;
+    }
+    if (m_assignments.contains(owner)) { // 门③：内存租约互斥（同一 owner 一个回合只干一件活）
+        *result = QStringLiteral(
+            "Owner %1 must finish the current work turn for %2 before claiming another task")
+                      .arg(owner, m_assignments.value(owner).taskId);
+        return true;
+    }
+    // 门④：磁盘上无属于该 owner 的 in_progress 任务（跨重启/崩溃遗留检测——内存账清空后仍拦）
+    Task current;
+    QString inProgError;
+    if (ownerInProgressTask(owner, &current, &inProgError)) {
+        *result = QStringLiteral("Owner %1 must complete %2 before claiming another task")
+                      .arg(owner, current.id);
+        return true;
+    }
+    if (!inProgError.isEmpty()) {
+        // 内核契约（本文件通篇纪律：bool=false 必带 error 文本，run 层 'Error: ' 折叠才有可判定输出；
+        // lcc 同点位 list() 抛 ValueError 经 run_claim_task 折叠原文——error 通道透传是规格行为，
+        // 重建重放时漏了这行，属重放缺陷非行为变更，事故前实测版此处即透传）
+        if (error)
+            *error = inProgError;
+        return false; // fail-closed：台账不可读 ≠ 无在途（不得误判为可认领）
+    }
+    // 门⑤：blockedBy 依赖全部 completed（坏/缺失依赖计为未完——与 s10 同款容错方向，勿统一）
+    const QStringList deps = incompleteDependencies(task);
+    if (!deps.isEmpty()) {
+        *result = QStringLiteral("Blocked by: %1").arg(pythonListRepr(deps));
+        return true;
+    }
+    // 门⑥：cwd 可解（lcc _task_cwd；resolver 置错即拒，任务保持 pending 不写盘、不建租约）
+    QString cwd;
+    QString cwdError;
+    if (!resolveTaskCwd(taskId, &cwd, &cwdError)) {
+        *result = QStringLiteral("Cannot claim %1: %2").arg(taskId, cwdError);
+        return true;
+    }
+    task.owned = true;
+    task.owner = owner;
+    task.status = QStringLiteral("in_progress");
+    if (!saveTask(task, error))
+        return false;
+    Lease lease;
+    lease.taskId = taskId;
+    lease.cwd = cwd;
+    m_assignments.insert(owner, lease);
+    advanceAssignmentVersion(owner, taskId);
+    qDebug().noquote()
+        << QStringLiteral("[task] claim %1 -> in_progress (lease owner: %2)").arg(task.subject, owner);
+    // 偏差③承重契约：'Claimed ' 前缀被 lcc 跨模块 startswith 判成功（spawn/pull 通道）；
+    // 本版本带括号是 s13 形（'Claimed <id> (<subject>)'），与遗留 s10 无括号形有意不同，勿"统一"。
+    *result = QStringLiteral("Claimed %1 (%2)").arg(task.id, task.subject);
+    return true;
+}
+
+bool TaskStore::completeTask(const QString &taskId, const QString &owner, QString *result, QString *error)
+{
+    // lcc s13 complete_task :354-396。门序照 lcc：状态 → owner → 计划门 → 租约自愈 → 记账。
+    // 铁律（lcc :354 注释语义）：完成**故意不释放租约、不递增版本**——同回合后续工具仍需租约 cwd 路由，
+    // 释放只发生在两个回合边界 API（releaseCompletedAssignment / releaseTeammateAssignment）。
+    Task task;
+    if (!loadTask(taskId, &task, error))
+        return false;
+    if (task.status != QStringLiteral("in_progress")) {
+        *result = QStringLiteral("Task %1 is %2, cannot complete").arg(taskId, task.status);
+        return true;
+    }
+    if (!task.owned || task.owner != owner) {
+        // lcc s13 :358 文案带后缀 '; cannot complete'（s10 遗留版无——有意不同，勿统一）；
+        // 未认领时 python None 呈现 'None'（与遗留版同款修正：Task.owner 类属性笔误 → 实例值）
+        *result = QStringLiteral("Task %1 is owned by %2, not %3; cannot complete")
+                      .arg(taskId, task.owned ? task.owner : QStringLiteral("None"), owner);
+        return true;
+    }
+    if (m_planGateCheck) { // 计划审批否决（lcc plan_gate_check；偏差⑥按 taskId 判定）
+        QString reason;
+        if (!m_planGateCheck(taskId, &reason)) {
+            *result = reason; // 可为空串=静默否决（lcc 空串拒口径同款）；任务保持 in_progress 不动
+            return true;
+        }
+    }
+    if (!m_assignments.contains(owner) || m_assignments.value(owner).taskId != taskId) {
+        // 租约自愈（lcc :370-375）：台账缺失或指向他任务（如遗留通道认领的任务走本内核完成）时重建。
+        // 有意偏离 lcc：自愈不递增版本、不触发 advanced 回调——版本推进=真实换工，自愈不算（P2 防 TOCTOU 语义纯净）。
+        QString healedCwd;
+        QString cwdError;
+        if (!resolveTaskCwd(taskId, &healedCwd, &cwdError)) {
+            *result = QStringLiteral("Task %1 cannot complete: %2").arg(taskId, cwdError);
+            return true; // 业务通道：可判定文本；任务保持 in_progress、租约保持缺失
+        }
+        Lease lease;
+        lease.taskId = taskId;
+        lease.cwd = healedCwd;
+        m_assignments[owner] = lease;
+    }
+    // ready_before：完成前已“可开始”的 pending 带依赖任务 id 集合（lcc :381-386，can_start 逐个重载）
+    QSet<QString> readyBefore;
+    QVector<Task> all;
+    if (!listTasks(&all, error))
+        return false;
+    for (const Task &candidate : all) {
+        if (candidate.status != QStringLiteral("pending") || candidate.blockedBy.isEmpty())
+            continue;
+        bool startable = false;
+        if (!canStart(candidate.id, &startable, error))
+            return false;
+        if (startable)
+            readyBefore.insert(candidate.id);
+    }
+    task.status = QStringLiteral("completed");
+    if (!saveTask(task, error))
+        return false;
+    // unblocked：完成前不可开始、现在可开始的 → 收集 subject（lcc :391-395）
+    QStringList unblocked;
+    QVector<Task> after;
+    if (!listTasks(&after, error))
+        return false;
+    for (const Task &candidate : after) {
+        if (candidate.status != QStringLiteral("pending") || candidate.blockedBy.isEmpty()
+            || readyBefore.contains(candidate.id))
+            continue;
+        bool startable = false;
+        if (!canStart(candidate.id, &startable, error))
+            return false;
+        if (startable)
+            unblocked.append(candidate.subject);
+    }
+    qDebug().noquote() << QStringLiteral("[task] complete %1").arg(task.subject);
+    QString message = QStringLiteral("Completed %1 (%2)").arg(task.id, task.subject);
+    if (!unblocked.isEmpty()) {
+        message += QStringLiteral("\nUnblocked: %1").arg(unblocked.join(QStringLiteral(", ")));
+        qDebug().noquote() << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
+    }
+    *result = message;
+    return true; // 铁律：此处不 remove 租约、不 advanceAssignmentVersion
+}
+
+bool TaskStore::releaseCompletedAssignment(const QString &owner, QString *error)
+{
+    // lcc release_completed_assignment :400-414（回合边界，Lead 侧同款）：租约指向的任务确已
+    // completed 且属于该 owner 才释放；否则一律不动台账（幂等：重复释放=“无租约”分支）。
+    // 偏差④：lcc :411 释放时也 advance_assignment_version + 触发 advanced 回调，
+    // lite 裁决只在 claim 换工时递增（一轮 claim→complete→release→reclaim 递增两次会扰乱
+    // P2 陈旧审批判定），已登记（TaskStore.h 类头偏差④）。
+    if (!m_assignments.contains(owner)) {
+        if (error)
+            *error = QStringLiteral("Owner %1 has no active assignment").arg(owner);
+        return false;
+    }
+    const QString leasedTaskId = m_assignments.value(owner).taskId;
+    Task task;
+    if (!loadTask(leasedTaskId, &task, error))
+        return false; // fail-closed：租约任务不可读则保留租约，交调用方决策
+    if (task.status != QStringLiteral("completed") || !task.owned || task.owner != owner) {
+        if (error)
+            *error = QStringLiteral("Owner %1 assignment for task %2 is not completed; nothing released")
+                         .arg(owner, leasedTaskId);
+        return false; // 未达释放条件：租约保持（同回合 continue 干下一件活的语义归 claim 门③保障）
+    }
+    m_assignments.remove(owner);
+    if (m_onAssignmentReleased)
+        m_onAssignmentReleased(owner);
+    return true;
+}
+
+bool TaskStore::releaseTeammateAssignment(const QString &owner, QString *error)
+{
+    // lcc release_teammate_assignment :419-431（队友死亡/退出清理）：遗留 in_progress 降级
+    // pending/清 owner；内存台账清理**无条件**执行（lcc try/finally 语义——死 owner 若不无条件
+    // 清租约，其名字被永久占用）。ghost owner（无租约无任务）同样走完成功路径且仍触发 released
+    // 回调（lcc 无条件 finally 同款，幂等清理）。
+    QString diskError;
+    Task current;
+    QString probeError;
+    if (ownerInProgressTask(owner, &current, &probeError)) {
+        current.status = QStringLiteral("pending");
+        current.owned = false;
+        current.owner.clear();
+        QString saveError;
+        if (!saveTask(current, &saveError))
+            diskError = saveError; // 磁盘清理失败：内存清理照跑，最终如实报 false
+    } else if (!probeError.isEmpty()) {
+        diskError = probeError; // 台账不可读：同样放行内存清理，如实报 false
+    }
+    // finally 段（无条件）：清租约 + 通知（lcc :428-431——即使降级抛异常也要走完）
+    m_assignments.remove(owner);
+    if (m_onAssignmentReleased)
+        m_onAssignmentReleased(owner);
+    if (error)
+        *error = diskError; // true 时恒空串；false 时=磁盘失败原因
+    return diskError.isEmpty();
+}
+
+void TaskStore::setPlanGateCheck(std::function<bool(const QString &taskId, QString *reason)> gate)
+{
+    m_planGateCheck = std::move(gate);
+}
+
+void TaskStore::setOnAssignmentAdvanced(std::function<void(const QString &owner, const QString &taskId)> cb)
+{
+    m_onAssignmentAdvanced = std::move(cb);
+}
+
+void TaskStore::setOnAssignmentReleased(std::function<void(const QString &owner)> cb)
+{
+    m_onAssignmentReleased = std::move(cb);
+}
+
+void TaskStore::setCwdResolver(std::function<QString(const QString &taskId, QString *error)> resolver)
+{
+    m_cwdResolver = std::move(resolver);
+}
+
+QString TaskStore::runClaimTaskLeased(const QJsonObject &args, const QString &owner)
+{
+    // P3 团队侧接线入口：Lead 传保留键 "agent"（类头说明），队友传邮箱名。
+    const QString taskId = args.value(QStringLiteral("task_id")).toString();
+    QString result;
+    QString error;
+    if (!claimTask(taskId, owner, &result, &error))
+        return QStringLiteral("Error: ") + error;
+    return result; // 成功时以 'Claimed ' 开头——承重契约（偏差③），下游 startswith 判成功
+}
+
+QString TaskStore::runCompleteTaskLeased(const QJsonObject &args, const QString &owner)
+{
+    const QString taskId = args.value(QStringLiteral("task_id")).toString();
+    QString result;
+    QString error;
+    if (!completeTask(taskId, owner, &result, &error))
         return QStringLiteral("Error: ") + error;
     return result;
 }
