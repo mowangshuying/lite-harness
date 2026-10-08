@@ -121,6 +121,8 @@ if (LITE_TESTS)
 	add_executable(lite-harness-tests ${test_src}
 		src/TaskStore.cpp
 		src/MessageBus.cpp
+		src/WorktreeManager.cpp
+		src/AgentTeamsManager.cpp
 	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"

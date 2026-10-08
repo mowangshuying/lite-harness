@@ -369,12 +369,14 @@ config/
 # deepwork local state
 .slim/deepwork/
 
-# agent runtime data (lcc parity: .memory/.task/.transcripts/.task_outputs)
+# agent runtime data (lcc parity: .memory/.task/.transcripts/.task_outputs/.mailboxes/.worktrees)
 /.lite-harness/
 /.memory/
 /.task/
 /.transcripts/
 /.task_outputs/
+/.mailboxes/
+/.worktrees/
 
 # agent scratch tooling (debug/edit scripts, logs)
 /.tools/

@@ -261,6 +261,7 @@ inline const QString kToolResultsDirName =
     QStringLiteral(".task_outputs/tool-results"); // 大工具输出卸载（含一级子目录）
 inline const QString kMemoryDirName = QStringLiteral(".memory"); // 记忆存储（MEMORY.md 索引 + slug 记录）
 inline const QString kMailboxesDirName = QStringLiteral(".mailboxes"); // 团队消息总线邮箱（一人一个 JSONL，lcc s13）
+inline const QString kWorktreesDirName = QStringLiteral(".worktrees"); // git worktree 隔离目录（一任务一 checkout，lcc s13）
 
 // ---- 队友保留名单源（lcc message_bus.py:17 RESERVED_TEAMMATE_NAMES={"lead","agent"}，
 // 原注释「供 Lane B/C/D 复用」——gate① M7 收口进本头，casefold 比较）----

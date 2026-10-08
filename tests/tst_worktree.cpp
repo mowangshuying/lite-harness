@@ -1,0 +1,529 @@
+// tst_worktree.cpp —— WorktreeManager（lcc s13 34775c8 worktree_manager.py 移植，Lane B）单测。
+//
+// 覆盖面：
+//  · 名字正则边界（合法含点/64 字符；拒内嵌 '..'、单独 '.'/'..'、非字母数字首字符、65 字符、路径分隔符）；
+//  · create 成功链（目录+分支+任务绑定=名字非路径+注册表可查+resolveWorktreeCwd 指回）；
+//  · create 拒绝门（任务不存在/非 pending 无主/名字被别任务占用/非仓库 toplevel/分支已存在）；
+//  · resolveWorktreeCwd：空绑定早退（零 git 进程）、破损绑定 fail-closed 钉死文案；
+//  · remove 五连门（活跃任务拒/租约在手指向拒/脏拒/干净成功+分支保留）；
+//  · discardChanges=true 只豁免脏门（借 --force 移除脏 worktree）；
+//  · 注册表解析对含空格路径安全（porcelain partition 首空格）。
+//
+// 需要 git 可用 + LITE_TEST_TMPROOT 合规，二者缺一整组 SKIP（返回 0，不假造通过）。
+// 夹具 = 临时根下 git init 的真实小仓库（git worktree 语义只有真 git 能证）。
+
+#include "TestHarness.h"
+#include "ScopedTempRoot.h"
+
+#include "AgentConstants.h" // kWorktreesDirName 单源（拼法断言用）
+#include "WorktreeManager.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QString>
+#include <QStringList>
+#include <QVector>
+
+#include <cstdio>
+#include <memory>
+
+namespace {
+
+// git 可用性探针（一次性）；测试进程内补 author 身份 env（新 init 仓库无 user.name/email
+// 时 commit 会失败——env 注入只影响本测试拉起的子进程，不碰全局配置）
+bool probeGit()
+{
+    static const bool available = []() {
+        QProcess proc;
+        proc.start(QStringLiteral("git"), {QStringLiteral("--version")});
+        if (!proc.waitForStarted(5000) || !proc.waitForFinished(10000))
+            return false;
+        return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
+    }();
+    return available;
+}
+
+// 在 dir 下跑 git（列表参数无 shell），收集并流输出；返回是否成功
+bool runGitIn(const QString &dir, const QStringList &args, QString *out)
+{
+    QProcess proc;
+    proc.setProcessChannelMode(QProcess::MergedChannels);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("GIT_AUTHOR_NAME"), QStringLiteral("lite-harness-test"));
+    env.insert(QStringLiteral("GIT_AUTHOR_EMAIL"), QStringLiteral("test@example.invalid"));
+    env.insert(QStringLiteral("GIT_COMMITTER_NAME"), QStringLiteral("lite-harness-test"));
+    env.insert(QStringLiteral("GIT_COMMITTER_EMAIL"), QStringLiteral("test@example.invalid"));
+    proc.setProcessEnvironment(env);
+    proc.setWorkingDirectory(dir);
+    proc.start(QStringLiteral("git"), args);
+    if (!proc.waitForStarted(10000) || !proc.waitForFinished(60000)) {
+        if (out)
+            *out = proc.errorString();
+        return false;
+    }
+    if (out)
+        *out = QString::fromUtf8(proc.readAll()).trimmed();
+    return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
+}
+
+// runCreateTask 成功文本 'Created <id>: <subject>' → 取 id
+// 生产锚（TaskStore::runCreateTask）：id token 形如 'task_<hex8>:'，尾冒号随
+// section(' ',1,1) 一并取回——必须剥除，否则门① 'Task …: not found' 级联全红
+// （实证：tst_worktree 首轮 20 FAIL 唯一根因，探针复现）。
+// id 本身（task_<hex8>）无冒号，token 内唯一冒号即尾随者。
+QString taskIdFromCreated(const QString &text)
+{
+    return text.section(QLatin1Char(' '), 1, 1).remove(QLatin1Char(':'));
+}
+
+// 按 id 查快照（M3 唯一视图）；found=false = 不在台账
+bool findSnapshot(const TaskStore &store, const QString &taskId, TaskStore::TaskSnapshot *out)
+{
+    QVector<TaskStore::TaskSnapshot> snapshots;
+    QString error;
+    if (!store.listTaskSnapshots(&snapshots, &error))
+        return false;
+    for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
+        if (snapshot.id == taskId) {
+            *out = snapshot;
+            return true;
+        }
+    }
+    return false;
+}
+
+// 夹具：临时根下建 git 仓库（repo）+ 会话根（repo/.lite-harness/sessions/t1，
+// 满足「会话根 ⊂ workDir」的路径门）+ 装配 TaskStore/WorktreeManager + P3 同款
+// cwdResolver 接线（堆对象 unique_ptr 输出——两引擎均 explicit 构造且互相引用，栈占位不可行）。
+// 返回 false = 夹具未成，调用方跳过后续断言。
+bool makeFixture(const QString &root, std::unique_ptr<TaskStore> *store,
+                 std::unique_ptr<WorktreeManager> *manager, QString *repo)
+{
+    *repo = QDir(root).filePath(QStringLiteral("repo"));
+    QDir().mkpath(*repo);
+    const QString session = QDir(*repo).filePath(QStringLiteral(".lite-harness/sessions/t1"));
+    QDir().mkpath(session);
+
+    QString out;
+    if (!runGitIn(*repo, {QStringLiteral("init"), QStringLiteral("-q")}, &out)
+        || !runGitIn(*repo, {QStringLiteral("commit"), QStringLiteral("-q"),
+                             QStringLiteral("--allow-empty"), QStringLiteral("-m"),
+                             QStringLiteral("seed")}, &out)) {
+        return false; // git init/seed commit 未成——不假造通过
+    }
+
+    const QString repoCopy = *repo;
+    const QString sessionCopy = session;
+    store->reset(new TaskStore([sessionCopy]() { return sessionCopy; },
+                               [repoCopy]() { return repoCopy; }));
+    manager->reset(new WorktreeManager(store->get(), [sessionCopy]() { return sessionCopy; },
+                                       [repoCopy]() { return repoCopy; }));
+    // P3 接线形态（gate① M4）：TaskStore cwdResolver ← WorktreeManager::resolveWorktreeCwd
+    WorktreeManager *rawManager = manager->get();
+    store->get()->setCwdResolver([rawManager](const TaskStore::TaskSnapshot &task, QString *error) {
+        return rawManager->resolveWorktreeCwd(task, error);
+    });
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// 名字正则边界（纯函数，无 fs）
+// ---------------------------------------------------------------------------
+void testNameRegex()
+{
+    // 合法：首字符字母数字，中段允许 . _ -，1~64 字符
+    TestHarness::check(WorktreeManager::isValidWorktreeName(QStringLiteral("a")), "单字符名合法");
+    TestHarness::check(WorktreeManager::isValidWorktreeName(QStringLiteral("v1.2-beta_x")), "含点/横线/下划线合法");
+    TestHarness::check(WorktreeManager::isValidWorktreeName(QString(64, QLatin1Char('z'))), "64 字符边界合法");
+    TestHarness::check(WorktreeManager::isValidWorktreeName(QStringLiteral("9lead")), "数字开头合法");
+
+    // 非法：内嵌 ".."（负向先行断言）、单独 '.'/'..'（首字符规则）、非字母数字开头、超长、分隔符、非 ASCII
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("a..b")), "内嵌 .. 拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral(".")), "单独 . 拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("..")), "单独 .. 拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("-lead")), "非字母数字开头拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QString(65, QLatin1Char('a'))), "65 字符拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("a/b")), "正斜杠拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("a\\b")), "反斜杠拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QStringLiteral("sp ace")), "空格拒绝");
+    TestHarness::check(!WorktreeManager::isValidWorktreeName(QString::fromUtf8("\xe4\xb8\xad\xe6\x96\x87")), "中文拒绝");
+}
+
+// ---------------------------------------------------------------------------
+// resolveWorktreeCwd：空绑定早退（协议核心：零 git 进程、零错误）
+// ---------------------------------------------------------------------------
+void testResolveEarlyReturn(WorktreeManager &manager)
+{
+    TaskStore::TaskSnapshot task;
+    task.id = QStringLiteral("t-early");
+    QString error = QStringLiteral("sentinel"); // 预置脏值验证「成功路径清错」
+    const QString cwd = manager.resolveWorktreeCwd(task, &error);
+    TestHarness::check(cwd.isEmpty(), "空绑定返回空串（交 TaskStore 回落链）");
+    TestHarness::check(error.isEmpty(), "空绑定不置错");
+}
+
+// ---------------------------------------------------------------------------
+// create 成功链 + 注册表 + resolver 指回 + 拒绝门若干
+// ---------------------------------------------------------------------------
+void testCreateChain(TaskStore &store, WorktreeManager &manager, const QString &repo)
+{
+    const QString created = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                             QStringLiteral("do work")}});
+    const QString taskId = taskIdFromCreated(created);
+    TestHarness::check(!taskId.isEmpty(), "夹具任务已建");
+
+    const QString text = manager.createWorktree(QStringLiteral("w1"), taskId);
+    TestHarness::check(text.startsWith(QStringLiteral("Created worktree 'w1' at ")),
+                       "成功文案锚（lcc :312）");
+    TestHarness::check(text.contains(taskId), "成功文案带 task id");
+
+    QString path;
+    QString pathError;
+    TestHarness::check(manager.worktreePath(QStringLiteral("w1"), &path, &pathError), "路径三关放行");
+    TestHarness::check(QFileInfo(path).isDir(), "worktree 目录已检出");
+    TestHarness::check(text == QStringLiteral("Created worktree 'w1' at %1 for task %2").arg(path, taskId),
+                       "成功文案 path/id 逐字");
+
+    QString out;
+    TestHarness::check(runGitIn(repo, {QStringLiteral("show-ref"), QStringLiteral("--verify"),
+                                       QStringLiteral("refs/heads/wt/w1")}, &out),
+                       "分支 wt/w1 已建");
+
+    // 绑定存「名字」非路径（gate① M1）
+    TaskStore::TaskSnapshot snap;
+    TestHarness::check(findSnapshot(store, taskId, &snap), "快照可读");
+    TestHarness::check(snap.worktree == QStringLiteral("w1"), "worktree 字段=名字（M1）");
+
+    // 注册表查询面
+    QString regError;
+    const QMap<QString, WorktreeManager::Entry> registered = manager.registeredWorktrees(&regError);
+    TestHarness::check(regError.isEmpty(), "注册表可读无错");
+    TestHarness::check(registered.contains(QStringLiteral("w1")), "w1 在在册表");
+    TestHarness::check(manager.isWorktreeRegistered(QStringLiteral("w1")), "isWorktreeRegistered 真");
+    TestHarness::check(!manager.isWorktreeRegistered(QStringLiteral("ghost")), "未注册名假");
+
+    // resolver 指回 worktree 目录
+    QString resolveError;
+    const QString cwd = manager.resolveWorktreeCwd(snap, &resolveError);
+    TestHarness::check(cwd == QDir::cleanPath(path), "resolveWorktreeCwd 指回目录");
+    TestHarness::check(resolveError.isEmpty(), "解析无错");
+
+    // ---- 拒绝门 ----
+    // 门①：任务不存在
+    const QString notFound = manager.createWorktree(QStringLiteral("nx"), QStringLiteral("nope123"));
+    TestHarness::check(notFound == QStringLiteral("Error: Task nope123 not found"), "门① not found 逐字");
+
+    // 门②：claimed（in_progress+owner）任务
+    const QString created2 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("claimed")}});
+    const QString id2 = taskIdFromCreated(created2);
+    QString claimResult;
+    QString claimError;
+    TestHarness::check(store.claimTask(id2, QStringLiteral("solo"), &claimResult, &claimError)
+                           && claimResult.startsWith(QStringLiteral("Claimed ")),
+                       "门②夹具认领成功");
+    const QString notPending = manager.createWorktree(QStringLiteral("np"), id2);
+    TestHarness::check(notPending == QStringLiteral("Error: Task %1 must be pending and unowned").arg(id2),
+                       "门② pending&unowned 逐字");
+
+    // 门③：pending&unowned 任务已绑别的 worktree → 拒。
+    // （原形在已 claim 的 id2 上 setWorktree 后断言门③是时序缺陷：门序②先于③，
+    //   in_progress 任务永不可达门③——门②拦截（实证 [diag]：actual=must be pending
+    //   and unowned）。setWorktree 无状态门（TaskStore.cpp:724 C3 钉桩），pending 即可直绑。）
+    const QString created5 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("bound-binder")}});
+    const QString id5 = taskIdFromCreated(created5);
+    QString bindError;
+    TestHarness::check(store.setWorktree(id5, QStringLiteral("other-wt"), &bindError)
+                           && bindError.isEmpty(),
+                       "门③夹具绑定");
+    const QString rebinding = manager.createWorktree(QStringLiteral("w-new"), id5);
+    TestHarness::check(rebinding == QStringLiteral("Error: Task %1 already uses worktree 'other-wt'").arg(id5),
+                       "门③ already uses 逐字");
+
+    // 门④：名字被别的任务占用
+    const QString created3 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("third")}});
+    const QString id3 = taskIdFromCreated(created3);
+    const QString taken = manager.createWorktree(QStringLiteral("other-wt"), id3);
+    TestHarness::check(taken == QStringLiteral("Error: Worktree 'other-wt' is already bound to another task"),
+                       "门④ bound to another 逐字");
+
+    // 门⓪：坏名折叠文案（合一正则：统一第一条 lcc 文案，登记偏差）
+    const QString badName = manager.createWorktree(QStringLiteral("a..b"), id3);
+    TestHarness::check(badName.startsWith(QStringLiteral("Error: worktree name must be 1-64")),
+                       "门⓪ 坏名文案锚");
+}
+
+// ---------------------------------------------------------------------------
+// 非仓库 toplevel 拒（门⑥）：独立小夹具（repo2 是普通目录）
+// ---------------------------------------------------------------------------
+void testNonToplevel(const QString &root)
+{
+    const QString repo2 = QDir(root).filePath(QStringLiteral("repo2"));
+    QDir().mkpath(repo2);
+    const QString session2 = QDir(repo2).filePath(QStringLiteral(".lite-harness/s2"));
+    QDir().mkpath(session2);
+
+    const QString repo2Copy = repo2;
+    const QString session2Copy = session2;
+    TaskStore store2([session2Copy]() { return session2Copy; },
+                     [repo2Copy]() { return repo2Copy; });
+    WorktreeManager manager2(&store2, [session2Copy]() { return session2Copy; },
+                             [repo2Copy]() { return repo2Copy; });
+    const QString created = store2.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("x")}});
+    const QString id = taskIdFromCreated(created);
+    const QString text = manager2.createWorktree(QStringLiteral("toplevel-check"), id);
+    TestHarness::check(text == QStringLiteral("Error: Working directory must be the root of a Git repository"),
+                       "门⑥ 非 toplevel 逐字");
+}
+
+// ---------------------------------------------------------------------------
+// 破损绑定 fail-closed（钉死文案，M1）+ 门⑧分支已存在（remove 后重建同名）
+// 与 remove 五连门共用时序：w1 上跑 claim→active 拒→complete→lease 拒→
+// release→dirty 拒→commit 干净→成功移除（分支保留）→重建同名校验门⑧
+// ---------------------------------------------------------------------------
+void testRemoveLifecycle(TaskStore &store, WorktreeManager &manager, const QString &repo)
+{
+    // 找回 w1 绑定的任务（testCreateChain 建的第一条）
+    QVector<TaskStore::TaskSnapshot> snapshots;
+    QString listError;
+    if (!store.listTaskSnapshots(&snapshots, &listError)) {
+        TestHarness::check(false, "remove 夹具：台账不可读");
+        return;
+    }
+    QString taskId;
+    for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
+        if (snapshot.worktree == QStringLiteral("w1")) {
+            taskId = snapshot.id;
+            break;
+        }
+    }
+    if (taskId.isEmpty()) {
+        TestHarness::check(false, "remove 夹具：w1 绑定任务缺失");
+        return;
+    }
+
+    QString path;
+    QString pathError;
+    TestHarness::check(manager.worktreePath(QStringLiteral("w1"), &path, &pathError), "remove 夹具路径可解");
+
+    // 破损绑定 fail-closed：给别的任务绑一个不存在的名字，resolver 必须置钉死错误
+    const QString createdGhost = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                                  QStringLiteral("ghosty")}});
+    const QString ghostId = taskIdFromCreated(createdGhost);
+    QString ghostBindError;
+    TestHarness::check(store.setWorktree(ghostId, QStringLiteral("nope"), &ghostBindError), "破夹具绑定落地");
+    TaskStore::TaskSnapshot ghostSnap;
+    TestHarness::check(findSnapshot(store, ghostId, &ghostSnap), "破快照可读");
+    QString brokenError;
+    const QString brokenCwd = manager.resolveWorktreeCwd(ghostSnap, &brokenError);
+    TestHarness::check(brokenCwd.isEmpty(), "破损绑定返回空串");
+    TestHarness::check(brokenError == QStringLiteral("worktree 'nope' is not available for task %1").arg(ghostId),
+                       "破损绑定钉死文案（M1）");
+
+    // ---- claim → 租约指向 worktree ----
+    QString claimResult;
+    QString claimError;
+    TestHarness::check(store.claimTask(taskId, QStringLiteral("w1owner"), &claimResult, &claimError)
+                           && claimResult.startsWith(QStringLiteral("Claimed ")),
+                       "认领 w1 任务成功（lease cwd=resolver 值）");
+    TestHarness::check(!claimResult.startsWith(QStringLiteral("Cannot claim")), "认领未被破损 resolver 拦截");
+
+    // 门②③：活跃（in_progress）任务绑定 → 拒
+    QString error;
+    const bool activeReject = manager.removeWorktree(QStringLiteral("w1"), false, &error);
+    TestHarness::check(!activeReject, "remove 门③：活跃任务拒");
+    TestHarness::check(error == QStringLiteral("Error: Worktree 'w1' is bound to active task %1; complete it before removal").arg(taskId),
+                       "remove 门③ 文案逐字");
+
+    // complete：s13 铁律「完成故意不释放租约」→ 门④仍应拒
+    QString completeResult;
+    TestHarness::check(store.completeTask(taskId, QStringLiteral("w1owner"), &completeResult, &claimError)
+                           && claimError.isEmpty(),
+                       "完成 w1 任务成功");
+    const bool leaseReject = manager.removeWorktree(QStringLiteral("w1"), false, &error);
+    TestHarness::check(!leaseReject, "remove 门④：租约在手指向拒");
+    TestHarness::check(error.contains(QStringLiteral("still in use by w1owner; wait for the turn to end")),
+                       "remove 门④ 文案（owners 逗号列）");
+
+    // 回合边界释放租约
+    QString releaseError;
+    TestHarness::check(store.releaseCompletedAssignment(QStringLiteral("w1owner"), &releaseError),
+                       "释放已完成租约成功");
+
+    // 门⑤：脏（worktree 目录里写未跟踪文件）→ 拒且计数；命令本身没坏
+    {
+        QFile dirty(QDir(path).filePath(QStringLiteral("dirt.txt")));
+        TestHarness::check(dirty.open(QIODevice::WriteOnly), "脏夹具文件可写");
+        dirty.write("dirt");
+        dirty.close();
+    }
+    const bool dirtyReject = manager.removeWorktree(QStringLiteral("w1"), false, &error);
+    TestHarness::check(!dirtyReject, "remove 门⑤：脏拒");
+    TestHarness::check(error.startsWith(QStringLiteral("Error: Worktree 'w1' has "))
+                           && error.contains(QStringLiteral("uncommitted change(s); preserve or discard them manually")),
+                       "remove 门⑤ 文案（1 change 计数形）");
+    TestHarness::check(QFileInfo(path).isDir(), "脏拒后目录仍在（宁拒不删）");
+
+    // 提交变干净 → 成功移除；分支保留、绑定清空、目录消失
+    QString out;
+    TestHarness::check(runGitIn(path, {QStringLiteral("add"), QStringLiteral("-A")}, &out)
+                           && runGitIn(path, {QStringLiteral("commit"), QStringLiteral("-q"),
+                                             QStringLiteral("-m"), QStringLiteral("dirt")}, &out),
+                       "脏夹具已在 worktree 内提交");
+    const bool removed = manager.removeWorktree(QStringLiteral("w1"), false, &error);
+    TestHarness::check(removed, "remove 成功");
+    TestHarness::check(error == QStringLiteral("Worktree 'w1' removed; branch 'wt/w1' retained"),
+                       "成功文案走 *error（钉死形）");
+    TestHarness::check(!QFileInfo(path).exists(), "worktree 目录已移除");
+    TestHarness::check(runGitIn(repo, {QStringLiteral("show-ref"), QStringLiteral("--verify"),
+                                        QStringLiteral("refs/heads/wt/w1")}, &out),
+                       "分支永不删除（lcc :385）");
+    TaskStore::TaskSnapshot afterSnap;
+    TestHarness::check(findSnapshot(store, taskId, &afterSnap) && afterSnap.worktree.isEmpty(),
+                       "解绑落地（worktree 字段清空）");
+
+    // 门⑧：分支还在、目录没了 → **新 pending 任务**同名重建被「分支已存在」拒。
+    // （原形用上方已 completed 的 taskId 复验是设计缺陷：门② pending&unowned 先于门⑧
+    //   拦截，永远到不了分支门——复验必须造一个能穿过门①~⑦的新任务。）
+    const QString created4 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("reuse")}});
+    const QString id4 = taskIdFromCreated(created4);
+    const QString recreate = manager.createWorktree(QStringLiteral("w1"), id4);
+    TestHarness::check(recreate == QStringLiteral("Error: Branch 'wt/w1' already exists"),
+                       "门⑧ 分支已存在逐字");
+}
+
+// ---------------------------------------------------------------------------
+// discardChanges=true 只豁免脏门（①~④寸步不让已由上文覆盖；此处脏+force 成功）
+// ---------------------------------------------------------------------------
+void testDiscardChanges(TaskStore &store, WorktreeManager &manager)
+{
+    const QString created = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                             QStringLiteral("discardme")}});
+    const QString taskId = taskIdFromCreated(created);
+    const QString text = manager.createWorktree(QStringLiteral("d1"), taskId);
+    if (!text.startsWith(QStringLiteral("Created worktree"))) {
+        TestHarness::check(false, "discard 夹具 create 未成");
+        return;
+    }
+    QString path;
+    QString pathError;
+    TestHarness::check(manager.worktreePath(QStringLiteral("d1"), &path, &pathError), "discard 路径可解");
+
+    // 脏 + 租约已释放 + 任务 completed → 门⑤本应拒，discardChanges=true 豁免之并追加 --force。
+    // （①~④寸步不让已由 testRemoveLifecycle 的门序覆盖，此处不重复。）
+    QString claimResult;
+    QString claimError;
+    TestHarness::check(store.claimTask(taskId, QStringLiteral("downer"), &claimResult, &claimError)
+                           && claimResult.startsWith(QStringLiteral("Claimed ")), "discard 夹具认领");
+    QString completeResult;
+    TestHarness::check(store.completeTask(taskId, QStringLiteral("downer"), &completeResult, &claimError),
+                       "discard 夹具完成");
+    QString releaseError;
+    TestHarness::check(store.releaseCompletedAssignment(QStringLiteral("downer"), &releaseError),
+                       "discard 夹具释放");
+    {
+        QFile dirty(QDir(path).filePath(QStringLiteral("trash.txt")));
+        dirty.open(QIODevice::WriteOnly);
+        dirty.write("junk");
+        dirty.close();
+    }
+    QString error;
+    const bool forced = manager.removeWorktree(QStringLiteral("d1"), true, &error);
+    TestHarness::check(forced, "discardChanges=true 豁免脏门成功移除");
+    TestHarness::check(error.startsWith(QStringLiteral("Worktree 'd1' removed")), "discard 成功文案");
+    TestHarness::check(!QFileInfo(path).exists(), "脏 worktree 目录已 --force 移除");
+}
+
+// ---------------------------------------------------------------------------
+// 含空格**路径**的注册表解析安全（porcelain partition 首空格 + git 引号形态）。
+// 注意：worktree **名字**禁含空格（lcc :33-45 字符集不含空格——原形用 "wt space"
+// 名必被门⓪拒，属测试缺陷）。空格压力由仓库目录名 "repo B with space" 供给：
+// worktree 全路径 = <root>/repo B with space/.lite-harness/sb/.worktrees/wtb，
+// 祖先目录含空格即触发 git porcelain 的引号/原样歧义域。
+// ---------------------------------------------------------------------------
+void testSpaceInPath(const QString &root)
+{
+    const QString repoB = QDir(root).filePath(QStringLiteral("repo B with space"));
+    QDir().mkpath(repoB);
+    const QString sessionB = QDir(repoB).filePath(QStringLiteral(".lite-harness/sb"));
+    QDir().mkpath(sessionB);
+    QString out;
+    if (!runGitIn(repoB, {QStringLiteral("init"), QStringLiteral("-q")}, &out)
+        || !runGitIn(repoB, {QStringLiteral("commit"), QStringLiteral("-q"),
+                             QStringLiteral("--allow-empty"), QStringLiteral("-m"),
+                             QStringLiteral("seed")}, &out)) {
+        TestHarness::check(false, "空格夹具 git init 未成");
+        return;
+    }
+    const QString repoBCopy = repoB;
+    const QString sessionBCopy = sessionB;
+    TaskStore storeB([sessionBCopy]() { return sessionBCopy; },
+                     [repoBCopy]() { return repoBCopy; });
+    WorktreeManager managerB(&storeB, [sessionBCopy]() { return sessionBCopy; },
+                             [repoBCopy]() { return repoBCopy; });
+    const QString created = storeB.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("spacy")}});
+    const QString taskId = taskIdFromCreated(created);
+    const QString text = managerB.createWorktree(QStringLiteral("wtb"), taskId);
+    TestHarness::check(text.startsWith(QStringLiteral("Created worktree 'wtb' at ")),
+                       "含空格路径 create 成功");
+
+    QString regError;
+    const QMap<QString, WorktreeManager::Entry> registered = managerB.registeredWorktrees(&regError);
+    TestHarness::check(regError.isEmpty(), "含空格路径注册表无错");
+    TestHarness::check(registered.contains(QStringLiteral("wtb")), "含空格路径注册表解析安全");
+    // resolve 指回含空格目录（M1 协议面闭环）
+    TaskStore::TaskSnapshot snapB;
+    if (findSnapshot(storeB, taskId, &snapB)) {
+        QString resolveError;
+        const QString cwdB = managerB.resolveWorktreeCwd(snapB, &resolveError);
+        TestHarness::check(cwdB.contains(QStringLiteral("repo B with space")) && resolveError.isEmpty(),
+                           "含空格路径 resolve 指回");
+    }
+}
+
+} // namespace
+
+int tst_worktree()
+{
+    ScopedTempRoot tmp(QStringLiteral("worktree"));
+    if (!tmp.isValid()) {
+        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        return 0;
+    }
+    if (!probeGit()) {
+        std::printf("SKIP: git unavailable\n");
+        return 0;
+    }
+
+    const int before = TestHarness::failCount();
+    const QString root = tmp.path();
+
+    // 主夹具（堆装配；跨测试函数共享演进状态，按各函数注释时序跑；unique_ptr 自动回收）
+    std::unique_ptr<TaskStore> store;
+    std::unique_ptr<WorktreeManager> manager;
+    QString repo;
+    if (!makeFixture(root, &store, &manager, &repo)) {
+        std::printf("SKIP: git fixture init failed\n");
+        return TestHarness::failCount() - before; // 夹具不成不跑断言，不假造通过
+    }
+
+    testNameRegex();
+    testResolveEarlyReturn(*manager);
+    testCreateChain(*store, *manager, repo);
+    testNonToplevel(root);
+    testRemoveLifecycle(*store, *manager, repo);
+    testDiscardChanges(*store, *manager);
+    testSpaceInPath(root);
+
+    return TestHarness::failCount() - before;
+}
