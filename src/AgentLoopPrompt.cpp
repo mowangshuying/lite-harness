@@ -39,6 +39,9 @@ namespace {
 // schema 描述发现，模型几乎不自发调用；限定"multi-step"防小任务反增 1 轮）；②bullet2 目标歧义
 // 且影响方案时先问一条聚焦问题而非猜测跑偏；③末条收敛句——判据满足且验证即停手简洁汇报，禁未
 // 被要求的打磨与对已通过检查的重复验证（拖拉两形态；maxToolIterations=500 是熔断非收敛）。
+// 本段末条再追加语言纪律 bullet（用户裁决：思考过程用中文输出）：约束 reasoning 用中文，
+// 同时点名代码/标识符/路径/工具参数保持原文——防模型连带翻译标识符或路径导致工具调用失配。
+// 仅主循环生效：SubAgent 请求不带 enable_thinking（黑盒无思考输出），无需此条。
 // 位置在 temp 纪律句后、技能使用说明句前；纯静态英文文本，不走 arg() 通道，head 段 %1
 // 单次替换语义与段间 \n\n 换行纪律不变；禁翻区 QStringLiteral 不包 tr()。
 QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
@@ -75,7 +78,9 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
                              "the output, change the approach, or report the blocker.\n"
                              "- When the done-criteria are met and verified, stop and report "
                              "the outcome; do not add unrequested refinements or re-check "
-                             "what already passed."
+                             "what already passed.\n"
+                             "- Write your reasoning in Chinese; keep code, identifiers, file "
+                             "paths and tool arguments in their original form."
                              "\n\n"
                              "Use load_skill to read the full instructions when a skill applies."
                              "\n\n"
