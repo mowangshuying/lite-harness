@@ -303,6 +303,41 @@ void ChatSessionPage::wireAgent()
                 requestScrollToBottom();
             });
 
+    // s13 观测面 a：队友活动 → 按名活卡 live 卡（AgentLoop 转发 TeammateRuntime 展示信号，
+    // turn/result/error/idle_notification 数据 token 在 ToolBlock 内映射中文）。首活动经
+    // ensureTeammateCard 建卡挂当时气泡，后续活动按名回挂原卡——队友回合不随 Lead 回合终结，
+    // 活卡跨 Lead 回合存续（刻意不占 m_liveTaskBlock 单槽，finishStreaming 不清扫）。
+    // idle_notification 不建卡（零活动可叙的开场不值得插卡扰动），只注记已有卡。
+    connect(m_agentLoop, &AgentLoop::teammateProgress, this,
+            [this](const QString &teammateName, const QString &type, const QString &content) {
+                auto it = m_liveTeammateCards.find(teammateName);
+                if (it == m_liveTeammateCards.end() || !it.value())
+                {
+                    if (it != m_liveTeammateCards.end())
+                        m_liveTeammateCards.erase(it);   // 卡被异常销毁后的空位
+                    if (type == QLatin1String("idle_notification") || !m_currentBubble)
+                        return;
+                    ToolBlock *card = m_currentBubble->ensureTeammateCard(teammateName);
+                    if (!card)
+                        return;
+                    it = m_liveTeammateCards.insert(teammateName, card);
+                }
+                it.value()->appendTeammateProgress(type, content);
+                requestScrollToBottom();
+            });
+
+    // 队友终态三通道（completed/exited/settled）→ 就地冻结收壳。收口不滚动：旧卡终态
+    // 可能远晚于其位置（跨回合），强滚会把正在回看历史的用户视野粗暴拉走
+    connect(m_agentLoop, &AgentLoop::teammateSettled, this,
+            [this](const QString &teammateName, const QString &outcome) {
+                settleTeammateCard(teammateName, outcome);
+            });
+
+    // s13 观测面 b：名册变更边沿广播 → 侧栏队友节（setter 推入的纯视图纪律不变）
+    connect(m_agentLoop, &AgentLoop::teamRosterChanged, this, [this]() {
+        m_sidebar->setTeammates(m_agentLoop->teammateRoster());
+    });
+
     // 记忆沉淀相位开始（仅自然结束分支，P2 起为异步链启动前、与 finished 同栈相邻发射）：
     // 正文就地定稿 markdown 并在气泡时间线挂「记忆整理中…」live 进度卡；提取/合并结果卡
     // （toolOutputReady toolName="memory"）到达后就地切换为终态留痕。
@@ -424,8 +459,40 @@ void ChatSessionPage::wireAgent()
         // 侧栏状态灯：running 置亮/熄灭；终局（先于 finished 到达）兜底回灭审批灯
         m_sidebar->setRunning(running);
         if (!running)
+        {
             m_sidebar->setPermissionPending(false);
+            // s13 兜底：Lead 回合结束时清算「已不在名册却还挂着的活卡」（终态广播
+            // 漏发的幽灵位）。仍在名册的队友保卡——队友回合不随 Lead 回合终结，
+            // 误冻结会让续跑活动凭空多出一张新卡（跨回合存续偏差已登记）
+            const QList<QPair<QString, QString>> roster = m_agentLoop->teammateRoster();
+            const QStringList liveNames = m_liveTeammateCards.keys();
+            for (const QString &name : liveNames)
+            {
+                bool alive = false;
+                for (const auto &entry : roster)
+                {
+                    if (entry.first == name)
+                    {
+                        alive = true;
+                        break;
+                    }
+                }
+                if (!alive)
+                    settleTeammateCard(name, QStringLiteral("settled"));
+            }
+        }
     });
+}
+
+// s13 观测面：按名收口活卡（置终态 + 除表，幂等——三路 settle/兜底重复到达 no-op）
+void ChatSessionPage::settleTeammateCard(const QString &teammateName, const QString &outcome)
+{
+    QPointer<ToolBlock> card = m_liveTeammateCards.take(teammateName);
+    if (!card)
+        return;
+    card->finishTeammateLive(outcome);
+    if (auto *bubble = qobject_cast<MessageBubbleWidget *>(card->parentWidget()))
+        bubble->refreshSize();
 }
 
 // error 链与运行中 sendMessage 拒绝分支共用的待决权限收口（原两处逐句重复，抽取单源）：

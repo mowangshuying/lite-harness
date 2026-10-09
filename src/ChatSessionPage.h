@@ -2,6 +2,7 @@
 
 #include "BasePage.h"
 #include "MessageBubbleWidget.h"
+#include <QHash>
 #include <QJsonArray>
 #include <QPointer>
 
@@ -70,6 +71,8 @@ private:
     // 上下文占用快照 → 侧栏（AgentLoop::estimatedContextTokens 的 ≈token 锚定估算，
     // 预算 = contextCharLimit/4 派生，见规格修4）
     void refreshContextUsage();
+    // s13 观测面：队友活卡按名收口（置终态 + 从活卡表除名，幂等——重复 settle no-op）
+    void settleTeammateCard(const QString &teammateName, const QString &outcome);
     // 首条用户消息派生会话标题（抄宿主 LiteHarness 规则）并同步侧栏；已有标题则 no-op
     void maybeCaptureSessionTitle(const QString &userText);
     // 滚动合并入口（效率 P5）：流式高频/在途内容事件（每个 SSE delta 的思考与正文增量、
@@ -106,6 +109,10 @@ private:
     QPointer<MessageBubbleWidget> m_memoryBubble;
     QPointer<PermissionCard> m_permissionCard;        // 最近一张权限卡（裁决后化为留痕仍在流中；销毁自动置空）
     QJsonArray m_lastTodoSnapshot;                    // 最近一次已嵌快照的清单内容（全同更新去重防刷屏；空=尚未嵌过任何卡）
+    // s13 观测面：队友名 → 活卡（活卡跨 Lead 回合存续，所有权随所挂气泡；QPointer
+    // 自动跟销毁。三路终态（completed/exited/settled）+ 回合末名册兜底统一经
+    // settleTeammateCard 除表收口，幂等）
+    QHash<QString, QPointer<ToolBlock>> m_liveTeammateCards;
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
     QToolButton *m_restoreBtn = nullptr;   // 侧栏收起后的浮动展开钮（页面右上角，手动摆位随 resize 跟随）

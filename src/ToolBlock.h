@@ -71,6 +71,25 @@ public:
     // 「已中断」并折叠，已积累的进度行保留可展开回看
     void finishTaskLiveAborted();
 
+    // ---- s13 队友 live 卡三件套（teammateProgress → 首行建卡+活动行；teammateSettled →
+    // finishTeammateLive 终局冻结。卡槽由会话页按队友名持有、跨气泡续写——task 卡的
+    // 单槽共位语义不适用：多队友并发且终点时刻不同）----
+
+    // 队友进行态：身份标签用 spawn_teammate（plan 类别着色，与派生它的团队工具同源），
+    // 「队友 <名> 执行中」轮播标题，自动展开供活动行逐条可见（task 卡同款）
+    void startTeammateLive(const QString &teammateName);
+
+    // 追加一条队友活动行：type 为数据域 token（turn/result/error/idle_notification，
+    // 译中文词条，未知 token 原样透传），content 折叠单行并按文件内上限截断
+    //（空闲待命同时把轮播标题切「空闲待命」，恢复 turn 时切回执行中）；
+    // 复用子代理进度滑窗/省略提示/底部跟随策略
+    void appendTeammateProgress(const QString &type, const QString &content);
+
+    // 终局（outcome 数据域 token：completed=已交付 ok 字形 / exited=已退出 /
+    // 其余=已中止，两者 stopped 灰方）：停轮播、切标题、折叠；已积累活动行保留可回看。
+    // 非队友卡（m_teammateLive 未置）幂等 no-op
+    void finishTeammateLive(const QString &outcome);
+
     // setExpanded / isExpanded / contentHeight / setContentHeight 继承自基类（API 冻结）
 
 protected:
@@ -100,4 +119,6 @@ private:
     QStringList m_subagentLines;      // task 子代理进度行窗口（终态重组时前置到结果之前）
     int m_subagentDropped = 0;        // 超上限被裁剪的最旧进度条数
     bool m_taskLive = false;          // 处于 task live 进行态（轮播/中断终态标记）
+    QString m_teammateName;           // 队友卡身份名（startTeammateLive 注入，终局标题取用）
+    bool m_teammateLive = false;      // 处于队友 live 进行态（轮播/终局幂等标记）
 };

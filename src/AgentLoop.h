@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QHash>
+#include <QPair>
 #include <QStringList>
 
 #include <functional>
@@ -86,6 +87,11 @@ public:
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
     void resolvePermission(bool allow);
 
+    // s13 队友名册（侧栏观测面 b 的数据口）：ledger 纯读——teammateNames() 升序名单配
+    // statusName() 数据域 token（working/waiting_approval/idle/stopping），缺账默认 Working
+    // （与引擎 cpp 侧 value_or 先例同口径）。本地化归 UI 层（侧栏），本方法不产文案
+    QList<QPair<QString, QString>> teammateRoster() const;
+
     // 工具输出成败判定单源（B1）：工具侧一切失败一律折叠为输出文本，文案族固定——
     // "Error:" 前缀（handler 校验/超时/危险拦截/TaskStore 补前缀族）、精确
     // "Permission denied"（权限门拒绝）、"Blocked:" 前缀（deny 列表硬拒）、
@@ -113,6 +119,19 @@ signals:
     // UI 用于 task 工具卡的 live 进度行（turnNo=子代理轮次自 1 起，toolName/summary=
     // 内部工具名与关键参数摘要）；task 终态仍由 toolOutputReady("task") 唯一收口
     void subagentProgress(int turnNo, const QString &toolName, const QString &summary);
+    // s13 队友运行态中继（观测面 a 的引擎→页面链路；兑现 P3 装配时「UI 接线留待后续阶段」决策）：
+    // teammateProgress = 活动行。type 为数据域 token（QStringLiteral，禁翻区）：turn=回合推进
+    // （turnRequested 心跳源）/ result=交付成果 / error=出错 / idle_notification=空闲待命
+    //（后三者经 teamEvent 转发，content 取事件原文，turn 时为空）。UI 组件按已知 token 译词条，
+    // 未知 token 原样透传（宁可显协议名不编造误导词条）。
+    void teammateProgress(const QString &teammateName, const QString &type, const QString &content);
+    // teammateSettled = 队友卡终局。outcome 数据域 token：completed=自报完成（taskFinished，
+    // 非生命周期终点——队友转 Idle 继续领活，后续活动另起新卡）/ exited=退出（finished）/
+    // settled=清算收口（settleTeamOnExit 或页面 runningChanged(false) 兜底扫）。幂等：同名只终局一次
+    void teammateSettled(const QString &teammateName, const QString &outcome);
+    // teamRosterChanged = 队友名册变化边沿（随 cron tick 1s 节拍签名比对，变才发；零新 QTimer）。
+    // 页面订阅后拉 teammateRoster() 推侧栏（setter-push 惯例，侧栏保持纯视图不读引擎）
+    void teamRosterChanged();
     // 权限门：工具调用命中询问规则（不含硬拒绝列表项）时发射，队列暂停等待 resolvePermission() 裁决
     // toolName / summary 与 toolOutputReady 前两参同义；reason = 命中规则文案
     //（"Writing outside workspace" / "Potentially destructive command"）
@@ -237,6 +256,10 @@ private:
     // 首位 + :401-408 wake 分支转译）：cron tick 同拍调用，仅 !m_running 且 Lead 邮箱
     // 有件时收割并经 scheduledUserMessage 同栈直连开新回合（tryDeliverCron 同款先例）
     void tryDeliverTeamEvents();
+    // 队友名册变更检测（观测面 b）：随 cron tick 1s 节拍调用（AgentLoop.cpp 挂点），拼
+    // name|status 签名与上次比对、仅不同时 emit teamRosterChanged——零新 QTimer，
+    // 空名单只在曾有名册时广播一次（初值空串与空名册同签不刷屏）
+    void updateTeamRosterBroadcast();
     // 定时任务空闲交付（lcc s12/31a99d1 run_delivery 转译）：仅 m_running=false 时经
     // m_cron.runDelivery 收割——回调内 emit scheduledUserMessage 同栈直连（宿主同步 run()
     // 置位）后回读 m_running 作为接管结果：未接管（无 UI 接线/防御拒绝）→ runDelivery
@@ -452,6 +475,8 @@ private:
     QHash<QString, TeammateRuntime *> m_teammateRuntimes;
     // 队友在途回合流（每队友至多一条，单飞防御；parent 到 this 随析构作废）
     QHash<QString, QPointer<QOpenAi::ChatStream>> m_teammateStreams;
+    // 上次广播的队友名册签名（name|status 以 ';' 连接）：updateTeamRosterBroadcast 边沿检测单源
+    QString m_teamRosterSignature;
     // lcc _team_was_active：队友全部下线的边沿检测（每回合终局比对一次）
     bool m_teamWasActive = false;
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）

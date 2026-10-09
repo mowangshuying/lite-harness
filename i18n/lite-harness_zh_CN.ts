@@ -19,7 +19,7 @@
         <translation>历史文件解析失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="211"/>
+        <location filename="../src/AgentLoop.cpp" line="213"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent 仍在运行中，请等待完成后再发送。</translation>
     </message>
@@ -45,7 +45,7 @@
         <translation>主动压缩（compact 工具）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="373"/>
+        <location filename="../src/AgentLoop.cpp" line="375"/>
         <source>已停止。</source>
         <translation>已停止。</translation>
     </message>
@@ -231,14 +231,14 @@
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="471"/>
-        <location filename="../src/ChatSessionPage.cpp" line="527"/>
-        <location filename="../src/ChatSessionPage.cpp" line="546"/>
+        <location filename="../src/ChatSessionPage.cpp" line="538"/>
+        <location filename="../src/ChatSessionPage.cpp" line="594"/>
+        <location filename="../src/ChatSessionPage.cpp" line="613"/>
         <source>处理中…</source>
         <translation>处理中…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="765"/>
+        <location filename="../src/ChatSessionPage.cpp" line="832"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -641,56 +641,101 @@
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="363"/>
+        <source>队友清单</source>
+        <translation>队友清单</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="369"/>
         <source>任务清单</source>
         <translation>任务清单</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="365"/>
+        <location filename="../src/SessionSidebar.cpp" line="371"/>
         <source>暂无任务</source>
         <translation>暂无任务</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="378"/>
+        <location filename="../src/SessionSidebar.cpp" line="384"/>
         <source>lite-harness %1</source>
         <translation>lite-harness %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="392"/>
+        <location filename="../src/SessionSidebar.cpp" line="398"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="410"/>
+        <location filename="../src/SessionSidebar.cpp" line="416"/>
         <source>≈%1 / %2 token · %3%</source>
         <translation>≈%1 / %2 token · %3%</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="463"/>
+        <location filename="../src/SessionSidebar.cpp" line="469"/>
         <source>%1 进行中</source>
         <translation>%1 进行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="464"/>
+        <location filename="../src/SessionSidebar.cpp" line="470"/>
         <source>%1 待办</source>
         <translation>%1 待办</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="465"/>
+        <location filename="../src/SessionSidebar.cpp" line="471"/>
         <source>%1 完成</source>
         <translation>%1 完成</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="473"/>
+        <location filename="../src/SessionSidebar.cpp" line="499"/>
+        <source>%1 · 执行中</source>
+        <translation>%1 · 执行中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="502"/>
+        <source>%1 · 等待审批</source>
+        <translation>%1 · 等待审批</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="505"/>
+        <source>%1 · 停止中</source>
+        <translation>%1 · 停止中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="508"/>
+        <source>%1 · 空闲</source>
+        <translation>%1 · 空闲</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="516"/>
+        <source>%1 执行中</source>
+        <translation>%1 执行中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="517"/>
+        <source>%1 待审批</source>
+        <translation>%1 待审批</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="518"/>
+        <source>%1 停止中</source>
+        <translation>%1 停止中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="519"/>
+        <source>%1 空闲</source>
+        <translation>%1 空闲</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="532"/>
         <source>等待审批</source>
         <translation>等待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="475"/>
+        <location filename="../src/SessionSidebar.cpp" line="534"/>
         <source>运行中</source>
         <translation>运行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="477"/>
+        <location filename="../src/SessionSidebar.cpp" line="536"/>
         <source>空闲</source>
         <translation>空闲</translation>
     </message>
@@ -1136,17 +1181,63 @@
         <translation>已中断</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="326"/>
+        <location filename="../src/ToolBlock.cpp" line="335"/>
+        <location filename="../src/ToolBlock.cpp" line="372"/>
+        <source>队友 %1 执行中</source>
+        <translation>队友 %1 执行中</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="357"/>
+        <source>回合推进</source>
+        <translation>回合推进</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="359"/>
+        <source>交付成果</source>
+        <translation>交付成果</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="361"/>
+        <source>出错</source>
+        <translation>出错</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="363"/>
+        <source>空闲待命</source>
+        <translation>空闲待命</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="370"/>
+        <source>队友 %1 空闲待命</source>
+        <translation>队友 %1 空闲待命</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="418"/>
+        <source>队友 %1 已交付</source>
+        <translation>队友 %1 已交付</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="423"/>
+        <source>队友 %1 已退出</source>
+        <translation>队友 %1 已退出</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="428"/>
+        <source>队友 %1 已中止</source>
+        <translation>队友 %1 已中止</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="441"/>
         <source>执行中</source>
         <translation>执行中</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="358"/>
+        <location filename="../src/ToolBlock.cpp" line="473"/>
         <source>已停止</source>
         <translation>已停止</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="378"/>
+        <location filename="../src/ToolBlock.cpp" line="493"/>
         <source>…更早 %1 条进度已省略</source>
         <translation>…更早 %1 条进度已省略</translation>
     </message>

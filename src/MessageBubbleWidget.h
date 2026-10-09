@@ -82,6 +82,12 @@ public:
     // stop/error 终局由 finishStreaming 兜底切「已中断」保留日志
     void appendSubagentProgress(int turnNo, const QString &toolName, const QString &summary);
 
+    // s13 观测面：按队友名建活卡（冻结-建卡链与 appendSubagentProgress 同款）。
+    // 与子代理卡的区别：返回卡片指针交由页面按名登记（队友回合跨 Lead 回合存续，
+    // 后续活动回挂原卡、终态由页面驱动收口），不占本页 m_liveTaskBlock 单槽，
+    // finishStreaming/appendToolExecution 均不清扫它。仅助手气泡承载，用户气泡返回 nullptr
+    ToolBlock *ensureTeammateCard(const QString &teammateName);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;

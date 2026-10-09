@@ -359,6 +359,12 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_statusSection->body()->addWidget(m_statusRow);
     iv->addWidget(m_statusSection);
 
+    // ②b s13 队友名册（空名册整节隐藏；≤2 恒展开，>2 可折叠，同任务清单策略）
+    m_teammateSection = new SidebarSection(tr("队友清单"), inner);
+    m_teammateSection->hide();
+    m_teammateList = m_teammateSection->body();
+    iv->addWidget(m_teammateSection);
+
     // ③ 任务清单（≤2 恒展开，>2 可折叠）
     m_todoSection = new SidebarSection(tr("任务清单"), inner);
     m_todoList = m_todoSection->body();
@@ -467,6 +473,59 @@ void SessionSidebar::refreshTodoSummary(qsizetype total, qsizetype done, qsizety
                                               : parts.join(QStringLiteral(" · ")));
 }
 
+void SessionSidebar::setTeammates(const QList<QPair<QString, QString>>& roster) {
+    // 清旧行（与 setTodos 同款 hide + deleteLater；无占位行——空名册直接隐藏整节）
+    while (QLayoutItem* item = m_teammateList->takeAt(0)) {
+        QWidget* w = item->widget();
+        if (w) { w->hide(); w->deleteLater(); }
+        delete item;
+    }
+    if (roster.isEmpty()) {
+        m_teammateSection->setSummary(QString());
+        m_teammateSection->hide();
+        return;
+    }
+    m_teammateSection->show();
+
+    // statusName token（引擎单源英文数据域）→ 行态/圆点/中文文案；未知 token 走兜底行
+    int working = 0, waiting = 0, idle = 0, stopping = 0;
+    const int avail = bodyTextAvail(m_teammateSection->width(), width());
+    for (const auto& entry : roster) {
+        const QString& name = entry.first;
+        const QString& token = entry.second;
+        QString state, mark, label;
+        if (token == QLatin1String("working")) {
+            state = QStringLiteral("active"); mark = QStringLiteral("\u25CF");
+            label = tr("%1 · 执行中").arg(name); ++working;
+        } else if (token == QLatin1String("waiting_approval")) {
+            state = QStringLiteral("active"); mark = QStringLiteral("\u25D0");
+            label = tr("%1 · 等待审批").arg(name); ++waiting;
+        } else if (token == QLatin1String("stopping")) {
+            state = QStringLiteral("pending"); mark = QStringLiteral("\u25A0");
+            label = tr("%1 · 停止中").arg(name); ++stopping;
+        } else {
+            state = QStringLiteral("pending"); mark = QStringLiteral("\u25CB");
+            label = tr("%1 · 空闲").arg(name); ++idle;
+        }
+        m_teammateList->addWidget(
+            makeRow("status", state, mark, label, avail, Qt::ElideRight));
+    }
+
+    m_teammateSection->setCount(QString("%1/%2").arg(working).arg(roster.size()));
+    QStringList parts;
+    if (working > 0) parts << tr("%1 执行中").arg(working);
+    if (waiting > 0) parts << tr("%1 待审批").arg(waiting);
+    if (stopping > 0) parts << tr("%1 停止中").arg(stopping);
+    if (idle > 0) parts << tr("%1 空闲").arg(idle);
+    m_teammateSection->setSummary(parts.join(QStringLiteral(" · ")));
+
+    // 折叠策略与任务清单同规则：≤2 恒展开；>2 获得折叠资格并保留用户当前选择
+    const bool collapsible = roster.size() > 2;
+    if (!collapsible && !m_teammateSection->isExpanded())
+        m_teammateSection->setExpanded(true, false);
+    m_teammateSection->setCollapsible(collapsible);
+}
+
 void SessionSidebar::applyRunState() {
     // waiting 优先：审批挂起时无论 running 与否都亮警示态
     if (m_permPending) {
@@ -483,5 +542,6 @@ void SessionSidebar::refreshIcons() {
         FluAwesomeType::ChevronRight, FluThemeUtils::getUtils()->getTheme(), 14, 14));
     m_contextSection->refreshArrow();
     m_statusSection->refreshArrow();
+    m_teammateSection->refreshArrow();
     m_todoSection->refreshArrow();
 }

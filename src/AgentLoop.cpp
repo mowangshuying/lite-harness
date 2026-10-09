@@ -102,6 +102,8 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
         // 卫兵自动跳过，到期任务待下个空闲 tick，与 lcc 单事件语义一致
         tryDeliverTeamEvents();
         tryDeliverCron();
+        // s13 观测面 b：名册变更边沿广播（1s 节拍搭车，零新 QTimer；签名相同则不发）
+        updateTeamRosterBroadcast();
     });
     m_cronTick->start();
     m_cron.start();

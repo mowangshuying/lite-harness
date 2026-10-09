@@ -316,6 +316,121 @@ void ToolBlock::finishTaskLiveAborted()
     setExpanded(false);
 }
 
+// ---- s13 队友 live 卡三件套（观测面 a；信号语义见 AgentLoop::teammateProgress/
+// teammateSettled 注释，type/outcome 均为数据域 token，本类只负责译词条展示）----
+
+namespace {
+// 队友活动行 content 段字符上限（超限截断加省略号）：AgentConstants.h 不在本轮写域，
+// 文件内常量登记偏差——纯观感参数，不涉协议/数据兼容
+constexpr int kTeammateContentMaxChars = 120;
+} // namespace
+
+void ToolBlock::startTeammateLive(const QString &teammateName)
+{
+    if (m_teammateLive)
+        return;
+    m_teammateLive = true;
+    m_live = true;
+    m_teammateName = teammateName;
+    m_liveTitle = tr("队友 %1 执行中").arg(teammateName);
+    m_liveDots = 0;
+
+    // 身份标签用派生工具名 spawn_teammate（ToolTagKind plan 类别着色，与团队工具卡
+    // 同源色系；成败字形位在终局前隐藏——队友没有「工具成败」只有生命周期）
+    m_toolName = ToolNames::SPAWN_TEAMMATE;
+    m_iconLabel->hide();
+    m_tagLabel->show();
+    m_tagLabel->setText(ToolNames::SPAWN_TEAMMATE);
+    ToolTagKind::applyTo(m_tagLabel, ToolNames::SPAWN_TEAMMATE);
+    m_outcomeLabel->hide();
+    m_titleLabel->setText(liveText());
+
+    startLiveTimer();
+    setExpanded(true);   // 自动展开供活动行可见（task 卡先例；用户折叠后不跟高）
+}
+
+void ToolBlock::appendTeammateProgress(const QString &type, const QString &content)
+{
+    // 数据域 token → 中文词条；未知 token 原样透传（宁可显协议名，不编造误导词条）
+    QString label;
+    if (type == QLatin1String("turn"))
+        label = tr("回合推进");
+    else if (type == QLatin1String("result"))
+        label = tr("交付成果");
+    else if (type == QLatin1String("error"))
+        label = tr("出错");
+    else if (type == QLatin1String("idle_notification"))
+        label = tr("空闲待命");
+    else
+        label = type;
+
+    // 轮播标题随相位切换：空闲期不再显「执行中」；result/error/turn 均属工作相位切回
+    // 执行中（词条与 startTeammateLive 初值同源字面）
+    if (type == QLatin1String("idle_notification"))
+        m_liveTitle = tr("队友 %1 空闲待命").arg(m_teammateName);
+    else
+        m_liveTitle = tr("队友 %1 执行中").arg(m_teammateName);
+    if (m_live)
+        m_titleLabel->setText(liveText());
+
+    // 单行 = 「词条 · 内容摘要」；content 为队友侧文本可能多行/超长：压单行 + 截断
+    //（上限文件内常量——AgentConstants.h 不在本轮写域，偏差已登记）
+    QString line = label;
+    if (!content.isEmpty())
+    {
+        QString flat = content.simplified();
+        if (flat.size() > kTeammateContentMaxChars)
+            flat = flat.left(kTeammateContentMaxChars) + QStringLiteral("…");
+        line += QStringLiteral(" · ") + flat;
+    }
+
+    // 超限策略/钉底跟随/头部关键参数位同步：与 appendSubagentProgress 同款（复用
+    // 同一 m_subagentLines 窗口与渲染链——task/队友两形态互斥共槽，一卡只走一条链）
+    while (m_subagentLines.size() >= AgentConst::kSubagentProgressMaxLines)
+    {
+        m_subagentLines.removeFirst();
+        ++m_subagentDropped;
+    }
+    m_subagentLines.append(line);
+    renderSubagentLog();
+    if (m_expanded)
+    {
+        QTimer::singleShot(0, this, [this]() {
+            QScrollBar *bar = m_content->verticalScrollBar();
+            bar->setValue(bar->maximum());
+        });
+    }
+    m_summary = line;
+    refreshSummaryLabel();
+}
+
+void ToolBlock::finishTeammateLive(const QString &outcome)
+{
+    if (!m_teammateLive)
+        return;                          // 幂等：兜底扫与逐名终局不双收口
+    m_teammateLive = false;
+    stopLiveTimer();
+
+    // 三种终局语义（见 AgentLoop::teammateSettled 注释）：自报完成点亮 ok 字形；
+    // 退出/中止共用灰方块「无结果终态」（与 task 中断/常规卡 stopped 同纪律）
+    if (outcome == QLatin1String("completed"))
+    {
+        m_titleLabel->setText(tr("队友 %1 已交付").arg(m_teammateName));
+        applyOutcome("ok", QStringLiteral("\u2713"));
+    }
+    else if (outcome == QLatin1String("exited"))
+    {
+        m_titleLabel->setText(tr("队友 %1 已退出").arg(m_teammateName));
+        applyOutcome("stopped", QStringLiteral("\u25a0"));
+    }
+    else
+    {
+        m_titleLabel->setText(tr("队友 %1 已中止").arg(m_teammateName));
+        applyOutcome("stopped", QStringLiteral("\u25a0"));
+    }
+    setExpanded(false);
+}
+
 // ---- B3 常规工具事前 live 卡 ----
 
 void ToolBlock::startToolLive(const QString &toolName, const QString &summary)

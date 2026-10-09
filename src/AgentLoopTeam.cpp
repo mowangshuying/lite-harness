@@ -56,8 +56,24 @@ void AgentLoop::initTeamEngine()
                 &AgentLoop::onTeammateTurnRequested);
         connect(runtime, &TeammateRuntime::finished, this,
                 &AgentLoop::onTeammateFinished);
-        // 决策（最小 UI 面）：teamEvent/taskFinished 展示信号不接卡片——团队事件经
-        // [Team events] 注入文本进消息流即可见，UI 接线留待后续阶段。
+        // s13 观测面 a 接线（兑现 P3「UI 接线留待后续阶段」决策）：回合心跳与事件转
+        // 中继信号给页面。turnRequested 双槽并行（引擎回合驱动 + UI「回合推进」活动行，
+        // Qt 多连接语义）；teamEvent 原样转发 type/content（数据域 token 单源在引擎，
+        // 禁在此加工）；taskFinished 只中继终局语义「completed」——它非生命周期终点
+        //（队友转 Idle 继续领活），页面收此终局冻卡，后续活动另起新卡。
+        connect(runtime, &TeammateRuntime::turnRequested, this,
+                [this](const QString &mateName) {
+                    emit teammateProgress(mateName, QStringLiteral("turn"), QString());
+                });
+        connect(runtime, &TeammateRuntime::teamEvent, this,
+                [this](const QString &type, const QString &from, const QString &content,
+                       const QString & /*requestId*/) {
+                    emit teammateProgress(from, type, content);
+                });
+        connect(runtime, &TeammateRuntime::taskFinished, this,
+                [this](const QString &mateName, const QString & /*summary*/) {
+                    emit teammateSettled(mateName, QStringLiteral("completed"));
+                });
         QTimer::singleShot(0, runtime, [runtime] { runtime->start(); });
         return runtime;
     });
@@ -385,6 +401,9 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
 
 void AgentLoop::onTeammateFinished(const QString &name)
 {
+    // 观测面 a：退出终局中继（置于 take 前——句柄表状态与 UI 终局无关，凡 finished
+    // 到达必终局一次；页面 settleTeammateCard 幂等，与兜底扫不双计）
+    emit teammateSettled(name, QStringLiteral("exited"));
     // finished 信号可能从 deliverTurnResult/finish() 调用栈中段发出——只许
     // deleteLater，禁即时 delete（FIND-L 契约）。
     QPointer<QOpenAi::ChatStream> stream = m_teammateStreams.take(name);
@@ -418,13 +437,51 @@ void AgentLoop::settleTeamOnExit()
 
     const QStringList names = m_teammateRuntimes.keys();
     for (const QString &name : names) {
+        // 观测面 a 终局兜底：blockSignals 会吞掉 runtime 的 finished——若不在此先发
+        // 「settled」中继，聊天流里的队友卡将永转「执行中」。页面幂等收口（QPointer）
         TeammateRuntime *runtime = m_teammateRuntimes.take(name);
         if (!runtime)
             continue;
+        emit teammateSettled(name, QStringLiteral("settled"));
         runtime->blockSignals(true);
         runtime->cancel();
         delete runtime;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 观测面 b：队友名册只读口 + 1s 节拍变更广播（见 AgentLoop.cpp tick 挂点）
+// ═══════════════════════════════════════════════════════════════
+
+QList<QPair<QString, QString>> AgentLoop::teammateRoster() const
+{
+    // ledger 纯读（statusName 为数据域 token，本地化归侧栏）；缺账兜底 Working
+    // 与引擎 value_or 先例同口径（正常不可达：names 出自同一本账）
+    QList<QPair<QString, QString>> roster;
+    const QStringList names = m_teams.teammateNames();
+    roster.reserve(names.size());
+    for (const QString &name : names) {
+        const std::optional<AgentTeamsManager::TeammateStatus> status =
+            m_teams.teammateStatus(name);
+        roster.append(qMakePair(
+            name, AgentTeamsManager::statusName(
+                      status.value_or(AgentTeamsManager::TeammateStatus::Working))));
+    }
+    return roster;
+}
+
+void AgentLoop::updateTeamRosterBroadcast()
+{
+    const QList<QPair<QString, QString>> roster = teammateRoster();
+    QStringList sig;
+    sig.reserve(roster.size());
+    for (const auto &entry : roster)
+        sig << entry.first + QLatin1Char('|') + entry.second;
+    const QString signature = sig.join(QLatin1Char(';'));
+    if (signature == m_teamRosterSignature)
+        return; // 边沿检测：无变化不广播（初值空串=空名册，首 tick 不刷屏）
+    m_teamRosterSignature = signature;
+    emit teamRosterChanged();
 }
 
 // ═══════════════════════════════════════════════════════════════

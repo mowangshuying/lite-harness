@@ -533,6 +533,37 @@ void MessageBubbleWidget::appendSubagentProgress(int turnNo, const QString &tool
     scheduleSizeUpdate();
 }
 
+ToolBlock *MessageBubbleWidget::ensureTeammateCard(const QString &teammateName)
+{
+    // 仅助手气泡承载队友卡；用户气泡防御性忽略（调用方据 nullptr 不落账）
+    if (m_role != Assistant)
+        return nullptr;
+
+    // 冻结-建卡链与 appendSubagentProgress 同套。差异（刻意）：不占 m_liveTaskBlock
+    // 单槽——队友卡生命周期跨 Lead 回合（settle 三通道由页面按名表驱动），
+    // 不归 finishStreaming/appendToolExecution 清算。
+    stopThinkingInterval();
+    rebuildAsTimeline();
+
+    dropPlaceholder();   // B2：段若仅剩占位文案则清空，不把占位冻结进归档
+    if (m_liveView)
+    {
+        if (m_liveView->document()->isEmpty())
+            m_liveView->hide();
+        else
+            m_textRuns.append({m_liveText, m_liveView});
+        m_liveView = nullptr;
+        m_liveText.clear();
+    }
+
+    auto *block = new ToolBlock(this);
+    block->startTeammateLive(teammateName);
+    m_timeline->addWidget(block);
+
+    scheduleSizeUpdate();
+    return block;
+}
+
 void MessageBubbleWidget::appendToolStart(const QString &toolName, const QString &summary)
 {
     // 仅助手气泡承载事前 live 卡；用户气泡防御性忽略

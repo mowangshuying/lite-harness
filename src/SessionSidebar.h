@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QList>
+#include <QPair>
 #include <QWidget>
 #include <QJsonArray>
 #include <QtGlobal> // qsizetype
@@ -47,6 +49,9 @@ public:
     void setPermissionPending(bool pending);
     /// 任务清单全量快照（[{content, status: pending|in_progress|completed}]）
     void setTodos(const QJsonArray& todos);
+    /// s13 队友名册全量快照（[name, statusName token]，AgentLoop::teammateRoster 推入；
+    /// 空名册隐藏整节——单代理会话零扰动）。纯视图纪律不破：数据由 ChatSessionPage 推入。
+    void setTeammates(const QList<QPair<QString, QString>>& roster);
 signals:
     /// 头部收起钮被点击（显隐偏好与恢复钮由 ChatSessionPage 管）
     void hideRequested();
@@ -69,6 +74,8 @@ private:
     SidebarSection*   m_todoSection = nullptr;
     QVBoxLayout*      m_todoList = nullptr;     // 任务清单行容器
     QLabel*           m_todoEmpty = nullptr;    // 「暂无任务」占位
+    SidebarSection*   m_teammateSection = nullptr;  // s13 队友名册节（空名册整节隐藏）
+    QVBoxLayout*      m_teammateList = nullptr;     // 队友行容器
     QLabel*           m_footerDir = nullptr;
     QLabel*           m_footerVersion = nullptr;
 
