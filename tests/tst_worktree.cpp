@@ -11,7 +11,10 @@
 //  · FIND-C 大小写口径：盘符大小写翻转的 sink 读同一注册表/台账不产生假 miss
 //    （注册表键查找/根过滤/m1 canonical 复校；无盘符形态整组诚实 SKIP）；
 //  · FIND-B 非目录伪装：文件顶替 worktree 目录 → registeredEntry 判 missing、
-//    resolver fail-closed 钉死串、remove 门①拒、注册表 isDir 过滤剔除。
+//    resolver fail-closed 钉死串、remove 门①拒、注册表 isDir 过滤剔除；
+//  · Gate③ MINOR-4 异步壳 startCreateWorktreeAsync：门拒走 done 同步折叠（同栈可证），
+//    同名并发 in-flight QSet 承重拒止（同步径/异步径双向互斥），信号驱动终局
+//    成功文案 + 注册表/绑定回读 + 收口后在途名出清（第三击不再报 in progress）。
 //
 // 需要 git 可用 + LITE_TEST_TMPROOT 合规，二者缺一整组 SKIP（返回 0，不假造通过）。
 // 夹具 = 临时根下 git init 的真实小仓库（git worktree 语义只有真 git 能证）。
@@ -22,7 +25,10 @@
 #include "AgentConstants.h" // kWorktreesDirName 单源（拼法断言用）
 #include "WorktreeManager.h"
 
+#include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -34,6 +40,7 @@
 #include <QVector>
 
 #include <cstdio>
+#include <functional>
 #include <memory>
 
 namespace {
@@ -662,6 +669,138 @@ void testFilePretender(TaskStore &store, WorktreeManager &manager, const QString
                        "pretender：注册表 isDir 过滤剔除");
 }
 
+// ---------------------------------------------------------------------------
+// Gate③ MINOR-4 异步壳 startCreateWorktreeAsync（P4b Lane B）
+// 时序纪律：门拒路径的 done 在调用栈内同步触发（可用 fired 标志直接证）；
+// 成功路径的 done 只经事件循环送达——发起后**不泵**则必未到，同名第二击
+// 因此确定性地落在发起窗口内（in-flight QSet 承重证明），随后有界泵送收口。
+// 泵送只用 QCoreApplication::processEvents（tests/main.cpp 裸 main 无 app 实例、
+// 属禁改文件——本组内惰性造 scoped 实例、组尾归还；禁 QThread/嵌套 exec）。
+// ---------------------------------------------------------------------------
+void testAsyncCreateShell(TaskStore &store, WorktreeManager &manager, const QString &repo)
+{
+    static char progName[] = "lite-harness-tests";
+    int argc = 1;
+    char *argv[] = {progName, nullptr};
+    std::unique_ptr<QCoreApplication> app(
+        QCoreApplication::instance() ? nullptr : new QCoreApplication(argc, argv));
+
+    auto pumpUntil = [&app](const std::function<bool()> &ready, int maxMs) {
+        QElapsedTimer clock;
+        clock.start();
+        while (!ready() && clock.elapsed() < maxMs) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+    };
+
+    // ---- 门⓪：非法名 → done 同栈折叠（foldError 逐字）----
+    {
+        bool firedDuringCall = false;
+        QString result;
+        manager.startCreateWorktreeAsync(
+            QStringLiteral("a..bad"), QStringLiteral("task_deadbeef"),
+            [&](const QString &r) { result = r; firedDuringCall = true; });
+        TestHarness::check(firedDuringCall, "异步壳门⓪：done 在调用栈内触发");
+        TestHarness::check(
+            result == QStringLiteral(
+                "Error: worktree name must be 1-64 letters, digits, dots, underscores, "
+                "or dashes, and start with a letter or digit"),
+            "异步壳门⓪：折叠文案逐字");
+    }
+
+    // ---- 门①：任务不存在 → done 同步折叠；在途名出清（第二击仍 not found，未卡 in progress）----
+    {
+        bool fired = false;
+        QString result;
+        manager.startCreateWorktreeAsync(QStringLiteral("nxas"), QStringLiteral("nope123"),
+                                         [&](const QString &r) { result = r; fired = true; });
+        TestHarness::check(fired && result == QStringLiteral("Error: Task nope123 not found"),
+                           "异步壳门①：not found 同步折叠");
+        bool fired2 = false;
+        QString result2;
+        manager.startCreateWorktreeAsync(QStringLiteral("nxas"), QStringLiteral("nope123"),
+                                         [&](const QString &r) { result2 = r; fired2 = true; });
+        TestHarness::check(
+            fired2 && result2 == QStringLiteral("Error: Task nope123 not found"),
+            "异步壳门①出清：同名第二击仍 not found（未卡在途）");
+    }
+
+    // ---- 在途门承重（异步发起 → 同步/异步双向拒止）+ 成功终局 ----
+    const QString created = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                             QStringLiteral("async job")}});
+    const QString tid = taskIdFromCreated(created);
+    TestHarness::check(!tid.isEmpty(), "异步壳夹具：任务已建");
+
+    QString asyncResult;
+    bool asyncFired = false;
+    manager.startCreateWorktreeAsync(QStringLiteral("wa"), tid,
+                                     [&](const QString &r) { asyncResult = r; asyncFired = true; });
+    TestHarness::check(!asyncFired, "异步壳：终态不同步返回（事件环未转）");
+
+    // 同步径命中异步填充的 QSet（承重门双向互斥的『sync 看 async』半区）
+    const QString secondSync = manager.createWorktree(QStringLiteral("wa"), tid);
+    TestHarness::check(
+        secondSync == QStringLiteral("Error: Worktree 'wa' creation is already in progress"),
+        "异步壳 in-flight 承重：同步径拒同名第二击逐字");
+
+    bool secondAsyncFired = false;
+    QString secondAsyncResult;
+    manager.startCreateWorktreeAsync(QStringLiteral("wa"), tid,
+                                     [&](const QString &r) { secondAsyncResult = r; secondAsyncFired = true; });
+    TestHarness::check(
+        secondAsyncFired &&
+            secondAsyncResult ==
+                QStringLiteral("Error: Worktree 'wa' creation is already in progress"),
+        "异步壳 in-flight 承重：异步径拒同名第二击（done 同步折叠）");
+
+    pumpUntil([&]() { return asyncFired; }, 20000);
+    TestHarness::check(asyncFired, "异步壳终局：done 回调 20s 内送达（信号驱动）");
+    TestHarness::check(asyncResult.startsWith(QStringLiteral("Created worktree 'wa' at ")),
+                       "异步壳终局：成功文案锚");
+    TestHarness::check(asyncResult.contains(tid), "异步壳终局：文案带任务 id");
+
+    QString path;
+    QString pathError;
+    TestHarness::check(manager.worktreePath(QStringLiteral("wa"), &path, &pathError),
+                       "异步壳终局：路径三关放行");
+    TestHarness::check(
+        asyncResult == QStringLiteral("Created worktree 'wa' at %1 for task %2").arg(path, tid),
+        "异步壳终局：文案逐字=同步径锚（finishCreateSuccess 单源）");
+
+    QString gitOut;
+    TestHarness::check(runGitIn(repo, {QStringLiteral("show-ref"), QStringLiteral("--verify"),
+                                        QStringLiteral("refs/heads/wt/wa")},
+                                &gitOut),
+                       "异步壳终局：git 分支 wt/wa 已建（真实子进程产物）");
+
+    QString regError;
+    const QMap<QString, WorktreeManager::Entry> registered = manager.registeredWorktrees(&regError);
+    TestHarness::check(registered.contains(QStringLiteral("wa")), "异步壳终局：注册表在册");
+    TestHarness::check(manager.isWorktreeRegistered(QStringLiteral("wa")),
+                       "异步壳终局：isWorktreeRegistered 真");
+    TaskStore::TaskSnapshot snap;
+    TestHarness::check(findSnapshot(store, tid, &snap) && snap.worktree == QStringLiteral("wa"),
+                       "异步壳终局：任务绑定=名字");
+
+    // ---- 收口后：同名第三击不再报 in progress（settled 闩出清证明），落门③折叠 ----
+    const QString third = manager.createWorktree(QStringLiteral("wa"), tid);
+    TestHarness::check(third == QStringLiteral("Error: Task %1 already uses worktree 'wa'").arg(tid),
+                       "异步壳出清：收口后 in-flight 已空（第三击落门③而非 in progress）");
+
+    // ---- 门④（异步径）：名字被别任务占用 → done 同步折叠逐字 ----
+    const QString created2 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("collider")}});
+    const QString tid2 = taskIdFromCreated(created2);
+    bool collideFired = false;
+    QString collideResult;
+    manager.startCreateWorktreeAsync(QStringLiteral("wa"), tid2,
+                                     [&](const QString &r) { collideResult = r; collideFired = true; });
+    TestHarness::check(
+        collideFired &&
+            collideResult == QStringLiteral("Error: Worktree 'wa' is already bound to another task"),
+        "异步壳门④：别任务占用同名同步折叠逐字");
+}
+
 } // namespace
 
 int tst_worktree()
@@ -697,6 +836,7 @@ int tst_worktree()
     testSpaceInPath(root);
     testDriveCaseRegistry(*store, *manager, repo);
     testFilePretender(*store, *manager, repo);
+    testAsyncCreateShell(*store, *manager, repo);
 
     return TestHarness::failCount() - before;
 }

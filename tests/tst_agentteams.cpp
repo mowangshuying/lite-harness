@@ -1,13 +1,14 @@
 // tst_agentteams.cpp — s13 Agent Teams 内核数据层（AgentTeamsManager）断言套件。
 //
 // lcc s13 34775c8 agent_teams_manager.py 移植验收证据（port-s13 P2 fix-4 · Gate② 补建）。
-// 覆盖 14 组：spawn 校验与回滚矩阵 / list_teammates 形态 / send_message /
+// 覆盖 15 组：spawn 校验与回滚矩阵 / list_teammates 形态 / send_message /
 // submitPlan 案卷与拒重提 / applyPlanResponse 11 门 / applyShutdownRequest 8 门 /
 // review_plan 五校验串与「Lead 不翻队友门」/ matchResponse 4 门 /
 // runTeammateTool 三门与 cwd 现读 / 释放三时点与回调接线 /
 // consumeLeadInbox 不吞协议 + formatTeamEvents 逐字行形 + M8 失败重试 /
 // genRequestId 形态 / claimNextTask 自拉活 / Gate② P3a-B minor 批回归面
-// （FIND-D/E 断言随组1、组10 轨迹钉桩，组14 补 FIND-M 诊断面语义与 FIND-N3 常量单源）。
+// （FIND-D/E 断言随组1、组10 轨迹钉桩，组14 补 FIND-M 诊断面语义与 FIND-N3 常量单源）
+// / Gate③ MINOR-4 异步工具桥 manager 侧面貌（组15）。
 //
 // 套件纪律：临时根一律 ScopedTempRoot（仅认 LITE_TEST_TMPROOT，未设即 SKIP 返 0）；
 // 期望文本从 src/AgentTeamsManager.cpp 与 src/TaskStore.cpp 实抄、与 lcc 逐字对照；
@@ -36,6 +37,7 @@
 #include <QVector>
 
 #include <cstdio>
+#include <functional>
 #include <optional>
 
 namespace {
@@ -1353,6 +1355,221 @@ void testGate2MinorBatchSurface()
                        "FIND-N3: 空闲心跳间隔单源在 AgentConst（2000ms=lcc :185 2.0s 逐值对位）");
 }
 
+// ————————————————————————————————————————————————————————————————
+// 组15：Gate③ MINOR-4 异步工具桥（manager 侧面貌）——挂起哨兵 / 续跑 /
+// 早归暂存 / clearPendingResume 与 finalizeTeammate 丢弃 / 门-权限-cwd 复核
+// 先于发起 / 同步表回退。TeammateRuntime 截批续跑不在测试目标（组14 同款
+// 纪律：该 TU 不链入），其验证归 cl /c + 宿主冒烟。期望文本从
+// src/AgentTeamsManager.cpp 现文逐字实抄（哨兵字面量 :802、折叠前缀 :444、
+// Blocked :410-412 等）。零事件循环依赖：假适配器直接调 done。
+// —————————————————————————————————————————————————————————————──
+void testAsyncToolBridge()
+{
+    ScopedTempRoot tmp("agentteams");
+    if (!tmp.isValid()) {
+        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        return;
+    }
+    const QString root = tmp.path();
+    TaskStore store([root] { return root; });
+    MessageBus bus([root] { return root; });
+    AgentTeamsManager mgr(&bus, &store);
+    mgr.runSpawnTeammate(QStringLiteral("eve"), QStringLiteral("c"), QStringLiteral("p"), QString(), false);
+
+    QStringList hookLog;
+    mgr.setHooksTrigger([&](const QString &evt, const QString &toolName,
+                            const QJsonObject &, const QString &output) {
+        hookLog << evt + QLatin1Char('|') + toolName;
+        if (evt == QStringLiteral("PostToolUse")) {
+            hookLog.last() += QLatin1Char('=') + output; // 记账输出，返回值被忽略（偏C' 同款）
+        }
+        return QString();
+    });
+    QString permissionDeny; // 空串=放行
+    mgr.setPermissionCheck([&](const QString &toolName, const QJsonObject &) {
+        return toolName == ToolNames::BASH ? permissionDeny : QString();
+    });
+
+    int syncBashCalls = 0;
+    mgr.setToolAdapter(ToolNames::BASH, [&](const QJsonObject &, const QString &) {
+        ++syncBashCalls;
+        return QStringLiteral("BASH-OK");
+    });
+    int asyncStarts = 0;
+    QString asyncCwd;
+    bool earlyMode = false;
+    std::function<void(const QString &)> lastDone;
+    mgr.setToolAsyncAdapter(ToolNames::BASH,
+                            [&](const QJsonObject &, const QString &cwd,
+                                std::function<void(const QString &)> done) {
+                                ++asyncStarts;
+                                asyncCwd = cwd;
+                                if (earlyMode) {
+                                    // 适配器内同步早归（danger 前置拒等形态）：测 earlyResult 暂存。
+                                    done(QStringLiteral("EARLY-DONE"));
+                                } else {
+                                    lastDone = std::move(done);
+                                }
+                            });
+
+    const QString t1 = newTask(store, QStringLiteral("async-job"));
+    TestHarness::check(store.runClaimTaskLeased(idArgs(t1), QStringLiteral("eve"))
+                           .startsWith(QStringLiteral("Claimed ")),
+                       "异步夹具: eve 认领任务（租约立起，assignmentCwd 放行）");
+
+    QJsonObject bashArgs;
+    bashArgs.insert(QStringLiteral("command"), QStringLiteral("echo hi"));
+
+    // ① plan 门先于异步发起（与同步同位同口径，无挂起账）。
+    TestHarness::check(mgr.runRequestPlan(QStringLiteral("eve"), QStringLiteral("do x"))
+                           == QStringLiteral("Plan requested from eve"),
+                       "异步夹具: 置 required 门");
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == QStringLiteral("Blocked: plan status is required. Submit or revise the plan "
+                                             "and wait for approval before changing the workspace."),
+                       "异步门: plan Blocked 逐字且不发起");
+    TestHarness::check(asyncStarts == 0 && syncBashCalls == 0, "异步门: Blocked 时两侧 adapter 均未触达");
+    // 合法在审账本（组5同规）：runRequestPlan 只复位门不立案卷，案号唯 submit_plan 登记；
+    // 缺这一步则 currentPlanRequestId 恒空 → 批准整单忽略 → 门停 required → 哨兵永不可达。
+    const QString subOut = mgr.submitPlan(QStringLiteral("eve"), QStringLiteral("step-one"));
+    TestHarness::check(subOut.startsWith(QStringLiteral("Plan submitted (")),
+                       "异步夹具: submit_plan 立案卷、门转 pending");
+    const QString eveRid = captureReqId(subOut);
+    TestHarness::check(!eveRid.isEmpty(), "异步夹具: eve 在审案号");
+    TestHarness::check(mgr.runReviewPlan(eveRid, true, QString())
+                           == QStringLiteral("Plan approved (%1)").arg(eveRid),
+                       "异步夹具: Lead 审案翻案卷 approved");
+    QString apOut;
+    TestHarness::check(mgr.applyPlanResponse(QStringLiteral("eve"),
+        mkMsg(QStringLiteral("lead"), QStringLiteral("eve"), QStringLiteral("ok"),
+              QStringLiteral("plan_approval_response"), eveRid, true), &apOut)
+                           && apOut == QStringLiteral("[Plan approved] ok"),
+                       "异步夹具: 批准放行");
+
+    // ② 正常发起：哨兵逐字返回、同步表被优先压制、Post 推迟到续跑点。
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == QStringLiteral("<async-tool-pending>"),
+                       "异步派发: 挂起哨兵逐字（钉桩字面量=禁翻区串）");
+    TestHarness::check(mgr.asyncPendingSentinel() == QStringLiteral("<async-tool-pending>"),
+                       "异步派发: 哨兵单源同字面量（生产定义点与测试锚同源）");
+    TestHarness::check(asyncStarts == 1 && syncBashCalls == 0 && asyncCwd == root,
+                       "异步派发: 异步表优先于同步表、cwd 仍 assignmentCwd 现读");
+    TestHarness::check(hookLog.contains(QStringLiteral("PreToolUse|bash"))
+                           && !hookLog.contains(QStringLiteral("PostToolUse|bash")),
+                       "异步派发: PostToolUse 推迟（发起点无 Post）");
+
+    // ③ 续跑：先挂闭包、done 后到 → 闭包携结果、Post 补发真实结果、销账后二次 done 丢弃。
+    int resumes = 0;
+    QString resumeText;
+    mgr.setPendingResume(QStringLiteral("eve"), [&](const QString &result) {
+        ++resumes;
+        resumeText = result;
+    });
+    TestHarness::check(resumes == 0, "异步续跑: 仅挂位不触发（无暂存态时闭包静候）");
+    TestHarness::check(static_cast<bool>(lastDone), "异步续跑: done 闭包已捕获（防空调用炸整个测试进程）");
+    const std::function<void(const QString &)> done1 = lastDone;
+    if (done1) {
+        done1(QStringLiteral("BASH-RESULT"));
+    }
+    TestHarness::check(resumes == 1 && resumeText == QStringLiteral("BASH-RESULT"),
+                       "异步续跑: done 驱动闭包逐字回灌");
+    TestHarness::check(hookLog.contains(QStringLiteral("PostToolUse|bash=BASH-RESULT")),
+                       "异步续跑: PostToolUse 在续跑点携真实结果补发（有意偏离登记面）");
+    done1(QStringLiteral("BASH-SECOND"));
+    TestHarness::check(resumes == 1, "异步续跑: 同名二次 done 丢弃（账已销）");
+
+    // ④ 早归：done 在发起栈内同步早归 → earlyResult 暂存 → setPendingResume 同栈续跑。
+    earlyMode = true;
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == AgentTeamsManager::asyncPendingSentinel(),
+                       "异步早归: 哨兵照发（done 早归不改派发语义）");
+    earlyMode = false;
+    bool earlyDelivered = false;
+    QString earlyText;
+    mgr.setPendingResume(QStringLiteral("eve"), [&](const QString &result) {
+        earlyDelivered = true;
+        earlyText = result;
+    });
+    TestHarness::check(earlyDelivered && earlyText == QStringLiteral("EARLY-DONE"),
+                       "异步早归: setPendingResume 即同栈消费暂存续跑（递归深度受批大小界，无事件重入）");
+    TestHarness::check(hookLog.contains(QStringLiteral("PostToolUse|bash=EARLY-DONE")),
+                       "异步早归: Post 于早归续跑时同样补发");
+
+    // ⑤ clearPendingResume 销账：晚归结果丢弃（runtime 退场清算的 manager 侧半面）。
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == AgentTeamsManager::asyncPendingSentinel(),
+                       "异步销账夹具: 再发起");
+    bool clearedFired = false;
+    mgr.setPendingResume(QStringLiteral("eve"), [&](const QString &) { clearedFired = true; });
+    mgr.clearPendingResume(QStringLiteral("eve"));
+    TestHarness::check(static_cast<bool>(lastDone), "异步销账: done 闭包已捕获（防空调用）");
+    const std::function<void(const QString &)> done3 = lastDone;
+    if (done3) {
+        done3(QStringLiteral("DISCARDED"));
+    }
+    TestHarness::check(!clearedFired, "异步销账: clearPendingResume 后 done 静默丢弃（shutdown 窗口裁决口径）");
+
+    // ⑥ finalizeTeammate 五本账收口：挂起窗口内晚归丢弃。
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == AgentTeamsManager::asyncPendingSentinel(),
+                       "异步退场夹具: 再发起");
+    bool finalizeFired = false;
+    mgr.setPendingResume(QStringLiteral("eve"), [&](const QString &) { finalizeFired = true; });
+    mgr.finalizeTeammate(QStringLiteral("eve"));
+    TestHarness::check(static_cast<bool>(lastDone), "异步退场: done 闭包已捕获（防空调用）");
+    const std::function<void(const QString &)> done4 = lastDone;
+    if (done4) {
+        done4(QStringLiteral("LATE-AFTER-FINALIZE"));
+    }
+    TestHarness::check(!finalizeFired, "异步退场: finalizeTeammate 销挂起账 → 晚归结果无人认领即丢弃");
+
+    // ⑦ 孤儿续跑调用：无账可查一律静默，不崩不抛。
+    mgr.resumePendingTool(QStringLiteral("ghostx"), QStringLiteral("orphan"));
+    bool orphanFired = false;
+    mgr.setPendingResume(QStringLiteral("ghosty"), [&](const QString &) { orphanFired = true; });
+    mgr.resumePendingTool(QStringLiteral("ghosty"), QStringLiteral("x"));
+    TestHarness::check(!orphanFired, "异步孤儿: 无挂起账时挂位/续跑均 no-op（闭包作废）");
+
+    // ⑧ 权限硬拒先于发起：拒绝逐字返回、异步零发起、零挂起账。
+    permissionDeny = QStringLiteral("Permission required: no way");
+    const int startsBefore = asyncStarts;
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == QStringLiteral("Permission required: no way"),
+                       "异步权限: 硬拒文本逐字返回（与同步同位同口径）");
+    TestHarness::check(asyncStarts == startsBefore, "异步权限: 硬拒零发起");
+    permissionDeny.clear();
+
+    // ⑨ cwd 现读失败：fail-closed 折叠、不发起（fix-4 钉死第 3 条同步口径延伸）。
+    QString err;
+    TestHarness::check(store.runCompleteTaskLeased(idArgs(t1), QStringLiteral("eve"))
+                           .startsWith(QStringLiteral("Completed ")),
+                       "异步现读夹具: eve 完工");
+    TestHarness::check(store.releaseCompletedAssignment(QStringLiteral("eve"), &err),
+                       "异步现读夹具: 回合边界退租");
+    const int startsBefore2 = asyncStarts;
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::BASH, bashArgs)
+                           == QStringLiteral("Error: Invalid task assignment: No active assignment for eve"),
+                       "异步现读: 无租约折叠逐字（未发起异步）");
+    TestHarness::check(asyncStarts == startsBefore2, "异步现读: 失败零发起");
+
+    // ⑩ 回退面：未注册异步的 read_file 仍走同步表；未知工具先返不受影响。
+    const QString t2 = newTask(store, QStringLiteral("sync-fallback-job"));
+    TestHarness::check(store.runClaimTaskLeased(idArgs(t2), QStringLiteral("eve"))
+                           .startsWith(QStringLiteral("Claimed ")),
+                       "回退夹具: eve 认领 t2（租约复立）");
+    QJsonObject pathArgs;
+    pathArgs.insert(QStringLiteral("path"), QStringLiteral("a.txt"));
+    mgr.setToolAdapter(ToolNames::READ_FILE, [](const QJsonObject &, const QString &) {
+        return QStringLiteral("READ-OK");
+    });
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), ToolNames::READ_FILE, pathArgs)
+                           == QStringLiteral("READ-OK"),
+                       "回退: read_file 未注册异步 → 同步 adapter 照常派发");
+    TestHarness::check(mgr.runTeammateTool(QStringLiteral("eve"), QStringLiteral("zipzap"), pathArgs)
+                           == QStringLiteral("Unknown tool: zipzap"),
+                       "回退: 异步表存在不改未知工具先返（lcc :518-520）");
+}
+
 } // namespace
 
 int tst_agentteams()
@@ -1372,5 +1589,6 @@ int tst_agentteams()
     testGenRequestId();
     testClaimNextTask();
     testGate2MinorBatchSurface();
+    testAsyncToolBridge();
     return TestHarness::failCount() - before;
 }

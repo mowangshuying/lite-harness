@@ -129,6 +129,16 @@ private:
     // 返回 true = 该退场了（shutdown 已接受并回执）。
     bool handleInbox(const QVector<BusMessage> &inbox);
 
+    // ── 工具批执行（Gate③ MINOR-4 异步桥拆分自 deliverTurnResult 工具分支）──
+    // 同步工具即时回填续批；异步工具返回挂起哨兵（AgentTeamsManager::
+    // asyncPendingSentinel）→ 保存批位（当前 callId + 剩余队列）、向 manager 挂
+    // 续跑闭包后退出本栈，drain/turnRequested 都不发生。批自然走完 = 中间链
+    // drain（shutdown 截停位点照旧）+ emit turnRequested。
+    void runToolBatch(const QJsonArray &toolCalls);
+    // 续跑入口（经 manager 闭包回调触发）：回填挂起工具的异步结果、清挂起态，
+    // 接续剩余批（可能再次挂起）。终态/非挂起窗口一律丢弃（防御）。
+    void resumePendingBatch(const QString &result);
+
     void enterIdle();  // 启动心跳（lcc：wait_for_work 的 Condition 等待段）
     void leaveIdle();  // 停心跳（lcc：开工/退场时退出等待）
     // 账目核（Gate② FIND-L 拆分）：闩锁→停心跳→退租→finalizeTeammate 弹账。
@@ -170,6 +180,13 @@ private:
     QStringList m_pendingTray;       // 本拍待合并的用户消息文本（lcc work_messages，:903）
     QTimer *m_heartbeat = nullptr;   // Idle 轮询心跳（零线程，钉死第 1 条）
     bool m_finished = false;         // 终态闩锁（finish 幂等；再调回调全静默）
+
+    // 异步挂起态（MINOR-4）：m_pendingTool 为批中断闩——挂起窗口内
+    // onHeartbeat/deliverTurnResult 顶部防御闸一律截停（宿主的单飞闸使物理不可达，
+    // 闩是第二道）。settleLedgers 清算时三态一并出清 + manager 销账。
+    bool m_pendingTool = false;
+    QString m_pendingCallId;   // 挂起中工具的 call id（续跑回填位）
+    QJsonArray m_pendingBatch; // 剩余批（不含挂起项）
 };
 
 #endif // TEAMMATERUNTIME_H

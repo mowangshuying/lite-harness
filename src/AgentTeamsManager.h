@@ -163,7 +163,9 @@ public:
     QString currentPlanRequestId(const QString &name) const;         // 不在册返回空串
     const ProtocolState *protocolState(const QString &requestId) const; // 只读指针，无案卷=nullptr
     // 队友退场清算的第②段（lcc run() finally :1048-1056 的 pop 四本账；
-    // 第①段 releaseTeammateAssignment 由 TeammateRuntime 自调——fix-4 钉死第 4 条）
+    // 第①段 releaseTeammateAssignment 由 TeammateRuntime 自调——fix-4 钉死第 4 条）。
+    // MINOR-4 追加：同点销挂起工具台账（m_pendingTools）——窗口内退场 =
+    // 晚归结果在 resumePendingTool 无账可查即丢弃（裁决口径）。
     void finalizeTeammate(const QString &name);
     // 在册队友名（字典序，lcc sorted() 口径）
     QStringList teammateNames() const;
@@ -206,6 +208,26 @@ public:
     void setToolAdapter(const QString &toolName,
                         std::function<QString(const QJsonObject &params, const QString &cwd)> adapter);
 
+    // ── 异步工具桥（Gate③ MINOR-4：队友 bash 摘除主线程有界等待）──
+    // 异步适配器契约：恰调用一次 done（同步早退与异步晚归都合法——早归在
+    // resumePending 闭包未挂位时暂存 earlyResult，setPendingResume 挂位即同栈续跑）。
+    // 注册了异步适配器的工具在派发时优先于同步表（同步 setToolAdapter 仍是
+    // 其余文件四件与未注册异步场景的回退通道）。
+    using ToolAsyncAdapter =
+        std::function<void(const QJsonObject &params, const QString &cwd,
+                           std::function<void(const QString &result)> done)>;
+    void setToolAsyncAdapter(const QString &toolName, ToolAsyncAdapter adapter);
+    // 挂起哨兵文案（runTeammateTool 对异步工具的返回值；runtime 据此截批）。
+    static QString asyncPendingSentinel();
+    // 续跑桥三件（TeammateRuntime 检测到哨兵后调用；本类不 include
+    // TeammateRuntime.h——续跑以闭包出参交接，偏A 解耦铁律保持）：
+    // setPendingResume 挂闭包；clearPendingResume 退场销账；
+    // resumePendingTool 由适配器 done 调进来，销账后驱动闭包继续批。
+    void setPendingResume(const QString &teammateName,
+                          std::function<void(const QString &result)> resume);
+    void clearPendingResume(const QString &teammateName);
+    void resumePendingTool(const QString &teammateName, const QString &result);
+
 private:
     // lcc match_response :391-422 四门软核销（①案卷存在 ②回执类型按案卷推导
     // ③镜像身份 ④一次性防重放）；全过才把案卷置 approved/rejected——它是
@@ -223,6 +245,18 @@ private:
     std::function<QString(const QString &, const QString &, const QJsonObject &, const QString &)>
         m_hooksTrigger;
     QHash<QString, std::function<QString(const QJsonObject &, const QString &)>> m_toolAdapters;
+
+    // 异步桥账簿（MINOR-4）：适配器表与挂起台账。挂起台账按队友名键——
+    // 每队友同一时刻至多一个挂起工具（批循环单点驱动，天然串行）。
+    QHash<QString, ToolAsyncAdapter> m_toolAsyncAdapters;
+    struct PendingTool {
+        std::function<void(const QString &result)> resume; // runtime 续跑闭包（挂位前为空）
+        QString toolName;                                   // PostToolUse 续跳时补发用
+        QJsonObject params;
+        QString earlyResult;                                // done 同步早归暂存
+        bool hasEarly = false;
+    };
+    QHash<QString, PendingTool> m_pendingTools;
 
     // 五本账（全内存，D7：重启即作废，禁从磁盘恢复）
     QHash<QString, TeammateStatus> m_activeTeammates;                 // name → status

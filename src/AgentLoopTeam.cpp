@@ -123,38 +123,59 @@ void AgentLoop::initTeamEngine()
                            [this](const QJsonObject &params, const QString &cwd) {
         return runGlobIn(cwd, params);
     });
-    // bash 适配器（偏差登记，P3b 已知代价）：引擎适配器契约为同步 QString 返回，
-    // lcc 队友 bash=daemon 线程内 subprocess.run(timeout) 阻塞——lite 零线程约束
-    // 把这段阻塞压缩到主线程（至多 kBashTimeoutMs+启动/回收界）。Lead 自身 bash
-    // 仍异步不受影响；GUI 冻结风险已知，后续如需再开异步适配器通道须改引擎契约。
-    // 输出收口逐点对齐前台异步分支（AgentLoopBash.cpp）：dangerWarning 前置、
-    // finalizeOutput 截断/超时文案、非零退出码走 formatBashResult 前缀。
-    m_teams.setToolAdapter(ToolNames::BASH,
-                           [this](const QJsonObject &params, const QString &cwd) {
+    // bash 适配器（Gate③ MINOR-4 异步化真实落地）：改走异步桥——原同步形态把
+    // lcc daemon 线程里的 subprocess.run(timeout) 压缩成主线程有界等待
+    // （waitForStarted/waitForFinished ≤kBashTimeoutMs），GUI 冻结整段时长；现换
+    // 信号驱动 BashRunner::start（与主循环 run_in_background 同机制，零线程零嵌套
+    // 事件循环），原 P3b 同步偏差登记就此撤销。
+    // danger 前置判定保持同步（主循环前台分支同口径：命中名单不发起进程）——
+    // done 同步早归经 manager 的 earlyResult 暂存，setPendingResume 挂位即同栈续跑。
+    // 收口三分支皆有界：FailedToStart（errorOccurred）/ 超时（BashRunner 内建
+    // singleShot kBashTimeoutMs kill，finished 收口成 kBashTimeoutError）/ 正常
+    // finished（finalizeOutput 截断 + formatBashResult 非零退出码前缀）。
+    // 进程 parent=宿主：runtime 在挂起窗口被清算时 manager 已销账（结果丢弃，
+    // 裁决口径），进程随宿主析构出清，晚归信号不再触发。
+    m_teams.setToolAsyncAdapter(ToolNames::BASH,
+                                [this](const QJsonObject &params, const QString &cwd,
+                                       std::function<void(const QString &result)> done) {
         const QString command = params.value(QStringLiteral("command")).toString();
         const QString danger =
             BashRunner::dangerWarning(command, AgentLoopDetail::bashDenyList());
-        if (!danger.isEmpty())
-            return danger;
-        QProcess process;
-        process.setProcessChannelMode(QProcess::MergedChannels);
-        process.setWorkingDirectory(cwd);
-        process.start(QStringLiteral("powershell.exe"),
-                      {QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
-                       QStringLiteral("-Command"), command});
-        if (!process.waitForStarted(AgentConst::kTeamBashStartWaitMs))
-            return QStringLiteral("Error: bash 启动失败：powershell.exe 无法启动（%1）")
-                .arg(process.errorString());
-        bool timedOut = false;
-        if (!process.waitForFinished(AgentConst::kBashTimeoutMs)) {
-            timedOut = true;
-            process.kill();
-            process.waitForFinished(AgentConst::kTeamBashKillWaitMs);
+        if (!danger.isEmpty()) {
+            done(danger);
+            return;
         }
-        const QString base = BashRunner::finalizeOutput(&process, timedOut);
-        if (timedOut)
-            return base; // 即 kBashTimeoutError 文案（不读缓冲，口径同异步版）
-        return BackgroundTasksManager::formatBashResult(base, process.exitCode(), false);
+        const auto timedOut = std::make_shared<bool>(false);
+        const auto settled = std::make_shared<bool>(false);
+        BashRunner::start(
+            command, cwd, this, nullptr, timedOut,
+            [timedOut, settled, done](QProcess *process) {
+                QObject::connect(process, &QProcess::errorOccurred, process,
+                                 [process, settled, done](QProcess::ProcessError error) {
+                    if (error != QProcess::FailedToStart || *settled) {
+                        return;
+                    }
+                    *settled = true;
+                    done(QStringLiteral("Error: bash 启动失败：powershell.exe 无法启动（%1）")
+                             .arg(process->errorString()));
+                    process->deleteLater();
+                });
+                QObject::connect(process, &QProcess::finished, process,
+                                 [process, timedOut, settled, done](int, QProcess::ExitStatus) {
+                    if (*settled) {
+                        return; // FailedToStart 时 errorOccurred/finished 连发，先到者收口
+                    }
+                    *settled = true;
+                    const QString base = BashRunner::finalizeOutput(process, *timedOut);
+                    if (*timedOut) {
+                        done(base); // 即 kBashTimeoutError 文案（不读缓冲，口径同前台异步版）
+                    } else {
+                        done(BackgroundTasksManager::formatBashResult(
+                            base, process->exitCode(), false));
+                    }
+                    process->deleteLater();
+                });
+            });
     });
 }
 

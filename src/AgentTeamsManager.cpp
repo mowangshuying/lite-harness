@@ -422,6 +422,39 @@ QString AgentTeamsManager::runTeammateTool(const QString &name, const QString &t
         }
     }
 
+    // ── 异步桥派发（Gate③ MINOR-4）：注册了异步适配器的工具优先于同步表 ──
+    // 与同步路径同口径已过 plan 门/权限门；PreToolUse 先于发起检查（lcc
+    // :521-523 同位）；PostToolUse 推迟到续跑点带真实结果补发（发起时无
+    // 输出可报——有意偏离，lcc 同步形态无此场景，登记）。cwd 仍
+    // assignmentCwd 现读（fix-4 钉死第 3 条），失败不发起异步、直接折叠报错。
+    if (m_toolAsyncAdapters.contains(toolName)) {
+        const ToolAsyncAdapter adapter = m_toolAsyncAdapters.value(toolName);
+        // 钩子先于 cwd 复核（与同步形态 invoke() 内部的检查次序同口径：
+        // hook 段在 :458-465 早于 invoke() 执行）。
+        if (m_hooksTrigger) {
+            const QString blocked =
+                m_hooksTrigger(QStringLiteral("PreToolUse"), toolName, params, QString());
+            if (!blocked.isEmpty()) {
+                return blocked;
+            }
+        }
+        QString cwd;
+        QString err;
+        if (!m_taskStore->assignmentCwd(name, &cwd, &err)) {
+            return QStringLiteral("Error: Invalid task assignment: ") + err;
+        }
+        PendingTool pending;
+        pending.toolName = toolName;
+        pending.params = params;
+        m_pendingTools.insert(name, pending);
+        // done 收敛到 resumePendingTool：runtime 尚未挂续跑闭包（同栈窗口）
+        // 则暂存 earlyResult，setPendingResume 挂位即消费。
+        adapter(params, cwd, [this, name](const QString &result) {
+            resumePendingTool(name, result);
+        });
+        return asyncPendingSentinel();
+    }
+
     // 派发：基五件走适配器表（cwd 一律 assignmentCwd 现读，禁读租约缓存——fix-4 钉死第 3 条），
     // 团队工具直连本类公共门。lcc :518-520：未知工具先返，钩子不触发。
     std::function<QString()> invoke;
@@ -512,6 +545,9 @@ void AgentTeamsManager::finalizeTeammate(const QString &name)
     m_planGates.remove(name);
     m_planRequestIds.remove(name);
     m_teammateHandles.remove(name);
+    // MINOR-4：同点销挂起工具台账——退场后晚归的适配器结果在
+    // resumePendingTool 无账可查即丢弃（shutdown 窗口裁决口径）。
+    m_pendingTools.remove(name);
 }
 
 // ── Lead 七工具薄壳（lcc run_* :690-776；P3 只做 args 解包转发）──
@@ -749,4 +785,68 @@ void AgentTeamsManager::setToolAdapter(
     std::function<QString(const QJsonObject &, const QString &)> adapter)
 {
     m_toolAdapters.insert(toolName, std::move(adapter));
+}
+
+// ── 异步桥（Gate③ MINOR-4）实现 ──────────────────────────────────────────
+
+void AgentTeamsManager::setToolAsyncAdapter(const QString &toolName, ToolAsyncAdapter adapter)
+{
+    m_toolAsyncAdapters.insert(toolName, std::move(adapter));
+}
+
+QString AgentTeamsManager::asyncPendingSentinel()
+{
+    // 挂起哨兵：非工具输出，仅存在于 runTeammateTool 返回值与 runtime 截批比较
+    // 之间（禁翻区串，永不进翻译）。真工具输出撞此文案的碰撞概率忽略——
+    // 尖括号包裹 + 全仓唯一定义点。
+    return QStringLiteral("<async-tool-pending>");
+}
+
+void AgentTeamsManager::setPendingResume(const QString &teammateName,
+                                         std::function<void(const QString &result)> resume)
+{
+    auto it = m_pendingTools.find(teammateName);
+    if (it == m_pendingTools.end()) {
+        return; // 账已销（退场清算竞态）——闭包作废，结果无人认领
+    }
+    it.value().resume = std::move(resume);
+    if (it.value().hasEarly) {
+        // done 同步早归（适配器内同步拒绝等）：哨兵返回后 runtime 同栈挂位，
+        // 此刻立即续跑—— recursion 深度受批大小界，无事件循环重入。
+        const PendingTool pending = it.value();
+        m_pendingTools.erase(it);
+        if (m_hooksTrigger) {
+            m_hooksTrigger(QStringLiteral("PostToolUse"), pending.toolName, pending.params,
+                           pending.earlyResult);
+        }
+        pending.resume(pending.earlyResult);
+    }
+}
+
+void AgentTeamsManager::clearPendingResume(const QString &teammateName)
+{
+    m_pendingTools.remove(teammateName);
+}
+
+void AgentTeamsManager::resumePendingTool(const QString &teammateName, const QString &result)
+{
+    auto it = m_pendingTools.find(teammateName);
+    if (it == m_pendingTools.end()) {
+        return; // 无挂起账 = 已退场清算（cancel/shutdown 窗口）：结果丢弃（裁决口径）
+    }
+    PendingTool pending = it.value();
+    if (!pending.resume) {
+        // 适配器在发起调用栈内同步 done（早归）：runtime 尚未截批挂位——暂存，
+        // setPendingResume 挂位时消费。
+        pending.earlyResult = result;
+        pending.hasEarly = true;
+        it.value() = pending;
+        return;
+    }
+    m_pendingTools.erase(it);
+    // PostToolUse 在续跑点带真实结果补发（偏C' 同款：返回值忽略）。
+    if (m_hooksTrigger) {
+        m_hooksTrigger(QStringLiteral("PostToolUse"), pending.toolName, pending.params, result);
+    }
+    pending.resume(result);
 }

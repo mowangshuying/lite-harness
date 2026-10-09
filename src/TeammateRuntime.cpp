@@ -145,6 +145,11 @@ void TeammateRuntime::onHeartbeat()
     if (m_finished) {
         return;
     }
+    if (m_pendingTool) {
+        // 挂起窗口不开新回合（MINOR-4 防重入闸）：心跳回合中间本就不武装，
+        // 此闸是防御——挂起期间不动信箱、不自拉活，等适配器收口驱动续跑。
+        return;
+    }
 
     const QVector<BusMessage> inbox = m_bus->drain(m_name);
     if (inbox.isEmpty() && !m_bus->lastError().isEmpty()) {
@@ -261,6 +266,11 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
     if (m_finished) {
         return;
     }
+    if (m_pendingTool) {
+        // 挂起窗口迟到的回合结果：宿主单飞闸下物理不可达（挂起期间不发
+        // turnRequested、无从起新流），此闸防御——不得清批队列态（MINOR-4）。
+        return;
+    }
 
     if (!errorMessage.isEmpty()) {
         // lcc :963-970 except：error 信发 Lead + return "stop"。
@@ -274,41 +284,11 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
 
     if (!toolCalls.isEmpty()) {
         // lcc :971-977：逐块执行并回填，return "continue"（while 下一轮）。
+        // MINOR-4：批执行拆入 runToolBatch——异步工具挂起时保存批位退出，
+        // 续跑经 resumePendingBatch 接批；批完 drain/turnRequested 照旧。
         m_manager->setTeammateStatus(m_name,
                                      AgentTeamsManager::TeammateStatus::Working);
-        for (const QJsonValue &tcv : toolCalls) {
-            const QJsonObject tc = tcv.toObject();
-            const QString callId = tc.value(QStringLiteral("id")).toString();
-            const QJsonObject fn = tc.value(QStringLiteral("function")).toObject();
-            const QString toolName = fn.value(QStringLiteral("name")).toString();
-            // arguments 兼容对象/JSON 串两形（repo-wide parseToolCall 同款容错；
-            // 本类不 include AgentLoopDetail 重 TU，P3 宿主可统一）。
-            QJsonObject params;
-            const QJsonValue argsVal = fn.value(QStringLiteral("arguments"));
-            if (argsVal.isObject()) {
-                params = argsVal.toObject();
-            } else if (argsVal.isString()) {
-                const QJsonDocument doc =
-                    QJsonDocument::fromJson(argsVal.toString().toUtf8());
-                if (doc.isObject()) {
-                    params = doc.object();
-                }
-            }
-            // 队友全部工具（含 base5/send_message/submit_plan/task 三件/协议门）
-            // 收敛在 manager 单点（偏C）；plan 门/权限/hook 都在那里。
-            const QString output = m_manager->runTeammateTool(m_name, toolName, params);
-            appendToolResult(callId, output);
-        }
-
-        // 中间链 drain：对齐 lcc「work() 第一步永远 drain」（:944-946）——多工具回合
-        // 续轮前让 shutdown 有机会截住（否则最长拖一整轮 LLM 时延）。
-        const QVector<BusMessage> inbox = m_bus->drain(m_name);
-        if (!inbox.isEmpty() && m_bus->lastError().isEmpty() && handleInbox(inbox)) {
-            finish();
-            return;
-        }
-
-        emit turnRequested(m_name);
+        runToolBatch(toolCalls);
         return;
     }
 
@@ -351,6 +331,80 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
     enterIdle();
 }
 
+// 工具批执行（Gate③ MINOR-4 拆自 deliverTurnResult 工具分支）。同步工具即时回填
+// 续批；异步工具哨兵 → 存批位、向 manager 挂续跑闭包后退出本栈（不 drain、不续轮）。
+// 挂起窗口内 cancel()/finish() 到达：settleLedgers 销 manager 账 + 清三态，晚归
+// 结果在 resumePendingTool 丢弃、终态照 finish 清算链——shutdown 观察点推迟到
+// 批尾 drain（至多当前工具的有界超时），裁决口径登记于报告。
+void TeammateRuntime::runToolBatch(const QJsonArray &toolCalls)
+{
+    for (int i = 0; i < toolCalls.size(); ++i) {
+        const QJsonObject tc = toolCalls.at(i).toObject();
+        const QString callId = tc.value(QStringLiteral("id")).toString();
+        const QJsonObject fn = tc.value(QStringLiteral("function")).toObject();
+        const QString toolName = fn.value(QStringLiteral("name")).toString();
+        // arguments 兼容对象/JSON 串两形（repo-wide parseToolCall 同款容错；
+        // 本类不 include AgentLoopDetail 重 TU，P3 宿主可统一）。
+        QJsonObject params;
+        const QJsonValue argsVal = fn.value(QStringLiteral("arguments"));
+        if (argsVal.isObject()) {
+            params = argsVal.toObject();
+        } else if (argsVal.isString()) {
+            const QJsonDocument doc =
+                QJsonDocument::fromJson(argsVal.toString().toUtf8());
+            if (doc.isObject()) {
+                params = doc.object();
+            }
+        }
+        // 队友全部工具（含 base5/send_message/submit_plan/task 三件/协议门）
+        // 收敛在 manager 单点（偏C）；plan 门/权限/hook 都在那里。
+        const QString output = m_manager->runTeammateTool(m_name, toolName, params);
+        if (output == AgentTeamsManager::asyncPendingSentinel()) {
+            // 异步挂起：哨兵不是 tool_result——当前项不回填，存批位后交闭包退栈。
+            // 挂位窗口内 done 已同步早归的（暂存态）由 setPendingResume 同栈续跑。
+            m_pendingTool = true;
+            m_pendingCallId = callId;
+            QJsonArray rest;
+            for (int j = i + 1; j < toolCalls.size(); ++j) {
+                rest.append(toolCalls.at(j));
+            }
+            m_pendingBatch = rest;
+            m_manager->setPendingResume(m_name,
+                                        [this](const QString &result) {
+                resumePendingBatch(result);
+            });
+            return;
+        }
+        appendToolResult(callId, output);
+    }
+
+    // 中间链 drain：对齐 lcc「work() 第一步永远 drain」（:944-946）——多工具回合
+    // 续轮前让 shutdown 有机会截住（否则最长拖一整轮 LLM 时延）。
+    const QVector<BusMessage> inbox = m_bus->drain(m_name);
+    if (!inbox.isEmpty() && m_bus->lastError().isEmpty() && handleInbox(inbox)) {
+        finish();
+        return;
+    }
+
+    emit turnRequested(m_name);
+}
+
+// 续跑入口：manager 在销账+PostToolUse 补发后调进来。回填挂起项、接续剩余批
+// （可能再次挂起——递归深度受批大小界，同栈无事件循环重入）。
+void TeammateRuntime::resumePendingBatch(const QString &result)
+{
+    if (m_finished || !m_pendingTool) {
+        return; // 已退场清算 / 非挂起态：防御丢弃（manager 侧账已同步出清）
+    }
+    m_pendingTool = false;
+    const QString callId = m_pendingCallId;
+    m_pendingCallId.clear();
+    const QJsonArray rest = m_pendingBatch;
+    m_pendingBatch = QJsonArray();
+    appendToolResult(callId, result);
+    runToolBatch(rest);
+}
+
 // 账目核（Gate② FIND-L 拆分）：闩锁 → 停心跳 → 退租 → 弹四本账。**全程零 emit**，
 // 析构上下文可安全调用；失败上报职责留给 emit 壳/析构兜底各通道（见出参注释）。
 bool TeammateRuntime::settleLedgers(QString *outCleanupError)
@@ -363,6 +417,14 @@ bool TeammateRuntime::settleLedgers(QString *outCleanupError)
     }
     m_finished = true;
     leaveIdle(); // m_heartbeat 是本对象子 QTimer，stop() 在析构上下文同样安全
+
+    // 挂起台账出清（MINOR-4）：终态在挂起窗口到达（cancel/shutdown/error）时，
+    // manager 销账使晚到的适配器结果在 resumePendingTool 无账可查即丢弃；
+    // 本地批队列态一并复位。终态清算链照走，不因挂起而变。
+    m_pendingTool = false;
+    m_pendingCallId.clear();
+    m_pendingBatch = QJsonArray();
+    m_manager->clearPendingResume(m_name);
 
     // 死亡清算释放点（lcc :1048；fix-4 钉死第 4 条之二）：遗留 in_progress 打回
     // pending 让别的 idle 队友捡。lcc except→"Assignment cleanup failed: {型名}: {exc}"

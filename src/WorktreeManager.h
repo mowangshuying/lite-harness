@@ -2,6 +2,8 @@
 
 #include "TaskStore.h" // TaskStore::TaskSnapshot 为嵌套类型，限定名查找需完整类定义，故直接 include
 
+#include <QObject>
+
 #include <QMap>
 #include <QSet>
 #include <QString>
@@ -13,9 +15,13 @@
  * WorktreeManager —— git worktree 隔离内核（lcc s13 34775c8 worktree_manager.py 移植，Lane B）
  *
  * 每个任务可绑定一个独立 checkout（worktree），让并行队友在互不踩踏的目录里干活。
- * 本类是纯同步引擎（与 MessageBus/TaskStore 同口径：零线程、无信号槽、无 GUI 依赖、
- * QtCore-only——QProcess 属 QtCore；同步 git 子进程用 waitForFinished，禁嵌事件循环）。
- * 宿主异步壳（D8：create_worktree 工具的异步形态）归 P3，本内核不感知。
+ * 同步内核口径（与 MessageBus/TaskStore 同族：零线程、无 GUI 依赖、QtCore-only——
+ * QProcess 属 QtCore；同步 git 子进程用 waitForFinished，禁嵌事件循环）。
+ * Gate③ MINOR-4（P4b Lane B）追加异步壳 startCreateWorktreeAsync：仅 `git worktree
+ * add` 一步改信号驱动 QProcess（十连门/终局分类仍在当前栈同步跑，只读查询的有界
+ * waitForFinished 按 D8 登记保留——waitForFinished 不泵应用事件循环，无重入窗口）。
+ * 本类为此改挂 QObject 基（**不加 Q_OBJECT**——无自有信号/槽，仅作子进程 parent
+ * 与连接 context；无 moc 负担，同步内核语义寸步未变）。
  *
  * 落点（D2 收敛偏差，登记：lcc 原落 workDir 直下 env worktreesDirPath=`.lcc/worktrees`）：
  * `<会话根>/.worktrees/<name>`，叶子段单源于 AgentConst::kWorktreesDirName；
@@ -40,7 +46,7 @@
  * （'Error: …' / 'Partial operation: …' / 'Partial success: …' / 成功文案），调用方即
  * 工具输出；removeWorktree 走 bool + *error 出参（内核 API，非工具）。
  */
-class WorktreeManager
+class WorktreeManager : public QObject
 {
 public:
     // 注册表单条（git worktree list --porcelain 的解析产物）
@@ -54,11 +60,15 @@ public:
     // store：任务账本（读写 worktree 绑定字段）；两 sink 惰性取根（仿 MessageBus/TaskStore
     // 注入法，每次调用现取不缓存——setWorkDir 切根自然生效）。workDirSink 可为空函数，
     // 届时 git 子进程走继承 cwd（lcc 同构），但路径门①②与 toplevel 比对会 fail-closed 拒。
-    WorktreeManager(TaskStore *store,
-                    std::function<QString()> sessionRootSink,
-                    std::function<QString()> workDirSink);
+    // QObject 基（MINOR-4 异步壳）：parent 传空，子进程/定时器挂本对象出清；禁拷贝。
+    explicit WorktreeManager(TaskStore *store,
+                             std::function<QString()> sessionRootSink,
+                             std::function<QString()> workDirSink);
 
-    // ---- 工具面（P3 接线 create_worktree 时经异步壳调本同步内核）----
+    Q_DISABLE_COPY(WorktreeManager)
+
+    // ---- 工具面（Lead create_worktree 现走本同步内核；异步接线方案见
+    // startCreateWorktreeAsync 与交付报告「Lead handler 未接异步」登记）----
     // 十连门（lcc create_worktree :234-312 顺序逐字）：名字/路径三关 → 任务存在 →
     // pending 且未认领 → 任务未绑 worktree → 名字未被别的任务占用 → 目标路径不存在 →
     // workDir 是仓库 toplevel → 分支名合法（check-ref-format）→ 分支不存在（show-ref）→
@@ -70,9 +80,24 @@ public:
     // （含人工处置指引），零残留才回 'Git error: …'；add 成功但写回绑定失败回
     // 'Partial success: …Git data was retained…'。成功文案锚：
     // Created worktree '<name>' at <path> for task <task_id>
-    // 注册偏差（D8/同步内核裁决）：同步内核无重入窗口，lcc 侧「同名并发 create 的
-    // in-flight QSet 拒绝」属异步壳职责，本 lane 不实现，归 P3 宿主壳。
+    // in-flight 名字表为同步/异步**共享**承重门（Gate③ MINOR-4 转承重）：同步路径
+    // RAII 出清、异步路径发起 insert + 收口 latch 恰一次 remove；同名并发第二发起
+    // 直接折叠 'Error: Worktree '<name>' creation is already in progress' 拒止。
     QString createWorktree(const QString &name, const QString &taskId);
+
+    // ---- 异步壳（Gate③ MINOR-4）----
+    // 十连门与 mkpath 在当前栈同步跑（只读查询走 runGit 有界等待，D8 登记）；仅
+    // `git worktree add` 改信号驱动 QProcess（parent=this，零线程零嵌套事件循环）。
+    // 终局分类复用与同步路径同一 helper——finishCreateFailure / finishCreateSuccess，
+    // Partial operation / Git error / Partial success / Created worktree 逐字同产。
+    // in-flight QSet：发起前 insert、收口 latch remove；同名第二发起折叠拒止
+    // （MINOR-4 转承重——异步在途可达）。
+    // done 恰一次契约：门拒/装配缺位/in-flight 拒止在**当前栈同步回调**；异步收口
+    // 在信号槽回调。连接 context = this —— WorktreeManager 先亡则 done 不再触发
+    // （宿主关停清算语义：Lead 的 executeTool 挂起位由既有 stop/析构链收口，
+    // 见报告「Lead handler」登记）。
+    void startCreateWorktreeAsync(const QString &name, const QString &taskId,
+                                  std::function<void(const QString &result)> done);
 
     // ---- 内核 API（**刻意不上工具面**：lcc 未暴露 remove_worktree，防误删；
     // 调用方只有宿主关停/人工流程。不进 ToolNames.h——gate① fix-3 专属④）----
@@ -175,6 +200,23 @@ private:
 
     // python repr() 的轻形近拟（'name'，含单引号时转 "name"）——lcc :65 {name!r} 文案锚用。
     static QString pyRepr(const QString &text);
+
+    // ---- create 共享核（Gate③ MINOR-4：同步/异步两径同源，文案逐字共保）----
+    // 门①..⑩（lcc create_worktree :241-298 顺序逐字；真写仅 mkpath 一步）。
+    // 调用前置：m_store 已核、path 已由 worktreePath 出、in-flight 已由调用方登记。
+    bool createGatesAfterPath(const QString &name, const QString &taskId,
+                              const QString &path, const QString &branch,
+                              QString *error);
+
+    // add 失败重查分类（lcc :300-310 逐字）：注册表/目录/分支现场 → Partial
+    // operation（有残留）/ Git error（零残留）。**绝不自动清理**。
+    QString finishCreateFailure(const QString &path, const QString &branch,
+                                const QString &taskId, const QString &addOut);
+
+    // add 成功后绑定收口：setWorktree 失败 → Partial success 文案；成功 → Created
+    // worktree 锚文案。
+    QString finishCreateSuccess(const QString &name, const QString &path,
+                                const QString &branch, const QString &taskId);
 
     // 隔离根 = sessionRoot/.worktrees（叶子段单源，lcc env.py worktreesDirPath 的 lite 收敛）
     QString worktreesRootDir() const;

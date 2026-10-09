@@ -8,16 +8,21 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QTimer>
 #include <QVector>
+
+#include <functional>
+#include <memory>
 
 // ============================================================================
 // lcc s13 34775c8 worktree_manager.py 移植（Lane B）。git worktree 隔离：一任务一
-// 独立 checkout，队友并行不互踩。纯同步内核（零线程、无信号槽、QtCore-only，
-// QProcess::waitForFinished 同步等待、禁嵌事件循环——waitForFinished 不泵应用事件
-// 循环，同步 createWorktree 路径内无可重入窗口，串行由「主线程同步执行」天然保证）。
-// D8 异步壳归 P3；Gate③ MINOR-4 前半已落地（P4 Lane A 第7条）：同名并发拒止
-// in-flight QSet 以防御性形态进内核（同步路径必空、Lane B 异步壳启用即承重）；
-// 异步形态本身（MINOR-4 剩余）仍归 Lane B。
+// 独立 checkout，队友并行不互踩。同步内核（零线程、无自有信号槽、QtCore-only；
+// waitForFinished 不泵应用事件循环，同步路径内无可重入窗口，串行由「主线程同步
+// 执行」天然保证）。Gate③ MINOR-4（P4b Lane B 真实落地）：异步壳
+// startCreateWorktreeAsync——十连门同步快照（只读查询的有界等待按 D8 登记保留），
+// 唯 `git worktree add` 改信号驱动 QProcess（parent=本 QObject 基，context=this）；
+// in-flight QSet（P4 Lane A 第7条防御性预埋）就此转承重：异步壳发起前 insert、
+// 收口 latch 恰一次 remove，同名在途第二发起折叠拒止。
 // 铁律：git 失败**绝不**自动清理（任何回滚冲动 = 二次销毁风险，repo-wipe 同族），
 // remove 成功后分支也永不删除。
 // ============================================================================
@@ -93,7 +98,8 @@ const WorktreeManager::Entry *findCi(const QMap<QString, WorktreeManager::Entry>
 WorktreeManager::WorktreeManager(TaskStore *store,
                                  std::function<QString()> sessionRootSink,
                                  std::function<QString()> workDirSink)
-    : m_store(store),
+    : QObject(nullptr),
+      m_store(store),
       m_sessionRootSink(std::move(sessionRootSink)),
       m_workDirSink(std::move(workDirSink))
 {
@@ -472,14 +478,44 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
 
     const QString branch = branchForWorktree(name);
 
+    // 门①..⑩ 拆入共享核 createGatesAfterPath（Gate③ MINOR-4：同步/异步两径同源，
+    // 十道门逐字共保——各门注释与文案随行迁入，本处不留副本防双源漂移）。
+    QString gateError;
+    if (!createGatesAfterPath(name, taskId, path, branch, &gateError))
+        return gateError;
+
+    // ---- 真实操作（lcc :299-312）----
+    QDir().mkpath(QFileInfo(path).dir().path()); // 父目录 = .worktrees 根（lcc mkdir parents=True exist_ok=True）
+
+    QString addOut;
+    const bool addOk = runGit({QStringLiteral("worktree"), QStringLiteral("add"),
+                               QStringLiteral("-b"), branch, path, QStringLiteral("HEAD")},
+                              &addOut);
+    if (!addOk) {
+        // **绝不自动清理**（lane 前言铁律）——重查分类见 finishCreateFailure。
+        return finishCreateFailure(path, branch, taskId, addOut);
+    }
+    return finishCreateSuccess(name, path, branch, taskId);
+}
+
+// ---------------------------------------------------------------------------
+// create 共享核（Gate③ MINOR-4：同步 createWorktree 与异步壳两径同源，文案逐字共保）
+// ---------------------------------------------------------------------------
+
+bool WorktreeManager::createGatesAfterPath(const QString &name, const QString &taskId,
+                                           const QString &path, const QString &branch,
+                                           QString *error)
+{
     // 门①（lcc :241-245 exists → 'Task {id} not found'）。
     // taskExists 是 TaskStore 私有核，公开面只有快照清单（M3 唯一跨模块视图）→ 用
     // listTaskSnapshots 扫一次；台账不可读 → fail-closed 折叠（登记偏差：lcc 的 load
     // 崩溃域无此形，lite 把 IO 灾难折成可读错误；破损任务文件在 lcc 会裸抛未捕获异常）。
     QVector<TaskStore::TaskSnapshot> snapshots;
     QString storeError;
-    if (!m_store->listTaskSnapshots(&snapshots, &storeError))
-        return foldError(QStringLiteral("cannot read task ledger: ") + storeError);
+    if (!m_store->listTaskSnapshots(&snapshots, &storeError)) {
+        *error = foldError(QStringLiteral("cannot read task ledger: ") + storeError);
+        return false;
+    }
     const TaskStore::TaskSnapshot *found = nullptr;
     for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
         if (snapshot.id == taskId) {
@@ -487,17 +523,23 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
             break;
         }
     }
-    if (!found) // 不在清单 = 不存在（含扫后消失的竞态窗口）——lcc 门①同文案 fail-closed
-        return foldError(QStringLiteral("Task %1 not found").arg(taskId));
+    if (!found) { // 不在清单 = 不存在（含扫后消失的竞态窗口）——lcc 门①同文案 fail-closed
+        *error = foldError(QStringLiteral("Task %1 not found").arg(taskId));
+        return false;
+    }
 
     // 门②（lcc :247-252：pending 且无主；owner 空串 ≡ lcc None）
-    if (found->status != QStringLiteral("pending") || !found->owner.isEmpty())
-        return foldError(QStringLiteral("Task %1 must be pending and unowned").arg(taskId));
+    if (found->status != QStringLiteral("pending") || !found->owner.isEmpty()) {
+        *error = foldError(QStringLiteral("Task %1 must be pending and unowned").arg(taskId));
+        return false;
+    }
 
     // 门③（lcc :253-258）
-    if (!found->worktree.isEmpty())
-        return foldError(QStringLiteral("Task %1 already uses worktree '%2'")
-                             .arg(taskId, found->worktree));
+    if (!found->worktree.isEmpty()) {
+        *error = foldError(QStringLiteral("Task %1 already uses worktree '%2'")
+                              .arg(taskId, found->worktree));
+        return false;
+    }
 
     // 门④（lcc :259-264：名字未被**别的**任务占用——扫快照，M3 唯一视图）。
     // FIND-C（Gate②）：worktree 名 = 目录路径的叶段，Windows 文件系统大小写不敏感——
@@ -505,15 +547,20 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
     // 造成双重绑定同一目录、互相踩工作区。故本比较走 eqCi（登记偏差：lcc :259 CS；
     // snapshot.id != taskId 属任务 id token 族，维持 CS 口径不变）。
     for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
-        if (snapshot.id != taskId && eqCi(snapshot.worktree, name))
-            return foldError(QStringLiteral("Worktree '%1' is already bound to another task").arg(name));
+        if (snapshot.id != taskId && eqCi(snapshot.worktree, name)) {
+            *error = foldError(
+                QStringLiteral("Worktree '%1' is already bound to another task").arg(name));
+            return false;
+        }
     }
 
     // 门⑤（lcc :265-267：目标路径不存在——已存在目录不做任何清理，看一眼就走）。
     // exists() 交 OS 判定，Windows OS 天然大小写不敏感，无字符串口径问题；m1 的
     // junction/canonical 复校已由门⓪ worktreePath（返回 path 前）覆盖，此处不再重复。
-    if (QFileInfo::exists(path))
-        return foldError(QStringLiteral("Worktree path already exists: %1").arg(path));
+    if (QFileInfo::exists(path)) {
+        *error = foldError(QStringLiteral("Worktree path already exists: %1").arg(path));
+        return false;
+    }
 
     // 门⑥（lcc :268-276：workDir 必须是仓库 toplevel）。
     // 比对偏差登记：lcc 两侧 resolve()（canonical）相等；lite 词法 cleanPath + Windows
@@ -523,14 +570,18 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
     QString toplevel;
     const bool toplevelOk = runGit({QStringLiteral("rev-parse"), QStringLiteral("--show-toplevel")},
                                    &toplevel);
-    if (!toplevelOk || !eqCi(QDir::cleanPath(toplevel), cleanWorkDir))
-        return foldError(QStringLiteral("Working directory must be the root of a Git repository"));
+    if (!toplevelOk || !eqCi(QDir::cleanPath(toplevel), cleanWorkDir)) {
+        *error = foldError(QStringLiteral("Working directory must be the root of a Git repository"));
+        return false;
+    }
 
     // 门⑦（lcc :277-282：分支名合法性交 git 自己裁决 check-ref-format --branch）
     QString branchCheck;
     if (!runGit({QStringLiteral("check-ref-format"), QStringLiteral("--branch"), branch},
-                &branchCheck))
-        return foldError(QStringLiteral("Invalid worktree branch '%1': %2").arg(branch, branchCheck));
+                &branchCheck)) {
+        *error = foldError(QStringLiteral("Invalid worktree branch '%1': %2").arg(branch, branchCheck));
+        return false;
+    }
 
     // 门⑧（lcc :283-288：show-ref --verify --quiet，rc0=存在→拒；rc 非 0 一律按不存在
     //   ——lcc `exists,_ = run_git(...)` 只取 ok 的逐字口径。非仓库等异常已被门⑥拦住，
@@ -541,63 +592,72 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
                                       QStringLiteral("refs/heads/") + branch},
                                      &showRefOut);
     Q_UNUSED(showRefOut); // --quiet 语义：rc1 无输出，本串不消费
-    if (branchExists)
-        return foldError(QStringLiteral("Branch '%1' already exists").arg(branch));
+    if (branchExists) {
+        *error = foldError(QStringLiteral("Branch '%1' already exists").arg(branch));
+        return false;
+    }
 
     // 门⑨（lcc :289-293：注册表可读性——不可读**拒绝**而非当「无 worktree」，fix-3 专属①）
     QString registryError;
     const QMap<QString, Entry> entries = parseRegistry(&registryError);
-    if (!registryError.isEmpty())
-        return foldError(registryError);
+    if (!registryError.isEmpty()) {
+        *error = foldError(registryError);
+        return false;
+    }
 
     // 门⑩（lcc :294-298：路径未注册）。FIND-C（Gate②）：QMap::contains 键比较大小写
     // **敏感**（原实现即假 miss 风险：git 输出盘符大小写与本地拼法不同形时，同一路径
     // 会被判「未注册」而放行双注册）→ 改 findCi 大小写不敏感扫描（键仍原文存储）。
-    if (findCi(entries, QDir::cleanPath(path)) != nullptr)
-        return foldError(QStringLiteral("Worktree path is already registered: %1").arg(path));
-
-    // ---- 真实操作（lcc :299-312）----
-    QDir().mkpath(QFileInfo(path).dir().path()); // 父目录 = .worktrees 根（lcc mkdir parents=True exist_ok=True）
-
-    QString addOut;
-    const bool addOk = runGit({QStringLiteral("worktree"), QStringLiteral("add"),
-                               QStringLiteral("-b"), branch, path, QStringLiteral("HEAD")},
-                              &addOut);
-    if (!addOk) {
-        // **绝不自动清理**（lane 前言铁律；TOCTOU② 重查现场分类残留，lcc :300-310 逐字）。
-        // 重查三件现场：注册表可读性、该路径是否已注册、分支是否已建、目录是否已现。
-        QString recheckError;
-        const QMap<QString, Entry> recheck = parseRegistry(&recheckError);
-        QStringList artifacts;
-        const bool dirAppeared = QFileInfo::exists(path);
-        // FIND-C（Gate②）：残留重查与门⑩同口径走 findCi（两侧口径必须一致，否则
-        // 「门⑩放行但重查报未注册/反之」会让 Partial operation 文案失真）。
-        const bool registeredAgain =
-            recheckError.isEmpty() && findCi(recheck, QDir::cleanPath(path)) != nullptr;
-        QString recheckBranch;
-        const bool branchAppeared = runGit({QStringLiteral("show-ref"), QStringLiteral("--verify"),
-                                            QStringLiteral("--quiet"),
-                                            QStringLiteral("refs/heads/") + branch},
-                                           &recheckBranch);
-        if (dirAppeared)
-            artifacts.append(QStringLiteral("checkout path %1").arg(pyRepr(path)));
-        if (registeredAgain)
-            artifacts.append(QStringLiteral("registered Git worktree"));
-        if (branchAppeared)
-            artifacts.append(QStringLiteral("branch %1").arg(pyRepr(branch)));
-
-        if (!artifacts.isEmpty()) {
-            return QStringLiteral(
-                       "Partial operation: git worktree add reported an error after leaving %1. "
-                       "Task %2 remains unbound and no Git data was deleted. "
-                       "Run `git worktree list`, inspect %3 and %4, then keep or remove those "
-                       "artifacts manually after preserving any work. Git error: %5")
-                .arg(artifacts.join(QStringLiteral(", ")), taskId, pyRepr(path), pyRepr(branch),
-                     truncateForReport(addOut));
-        }
-        return QStringLiteral("Git error: %1").arg(truncateForReport(addOut));
+    if (findCi(entries, QDir::cleanPath(path)) != nullptr) {
+        *error = foldError(QStringLiteral("Worktree path is already registered: %1").arg(path));
+        return false;
     }
+    return true;
+}
 
+QString WorktreeManager::finishCreateFailure(const QString &path, const QString &branch,
+                                             const QString &taskId, const QString &addOut)
+{
+    // **绝不自动清理**（lane 前言铁律；TOCTOU② 重查现场分类残留，lcc :300-310 逐字）。
+    // 重查三件现场：注册表可读性、该路径是否已注册、分支是否已建、目录是否已现。
+    // 同步径与异步径收口共用本函数（异步槽内在当前栈跑有界只读 recheck——
+    // waitForFinished 不泵应用事件循环，无重入窗口，Lane A WorktreeManager.cpp
+    // 头注同款口径；D8 登记）。
+    QString recheckError;
+    const QMap<QString, Entry> recheck = parseRegistry(&recheckError);
+    QStringList artifacts;
+    const bool dirAppeared = QFileInfo::exists(path);
+    // FIND-C（Gate②）：残留重查与门⑩同口径走 findCi（两侧口径必须一致，否则
+    // 「门⑩放行但重查报未注册/反之」会让 Partial operation 文案失真）。
+    const bool registeredAgain =
+        recheckError.isEmpty() && findCi(recheck, QDir::cleanPath(path)) != nullptr;
+    QString recheckBranch;
+    const bool branchAppeared = runGit({QStringLiteral("show-ref"), QStringLiteral("--verify"),
+                                        QStringLiteral("--quiet"),
+                                        QStringLiteral("refs/heads/") + branch},
+                                       &recheckBranch);
+    if (dirAppeared)
+        artifacts.append(QStringLiteral("checkout path %1").arg(pyRepr(path)));
+    if (registeredAgain)
+        artifacts.append(QStringLiteral("registered Git worktree"));
+    if (branchAppeared)
+        artifacts.append(QStringLiteral("branch %1").arg(pyRepr(branch)));
+
+    if (!artifacts.isEmpty()) {
+        return QStringLiteral(
+                   "Partial operation: git worktree add reported an error after leaving %1. "
+                   "Task %2 remains unbound and no Git data was deleted. "
+                   "Run `git worktree list`, inspect %3 and %4, then keep or remove those "
+                   "artifacts manually after preserving any work. Git error: %5")
+            .arg(artifacts.join(QStringLiteral(", ")), taskId, pyRepr(path), pyRepr(branch),
+                 truncateForReport(addOut));
+    }
+    return QStringLiteral("Git error: %1").arg(truncateForReport(addOut));
+}
+
+QString WorktreeManager::finishCreateSuccess(const QString &name, const QString &path,
+                                             const QString &branch, const QString &taskId)
+{
     // 成功链收口：绑定回写（存**名字**非路径——gate① M1，lcc :304 task.worktree = name）。
     QString bindError;
     if (!m_store->setWorktree(taskId, name, &bindError)) {
@@ -607,6 +667,110 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
             .arg(name, path, branch, bindError);
     }
     return QStringLiteral("Created worktree '%1' at %2 for task %3").arg(name, path, taskId);
+}
+
+// ---------------------------------------------------------------------------
+// 异步壳（Gate③ MINOR-4：仅 `git worktree add` 信号驱动，十连门同步快照）
+// ---------------------------------------------------------------------------
+
+void WorktreeManager::startCreateWorktreeAsync(
+    const QString &name, const QString &taskId,
+    std::function<void(const QString &result)> done)
+{
+    if (!done) {
+        return; // 内部缺陷 fail-quiet（宿主未给终态去处，不发起）
+    }
+    if (!m_store) {
+        done(foldError(QStringLiteral("WorktreeManager: task store not wired"))); // 装配未毕 fail-closed（偏差登记：lcc 无此态）
+        return;
+    }
+
+    // 门⓪（lcc :236-239 validate + _worktree_path 合一折叠，'Error: {exc}' 形）
+    QString path;
+    QString pathError;
+    if (!worktreePath(name, &path, &pathError)) {
+        done(foldError(pathError));
+        return;
+    }
+
+    // in-flight 承重门（MINOR-4 启用即承重）：同名在途第二发起直接折叠拒止。
+    // 键 CS 口径与同步径一致（lcc 原语义；CI 双重注册评估留 gate④，见头文件注）。
+    if (m_createInFlight.contains(name)) {
+        done(foldError(
+            QStringLiteral("Worktree '%1' creation is already in progress").arg(name)));
+        return;
+    }
+    m_createInFlight.insert(name);
+
+    const QString branch = branchForWorktree(name);
+
+    QString gateError;
+    if (!createGatesAfterPath(name, taskId, path, branch, &gateError)) {
+        m_createInFlight.remove(name); // 发起失败同步出清，不留脏在途名
+        done(gateError);
+        return;
+    }
+
+    QDir().mkpath(QFileInfo(path).dir().path()); // 与同步径同位（lcc mkdir parents=True exist_ok=True）
+
+    auto *proc = new QProcess(this); // parent=this：宿主先亡则子对象析构、回调随 context 消亡（done 不再触发）
+    proc->setProcessChannelMode(QProcess::MergedChannels);
+    const QString startDir = m_workDirSink ? m_workDirSink() : QString();
+    if (!startDir.isEmpty()) {
+        proc->setWorkingDirectory(startDir);
+    }
+
+    const auto timedOut = std::make_shared<bool>(false);
+    const auto settled = std::make_shared<bool>(false); // errorOccurred/finished 双信号收口恰一次
+
+    // 有界硬顶与 runGit 同值（kGitTimeoutMs，lcc run_git timeout=30 parity）。
+    QTimer::singleShot(kGitTimeoutMs, proc, [proc, timedOut]() {
+        *timedOut = true;
+        proc->kill();
+    });
+
+    QObject::connect(proc, &QProcess::errorOccurred, this,
+                     [this, proc, name, path, branch, taskId, settled, done](
+                         QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart || *settled) {
+            return; // kill/崩溃不单列终态：Qt 保证其后发 finished，由 finished 收口
+        }
+        *settled = true;
+        const QString addOut =
+            QStringLiteral("WorktreeManager: failed to start \"git\" (%1)").arg(proc->errorString());
+        m_createInFlight.remove(name);
+        proc->deleteLater();
+        done(finishCreateFailure(path, branch, taskId, addOut));
+    });
+
+    QObject::connect(proc, &QProcess::finished, this,
+                     [this, proc, name, path, branch, taskId, timedOut, settled, done](
+                         int exitCode, QProcess::ExitStatus exitStatus) {
+        if (*settled) {
+            return; // FailedToStart 双连发防御（先到的 errorOccurred 已收口）
+        }
+        *settled = true;
+        // 输出收口逐字镜像 runGit 口径（MergedChannels 全量 readAll + strip +
+        // 空输出哨兵；超时计失败，文案同 runGit——D8 有界等待换为有界定时器收口）。
+        QString addOut;
+        if (*timedOut) {
+            addOut = QStringLiteral("WorktreeManager: git timed out after %1 ms").arg(kGitTimeoutMs);
+        } else {
+            addOut = QString::fromUtf8(proc->readAll()).trimmed();
+            if (addOut.isEmpty()) {
+                addOut = QStringLiteral("(no output)"); // remove 第五门依赖的哨兵，逐字
+            }
+        }
+        const bool addOk = !(*timedOut) && exitStatus == QProcess::NormalExit && exitCode == 0;
+        m_createInFlight.remove(name);
+        proc->deleteLater();
+        done(addOk ? finishCreateSuccess(name, path, branch, taskId)
+                   : finishCreateFailure(path, branch, taskId, addOut));
+    });
+
+    proc->start(QStringLiteral("git"),
+               {QStringLiteral("worktree"), QStringLiteral("add"),
+                QStringLiteral("-b"), branch, path, QStringLiteral("HEAD")});
 }
 
 // ---------------------------------------------------------------------------
