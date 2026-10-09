@@ -1475,7 +1475,12 @@ void testAsyncToolBridge()
                        "异步续跑: done 驱动闭包逐字回灌");
     TestHarness::check(hookLog.contains(QStringLiteral("PostToolUse|bash=BASH-RESULT")),
                        "异步续跑: PostToolUse 在续跑点携真实结果补发（有意偏离登记面）");
-    done1(QStringLiteral("BASH-SECOND"));
+    // 与上方「done 闭包已捕获」同源的 if(done1) 门卫：捕获断言已红时此处
+    // 不再空调用炸进程；失败面不缩——空调被跳过则 resumes 仍 0，
+    // 下一条「同名二次 done 丢弃」照红。
+    if (done1) {
+        done1(QStringLiteral("BASH-SECOND"));
+    }
     TestHarness::check(resumes == 1, "异步续跑: 同名二次 done 丢弃（账已销）");
 
     // ④ 早归：done 在发起栈内同步早归 → earlyResult 暂存 → setPendingResume 同栈续跑。

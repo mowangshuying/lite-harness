@@ -42,6 +42,7 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -731,11 +732,16 @@ void testAsyncCreateShell(TaskStore &store, WorktreeManager &manager, const QStr
     const QString tid = taskIdFromCreated(created);
     TestHarness::check(!tid.isEmpty(), "异步壳夹具：任务已建");
 
-    QString asyncResult;
-    bool asyncFired = false;
+    // 终态写入堆持有状态（shared_ptr）而非栈引用捕获：若 20s 泵送超时时子进程
+    // 仍在途，done 可能在后续任意事件泵中晚归——届栈已亡，引用捕获即悬垂（UB）。
+    // 断言文本与条数不变，仅状态载体堆化（健壮化，不掩盖任何失败面）。
+    const auto terminal = std::make_shared<std::pair<QString, bool>>(QString(), false);
     manager.startCreateWorktreeAsync(QStringLiteral("wa"), tid,
-                                     [&](const QString &r) { asyncResult = r; asyncFired = true; });
-    TestHarness::check(!asyncFired, "异步壳：终态不同步返回（事件环未转）");
+                                     [terminal](const QString &r) {
+                                         terminal->first = r;
+                                         terminal->second = true;
+                                     });
+    TestHarness::check(!terminal->second, "异步壳：终态不同步返回（事件环未转）");
 
     // 同步径命中异步填充的 QSet（承重门双向互斥的『sync 看 async』半区）
     const QString secondSync = manager.createWorktree(QStringLiteral("wa"), tid);
@@ -753,18 +759,18 @@ void testAsyncCreateShell(TaskStore &store, WorktreeManager &manager, const QStr
                 QStringLiteral("Error: Worktree 'wa' creation is already in progress"),
         "异步壳 in-flight 承重：异步径拒同名第二击（done 同步折叠）");
 
-    pumpUntil([&]() { return asyncFired; }, 20000);
-    TestHarness::check(asyncFired, "异步壳终局：done 回调 20s 内送达（信号驱动）");
-    TestHarness::check(asyncResult.startsWith(QStringLiteral("Created worktree 'wa' at ")),
+    pumpUntil([terminal]() { return terminal->second; }, 20000);
+    TestHarness::check(terminal->second, "异步壳终局：done 回调 20s 内送达（信号驱动）");
+    TestHarness::check(terminal->first.startsWith(QStringLiteral("Created worktree 'wa' at ")),
                        "异步壳终局：成功文案锚");
-    TestHarness::check(asyncResult.contains(tid), "异步壳终局：文案带任务 id");
+    TestHarness::check(terminal->first.contains(tid), "异步壳终局：文案带任务 id");
 
     QString path;
     QString pathError;
     TestHarness::check(manager.worktreePath(QStringLiteral("wa"), &path, &pathError),
                        "异步壳终局：路径三关放行");
     TestHarness::check(
-        asyncResult == QStringLiteral("Created worktree 'wa' at %1 for task %2").arg(path, tid),
+        terminal->first == QStringLiteral("Created worktree 'wa' at %1 for task %2").arg(path, tid),
         "异步壳终局：文案逐字=同步径锚（finishCreateSuccess 单源）");
 
     QString gitOut;
