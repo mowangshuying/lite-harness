@@ -292,6 +292,13 @@ inline bool isReservedTeammateName(const QString &name)
 // （毫秒域，故存 int 毫秒而非秒，2000ms=2.0s 逐值对位）。
 constexpr int kTeamIdleScanIntervalMs = 2000;
 
+// ---- 队友同步 bash 适配器等待界（s13 P3b 宿主侧，AgentLoopTeam.cpp 消费）----
+// 引擎工具适配器契约为同步 QString 返回（lcc 队友 daemon 线程 subprocess.run(timeout)
+// 同型阻塞，lite 零线程约束把阻塞压缩到主线程）：进程启动确认与超时 kill 后回收
+// 两个兜底等待都必须有界，勿学 lcc 无界 join。
+constexpr int kTeamBashStartWaitMs = 5000; // QProcess::waitForStarted 上界
+constexpr int kTeamBashKillWaitMs = 1000;  // kill() 后 waitForFinished 回收上界
+
 // ---- glob 工具（runGlobIn）有界化参数 ----
 // runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：
 // 原 QDirIterator 无上限且进入 .git/build 等巨型目录，大仓库直接冻结 UI。

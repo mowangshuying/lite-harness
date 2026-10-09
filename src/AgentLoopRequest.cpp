@@ -127,6 +127,9 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
 
                 if (++m_toolIterations > m_maxToolIterations)
                 {
+                    // s13：lcc finally 覆盖异常分支——撞上限终局同样退租（只释放，
+                    // 不注入事件：注入窗口已过，欠账留待下一自然回合收割）
+                    settleLeadLease();
                     // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
                     m_cron.finalizeInFlightDelivery(false);
                     setRunning(false);
@@ -151,6 +154,12 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             // 阻塞期间崩溃则历史与 finished 一起丢）。finished 不再被 2×120s 阻塞窗口延迟，
             // 旧代码"阻塞后复验 m_running 不通过则 return"的吞 finished 竞态随之消亡。
             // Stop 钩子在上方 force 分支触发并已 return，位置与语义与旧版逐字不变。
+            // s13 Agent Teams（P3 挂载三）：lcc agent_loop finally 的
+            // release_completed_assignment("agent") 与 inject_team_events、
+            // check_team_offline_edge 三合一，置于终局序列最前——注入的 [Team events]
+            // user 消息随下方 persistHistory 一并落盘（lcc loop.py :168-172 finally +
+            // :419 每轮圈尾核对）
+            leadTurnEndSettlement();
             // lcc 31a99d1：回合成功终局——确认在途 cron 批（at-least-once 收口）
             m_cron.finalizeInFlightDelivery(true);
             setRunning(false);
@@ -171,6 +180,8 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         // 有工具调用 -> 防死循环计数（上限取回合快照，见 run() 入口注释）
         if (++m_toolIterations > m_maxToolIterations)
         {
+            // s13：lcc finally 覆盖异常分支——撞上限终局同样退租
+            settleLeadLease();
             // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
             m_cron.finalizeInFlightDelivery(false);
             setRunning(false);
@@ -216,6 +227,8 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                 m_sideRequest = req;
             return;
         }
+        // s13：流错误失败终局同样退租（反应式压缩重发分支非终局，上方已 return 不处理）
+        settleLeadLease();
         // lcc 31a99d1：流错误失败终局——在途 cron 批回队（反应式压缩重发分支非终局，不处理）
         m_cron.finalizeInFlightDelivery(false);
         setRunning(false);
@@ -384,6 +397,11 @@ void AgentLoop::runNextTool()
         // compact 之前）：此刻末条为 tool 角色 → 新增独立 user 消息携带通知；无通知不动作。
         // 置于 todo 提醒之前不影响其向后查找末条 tool 消息（新增 user 消息会被跳过）
         injectBackgroundResults();
+
+        // s13 Agent Teams（P3 挂载点二）：批尾收割投递 lead 邮箱团队事件（lcc 圈首
+        // inject_team_events 的 GUI 转译：批尾=重发请求前最后一刻，队友 result/停机
+        // 应答在此对 Lead 显影）
+        injectTeamEvents();
 
         // 待办提醒（lcc s05 引入，s06 改并入形态）：本批 tool_calls 未"执行"todo_write 则
         // 计数 +1，执行过则归零。与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行

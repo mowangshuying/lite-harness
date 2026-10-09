@@ -38,16 +38,25 @@ namespace ToolTagKind
             return QStringLiteral("search");
         if (toolName == QStringLiteral("read_file")
             || toolName == QStringLiteral("list_tasks")
-            || toolName == QStringLiteral("get_task"))
+            || toolName == QStringLiteral("get_task")
+            || toolName == QStringLiteral("list_teammates"))
             return QStringLiteral("read");
         if (toolName == QStringLiteral("todo_write")
             || toolName == QStringLiteral("create_task")
             || toolName == QStringLiteral("update_task")
             || toolName == QStringLiteral("claim_task")
-            || toolName == QStringLiteral("complete_task"))
+            || toolName == QStringLiteral("complete_task")
+            // s13 团队（P3）：编排/闸门类归 plan，不新增 kind（避免动三主题 QSS 面）
+            || toolName == QStringLiteral("spawn_teammate")
+            || toolName == QStringLiteral("request_plan")
+            || toolName == QStringLiteral("review_plan")
+            || toolName == QStringLiteral("create_worktree"))
             return QStringLiteral("plan");
         if (toolName == QStringLiteral("task")
-            || toolName == QStringLiteral("load_skill"))
+            || toolName == QStringLiteral("load_skill")
+            // s13 团队：对队友的通信/关停属委派语义
+            || toolName == QStringLiteral("send_message")
+            || toolName == QStringLiteral("request_shutdown"))
             return QStringLiteral("delegate");
         return QStringLiteral("other");
     }

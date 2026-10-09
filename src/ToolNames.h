@@ -4,6 +4,9 @@
 // 18 个常量值逐字对齐 lcc tool_names.py（BASH/READ_FILE/WRITE_FILE/EDIT_FILE/GLOB/
 // TODO_WRITE/TASK/LOAD_SKILL/COMPACT/CREATE_TASK/UPDATE_TASK/LIST_TASKS/GET_TASK/
 // CLAIM_TASK/COMPLETE_TASK/SCHEDULE_CRON/LIST_CRONS/CANCEL_CRON）。
+// s13 追加 7 个团队工具名（共 25）：逐字对齐 lcc agent_teams_manager.py 的 TEAM_TOOLS
+// 注册名（SPAWN_TEAMMATE/LIST_TEAMMATES/SEND_MESSAGE/REQUEST_SHUTDOWN/REQUEST_PLAN/
+// REVIEW_PLAN/CREATE_WORKTREE）——lcc tool_names.py 无这些常量，属移植并表。
 // AgentLoop（schema 注册 / mainToolHandlers / executeTool 特判 / toolSummary / 钩子比较）、
 // SubAgent（白名单 / bash 分支）、ToolBlock（标题表）一律引用本文件，不再散写字面量。
 //
@@ -34,5 +37,16 @@ inline const QString COMPLETE_TASK = QStringLiteral("complete_task");
 inline const QString SCHEDULE_CRON = QStringLiteral("schedule_cron");
 inline const QString LIST_CRONS = QStringLiteral("list_crons");
 inline const QString CANCEL_CRON = QStringLiteral("cancel_cron");
+
+// s13 Agent Teams（P3 挂载，Lead 侧 7 工具；队友侧 send_message/list_tasks/
+// claim_task/complete_task 复用上方同名常量。submit_plan 不在本表——它永不进主循环
+// 工具面，单源在引擎匿名 ns kToolSubmitPlan 与宿主队友 schema 的字面量，同 lcc 惯例）
+inline const QString SPAWN_TEAMMATE = QStringLiteral("spawn_teammate");
+inline const QString LIST_TEAMMATES = QStringLiteral("list_teammates");
+inline const QString SEND_MESSAGE = QStringLiteral("send_message");
+inline const QString REQUEST_SHUTDOWN = QStringLiteral("request_shutdown");
+inline const QString REQUEST_PLAN = QStringLiteral("request_plan");
+inline const QString REVIEW_PLAN = QStringLiteral("review_plan");
+inline const QString CREATE_WORKTREE = QStringLiteral("create_worktree");
 
 } // namespace ToolNames

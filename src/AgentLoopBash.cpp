@@ -80,7 +80,11 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // errorOccurred 之后仍会发 finished，handled 保证 onToolFinished 恰好走一次
     auto handled = std::make_shared<bool>(false);
 
-    BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
+    // s13 租约感知 cwd（挂载十四）：前台 bash 的执行目录走 leadToolCwd()——Lead 持租约
+    // 且任务绑定 worktree 时进 worktree（lcc _run_base current_cwd 对 lead bash 同生效）；
+    // 无租约回落 m_workDir，与 s13 前逐字节一致。后台分支不动：台账语义为会话级，
+    // 且 start 时固化——偏差登记（lcc 后台 Popen 亦 current_cwd；lite 保守不切）。
+    BashRunner::start(command, leadToolCwd(), this, &m_activeProcesses, timedOut,
                       [this, toolCall, command, timedOut, handled](QProcess *process) {
         // 启动失败显式收口（挂起审计防御加固，对齐后台分支的 errorOccurred 防线）：
         // 原前台只连 finished、依赖"FailedToStart 后仍发 finished"的隐式行为收口，

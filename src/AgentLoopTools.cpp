@@ -46,6 +46,21 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
         return QStringLiteral("cron list");
     if (toolName == ToolNames::CANCEL_CRON)
         return QStringLiteral("cancel cron ") + args.value(QStringLiteral("job_id")).toString();
+    // lcc s13 Agent Teams：摘要取队友名/收件人/固定短文本（仿 s10/s12 风格，lcc 无对应钩子文案）
+    if (toolName == ToolNames::SPAWN_TEAMMATE)
+        return args.value(QStringLiteral("name")).toString();
+    if (toolName == ToolNames::LIST_TEAMMATES)
+        return QStringLiteral("teammate list");
+    if (toolName == ToolNames::SEND_MESSAGE)
+        return QStringLiteral("to ") + args.value(QStringLiteral("to")).toString();
+    if (toolName == ToolNames::REQUEST_SHUTDOWN)
+        return args.value(QStringLiteral("teammate")).toString();
+    if (toolName == ToolNames::REQUEST_PLAN)
+        return args.value(QStringLiteral("teammate")).toString();
+    if (toolName == ToolNames::REVIEW_PLAN)
+        return args.value(QStringLiteral("request_id")).toString();
+    if (toolName == ToolNames::CREATE_WORKTREE)
+        return args.value(QStringLiteral("name")).toString();
     return QString();
 }
 
@@ -281,6 +296,23 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     // lcc s10：任务图六件套同为仅主循环注册（lcc subTools/subToolsHandlers 仍为五工具，天然不进 sub）
     // lcc s12：cron 三件套同为仅主循环注册（子代理白名单不含，天然不进 sub）
     QHash<QString, ToolHandler> handlers = baseFileToolHandlers(m_workDir);
+    // s13 租约感知围栏根（挂载十三）：主循环的文件四件套改为本表覆盖项——执行时现取
+    // leadToolCwd()（Lead 持租约且绑定 worktree → worktree 路径；无租约 → assignmentCwd
+    // ①号分支经 workDirSink 回落 m_workDir，与 s13 前逐字节一致）。
+    // baseFileToolHandlers 保持构造期按值固化语义不动——SubAgent 仍复用它（P4 既定：
+    // 子代理不做租约切换）。
+    handlers.insert(ToolNames::READ_FILE, [this](const QJsonObject &args) {
+        return runReadFileIn(leadToolCwd(), args);
+    });
+    handlers.insert(ToolNames::WRITE_FILE, [this](const QJsonObject &args) {
+        return runWriteFileIn(leadToolCwd(), args);
+    });
+    handlers.insert(ToolNames::EDIT_FILE, [this](const QJsonObject &args) {
+        return runEditFileIn(leadToolCwd(), args);
+    });
+    handlers.insert(ToolNames::GLOB, [this](const QJsonObject &args) {
+        return runGlobIn(leadToolCwd(), args);
+    });
     handlers.insert(ToolNames::TODO_WRITE, [this](const QJsonObject &args) {
         return runTodoWrite(args);
     });
@@ -300,11 +332,16 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     handlers.insert(ToolNames::GET_TASK, [this](const QJsonObject &args) {
         return m_taskStore.runGetTask(args);
     });
+    // s13 补充事实①：Lead 的 claim/complete 改走租约通道（owner="agent"=kLeadOwnerKey），
+    // 领取落内存租约 + 版本递增，回合尾由 releaseCompletedAssignment 退租（lcc loop.py 同型）；
+    // 遗留非租约版 runClaimTask/runCompleteTask 不再挂进主循环表。
     handlers.insert(ToolNames::CLAIM_TASK, [this](const QJsonObject &args) {
-        return m_taskStore.runClaimTask(args);
+        return m_taskStore.runClaimTaskLeased(args,
+                                              QString::fromLatin1(AgentTeamsManager::kLeadOwnerKey));
     });
     handlers.insert(ToolNames::COMPLETE_TASK, [this](const QJsonObject &args) {
-        return m_taskStore.runCompleteTask(args);
+        return m_taskStore.runCompleteTaskLeased(args,
+                                                 QString::fromLatin1(AgentTeamsManager::kLeadOwnerKey));
     });
     handlers.insert(ToolNames::SCHEDULE_CRON, [this](const QJsonObject &args) {
         return runScheduleCron(args);
@@ -314,6 +351,43 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     });
     handlers.insert(ToolNames::LIST_CRONS, [this](const QJsonObject &) {
         return runListCrons();
+    });
+    // lcc s13 Agent Teams（Lead 侧 7 工具，lcc TEAM_TOOLS agent_teams_manager.py :217-295）：
+    // 直通引擎同步壳（失败一律折叠为工具输出字符串交还模型，仓规约同任务图/定时族）。
+    handlers.insert(ToolNames::SPAWN_TEAMMATE, [this](const QJsonObject &args) {
+        return m_teams.runSpawnTeammate(
+            args.value(QStringLiteral("name")).toString(),
+            args.value(QStringLiteral("role")).toString(),
+            args.value(QStringLiteral("prompt")).toString(),
+            args.value(QStringLiteral("task_id")).toString(),
+            args.value(QStringLiteral("require_plan")).toBool());
+    });
+    handlers.insert(ToolNames::LIST_TEAMMATES, [this](const QJsonObject &) {
+        return m_teams.runListTeammates();
+    });
+    handlers.insert(ToolNames::SEND_MESSAGE, [this](const QJsonObject &args) {
+        return m_teams.runSendMessage(
+            args.value(QStringLiteral("to")).toString(),
+            args.value(QStringLiteral("content")).toString());
+    });
+    handlers.insert(ToolNames::REQUEST_SHUTDOWN, [this](const QJsonObject &args) {
+        return m_teams.runRequestShutdown(args.value(QStringLiteral("teammate")).toString());
+    });
+    handlers.insert(ToolNames::REQUEST_PLAN, [this](const QJsonObject &args) {
+        return m_teams.runRequestPlan(
+            args.value(QStringLiteral("teammate")).toString(),
+            args.value(QStringLiteral("task")).toString());
+    });
+    handlers.insert(ToolNames::REVIEW_PLAN, [this](const QJsonObject &args) {
+        return m_teams.runReviewPlan(
+            args.value(QStringLiteral("request_id")).toString(),
+            args.value(QStringLiteral("approve")).toBool(),
+            args.value(QStringLiteral("feedback")).toString());
+    });
+    handlers.insert(ToolNames::CREATE_WORKTREE, [this](const QJsonObject &args) {
+        return m_teams.runCreateWorktree(
+            args.value(QStringLiteral("name")).toString(),
+            args.value(QStringLiteral("task_id")).toString());
     });
     return handlers;
 }

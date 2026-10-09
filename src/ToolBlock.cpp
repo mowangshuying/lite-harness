@@ -101,6 +101,20 @@ QString ToolBlock::toolTitleText(const QString &toolName)
         return tr("定时清单"); // 列出定时任务（s12 cron 系统）
     if (toolName == ToolNames::CANCEL_CRON)
         return tr("已取消定时"); // 取消定时任务（s12 cron 系统）
+    if (toolName == ToolNames::SPAWN_TEAMMATE)
+        return tr("已建队友"); // 创建队友（s13 团队系统）
+    if (toolName == ToolNames::LIST_TEAMMATES)
+        return tr("队友清单"); // 列出在簿队友（s13 团队系统）
+    if (toolName == ToolNames::SEND_MESSAGE)
+        return tr("已发消息"); // 向队友/Lead 投递消息（s13 团队系统）
+    if (toolName == ToolNames::REQUEST_SHUTDOWN)
+        return tr("已请下线"); // 请求队友下线（s13 团队系统）
+    if (toolName == ToolNames::REQUEST_PLAN)
+        return tr("已索计划"); // 要求队友先交计划（s13 团队系统）
+    if (toolName == ToolNames::REVIEW_PLAN)
+        return tr("已评计划"); // 批准/驳回队友计划（s13 团队系统）
+    if (toolName == ToolNames::CREATE_WORKTREE)
+        return tr("已建工作树"); // 创建并绑定任务 worktree（s13 团队系统）
     return tr("已执行");
 }
 
@@ -143,6 +157,20 @@ QString ToolBlock::toolFailText(const QString &toolName)
         return tr("定时清单读取失败"); // 定时任务总览读取失败（s12 cron 系统）
     if (toolName == ToolNames::CANCEL_CRON)
         return tr("取消定时失败"); // 定时任务取消失败（s12 cron 系统）
+    if (toolName == ToolNames::SPAWN_TEAMMATE)
+        return tr("建队友失败"); // 队友创建失败（s13 团队系统）
+    if (toolName == ToolNames::LIST_TEAMMATES)
+        return tr("队友清单读取失败"); // 在簿队友读取失败（s13 团队系统）
+    if (toolName == ToolNames::SEND_MESSAGE)
+        return tr("消息投递失败"); // 团队消息投递失败（s13 团队系统）
+    if (toolName == ToolNames::REQUEST_SHUTDOWN)
+        return tr("下线请求失败"); // 队友下线请求失败（s13 团队系统）
+    if (toolName == ToolNames::REQUEST_PLAN)
+        return tr("索计划失败"); // 计划要求投递失败（s13 团队系统）
+    if (toolName == ToolNames::REVIEW_PLAN)
+        return tr("计划评审失败"); // 计划批复失败（s13 团队系统）
+    if (toolName == ToolNames::CREATE_WORKTREE)
+        return tr("工作树创建失败"); // worktree 创建失败（s13 团队系统）
     return tr("执行失败");
 }
 

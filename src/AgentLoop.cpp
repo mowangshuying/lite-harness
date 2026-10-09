@@ -14,7 +14,9 @@
 //   AgentLoopCron.cpp        定时任务 handler 与空闲交付
 //   AgentLoopHooks.cpp       生命周期钩子注册表（UserPromptSubmit / PreToolUse / PostToolUse / Stop）
 //   AgentLoopHistory.cpp     history.json 落盘与恢复
-//   AgentLoopPrompt.cpp      system prompt 组装与 18 工具 schema
+//   AgentLoopPrompt.cpp      system prompt 组装与 25 工具 schema
+//   AgentLoopTeam.cpp        s13 Agent Teams 宿主装配：引擎六注入、Lead 租约感知 cwd、
+//                            团队事件收割注入、队友回合驱动（turnRequested→deliverTurnResult）
 // 跨单元共享的内部工具集中在 AgentLoopInternal.h（非公开 API）。
 
 #include "AgentLoop.h"
@@ -40,8 +42,15 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     , m_compact([this] { return sessionDataRoot(); }, [this] { return m_model; })
     , m_memory([this] { return sessionDataRoot(); }, [this] { return m_model; })
     , m_cron([this] { return sessionDataRoot(); })
-    , m_taskStore([this] { return sessionDataRoot(); })
+    // s13 P3：补第二参 workDirSink——TaskStore::assignmentCwd ①号分支（Lead 无租约回落）
+    // 取此值，令无租约时行为与 s13 前逐字一致（回落 m_workDir 而非会话根）
+    , m_taskStore([this] { return sessionDataRoot(); }, [this] { return m_workDir; })
     , m_sessionDataId(sessionDataId)
+    // s13 Agent Teams 引擎三件套（声明序 bus→worktrees→teams；构造仅需 &m_taskStore/&m_bus
+    // 稳定地址，sink 均 [this] 惰性读取，见 AgentLoop.h 成员注释）
+    , m_bus([this] { return sessionDataRoot(); })
+    , m_worktrees(&m_taskStore, [this] { return sessionDataRoot(); }, [this] { return m_workDir; })
+    , m_teams(&m_bus, &m_taskStore)
 {
     // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::defaultModel()
     // （settings.ini 的 defaultModel 键，未配置则取生效清单首项；清单本身可由
@@ -91,6 +100,9 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     });
     m_cronTick->start();
     m_cron.start();
+
+    // s13 Agent Teams 引擎装配（P3）：六注入一次性完成，先于任何回合/心跳/工具执行
+    initTeamEngine();
 }
 
 void AgentLoop::setWorkDir(const QString &dir)
@@ -160,6 +172,11 @@ AgentLoop::~AgentLoop()
     // "(cancelled)" 回填进即将清空的历史属良性无害
     cancelSubAgent();
 
+    // s13 P3 退出清算（lcc finally 的 lite 转译，登记偏差：不做 courteous shutdown 广播——
+    // 析构后无事件循环可收应答；引擎 settleLedgers 保证账本收口）：必须在成员析构前于本
+    // 体内完成——此刻 m_teams/m_bus/m_taskStore 仍存活，满足 TeammateRuntime FIND-L 契约
+    settleTeamOnExit();
+
     for (QProcess *p : m_activeProcesses)
     {
         if (p)
@@ -217,6 +234,11 @@ void AgentLoop::run(const QString &userMessage)
     // 后台任务收割注入（lcc s11 inject_background_results 挂载点一）：此刻末条即刚追加的
     // user 消息 → 通知并入其 content 尾部（lcc 末条 user 合并语义）；无通知不动作
     injectBackgroundResults();
+
+    // s13 P3 团队事件收割注入（挂载点一，lcc inject_team_events 同型）：Lead 邮箱在
+    // GUI 模型下的自然唤醒点即用户开新回合——事件并入刚追加的 user 消息尾部或新增
+    // user 消息；空批不动作（lcc wait_for_cli_event stdin 唤醒轮的偏差登记见 AgentLoopTeam.cpp 头注释）
+    injectTeamEvents();
 
     // 记忆召回（lcc s09 loop.py :71-72：每轮提问在 while 前 load_memories；规格修1 有意
     // 偏离：召回结果不再重建 system——快照进注入块 m_contextInjection，由 doStartChatRequest

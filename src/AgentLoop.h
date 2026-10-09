@@ -18,6 +18,11 @@
 #include "MemoryManager.h"
 #include "QOpenAi.h" // m_currentStream 类型化弱引用需 ChatStream 完整类型（审计 C8）
 #include "TaskStore.h"
+// s13 Agent Teams（P3 宿主装配）：引擎三件套按值成员需要完整类型
+#include "MessageBus.h"
+#include "WorktreeManager.h"
+#include "AgentTeamsManager.h"
+#include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
 
 class QProcess;
 class SubAgent;
@@ -205,6 +210,29 @@ private:
     // 合并语义），否则新增一条 user 消息。两个挂载点：run() 追加用户消息后、
     // runNextTool() 批尾 flush 之后（compact 之前）
     void injectBackgroundResults();
+    // ---- s13 Agent Teams（P3 宿主挂载，实现单源 AgentLoopTeam.cpp）----
+    // 引擎装配（构造体末尾调用一次）：setCwdResolver/setWorktreeCreator/
+    // setTeammateLauncher/setPermissionCheck/setHooksTrigger/setToolAdapter×5 六注入
+    void initTeamEngine();
+    // Lead 工具面 cwd（lcc _run_base current_cwd 等价）：有租约→assignmentCwd 现读
+    // （worktree 绑定经 resolver 折入）；无租约→m_workDir（assignmentCwd ① 号分支，
+    // 与 s13 前行为逐字一致）
+    QString leadToolCwd();
+    // 收割 Lead 邮箱并注入会话（lcc inject_team_events 形态，复刻
+    // injectBackgroundResults 的合并/追加两分支）；空批不产生消息（偏G：空串直接返回）
+    void injectTeamEvents();
+    // 回合终局清算（lcc agent_loop finally + check_team_offline_edge）：释放 Lead 已完成
+    // 租约（幂等）→ 收割注入 → 队友全部下线沿记一次日志；挂 messageFinished 自然收尾前
+    void leadTurnEndSettlement();
+    // 非自然终局（轮次上限/流错误）只退租不收割（lcc finally 覆盖异常分支的 lite 转译）
+    void settleLeadLease();
+    // 队友回合驱动：turnRequested→建流（systemPrompt+messages+队友工具面）→
+    // messageFinished/error→deliverTurnResult（lcc daemon 线程 consume 循环的事件驱动转译）
+    void onTeammateTurnRequested(const QString &name);
+    void onTeammateFinished(const QString &name);
+    // 退出清算（析构体调用）：对在簿队友逐个 blockSignals→cancel→delete（引擎
+    // settleLedgers 保证账本收口；manager/bus/store 此刻仍存活，FIND-L 契约成立）
+    void settleTeamOnExit();
     // 定时任务空闲交付（lcc s12/31a99d1 run_delivery 转译）：仅 m_running=false 时经
     // m_cron.runDelivery 收割——回调内 emit scheduledUserMessage 同栈直连（宿主同步 run()
     // 置位）后回读 m_running 作为接管结果：未接管（无 UI 接线/防御拒绝）→ runDelivery
@@ -242,8 +270,12 @@ private:
     static QString safePathIn(const QString &workDir, const QString &p, QString *error);
     // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact
     // / create_task / update_task / list_tasks / get_task / claim_task / complete_task
-    // / schedule_cron / list_crons / cancel_cron，共 18 个；
-    // s10 六个任务图工具仅注册进主循环表，子代理白名单不含；lcc s12 cron 三件套同为仅主循环注册）
+    // / schedule_cron / list_crons / cancel_cron
+    // / spawn_teammate / list_teammates / send_message / request_shutdown / request_plan
+    // / review_plan / create_worktree，共 25 个；
+    // s10 六个任务图工具仅注册进主循环表，子代理白名单不含；lcc s12 cron 三件套同为仅主循环注册；
+    // s13 团队七件套同为仅主循环注册（lcc TEAM_TOOLS，AGENT_LOOP tools 面）；
+    // 队友侧 10 工具 schema 另立于 AgentLoopTeam.cpp（D5：不动本缓存）
     static QJsonArray createToolsDefinition();
 
     // ---- 技能（lcc s07 SkillManager 内联移植：不建独立类，数据结构与方法置于本类私有段）----
@@ -359,11 +391,12 @@ private:
     QJsonArray m_pendingToolCalls;   // 待执行 tool 调用队列
     QJsonArray m_toolResultsReady;   // 已执行完的 tool 结果消息
     // 主循环 handler 表缓存（效率 P4：每工具调用整表重建 → 首用构建、setWorkDir 失效）：
-    // 逐 lambda 核实结论——read/write/edit/glob 四件套经 baseFileToolHandlers 把 workDir
-    // 按值捕获进 lambda（表构建时刻固化目录），其余十个（todo_write/load_skill/任务图六件套/
-    // cron 三件套）均为 [this] 捕获、执行时才读成员（m_taskStore/m_cron 等经构造期注入的
-    // sessionDataRoot 惰性回调解析路径，切根自然生效）——故表唯一随外部状态变化的依赖是
-    // m_workDir，setWorkDir 写入新目录后 clear 本表即可保证语义与逐次重建严格等价；
+    // s13 P3 起 read/write/edit/glob 四件套改由 mainToolHandlers 以 [this] 重建覆盖
+    // baseFileToolHandlers 的按值固化版——执行时才现读 leadToolCwd()（Lead 租约感知，
+    // 无租约回落 m_workDir），切目录与租约迁移都不再依赖表重建；其余（todo_write/
+    // load_skill/任务图六件套/cron 三件套/团队七件套）本就 [this] 惰性读取。
+    // setWorkDir 的 clear 保留：baseFileToolHandlers(m_workDir) 仍在表构建时参与拼表，
+    // 且失效重建是无害防御（与逐次重建严格等价）；
     // 表在服务端路由期间不被任何路径改写（工具 handler 无一调用 setWorkDir，主线程无嵌套事件循环重入）
     QHash<QString, ToolHandler> m_toolHandlers;
     QList<QProcess *> m_activeProcesses; // 正在运行的 QProcess，stop()/析构时 kill
@@ -402,6 +435,21 @@ private:
     // 六个 run_* 经 mainToolHandlers 表直通本成员；sessionRootSink 惰性取会话数据根，
     // setWorkDir 切根后自然生效（与拆分前每操作现取 sessionDataRoot() 逐点等价）
     TaskStore m_taskStore;
+    // s13 Agent Teams 引擎三件套（P3 宿主装配，声明序=初始化序：bus 先于 worktrees/teams，
+    // 后者构造需 &m_taskStore/&m_bus 地址——成员地址天然稳定）。析构反序（teams→bus→
+    // worktrees→store）：TeammateRuntime 不受此保护（其 FIND-L 契约要求 manager/bus/store
+    // 后死于 runtime），故队友在 ~AgentLoop 体内的 settleTeamOnExit() 先行显式清算，
+    // 运行时从不挂 this 的 QObject 父子树（launcher 内 parent=nullptr）
+    MessageBus m_bus;                          // 团队邮箱总线（会话根 .mailboxes，P1）
+    WorktreeManager m_worktrees;               // git worktree 隔离（s13 P2a，需 &m_taskStore）
+    AgentTeamsManager m_teams;                 // 团队编排引擎（s13 P2，需 &m_bus &m_taskStore）
+    // 队友运行时宿主所有权表（引擎 handles 为不拥有引用，偏A）：launcher 建、
+    // onTeammateFinished/settleTeamOnExit 销
+    QHash<QString, TeammateRuntime *> m_teammateRuntimes;
+    // 队友在途回合流（每队友至多一条，单飞防御；parent 到 this 随析构作废）
+    QHash<QString, QPointer<QOpenAi::ChatStream>> m_teammateStreams;
+    // lcc _team_was_active：队友全部下线的边沿检测（每回合终局比对一次）
+    bool m_teamWasActive = false;
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）
     QVector<UserPromptSubmitHook> m_userPromptSubmitHooks;
     QVector<PreToolUseHook> m_preToolUseHooks;
