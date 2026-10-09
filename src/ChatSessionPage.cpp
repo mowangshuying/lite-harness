@@ -326,6 +326,29 @@ void ChatSessionPage::wireAgent()
                 requestScrollToBottom();
             });
 
+    // P8 需求2：逐工具活动行 → 同一张按名活卡的既有子代理式滑窗链（ToolBlock::
+    // appendSubagentProgress 复用，行形「第 N 轮 · 工具名  摘要」，零新文案）。建卡/
+    // 回挂/空位清理纪律与上方事件行完全同款；completed 终局后队友若继续领活，
+    // 同名新活动自然另起新卡（settle 已把表位出清）。
+    connect(m_agentLoop, &AgentLoop::teammateToolProgress, this,
+            [this](const QString &teammateName, int turnNo, const QString &toolName,
+                   const QString &summary) {
+                auto it = m_liveTeammateCards.find(teammateName);
+                if (it == m_liveTeammateCards.end() || !it.value())
+                {
+                    if (it != m_liveTeammateCards.end())
+                        m_liveTeammateCards.erase(it);   // 卡被异常销毁后的空位
+                    if (!m_currentBubble)
+                        return;
+                    ToolBlock *card = m_currentBubble->ensureTeammateCard(teammateName);
+                    if (!card)
+                        return;
+                    it = m_liveTeammateCards.insert(teammateName, card);
+                }
+                it.value()->appendSubagentProgress(turnNo, toolName, summary);
+                requestScrollToBottom();
+            });
+
     // 队友终态三通道（completed/exited/settled）→ 就地冻结收壳。收口不滚动：旧卡终态
     // 可能远晚于其位置（跨回合），强滚会把正在回看历史的用户视野粗暴拉走
     connect(m_agentLoop, &AgentLoop::teammateSettled, this,

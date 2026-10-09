@@ -18,6 +18,20 @@
 
 #include <optional>
 
+namespace {
+// P8 观测面 ok 判定：镜像 AgentLoop::isToolFailure 的折叠失败文案族前缀（单源在
+// GUI 层 TU，本 TU 层律禁 include AgentLoop.h/AgentLoopInternal.h——镜像副本登记
+// 偏差；改动文案族时两处同步）。仅供 teammateToolActivity 的 ok 诊断位，UI 不着色。
+bool teamToolOutputLooksFailed(const QString &output)
+{
+    return output.startsWith(QStringLiteral("Error:"))
+        || output == QStringLiteral("Permission denied")
+        || output.startsWith(QStringLiteral("Blocked:"))
+        || output.startsWith(QStringLiteral("[Background task start error]"))
+        || output.startsWith(QStringLiteral("Unknown tool:"));
+}
+} // namespace
+
 TeammateRuntime::TeammateRuntime(const QString &name, const QString &role,
                                  const QString &prompt, const QString &taskId,
                                  bool requirePlan, AgentTeamsManager *manager,
@@ -126,6 +140,7 @@ void TeammateRuntime::start()
         return;
     }
 
+    ++m_turnNo; // 新回合开编号（观测面 turnNo：第 N 个模型回合，自 1 起）
     emit turnRequested(m_name);
 }
 
@@ -171,6 +186,7 @@ void TeammateRuntime::onHeartbeat()
             leaveIdle();
             m_manager->setTeammateStatus(m_name,
                                          AgentTeamsManager::TeammateStatus::Working);
+            ++m_turnNo; // 新回合开编号（观测面 turnNo 口径）
             emit turnRequested(m_name);
             return;
         }
@@ -201,6 +217,7 @@ void TeammateRuntime::onHeartbeat()
         leaveIdle();
         m_manager->setTeammateStatus(m_name,
                                      AgentTeamsManager::TeammateStatus::Working);
+        ++m_turnNo; // 新回合开编号（观测面 turnNo 口径）
         emit turnRequested(m_name);
         return;
     }
@@ -369,6 +386,10 @@ void TeammateRuntime::runToolBatch(const QJsonArray &toolCalls)
                 rest.append(toolCalls.at(j));
             }
             m_pendingBatch = rest;
+            // 挂起项身份快照（P8 观测面）：异步收口点在 resumePendingBatch 补发
+            // 活动行时取用——发起点不发，行不先于结果出现。
+            m_pendingToolName = toolName;
+            m_pendingArgs = params;
             m_manager->setPendingResume(m_name,
                                         [this](const QString &result) {
                 resumePendingBatch(result);
@@ -376,6 +397,9 @@ void TeammateRuntime::runToolBatch(const QJsonArray &toolCalls)
             return;
         }
         appendToolResult(callId, output);
+        // P8 观测面：工具真实收口（回填完成）才发活动行——协议零影响，纯 emit。
+        emit teammateToolActivity(m_name, m_turnNo, toolName, params,
+                                  !teamToolOutputLooksFailed(output));
     }
 
     // 中间链 drain：对齐 lcc「work() 第一步永远 drain」（:944-946）——多工具回合
@@ -386,6 +410,7 @@ void TeammateRuntime::runToolBatch(const QJsonArray &toolCalls)
         return;
     }
 
+    ++m_turnNo; // 新回合开编号（观测面 turnNo 口径）
     emit turnRequested(m_name);
 }
 
@@ -401,7 +426,15 @@ void TeammateRuntime::resumePendingBatch(const QString &result)
     m_pendingCallId.clear();
     const QJsonArray rest = m_pendingBatch;
     m_pendingBatch = QJsonArray();
+    const QString toolName = m_pendingToolName; // 发起点存的身份快照
+    m_pendingToolName.clear();
+    const QJsonObject args = m_pendingArgs;
+    m_pendingArgs = QJsonObject();
     appendToolResult(callId, result);
+    // P8 观测面：异步工具在**真实结果到达的收口点**发活动行（发起点不发——
+    // 行不先于结果；挂起窗口内被清算时本函数根本到不了，行自然缺失，正确）。
+    emit teammateToolActivity(m_name, m_turnNo, toolName, args,
+                              !teamToolOutputLooksFailed(result));
     runToolBatch(rest);
 }
 
@@ -424,6 +457,8 @@ bool TeammateRuntime::settleLedgers(QString *outCleanupError)
     m_pendingTool = false;
     m_pendingCallId.clear();
     m_pendingBatch = QJsonArray();
+    m_pendingToolName.clear(); // P8 观测面身份快照同窗口出清（m_turnNo 不复位——终态将亡）
+    m_pendingArgs = QJsonObject();
     m_manager->clearPendingResume(m_name);
 
     // 死亡清算释放点（lcc :1048；fix-4 钉死第 4 条之二）：遗留 in_progress 打回

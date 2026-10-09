@@ -346,7 +346,10 @@ void ToolBlock::startTeammateLive(const QString &teammateName)
     m_titleLabel->setText(liveText());
 
     startLiveTimer();
-    setExpanded(true);   // 自动展开供活动行可见（task 卡先例；用户折叠后不跟高）
+    // P8 需求1：建卡保持默认折叠（用户冒烟裁决——队友执行不自动展开工具块）。
+    // 折叠态头部摘要仍逐行更新最新活动（refreshSummaryLabel 链），点击头部即可
+    // 手动展开看全队列；钉底滚动只对已展开卡生效，折叠侧零副作用。终局
+    // finishTeammateLive 亦收壳不强制展开（同款纪律）。
 }
 
 void ToolBlock::appendTeammateProgress(const QString &type, const QString &content)

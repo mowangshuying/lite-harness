@@ -110,6 +110,19 @@ signals:
     // 最终总结可达宿主（lcc thread finally 后 Lead 经信箱收 result 的 lite 双通道之一）。
     void taskFinished(const QString &teammateName, const QString &summary);
 
+    // 纯 UI 观测钩子（P8 需求2；不参与任何协议/邮箱语义，与 teamEvent 展示钩子同族）：
+    // runToolBatch 每个工具**真实收口**后发射——同步路径在 appendToolResult 之后；
+    // 异步哨兵路径推迟到 resumePendingBatch 拿到真实结果才发（发起点不发，
+    // 活动行不先于结果出现）。turnNo = 引擎内回合计数（随每次 emit turnRequested
+    // 递增、自 1 起，「第 N 轮」= 第 N 个模型回合，与子代理卡口径对齐）；
+    // args 原样携带（摘要渲染归宿主 AgentLoopDetail::toolSummary——本 TU 禁
+    // include GUI 头）；ok 由本 TU 镜像 AgentLoop::isToolFailure 前缀族本地判定，
+    // 仅供诊断：子代理先例的进度行不着色，UI 侧忽略即可（偏差登记：单源在 GUI 层，
+    // 层律禁 include，此处为镜像副本）。
+    void teammateToolActivity(const QString &teammateName, int turnNo,
+                              const QString &toolName, const QJsonObject &args,
+                              bool ok);
+
     // 生命周期终点：finish() 清算完成后发出（宿主据此删对象/刷新台账展示）。
     void finished(const QString &teammateName);
 
@@ -187,6 +200,13 @@ private:
     bool m_pendingTool = false;
     QString m_pendingCallId;   // 挂起中工具的 call id（续跑回填位）
     QJsonArray m_pendingBatch; // 剩余批（不含挂起项）
+    // 挂起项的身份快照（P8 观测面：异步收口点补发活动行时取用；与 callId 同生命周期，
+    // settleLedgers 一并出清）
+    QString m_pendingToolName;
+    QJsonObject m_pendingArgs;
+    // 回合计数（P8 观测面 turnNo 口径）：每次 emit turnRequested 前置增 = 开新模型回合，
+    // 该回合内执行的工具活动行携带此编号（自 1 起；终态不重置——对象即将消亡）
+    int m_turnNo = 0;
 };
 
 #endif // TEAMMATERUNTIME_H

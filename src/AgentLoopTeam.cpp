@@ -74,6 +74,15 @@ void AgentLoop::initTeamEngine()
                 [this](const QString &mateName, const QString & /*summary*/) {
                     emit teammateSettled(mateName, QStringLiteral("completed"));
                 });
+        // P8 需求2：逐工具活动行中继——摘要在宿主渲染（toolSummary 与 Lead 工具卡
+        // 同源；AgentLoopInternal.h 已 include），引擎 ok 标志刻意丢弃（子代理
+        // 口径：进度行不着色）。异步 bash 行由引擎在真实收口点发，本链零时序加工。
+        connect(runtime, &TeammateRuntime::teammateToolActivity, this,
+                [this](const QString &mateName, int turnNo, const QString &toolName,
+                       const QJsonObject &args, bool /*ok*/) {
+                    emit teammateToolProgress(mateName, turnNo, toolName,
+                                              AgentLoopDetail::toolSummary(toolName, args));
+                });
         QTimer::singleShot(0, runtime, [runtime] { runtime->start(); });
         return runtime;
     });

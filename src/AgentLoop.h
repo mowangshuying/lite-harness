@@ -132,6 +132,13 @@ signals:
     // teamRosterChanged = 队友名册变化边沿（随 cron tick 1s 节拍签名比对，变才发；零新 QTimer）。
     // 页面订阅后拉 teammateRoster() 推侧栏（setter-push 惯例，侧栏保持纯视图不读引擎）
     void teamRosterChanged();
+    // s13 队友逐工具活动行中继（P8 需求2，形态对齐 subagentProgress）：引擎
+    // TeammateRuntime::teammateToolActivity 真实收口点信号经宿主翻译——summary =
+    // AgentLoopDetail::toolSummary(toolName, args)（与 Lead 工具卡摘要同源）。
+    // 引擎 ok 标志不转发（子代理先例：进度行不着色，摘要自表达）。
+    // turnNo = 队友引擎回合计数（随 turnRequested 递增，自 1 起）。
+    void teammateToolProgress(const QString &teammateName, int turnNo,
+                              const QString &toolName, const QString &summary);
     // 权限门：工具调用命中询问规则（不含硬拒绝列表项）时发射，队列暂停等待 resolvePermission() 裁决
     // toolName / summary 与 toolOutputReady 前两参同义；reason = 命中规则文案
     //（"Writing outside workspace" / "Potentially destructive command"）

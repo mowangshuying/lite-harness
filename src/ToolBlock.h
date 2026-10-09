@@ -76,7 +76,8 @@ public:
     // 单槽共位语义不适用：多队友并发且终点时刻不同）----
 
     // 队友进行态：身份标签用 spawn_teammate（plan 类别着色，与派生它的团队工具同源），
-    // 「队友 <名> 执行中」轮播标题，自动展开供活动行逐条可见（task 卡同款）
+    // 「队友 <名> 执行中」轮播标题；默认保持折叠（P8 需求1，头部摘要滚动最新行，
+    // 手动展开看全队列，终局亦不强制展开）
     void startTeammateLive(const QString &teammateName);
 
     // 追加一条队友活动行：type 为数据域 token（turn/result/error/idle_notification，
