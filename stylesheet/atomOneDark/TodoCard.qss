@@ -7,8 +7,6 @@ TodoCard {
    rgb(43,47,55) = ToolBlock #toolHeader 同款合成实色，保持家族一致 */
 #todoHeader {
     background-color: rgb(43, 47, 55);
-    border: 1px solid rgb(56, 60, 68);
-    border-radius: 6px;
 }
 
 /* hover 实色 = 与 ToolBlock 头部同款合成值 */
@@ -44,11 +42,9 @@ TodoCard {
     background-color: rgba(255, 255, 255, 3);
 }
 
-/* 行基态：透明左侧描边占位（与 active 行等宽，状态切换时文字不跳位）；
-   行高/边距常量与 TodoCard.cpp kRowHeight 等注释保持耦合 */
+/* 行基态；行高/边距常量与 TodoCard.cpp kRowHeight 等注释保持耦合 */
 #todoRow {
     background-color: transparent;
-    border-left: 2px solid transparent;
     border-radius: 4px;
 }
 
@@ -68,11 +64,10 @@ TodoCard {
     color: rgb(171, 178, 191);
 }
 
-/* 进行中：最强视觉权重 —— 语法黄实心圆 + 淡染底行 + 左描边 + 提亮加粗正文
+/* 进行中：最强视觉权重 —— 语法黄实心圆 + 淡染底行 + 提亮加粗正文
    （黄与 PermissionCard 警示同谱系 rgb(229,192,123) = atomOneDark 语法黄 #E5C07B） */
 #todoRow[status="active"] {
     background-color: rgba(229, 192, 123, 14);
-    border-left: 2px solid rgba(229, 192, 123, 150);
 }
 #todoRow[status="active"] #todoMark {
     color: rgb(229, 192, 123);
