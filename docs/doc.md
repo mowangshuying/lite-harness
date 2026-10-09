@@ -400,7 +400,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 导航/堆叠键 | `NavItem.h::NavKey` |
 | 团队数据目录名 | `AgentConst::kMailboxesDirName`（`.mailboxes`，`AgentConstants.h:263`）/ `kWorktreesDirName`（`.worktrees`，`:264`）——各引擎禁另拼 |
 | 预留队友名 | `AgentConst::kReservedTeammateNames`={lead, agent} + `isReservedTeammateName`（大小写折叠，`AgentConstants.h:274-278`；spawn 占用即拒） |
-| 团队心跳/等待界 | `kTeamIdleScanIntervalMs`(2000, `:293`) / `kTeamBashStartWaitMs`(5000, `:299`) / `kTeamBashKillWaitMs`(1000, `:300`)（`AgentConstants.h:293-300`） |
+| 团队心跳界 | `kTeamIdleScanIntervalMs`(2000, `AgentConstants.h:293`)——原同步适配器等待界 `kTeamBashStartWaitMs`/`kTeamBashKillWaitMs` 已随 Lane B 异步化摘除（Gate④ MINOR-A），勿复活 |
 | Lead 收件名 / Lead owner 键 | 邮箱名 `lead`：引擎侧 `AgentTeamsManager.cpp` 匿名 ns `kLeadName` 单源，宿主 wake 点重复字面量并以注释交叉锚定；TaskStore owner 键 `agent`（`kLeadOwnerKey`）是另一语义——`agent` 双重身份（邮箱预留名 + Lead owner 键） |
 | `submit_plan` 工具名 | 引擎匿名 ns 字面量 + 宿主队友 schema 字面量（Lead 面 25 件永不含它） |
 | claim 成功承重前缀 | `'Claimed '`（lcc 跨模块字符串契约；定义在 `TaskStore` 两 claim 路径文案、消费在 `AgentTeamsManager`——改文案必同审两处） |
@@ -427,7 +427,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    `BashRunner::dangerWarning` / `isToolFailure` / cron 表达式匹配 / token 估算 / frontmatter 解析——
    每个都是「加一个 `tests/tst_<模块>.cpp` + `tests/main.cpp` 里一行调用」，GLOB 收集无需改 CMakeLists。
     刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
-6. **队友 bash 同步适配器**（Gate③ MINOR-4，**Lane B 未办**）：队友前台 bash 同步等待（界 `kTeamBashStartWaitMs`/`kTeamBashKillWaitMs`），最坏冻结 GUI 数秒；异步化登记在案。
+6. **队友 bash 异步桥（Gate③ MINOR-4，Lane B 已落地 0654a48）**：队友前台 bash 经 `setToolAsyncAdapter` 信号驱动（哨兵 `<async-tool-pending>` 截批 + resume 续跑，原同步等待界常量已摘除）；残留=Lead `create_worktree` 仍同步 handler（病态 git 冻结 ≤30s，Gate④ MINOR-B，发布后 P4.1 接异步壳）与异步 git 失败分类无行为测试（NIT-B）。
 7. **SubAgent `task` 仍走遗留非租约路径**（裁决：不做租约切换）：`runClaimTask`/`runCompleteTask` 不经租约六门，与团队工具并存是刻意边界。
 8. **lcc 线程模型 → 主线程状态机转译（总偏差）**：lcc 守护线程/文件锁 → QTimer 心跳/deferred 驱动/内存台账（D7/D9）；Gate③ 各 MINOR/NIT 的处置与本轮文档同步（NIT-4）见 `.slim/deepwork/port-s13-agent-teams.md` 台账与 `gate3-oracle-report.md`。
 
