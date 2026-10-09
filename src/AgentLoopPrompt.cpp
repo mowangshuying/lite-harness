@@ -1,5 +1,5 @@
 // 提示词与工具 schema：system prompt 静态组装（lcc build_system_prompt 等价；规格修1：记忆目录/召回记录
-// 搬出 system，改经请求尾部注入块下发）、18 个工具的 OpenAI function 定义（仅被 LLM 消费，禁翻区）。
+// 搬出 system，改经请求尾部注入块下发）、25 个工具（18 基础 + 7 团队）的 OpenAI function 定义（仅被 LLM 消费，禁翻区）。
 
 #include "AgentLoop.h"
 

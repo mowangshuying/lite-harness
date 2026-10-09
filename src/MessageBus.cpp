@@ -37,8 +37,14 @@ bool MessageBus::resolveMailboxPath(const QString &name, QString *path, QString 
 {
     // 三关 fail-closed（宁报错不猜，照 lcc _path :38-50）。
     // 名字正则与路径包含 helper 单源于 AgentPathGuard.h（gate① M7 提出，供 Lane B/C/D 复用）。
-    // 偏差 m1（P3 收口，safePathIn 议程）：此处两关均词法口径，不解析符号链接/junction——
-    // AgentPathGuard::isWithinPathCanonical 为其复校预留件。
+    // m1 已落地（Gate① minor 遗留 → Gate② 前置③ → 本轮 Gate③ P4 收口）：词法关
+    // 保留（不存在目标无 canonical 可解析，lcc message_bus.py:38-47 Path.resolve
+    // (strict=False) 同款两口径），目标存在时追加 canonical 复校——junction/符号链接
+    // 把 .mailboxes 或邮箱文件指向根外时，纯词法 indexOf 放行而 OS 实际写出界外。
+    // 同款接法照 WorktreeManager.cpp worktreePath 的 m1 先例（喂 canonicalFilePath
+    // 作 child 匹配 helper 的 canonical parent，防盘符大小写假拒；断链 canonical
+    // 为空 → helper fail-closed）。大小写口径不改（维持现词法大小写敏感，
+    // WorktreeManager 的 CI 注册表是它自己的 FIND-C 裁决，不跨界）。
     // ① 收件人名正则（VALID_AGENT_NAME fullmatch）
     if (!AgentPathGuard::isValidAgentName(name)) {
         *error = QStringLiteral("MessageBus: invalid mailbox name '%1' (must match [A-Za-z0-9_-]{1,64})")
@@ -52,9 +58,25 @@ bool MessageBus::resolveMailboxPath(const QString &name, QString *path, QString 
         *error = QStringLiteral("MessageBus: mailbox directory escapes session root");
         return false;
     }
+    // m1 复校：目录存在（send 曾 mkpath 过/外部预建）时按 canonical 实测口径再验一次
+    const QFileInfo dirInfo(cleanDir);
+    if (dirInfo.exists()
+        && !AgentPathGuard::isWithinPathCanonical(dirInfo.canonicalFilePath(), cleanRoot)) {
+        *error = QStringLiteral("MessageBus: mailbox directory escapes session root");
+        return false;
+    }
     // ③ 解析后的文件路径必须仍在邮箱根下
     const QString file = QDir::cleanPath(cleanDir + QLatin1Char('/') + name + QStringLiteral(".jsonl"));
     if (!AgentPathGuard::isWithinPath(file, cleanDir)) {
+        *error = QStringLiteral("MessageBus: mailbox path escapes directory '%1'").arg(name);
+        return false;
+    }
+    // m1 复校：邮箱文件已存在（doorbell/历史消息）时同上走 canonical（父级 cleanDir
+    // 已由 helper 内部 canonical 化，若父级本身是指向界外的 junction，
+    // isWithinPathCanonical 在②号关已被拦截——此关防的是文件级链接，纵深防御）
+    const QFileInfo fileInfo(file);
+    if (fileInfo.exists()
+        && !AgentPathGuard::isWithinPathCanonical(fileInfo.canonicalFilePath(), cleanDir)) {
         *error = QStringLiteral("MessageBus: mailbox path escapes directory '%1'").arg(name);
         return false;
     }

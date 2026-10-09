@@ -3,6 +3,7 @@
 #include "TaskStore.h" // TaskStore::TaskSnapshot 为嵌套类型，限定名查找需完整类定义，故直接 include
 
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -181,4 +182,11 @@ private:
     TaskStore *m_store;                        // 任务账本（不拥有，宿主注入；lifetime 由宿主保证）
     std::function<QString()> m_sessionRootSink; // 会话数据根惰性获取
     std::function<QString()> m_workDirSink;     // 宿主工作目录（git cwd）惰性获取，可为空函数
+
+    // Gate③ 第7条（P4 Lane A）：createWorktree 在途名字表。同步内核下入口必为空
+    // （waitForFinished 不泵事件循环、无重入窗口）——本表为防御性 + Lane B 异步壳
+    // 预埋：并发同名 create 由入口拒止（'Error: Worktree '<name>' creation is
+    // already in progress'），RAII 出口清表。键大小写敏感（lcc 原语义）；若 Lane B
+    // 异步壳启用，需连带 gate④ 的 eqCi 口径评估（Windows 目录 CI，登记于 cpp 注）。
+    QSet<QString> m_createInFlight;
 };

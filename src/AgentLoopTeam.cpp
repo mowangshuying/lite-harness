@@ -165,17 +165,29 @@ void AgentLoop::initTeamEngine()
 QString AgentLoop::leadToolCwd()
 {
     // assignmentCwd ①号分支（Lead 无租约）经 workDirSink 直接给 m_workDir——
-    // 与 s13 前行为逐字一致；有租约→租约任务现读盘校验（status/owner 失真即 false）
-    // →worktree 绑定经 resolver 折入。false/空 → 回落 m_workDir（fail-open 偏差
-    // 登记：lcc current_cwd 对失真租约 raise 炸回合，lite 工具面失败折叠纪律下
-    // 保守回落主工作区，宁可让 Lead 在旧目录干活也不毁回合——Lead 是交互主体，
-    // 失真多由用户外部动盘造成，回落后 list_tasks/get_task 可自纠）。
+    // 与 s13 前行为逐字一致（真回落，非失真，不打警告）；有租约→租约任务现读盘
+    // 校验（status/owner 失真即 false）→worktree 绑定经 resolver 折入。
+    // Gate③ MINOR-2 注释纠偏（原盘码注释失实，现以 lcc 盘码为准）：lcc
+    // tools_manager.py:559-563 _agent_cwd **不 raise**——catch (FileNotFoundError,
+    // ValueError) 后把 "Error: Invalid task assignment: {exc}" 作为工具输出串折叠
+    // （run_agent_* 五个包装 :565-583 `return error or self.run_x(..., cwd=cwd)`），
+    // 即 lcc 失真租约下 Lead 工具**失败**而非回落。lite 采 fail-open 有意偏离：
+    // 本函数返回值被消费方一律当路径用（run*In 围栏根 / BashRunner cwd），签名
+    // 与消费点均不在本轮写域，无法透传错误串；失真多由用户外部动盘造成，保守
+    // 回落主工作区并 qWarning 留痕（禁静默），Lead 可经 list_tasks/get_task 自纠。
     QString cwd;
     QString error;
-    if (m_taskStore.assignmentCwd(QString::fromLatin1(AgentTeamsManager::kLeadOwnerKey),
-                                  &cwd, &error)
-        && !cwd.isEmpty())
+    const bool leased = m_taskStore.assignmentCwd(
+        QString::fromLatin1(AgentTeamsManager::kLeadOwnerKey), &cwd, &error);
+    if (leased && !cwd.isEmpty())
         return cwd;
+    if (!leased)
+    {
+        // 租约失真分支（assignmentCwd=false 仅出现在有租约但盘校失败；Lead 无租约
+        // 走①号 true 回落）：与「无租约回落」区分留痕，日志各走各路
+        qWarning().noquote()
+            << QStringLiteral("[team] lead lease invalid, falling back to workDir: %1").arg(error);
+    }
     return m_workDir;
 }
 
@@ -251,8 +263,8 @@ void AgentLoop::tryDeliverTeamEvents()
     // 丢失——与 lcc consume 后即弃的一次性语义同性质（GUI 恒接线，理论分支）。
     emit scheduledUserMessage(text, text);
     qInfo().noquote() << QStringLiteral("[team] wake: delivered %1 events").arg(events.size());
-    // m_teamWasActive 边沿无需在此维护：所开新回合的自然终局 leadTurnEndSettlement
-    // 统一刷新（lcc loop.py:419 每轮圈尾核对的 lite 落点）。
+    // m_teamWasActive 边沿无需在此维护：所开新回合的任一终局均经 settleLeadLease
+    // 统一刷新（Gate③ NIT-1 下沉；lcc loop.py:419 每轮圈尾核对的 lite 落点）。
 }
 
 void AgentLoop::settleLeadLease()
@@ -264,6 +276,15 @@ void AgentLoop::settleLeadLease()
     QString error;
     m_taskStore.releaseCompletedAssignment(
         QString::fromLatin1(AgentTeamsManager::kLeadOwnerKey), &error);
+
+    // Gate③ NIT-1：lcc loop.py:419 check_team_offline_edge 挂在**外层 run 每轮圈尾**
+    // （自然终局/撞上限/流错误全走），lite 原仅挂 leadTurnEndSettlement（自然终局）
+    // ——现迁入本函数：四类终局（自然/双上限/流错误/stop）全部经过此处，边沿恰好
+    // 每终局核对一次，文案与语义不变。
+    const bool active = !m_teams.teammateNames().isEmpty();
+    if (m_teamWasActive && !active)
+        qDebug() << "所有队友已下线，如需继续协作可再次 spawn_teammate";
+    m_teamWasActive = active;
 }
 
 void AgentLoop::leadTurnEndSettlement()
@@ -271,16 +292,13 @@ void AgentLoop::leadTurnEndSettlement()
     // lcc loop.py :168-172 finally（退租）+ 每回合圈尾收割的三合一：
     // 退租 → 收割 lead 邮箱注入 → 下线边沿检测。注入的 user 消息随调用点
     // 下方的 persistHistory 一并落盘（挂载三置于 finalizeInFlightDelivery 前）。
+    // Gate③ NIT-1：下线边沿检测已下沉 settleLeadLease（四类终局全覆盖，lcc
+    // loop.py:419 每轮圈尾语义），本函数不再重复核对。
     settleLeadLease();
     injectTeamEvents();
-    // lcc check_team_offline_edge :160-164：active→全下线边沿记一次日志。
     //（Gate③ MAJOR-1 更新：lcc wake 分支 :401-408 的「空闲即开新回合」已另立
     // tick 路径 tryDeliverTeamEvents 落地——本函数三卫兵继续只负责回合内/回合尾
     // 边界收割；skip_approval 无 lite 对应物，Ask 卡对 Lead 保留=增强非缺陷。）
-    const bool active = !m_teams.teammateNames().isEmpty();
-    if (m_teamWasActive && !active)
-        qDebug() << "所有队友已下线，如需继续协作可再次 spawn_teammate";
-    m_teamWasActive = active;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -432,13 +450,15 @@ QJsonArray AgentLoopTeam::teammateToolsDefinition()
                           {qMakePair(QString(QStringLiteral("command")),
                                      QString(QStringLiteral("string")))},
                           {QStringLiteral("command")}));
-        tools.append(tool(QStringLiteral("read_file"), QStringLiteral("Read file contents."),
+        // Gate③ NIT-2：desc 逐字对齐 lcc :113/:122（无句号；bash "Run a shell
+        // command." lcc :103 原文带句号，lite 保持带句号=正确 parity）
+        tools.append(tool(QStringLiteral("read_file"), QStringLiteral("Read file contents"),
                           {qMakePair(QString(QStringLiteral("path")),
                                      QString(QStringLiteral("string"))),
                            qMakePair(QString(QStringLiteral("limit")),
                                      QString(QStringLiteral("integer")))},
                           {QStringLiteral("path")}));
-        tools.append(tool(QStringLiteral("write_file"), QStringLiteral("Write content to a file."),
+        tools.append(tool(QStringLiteral("write_file"), QStringLiteral("Write content to a file"),
                           {qMakePair(QString(QStringLiteral("path")),
                                      QString(QStringLiteral("string"))),
                            qMakePair(QString(QStringLiteral("content")),

@@ -14,8 +14,8 @@
 
 | 部分 | 定位 | 状态 | 与代码的关系 |
 |---|---|---|---|
-| [第二部分 · 模块结构总览](#architecture) | **结构与依赖边**：六层清单、AgentLoop 家族 13 个 TU 的职责地图、一条消息的完整数据流、运行时目录布局、单源纪律一览、已知分层异常、新增代码落位决策树 | 活文档（权威） | 增删 `src/` 模块、改各 TU 分工、改 `AgentLoopInternal.h` 符号归属必须同步 |
-| [第三部分 · 手工冒烟回归清单](#checklist) | **历轮验收场景沉淀**：十组 P0/P1/P2 勾选项 | 活文档（发版必跑） | 每条对应一个已实现行为；实现变了要改条目，**只记现状、不记愿望** |
+| [第二部分 · 模块结构总览](#architecture) | **结构与依赖边**：六层清单、AgentLoop 家族 14 个 TU 的职责地图、一条消息的完整数据流、运行时目录布局、单源纪律一览、已知分层异常、新增代码落位决策树 | 活文档（权威） | 增删 `src/` 模块、改各 TU 分工、改 `AgentLoopInternal.h` 符号归属必须同步 |
+| [第三部分 · 手工冒烟回归清单](#checklist) | **历轮验收场景沉淀**：十一组 P0/P1/P2 勾选项 | 活文档（发版必跑） | 每条对应一个已实现行为；实现变了要改条目，**只记现状、不记愿望** |
 | [第四部分 · 交互 UI 设计逻辑](#ui) | **交互设计原理**：折叠式渐进披露的公共骨架与各类卡片（思考块 / 工具卡 / 权限卡 / 待办卡 / 子代理进度 / 记忆与压缩卡 / 侧栏 / 历史回放）为什么这么设计 | 活文档（设计说明） | 只讲原理与契约，不逐控件枚举 API；新增一类卡片/一种进行态时补一节，别在源码注释里另写一套原理 |
 | [第五部分 · 异步链现状契约](#async) | **memory / compact 侧链的现行契约**：全异步不变量、`AsyncRequest` 语义、三条记忆链与压缩变体、`stop()` 收口顺序、UI 侧接线 | 活文档（改侧链契约必须同步） | 原「异步化实施规格」已落地，其迁移前现状表 / API 草案 / 分阶段计划 / 工作量估算**已删除**（正文行号锚定拆分前的旧 2063 行 `AgentLoop.cpp`，100% 不可回查）；历史决策与偏离登记只留 §7 |
 
@@ -91,10 +91,11 @@ L3 展示控件      MessageBubbleWidget · CollapsibleBlock(→ThinkingBlock/To
                  PermissionCard · SessionSidebar · ChatMsgEdit · SendMsgButton
                  WorkDirPathBar · FluentInputDialog · NavItem
                         ↓
-L4 Agent 编排    AgentLoop（1 类 × 13 TU）· SubAgent
-                        ↓
+L4 Agent 编排    AgentLoop（1 类 × 14 TU）· SubAgent
+                         ↓
 L5 引擎/传输     QOpenAi · BashRunner · CompactManager · MemoryManager · TaskStore
-                 CronSchedulerManager · BackgroundTasksManager · SessionStore
+                  CronSchedulerManager · BackgroundTasksManager · SessionStore
+                  MessageBus · WorktreeManager · AgentTeamsManager · TeammateRuntime
                         ↓
 L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · AppSettings.h
                  I18n · ThemeAware · ToolTagKind.h · AgentLoopInternal.h · LineEnding.h
@@ -145,7 +146,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 
 | 模块 | 职责 | 直接依赖 |
 |---|---|---|
-| `AgentLoop` | 回合状态机：`run()` → 召回 → 压缩前导 → 流式请求 → 工具批串行推进 → 终局落盘与记忆沉淀；**值成员**持有并编排全部 L5 引擎 | `QOpenAi`、`CompactManager`、`MemoryManager`、`TaskStore`、`CronSchedulerManager`、`BackgroundTasksManager`、`SubAgent`、`BashRunner`、`ToolNames`、`AgentConstants` |
+| `AgentLoop` | 回合状态机：`run()` → 召回 → 压缩前导 → 流式请求 → 工具批串行推进 → 终局落盘与记忆沉淀；**值成员**持有并编排全部 L5 引擎 | `QOpenAi`、`CompactManager`、`MemoryManager`、`TaskStore`、`CronSchedulerManager`、`BackgroundTasksManager`、`SubAgent`、`BashRunner`、`MessageBus`、`WorktreeManager`、`AgentTeamsManager`、`TeammateRuntime`、`ToolNames`、`AgentConstants` |
 | `SubAgent` | `task` 子代理：独立 messages / ChatStream / 工具队列 / 权限槽的黑盒，唯一出口是完成汇总文本 | `AgentLoop`（`friend`）、`QOpenAi`、`AgentLoopInternal.h`、`BashRunner`、`ToolNames` |
 
 #### L5 引擎 / 传输（零 GUI）
@@ -156,17 +157,21 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `BashRunner` | bash 执行段单源：`dangerWarning` / `truncateOutput` / `finalizeOutput` / `start`（`powershell.exe -NoProfile -NonInteractive`） | `AgentConstants` |
 | `CompactManager` | 五级压缩管线 `toolResultBudget → snip → micro → fitToolResults → compactHistory` + 溢出反应式压缩；非 QObject，全靠回调注入 | `QOpenAi::AsyncRequest`、`AgentConstants` |
 | `MemoryManager` | 持久记忆：召回 / 提取 / 合并三条异步链，落 `.memory/MEMORY.md` + `<slug>.md` | `QOpenAi`、`AgentConstants` |
-| `TaskStore` | 任务图文件存储：一任务一 `.task/task_<hex8>.json`，每操作直读盘；6 个 `run_*` 纯文本进出 | `AgentConstants` |
+| `TaskStore` | 任务图文件存储：一任务一 `.task/task_<hex8>.json`，每操作直读盘；6 个 `run_*` 纯文本进出；**s13 租约扩展**：租约版 `claimTask` 六门（任务可读 / pending 且无主 / 该 owner 无内存租约 / 磁盘无该 owner 的 in_progress / blockedBy 全 completed / cwd 可解）；`completeTask` 完成后**故意不退租**（同回合后续工具仍需租约 cwd），释放只在两个回合边界 API（`releaseCompletedAssignment` / `releaseTeammateAssignment`，后者无条件清内存租约+触发 released 回调）；换工版本只在 claim 递增、释放不推；`assignmentCwd` 三分支热路径（无租约 Lead 键回落 / 无租约队友 fail-closed / 有租约读盘校验+自愈回写不推版本）；`scanUnclaimedTasks` 纯侦察；承重跨模块契约 claim 成功文案 `Claimed ` 前缀；租约台账纯内存 D7 重启作废；遗留非租约路径 `claimTaskUnleased`/`completeTaskUnleased` 逐字保留 | `AgentConstants` |
 | `CronSchedulerManager` | 定时任务台账：cron 校验/匹配、到期队列、`scheduled_tasks.json` 持久化、两段式 at-least-once 交付；`QTimer` 1s 轮询不建线程 | 仅 QtCore |
 | `BackgroundTasksManager` | 后台 bash 任务台账：登记 / 存结果 / 渲染 `<task_notification>`，进程由宿主驱动 | `ToolNames` |
 | `SessionStore` | 全局索引 `<workDir>/.lite-harness/index.json` 读写 + 条目 upsert（`QSaveFile` 原子写）；纯静态 header-only（无 `.cpp`，方法全在类内定义即隐式 inline） | 仅 QtCore |
+| `MessageBus` | s13 团队邮箱内核（lcc s13 34775c8 message_bus.py）：`<会话根>/.mailboxes/<name>.jsonl` 一代理一邮箱，append 写+**破坏性读**（读走即删）= at-most-once，无游标无 ack；三重 fail-closed 路径门（收件名 `^[A-Za-z0-9_-]{1,64}$` / 邮箱目录会聚 sessionRoot / 解析后路径仍在目录内）；信封 6 字段，type 9 种由调用方给定不校验；M8 drain 删除失败→**失败即空批**+lastError（宿主下一 tick 重试）；坏行跳过（D9-defensive 偏离 lcc raise） | 仅 QtCore |
+| `WorktreeManager` | s13 git worktree 隔离内核：落 `<会话根>/.worktrees/<name>`、分支 `wt/<name>`；create 十门 / remove 五门（`discardChanges` 只豁免 porcelain 门并加 `--force`，余四门绝对）；**铁律：git 失败绝不自动清理、remove 成功也永不删分支**；`removeWorktree` **刻意不是工具**（不进 ToolNames.h，仅宿主关停/手工，防模型误删）；create 返回折叠文本（`Error:`/`Partial operation:`/`Partial success:`）、remove bool+*error；`resolveWorktreeCwd` 是 `TaskStore::setCwdResolver` 注入目标 | 仅 QtCore |
+| `AgentTeamsManager` | s13 团队协议内核：Lead 7 工具内核（`runSpawnTeammate`…`runCreateWorktree`）+ 队友侧 `sendTeammateMessage`（收件恒 lead）/ `claimNextTask` / `runTeammateTool`（工具总闸：plan 门只拦 bash/write_file/edit_file，read/glob 恒放行）；五本账**全内存态**（队友台账 / planGates / 在评审请求 / 协议待决 / 运行时句柄，D7 重启作废；句柄持 `TeammateRuntime*` 偏离 lcc 线程句柄）；协议门 submit_plan 一案一批、`applyPlanResponse` 11 项合取、`applyShutdownRequest` 8 项——**门翻转只发生在队友侧**（Lead `runReviewPlan` 不触 planGates）；`consumeLeadInbox` 返回原始批（回执不吞）、`formatTeamEvents` 静态 `[Team events]…` 文本（空批回空串，偏G 优于 lcc）；注入点 `setTeammateLauncher`（create-then-deferred-start 契约、nullptr=回滚 fail-closed）/ `setWorktreeCreator` / `setPermissionCheck` / `setHooksTrigger` / `setToolAdapter`×5 | QtCore + MessageBus/WorktreeManager/TaskStore |
+| `TeammateRuntime` | s13 队友无头状态机（lcc TeammateRuntime 段）：lcc 守护线程→**QTimer 心跳转译**（`AgentConst::kTeamIdleScanIntervalMs`=2000ms，仅 Idle 态单轮探测：drain 邮箱→协议处置→否则 `claimNextTask` 自拉活）；不持 ChatStream，回合 LLM 由宿主经 `turnRequested` 驱动、`deliverTurnResult()` 回填，零嵌套事件循环；`cancel()`→`finished`→宿主 delete；析构 FIND-L 兜底（未收口即**无 emit** 清算台账） | QtCore + AgentTeamsManager 门 |
 
 #### L6 单源与设施
 
 | 模块 | 单一事实源 |
 |---|---|
-| `AgentConstants.h` | 模型清单（settings.ini `modelOptions` 逗号分隔 + `defaultModel` 缺省项，未配置回落内置 `kBuiltinModelOptions`；读值经头内 `iniTextValue()` 兼容 QSettings 的 ini 列表语法，裸 `.toString()` 会得空串）、`kMaxTokens`、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`，`AgentConstants.h:257-262`，拼法涉数据兼容不可改）、**token 口径**（`estimateTokens` 字符→token 折算基准 `kCharsPerTokenBudget=4`、全局预算 `contextTokenBudget()`、上下文上限 `contextCharLimitValue()`） |
-| `ToolNames.h` | 18 个工具名（bash/read_file/write_file/edit_file/glob/todo_write/task/load_skill/compact/create_task/update_task/list_tasks/get_task/claim_task/complete_task/schedule_cron/list_crons/cancel_cron） |
+| `AgentConstants.h` | 模型清单（settings.ini `modelOptions` 逗号分隔 + `defaultModel` 缺省项，未配置回落内置 `kBuiltinModelOptions`；读值经头内 `iniTextValue()` 兼容 QSettings 的 ini 列表语法，裸 `.toString()` 会得空串）、`kMaxTokens`、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`/`.mailboxes`/`.worktrees`，`AgentConstants.h:257-264`，拼法涉数据兼容不可改）、**token 口径**（`estimateTokens` 字符→token 折算基准 `kCharsPerTokenBudget=4`、全局预算 `contextTokenBudget()`、上下文上限 `contextCharLimitValue()`） |
+| `ToolNames.h` | 25 个工具名（18 基础：bash/read_file/write_file/edit_file/glob/todo_write/task/load_skill/compact/create_task/update_task/list_tasks/get_task/claim_task/complete_task/schedule_cron/list_crons/cancel_cron + 7 团队：spawn_teammate/list_teammates/send_message/request_shutdown/request_plan/review_plan/create_worktree）；`submit_plan` 为队友专属名——单源在引擎匿名 ns+宿主队友 schema 字面量，**刻意不入本表**；队友侧 send_message/list_tasks/claim_task/complete_task 复用基础名 |
 | `LayoutConstants.h` | 聊天栏宽 800 / 边距 35 / 气泡系数 0.75 / 侧栏宽 280 |
 | `AppSettings.h` | 配置存储：一律 `applicationDirPath()/settings.ini`（弃用注册表），键清单见 `AppSettings.h:3-6`（`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`） |
 | `ToolTagKind.h` | 工具名 → 语义类别（read/search/plan/delegate/run/write/other）→ QSS `toolTagKind` 动态属性 |
@@ -180,7 +185,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 
 ### 3. AgentLoop 家族：单类多 TU 的职责地图
 
-`AgentLoop.h` 是**唯一类声明**；13 个 `.cpp` 各承载一组成员方法定义（不是多个类）。这样既保住了
+`AgentLoop.h` 是**唯一类声明**；14 个 `.cpp` 各承载一组成员方法定义（不是多个类）。这样既保住了
 「一个状态机一个所有者」的语义，又让单文件回到可读体量。**新增方法请按 §10 的决策树落位，不要
 往 `AgentLoop.cpp` 里堆。**
 
@@ -188,7 +193,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 |---|---|---|---|
 | `AgentLoop.cpp` | 405 | 生命周期与会话身份：构造/析构、workDir / sessionDataId / sessionDataRoot / model、回合入口与终局、**token 计量单源**（usage 锚 + 增量外推） | `run()`、`stop()`、`sessionDataRoot()`（`:137-143`）、`adoptUsageAnchor()`、`estimatedContextTokens()` |
 | `AgentLoopRequest.cpp` | 460 | 一次 LLM 请求回合：压缩前导 → 流式请求 → 工具批推进 → 记忆沉淀链 | `startChatRequest`、`doStartChatRequest`、`applyCompactPipelineAsync`、`continueWithToolResults`、`runNextTool`、`startMemoryChain` |
-| `AgentLoopPrompt.cpp` | 436 | **静态** system prompt（只由 workDir / 会话根 / 静态文字决定，全会话字节恒定）+ 请求尾部 `<agent_context>` 注入块（技能目录 / 记忆索引 / 召回记录）+ 18 工具 function 定义（**禁翻区**，`QStringLiteral` 不包 `tr()`） | `makeSystemPrompt`、`rebuildSystemPromptMessage`、`makeContextInjection`、`AgentLoop::buildContextInjection`、`createToolsDefinition` |
+| `AgentLoopPrompt.cpp` | 436 | **静态** system prompt（只由 workDir / 会话根 / 静态文字决定，全会话字节恒定）+ 请求尾部 `<agent_context>` 注入块（技能目录 / 记忆索引 / 召回记录）+ 25 工具 function 定义（含 s13 团队 7 件 schema 与团队纪律静态段；**禁翻区**，`QStringLiteral` 不包 `tr()`） | `makeSystemPrompt`、`rebuildSystemPromptMessage`、`makeContextInjection`、`AgentLoop::buildContextInjection`、`createToolsDefinition` |
 | `AgentLoopTools.cpp` | 315 | 工具分发：`executeTool` 分流、handler 表、统一收口 `onToolFinished`、成败判定单源 | `executeTool`、`onToolFinished`、`isToolFailure`、`AgentLoopDetail` 工具段定义 |
 | `AgentLoopFileTools.cpp` | 355 | 沙箱文件工具（同步本地 IO）：逃逸判定 + read/write/edit/glob，全静态，宿主与子代理各传各的 workDir；edit/write 的行尾与编码防线见 `LineEnding.h`；edit 另有三道防线（空 `old_string` 拒绝 / 体量上限 `kEditFileMaxBytes` 拒绝 / 多处命中歧义拒绝） |
  `safePathIn`、`runReadFileIn`、`runWriteFileIn`、`runEditFileIn`、`runGlobIn` |
@@ -200,6 +205,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopTodo.cpp` | 119 | `todo_write`（无状态：只校验入参并渲染面板文本，成功即以本次快照发 `todoUpdated`） | `renderTodos`、`runTodoWrite` |
 | `AgentLoopSubAgent.cpp` | 86 | `task` 子代理的启动与统一收口（子代理信号直连转发为主循环信号） | `startSubAgentTask`、`cancelSubAgent` |
 | `AgentLoopCron.cpp` | 64 | 三个 cron handler 与空闲边界交付；台账与匹配在 `CronSchedulerManager`，本文件只做宿主侧接线 | `runScheduleCron`、`runCancelCron`、`runListCrons`、`tryDeliverCron` |
+| `AgentLoopTeam.cpp` | 420 | **s13 团队宿主接线单 TU**：`initTeamEngine` 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）；`leadToolCwd` 租约感知 cwd 单点（有租约取 `assignmentCwd` 含 worktree 解析、无租约回落宿主 workDir）；三注入边界（`run()` 入口与批尾 `injectTeamEvents`、自然终局 `leadTurnEndSettlement` 先于 finalize/persist）+ 非自然终局 `settleLeadLease`；**`tryDeliverTeamEvents`** Gate③ MAJOR-1 空闲唤醒收割（挂 `m_cronTick` 1s 节拍、先于 `tryDeliverCron`——lcc 邮箱优先口径；仅 `!m_running` 且 lead 邮箱有信时 harvest→`scheduledUserMessage` 自动开回合，与 cron 同路 GUI 零改动）；队友回合环 `onTeammateTurnRequested`/`onTeammateFinished`（镜像 SubAgent 先例）；`settleTeamOnExit` 析构清算；`teammateToolsDefinition()` 队友面 10 件 schema（D5 与主表分开、禁翻区） | `initTeamEngine`、`leadToolCwd`、`injectTeamEvents`、`tryDeliverTeamEvents`、`leadTurnEndSettlement`、`settleLeadLease`、`onTeammateTurnRequested`、`settleTeamOnExit` |
 
 **AgentLoop 对外信号面**（`AgentLoop.h:91-138`，UI 只认这些）：`thinkingDelta`、`textDelta`、
 `toolStarted`、`toolOutputReady(…, ok)`、`subagentProgress`、`permissionRequired`、`todoUpdated`、
@@ -318,7 +324,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | `permissionRequired` | `:319` | `PermissionCard` + 侧栏状态灯 |
 | `todoUpdated` | `:348` | `TodoCard` 快照 + 侧栏任务清单 |
 | `memoryPhaseStarted` / `memoryChainFinished` | `:291` / `:306` | 记忆进度 live 卡的挂出与收尾 |
-| `scheduledUserMessage` | `:378` | 以「定时任务用户消息」入历史并直接发起新一轮 |
+| `scheduledUserMessage` | `:378` | 以「定时/团队唤醒用户消息」入历史并直接发起新一轮（cron 交付与 s13 `tryDeliverTeamEvents` 空闲唤醒共用此发射点，GUI 零改动） |
 | `runningChanged` | `:391` | 输入框忙态 `setTurnBusy` + 侧栏状态灯；终局兜底复位审批灯（`setRunning(true)` 起即禁输入，早于 `run()` 卫兵） |
 
 ---
@@ -340,13 +346,15 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
         ├── .transcripts/snip_archive.jsonl ← snip 归档，**固定名只追加**（非全量重写；恒定标记文本，缓存友好）
         ├── .task_outputs/tool-results/   ← 超大工具输出卸载（AgentConst 名单源）
         ├── .temp/                        ← prompt 引导语指向的临时目录（AgentLoopPrompt.cpp:22-25）
-        └── scheduled_tasks.json          ← cron 台账（CronSchedulerManager.cpp:554）
+        ├── scheduled_tasks.json          ← cron 台账（CronSchedulerManager.cpp:554）
+        ├── .mailboxes/<name>.jsonl       ← 团队邮箱，一代理一文件（MessageBus；破坏性读；s13）
+        └── .worktrees/<name>             ← git worktree 隔离检出（WorktreeManager；分支 wt/<name> 永不随 remove 删除；s13）
 ```
 
 - **回退语义**：`sessionDataId` 为空时 `sessionDataRoot()` 返回 `<workDir>/.lite-harness`（
   `AgentLoop.cpp:137-143`），保证未注入 ID 的独立构造路径行为不变；空历史不落盘以免污染全局根
   （`AgentLoopHistory.cpp:22-24`）。
-- 目录名一律取 `AgentConst::k*DirName`（`AgentConstants.h:257-262`），拼法涉既有数据兼容，**逐字符
+- 目录名一律取 `AgentConst::k*DirName`（`AgentConstants.h:257-264`，s13 扩 `.mailboxes`/`.worktrees`），拼法涉既有数据兼容，**逐字符
   不可改**；`.lite-harness` 中间层只在 `sessionDataRoot()` 拼一次，各引擎只拼自己的叶子段。
 - 用户配置在**另一处**：`<exe 目录>/settings.ini`（`AppSettings.h:19`，弃用注册表）。
 
@@ -388,8 +396,14 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；管线内即时估算另见 `CompactManager::estimateTokens` |
 | 上下文占用（侧栏占用条与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
-| 工具名清单（18 个） | `ToolNames.h`（schema / handler 表 / 权限门 / 子代理白名单 / ToolBlock 标题 / 回归清单核对项全部引用它） |
+| 工具名清单（25 个 = 18 基础 + 7 团队；`submit_plan` 不入表） | `ToolNames.h`（schema / handler 表 / 权限门 / 子代理白名单 / ToolBlock 标题 / 回归清单核对项全部引用它） |
 | 导航/堆叠键 | `NavItem.h::NavKey` |
+| 团队数据目录名 | `AgentConst::kMailboxesDirName`（`.mailboxes`，`AgentConstants.h:263`）/ `kWorktreesDirName`（`.worktrees`，`:264`）——各引擎禁另拼 |
+| 预留队友名 | `AgentConst::kReservedTeammateNames`={lead, agent} + `isReservedTeammateName`（大小写折叠，`AgentConstants.h:274-278`；spawn 占用即拒） |
+| 团队心跳/等待界 | `kTeamIdleScanIntervalMs`(2000, `:293`) / `kTeamBashStartWaitMs`(5000, `:299`) / `kTeamBashKillWaitMs`(1000, `:300`)（`AgentConstants.h:293-300`） |
+| Lead 收件名 / Lead owner 键 | 邮箱名 `lead`：引擎侧 `AgentTeamsManager.cpp` 匿名 ns `kLeadName` 单源，宿主 wake 点重复字面量并以注释交叉锚定；TaskStore owner 键 `agent`（`kLeadOwnerKey`）是另一语义——`agent` 双重身份（邮箱预留名 + Lead owner 键） |
+| `submit_plan` 工具名 | 引擎匿名 ns 字面量 + 宿主队友 schema 字面量（Lead 面 25 件永不含它） |
+| claim 成功承重前缀 | `'Claimed '`（lcc 跨模块字符串契约；定义在 `TaskStore` 两 claim 路径文案、消费在 `AgentTeamsManager`——改文案必同审两处） |
 
 ---
 
@@ -412,7 +426,10 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    下一批最小切口是已无 GUI 依赖的纯函数：`AgentLoopDetail::toolSummary` / `parseToolCall` /
    `BashRunner::dangerWarning` / `isToolFailure` / cron 表达式匹配 / token 估算 / frontmatter 解析——
    每个都是「加一个 `tests/tst_<模块>.cpp` + `tests/main.cpp` 里一行调用」，GLOB 收集无需改 CMakeLists。
-   刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
+    刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
+6. **队友 bash 同步适配器**（Gate③ MINOR-4，**Lane B 未办**）：队友前台 bash 同步等待（界 `kTeamBashStartWaitMs`/`kTeamBashKillWaitMs`），最坏冻结 GUI 数秒；异步化登记在案。
+7. **SubAgent `task` 仍走遗留非租约路径**（裁决：不做租约切换）：`runClaimTask`/`runCompleteTask` 不经租约六门，与团队工具并存是刻意边界。
+8. **lcc 线程模型 → 主线程状态机转译（总偏差）**：lcc 守护线程/文件锁 → QTimer 心跳/deferred 驱动/内存台账（D7/D9）；Gate③ 各 MINOR/NIT 的处置与本轮文档同步（NIT-4）见 `.slim/deepwork/port-s13-agent-teams.md` 台账与 `gate3-oracle-report.md`。
 
 ---
 
@@ -423,7 +440,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 分发或收口 → `AgentLoopTools.cpp`；文件沙箱工具 → `AgentLoopFileTools.cpp`；bash/后台任务 →
 `AgentLoopBash.cpp`；权限判定 → `AgentLoopPermission.cpp`；钩子 → `AgentLoopHooks.cpp`；
 历史读写 → `AgentLoopHistory.cpp`；技能 → `AgentLoopSkills.cpp`；todo → `AgentLoopTodo.cpp`；
-子代理 → `AgentLoopSubAgent.cpp`；cron → `AgentLoopCron.cpp`；生命周期/会话身份 → `AgentLoop.cpp`。
+子代理 → `AgentLoopSubAgent.cpp`；cron → `AgentLoopCron.cpp`；**团队（队友生命周期/邮箱唤醒/审批翻转/工作树接线/退出清算）→ `AgentLoopTeam.cpp`**；生命周期/会话身份 → `AgentLoop.cpp`。
 ② 有 ≥2 个 TU 共用的纯函数？→ 声明进 `AgentLoopInternal.h`，定义落「语义最贴近」的那个 TU，**不加转发层**。
 ③ 只在单 TU 内用？→ 留在该 `.cpp` 的匿名 namespace，别上头文件。
 
@@ -467,7 +484,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 ### 三、P0 Agent 主循环与权限门
 
-- [ ] 工具名单核对（读码 `ToolNames.h` + 运行时注册观察）→ 恰 18 工具：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron；任务图 6 + cron 3 仅主循环注册
+- [ ] 工具名单核对（读码 `ToolNames.h` + 运行时注册观察）→ 恰 25 工具：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron / spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree；任务图 6 + cron 3 + 团队 7 仅主循环注册；`submit_plan` 为队友专属名不在 `ToolNames.h`（引擎匿名 ns 单源，Lead 面不可见）
 - [ ] bash 执行普通命令（如 `echo`）→ 不触发审批卡直接执行
 - [ ] bash 触发硬拒绝表（`rm -rf /`、`sudo`、`shutdown`、`reboot`、`mkfs`、`dd if=`、`> /dev/`；大小写不敏感 contains）→ 直接回填 `Blocked: … is on the deny list`，不弹询问
 - [ ] bash 触发 ASK 规则（含 `rm ` 等破坏词「Potentially destructive command」）或 write_file/edit_file 越出工作目录（「Writing outside workspace」）→ 内联 PermissionCard 出现、默认焦点「拒绝」、理由中文与 EN→ZH 映射表一致（新增 reason 必须同步该表）
@@ -499,6 +516,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] `defaultModel` 指向清单内模型 → 生效；指向清单外或留空 → 回落清单首项（防配置指向不存在的模型）
 - [ ] 设置页改「模型服务」端点/密钥 → 写 ini 后立即 `QOpenAi::setUrl()` / `setToken()`，下一回合请求即用新值（无需重启）；密钥卡默认掩码、点眼睛切明文且焦点不跳字
 - [ ] 会话数据目录拼法目测+读码（`AgentConstants.h`）→ `.task` / `.temp` / `.transcripts` / `.task_outputs/tool-results` / `.memory` 零偏差（拼法涉数据兼容，改名即回归）；任务图每任务一个 `.task/task_<hex8>.json`
+- [ ] s13 新增目录名（`.mailboxes` / `.worktrees`，`AgentConstants.h:263-264`）同样涉及数据兼容，改名即回归；邮箱文件名 = 收件名（预留名 lead/agent 禁被 spawn 占用）
 
 ### 五、P1 异步链与压缩（禁回退阻塞的验证点）
 
@@ -561,6 +579,16 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] tag `v*` / `s*` 推送 → 同一 workflow 把 zip 上传为该 tag 的 GitHub Release 资产；**Release 标题与简介的单源 = 附注 tag 正文**（`git for-each-ref --format='%(contents)'` 读出后喂 `body`，标题统一 `lite-harness <tag>`）；轻量 tag 会被「Read tag annotation as release notes」步骤显式 throw、不产出空简介 Release；改存量已发布 tag 的简介只走 GitHub 网页/API，**勿重跑其 workflow**（会用短附注覆盖富正文）
 - [ ] CI 零凭证读码 → workflow 内无任何 token/secret 硬编码或引用
 - [ ] 旧就地 `deploy` 目标（windeployqt 自定义目标）已摘除，**勿恢复双轨**：CPack ZIP 是唯一部署/打包路径，不要再验 `--target deploy` 或往 `dist/` 拷产物
+
+### 十一、Agent 团队（s13 移植：P0 唤醒收割 + P2 协议抽查）
+
+- [ ] **P0** `spawn_teammate` 后 Lead **结束当前回合**（空闲）→ 队友投给 lead 邮箱的 `plan_approval_request` / `result` 等由 1s cron tick 的 `tryDeliverTeamEvents` **自动收割**并开新回合（Gate③ MAJOR-1 回归点：曾永沉 `.mailboxes/lead.jsonl` 团队死锁直至人类再发言）；同 tick 邮箱交付先于 cron（lcc 优先级口径）；Lead 忙时不插队（`m_running` 卫兵）；空批不开回合（MessageBus M8 unlink 失败=本 tick 跳过、下一 tick 重试）
+- [ ] **P2** `request_plan`→`review_plan` 审批翻转：门只随队友侧 `submit_plan`/`applyPlanResponse` 翻转（Lead `runReviewPlan` 不触 planGates）；批准前队友 bash/write_file/edit_file 被拦、read/glob 恒放行；裁决以 `plan_approval_response` 投回队友邮箱
+- [ ] **P2** `create_worktree` 十门逐门回判（任务非 pending / 已被他树绑定 / 名占用 / 分支已存在 / 路径已存在 / 非仓库根 / 注册表不可读…失败一律折叠 `Error:` / `Partial` 文本交还模型）；Lead claim 绑定任务后 `leadToolCwd` 取 worktree cwd——bash/read/write/edit/glob **围栏根随租约 cwd**；`removeWorktree` 刻意非工具（ToolNames.h 不可见，防模型误删）；分支 `wt/<name>` 永不随 remove 删除
+- [ ] **P2** Lead 工具面恰 25 件闭环（静态核对 `createToolsDefinition` / handler 表 / toolSummary / ToolBlock 标题四处 +7；ToolTagKind 零新增类别）；`submit_plan` 只出现在队友 schema（`teammateToolsDefinition` 共 10 件）；团队纪律静态段字节恒定 `QStringLiteral` 禁翻（`.ts` 不得出现 schema 英文描述串——P4 Lane C 实测 0 泄漏）
+- [ ] **P2** 队友回合环：`turnRequested`→宿主 deferred 发 ChatStream→`deliverTurnResult` 回填（零嵌套事件循环）；权限询问经同一 `permissionRequired` 透明转发；队友工具失败折叠为文本回喂不抛异常
+- [ ] **P2** 重启即账销（D7）：五本账纯内存——重启后磁盘残留 in_progress 任务经 `releaseTeammateAssignment` 降级 pending、清空 owner，不自动复活队友
+- [ ] **P2** 关停与退出清算：`request_shutdown` 握手→队友 `finished`→宿主收口；会话关闭/`~AgentLoop` 经 `settleTeamOnExit`（不留活 QTimer、析构无 emit），运行中关窗守卫照常先 `stop()`
 
 ---
 

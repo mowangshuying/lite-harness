@@ -13,12 +13,29 @@
 // ============================================================================
 // lcc s13 34775c8 worktree_manager.py 移植（Lane B）。git worktree 隔离：一任务一
 // 独立 checkout，队友并行不互踩。纯同步内核（零线程、无信号槽、QtCore-only，
-// QProcess::waitForFinished 同步等待、禁嵌事件循环）；D8 异步壳归 P3。
+// QProcess::waitForFinished 同步等待、禁嵌事件循环——waitForFinished 不泵应用事件
+// 循环，同步 createWorktree 路径内无可重入窗口，串行由「主线程同步执行」天然保证）。
+// D8 异步壳归 P3；Gate③ MINOR-4 前半已落地（P4 Lane A 第7条）：同名并发拒止
+// in-flight QSet 以防御性形态进内核（同步路径必空、Lane B 异步壳启用即承重）；
+// 异步形态本身（MINOR-4 剩余）仍归 Lane B。
 // 铁律：git 失败**绝不**自动清理（任何回滚冲动 = 二次销毁风险，repo-wipe 同族），
 // remove 成功后分支也永不删除。
 // ============================================================================
 
 namespace {
+
+// Gate③ 第7条：createWorktree 在途名字表的 RAII 出口——十连门多 early return，
+// 逐点手写 remove 易漏，析构统一清（键保持入口 insert 时的原文形态）。
+struct CreateInFlightGuard
+{
+    QSet<QString> *set;
+    QString name;
+    ~CreateInFlightGuard()
+    {
+        if (set)
+            set->remove(name);
+    }
+};
 
 // lcc _run_git timeout=30（秒）；lite 毫秒口径同值（fix-3 专属⑥ parity）
 constexpr int kGitTimeoutMs = 30000;
@@ -441,6 +458,17 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
     QString pathError;
     if (!worktreePath(name, &path, &pathError))
         return foldError(pathError);
+
+    // Gate③ 第7条（in-flight 防御，lcc 异步壳 in-flight 集的同步内核预埋）：
+    // 名字非法已被门⓪挡掉，此处起同名并发拒止。同步路径下入口必空（无重入窗口），
+    // 断言性常假——但 Lane B 异步壳（MINOR-4：git 子进程挪到事件循环外/或嵌套轮询）
+    // 一旦启用即是承重门，故 RAII 登记。键 CS 口径（lcc 原语义）；CI 双重注册风险
+    // 由 gate④ eqCi 兜（见头文件注）。
+    if (m_createInFlight.contains(name))
+        return foldError(
+            QStringLiteral("Worktree '%1' creation is already in progress").arg(name));
+    m_createInFlight.insert(name);
+    const CreateInFlightGuard inFlightGuard{&m_createInFlight, name};
 
     const QString branch = branchForWorktree(name);
 

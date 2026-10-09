@@ -44,23 +44,25 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## 架构（src/）
 
-> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 13 个 TU 的职责地图、
+> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 14 个 TU 的职责地图、
 > `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
 > 异常与技术债、新增代码落位决策树**见 [docs/doc.md](docs/doc.md) 第二部分「模块结构总览」（锚点 `#architecture`）——改结构须同步它**。
 > 本仓文档的权威等级、「该读哪篇」与同步纪律见同文件**第一部分（锚点 `#index`）**。
 
 ### Agent 核心链
 
-- **AgentLoop** — LLM 主循环 + 18 工具分发（名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6 工具与 cron 3 工具仅主循环注册。**上下文占用单源** `AgentLoop::estimatedContextTokens()`：有锚时取 `usage.prompt_tokens` + 锚后逐条增量（`AgentConst::estimateTokens`，字符→token 折算基准 `kCharsPerTokenBudget=4`），锚对应发送点历史条数与注入块 token 快照；历史被改写（压缩/回滚）或无 usage 则回落全量估算 `CompactManager::estimateTokens(m_messages) + tools schema + 注入块`。侧栏只读该值，别处不再另算一套。
+- **AgentLoop** — LLM 主循环 + 25 工具分发（18 基础 + s13 团队 7；名单唯一来源 `ToolNames.h`）：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / create_task / update_task / list_tasks / get_task / claim_task / complete_task / schedule_cron / list_crons / cancel_cron / spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree。权限门（bash 硬拒绝表 + ASK 规则）与生命周期钩子（UserPromptSubmit/PreToolUse/PostToolUse/Stop）。任务图 6、cron 3 与团队 7 工具仅主循环注册；`submit_plan` 为队友专属名（引擎匿名 ns 单源，刻意不入 `ToolNames.h`）。**上下文占用单源** `AgentLoop::estimatedContextTokens()`：有锚时取 `usage.prompt_tokens` + 锚后逐条增量（`AgentConst::estimateTokens`，字符→token 折算基准 `kCharsPerTokenBudget=4`），锚对应发送点历史条数与注入块 token 快照；历史被改写（压缩/回滚）或无 usage 则回落全量估算 `CompactManager::estimateTokens(m_messages) + tools schema + 注入块`。侧栏只读该值，别处不再另算一套。
 - **提示词单源与注入块** — system prompt **静态化**：`makeSystemPrompt` 只由 workDir / 会话根 / 静态文字决定，全会话字节恒定（前缀缓存与 token 计量都靠它稳定）。每轮变化的数据（技能目录、记忆索引、召回记录）**严禁再写回 system**——改由 `makeContextInjection` 生成 `<agent_context>` 注入块随 payload 尾部下发（成员包装 `AgentLoop::buildContextInjection`，在召回 done 续延里快照进 `m_contextInjection`）。零技能 + 零记忆会话不产生注入块，也就不产生无信息量的 overhead。工具 function 定义 `createToolsDefinition` 与本段同属**禁翻区**（`QStringLiteral`，禁包 `tr()`）。
 - **QOpenAi** — OpenAI 兼容客户端：`ChatStream` SSE 流式（thinkingDelta / textDelta / messageFinished / usageReceived / error）+ `AsyncRequest` 一次性异步文本请求（复用 ChatStream，done 恒一次/取消永久静默/总超时兜底；全仓零嵌套事件循环，阻塞族已随异步化 P4 删除）。运行时配置来自 settings.ini 键 `apiBaseUrl` / `apiToken`（`initFromSettings()` 于主窗口构造调用；设置页「模型服务」分组可编辑，写后即时生效），模型名 `MODEL_ID`（仍走环境变量），缺省 `AgentConst::defaultModel()`（settings.ini 键 `defaultModel`，未配置/非法则取生效清单首项）。429/5xx 走指数退避重试（1s,2s,4s…，上限 settings.ini 键 `maxRetries`，默认 2、校验界 0~5，`AgentConst::maxRetriesValue()` 单点取值，`initFromSettings()` 注入）；可重试判定**必须先于** 4xx 硬错误分支——429 落在 [400,500) 内，顺序颠倒会让退避链路永不可达（曾如此，429 直接终结回合）。**usage 回读**：主循环请求体带 `stream_options.include_usage`（`AsyncRequest` 侧不带、不武装宽限），`include_usage` 语义下末帧 `choices=[]` 且带 usage，故 **usage 捕获必须先于 choices 检查**；`finish_reason` 已见而 usage 未达时启 `kUsageGraceMs`（1500ms）**单次**宽限兜底收尾，重试 attempt 须清空 usage 捕获态从零重收。
-- **TaskStore** — 任务图存储（lcc s10 移植）：每任务一个 `<会话根>/.task/task_<hex8>.json`，每次操作直读磁盘；6 个 run_* handler + 14 内核方法，失败一律折叠为工具输出字符串。
+- **TaskStore** — 任务图存储（lcc s10 移植）：每任务一个 `<会话根>/.task/task_<hex8>.json`，每次操作直读磁盘；6 个 run_* handler + 14 内核方法，失败一律折叠为工具输出字符串；**s13 租约扩展**：租约版 claim 六门 / complete 后**不退租**（同回合后续工具仍需租约 cwd）/ 双回合边界释放点（`releaseCompletedAssignment`/`releaseTeammateAssignment`）/ `Claimed ` 承重前缀（lcc 跨模块字符串契约）/ 租约台账纯内存重启作废（D7）；遗留非租约路径逐字保留保单代理零行为漂移。
 - **SubAgent** — `task` 工具子代理（lcc s06）：全新上下文、黑盒只回最终文本、轮次预算与主循环同源可设置（`maxToolIterations`，start 入口快照）；仅开放 read/write/edit/glob + bash 异步。
 - **BashRunner** — bash 执行单源（危险检测 / 截断 / 超时终态 / QProcess 启动），AgentLoop 前后端与 SubAgent 共用。
 - **BackgroundTasksManager** — 后台 bash 任务台账（lcc s11）：`run_in_background` 严格布尔判定，宿主驱动 QProcess，结果以 `<task_notification>` 注入下一回合。
 - **CronSchedulerManager** — cron 定时任务（lcc s12）：5 段表达式校验/匹配，`<会话根>/scheduled_tasks.json` 持久账本，QTimer 1s 轮询替代线程，at-least-once 两段投递。
 - **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。主字符上限可设置（见「数据与路径」）；**阈值判定对象已迁 token 域**：会话体预算 `T' = AgentConst::contextTokenBudget() − overhead`（overhead = system + tools schema + 注入块，钳位 `[T/4, T]`），batch=`4×T'`、单条大结果 `0.6×T'`、压缩目标 `0.8×T'`——比例与原字符口径一致，派生表达式写死在消费点防漂移；唯 summary 输入裁剪（`1.6S`）与预览长度仍是字符域（内容级启发不随迁）。snip 走双门槛回滞：条数 > 60 **且** 会话体估算过 token 闸门才归档，归档后总量 ≈50（10 条迟滞带内不重复触发）；归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写），会话内标记为恒定文本（无条数、无路径，缓存友好）。
 - **MemoryManager** — 记忆（lcc s09）：`<会话根>/.memory/`（MEMORY.md 索引 + slug.md 记录）；沉淀（会话自然结束）、召回（LLM 选择 + 关键词兜底 → **上下文注入块**，见上「提示词单源与注入块」条；system 不随召回变动）、整理（阈值重写带快照回滚）。
+- **Agent Teams 引擎群（lcc s13）** — 四个零 GUI 内核：`MessageBus`（`<会话根>/.mailboxes/<name>.jsonl` 破坏性读邮箱 = at-most-once；三重 fail-closed 路径门；M8 删除失败即空批+lastError）、`WorktreeManager`（git worktree 十门创建 / 五门移除、分支永留、remove 刻意非工具、落 `.worktrees/<name>` 分支 `wt/<name>`）、`AgentTeamsManager`（Lead 7 工具内核 + 五本账全内存重启作废 + 11/8/4 协议门，门翻转只在队友侧——Lead `runReviewPlan` 不触 planGates）、`TeammateRuntime`（QTimer 2s 心跳无头状态机，回合 LLM 由宿主 `turnRequested` deferred 驱动、`deliverTurnResult()` 回填，零线程零嵌套事件循环）。
+- **AgentLoopTeam.cpp（s13 宿主接线 TU）** — 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）、`leadToolCwd` 租约感知 cwd 单点（围栏根随租约 cwd）、三注入边界 + `tryDeliverTeamEvents` 空闲唤醒收割（挂 cron tick 1s 节拍、先于 cron 交付、经 `scheduledUserMessage` 开回合——Gate③ MAJOR-1）、队友回合环与退出清算（`settleTeamOnExit`，析构无 emit）。
 
 ### 会话层
 
@@ -69,9 +71,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ### 单源常量 / 纯头
 
-- **AgentConstants.h** — 模型清单（settings.ini 键 `modelOptions` 逗号分隔、`defaultModel` 指定缺省项，未配置/非法回落内置 `kBuiltinModelOptions`；单点取值 `modelOptions()`/`defaultModel()`，**读值必须经本头内 `iniTextValue()`**——裸逗号串在 ini 是 QSettings 的列表语法，`value().toString()` 会得空串即「配置了却不显示」，列表形态要逐元素取原文再按逗号拆，严禁再裸用 `.toString()`）、kMaxTokens、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results` — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被 settings.ini 覆盖，非硬约束）。
+- **AgentConstants.h** — 模型清单（settings.ini 键 `modelOptions` 逗号分隔、`defaultModel` 指定缺省项，未配置/非法回落内置 `kBuiltinModelOptions`；单点取值 `modelOptions()`/`defaultModel()`，**读值必须经本头内 `iniTextValue()`**——裸逗号串在 ini 是 QSettings 的列表语法，`value().toString()` 会得空串即「配置了却不显示」，列表形态要逐元素取原文再按逗号拆，严禁再裸用 `.toString()`）、kMaxTokens、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results`/`.mailboxes`/`.worktrees` + 预留队友名 `kReservedTeammateNames`={lead,agent} 与团队节拍/等待界常量 — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被 settings.ini 覆盖，非硬约束）。
 - **LayoutConstants.h** — 消息列宽/边距（NewChatPage/ChatSessionPage/ChatMsgEdit 同列对齐）。
-- **NavItem.h** — 导航键常量（NavKey）+ NavItem（带 removeChildItem）。**ToolNames.h** — 18 工具名。**ToolTagKind.h** — 工具→样式标签（write/run/search/read/plan/delegate/other），经动态属性喂给 QSS 选择器。
+- **NavItem.h** — 导航键常量（NavKey）+ NavItem（带 removeChildItem）。**ToolNames.h** — 25 工具名（18 基础 + 7 团队；`submit_plan` 队友专属名不入表，单源在引擎匿名 ns）。**ToolTagKind.h** — 工具→样式标签（write/run/search/read/plan/delegate/other），经动态属性喂给 QSS 选择器。
 - **LineEnding.h** — 文本文件行尾归一单源（header-only 纯函数）：`dominant` 主导行尾判定（CRLF 数 ≥ 裸 LF 数且非零判 CRLF，平局偏 CRLF）/ `toLf` 匹配域归一 / `apply` 写回域还原（幂等，不产生 `\r\r\n`）/ `replaceOnce` 两级匹配单次替换。**纪律：匹配域归一到 LF、写回域按文件主导行尾还原**——`read_file` 以 `QTextStream` 逐行读再用 `'\n'` join，交还模型的永远是 LF 文本，而落盘文件在本仓（`core.autocrlf=true`）多为 CRLF；`edit_file` 若拿原始字节直接匹配，多行 `old_string` 必然失配（报 text not found），LF `new_string` 原样插入又会混入裸 LF。孤立 CR 不折叠（不误伤正文 CR 字面量）。`countOccurrences` 统计命中次数（不重叠计数，与两级匹配同口径：在哪个域命中就在哪个域计数），经 `replaceOnce` 的 `matchCount` 出参回传（与 `matched` 同为 nullptr 容错）。**`edit_file` 三道防线**（`runEditFileIn`）：① 空 `old_string` 拒绝——`indexOf("")` 恒返回 0，原语义会把 `new_string` 静默前插到文件开头（模型漏填参数即毁文件头）；② 体量上限 `kEditFileMaxBytes`（5MB）拒绝——整文件读入 + 多次整串拷贝（编码往返预检、行尾归一与还原）在零线程下会冻结主线程，`read_file` 已因此限量读，`edit_file` 不能反而无界；超限不尝试部分读写（部分写会毁文件）；③ **多处命中拒绝**（**有意偏离** lcc `str.replace(old,new,1)` 的静默替换第一处）——改哪一处取决于文件里恰好先出现哪个，模型无从判断，静默改错位置比失败更危险，回可判定错误要求补上下文使其唯一。
 
 ### UI 层
@@ -88,7 +90,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 ## 数据与路径
 
 - 所有会话数据落在 **`<workDir>/.lite-harness/`**（`SessionStore::rootDirFor`）——是会话工作目录下的相对根，**不是**用户主目录。
-- 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json 等）；`skills/` 始终跨会话共享。
+- 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json、.mailboxes、.worktrees 等）；`skills/` 始终跨会话共享。
 - 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
 - 上下文压缩上限可设置（settings.ini 键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认，单点取值 `AgentConst::contextCharLimitValue()`）。**它是字符口径的唯一入口**：全局 token 预算 `T = contextCharLimit / kCharsPerTokenBudget(4)` 经 `AgentConst::contextTokenBudget()` 现取现用，压缩阈值 batch/large/目标按 `4×T'`/`0.6×T'`/`0.8×T'` 缩放（`T' = T − overhead`，见「CompactManager」条），summary 输入裁剪仍按 `1.6S` 字符域。设置页写值后压缩管线下一回合即生效，无需重启。
 - 单轮最大工具调用次数可设置（settings.ini 键 `maxToolIterations`，默认 500，校验界 10~1000；缺失/非法/越界回退默认，`AgentConst::maxToolIterationsValue()` 单点取值，设置页与主循环共用）；主循环回合入口快照，中途改设置不影响当前回合。SubAgent 轮次预算与之同源（`start()` 入口快照进 `m_maxTurns`，原固定 `kMaxSubagentTurns = 50` 已删）。
@@ -114,8 +116,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - 导航键统一取自 `NavItem.h::NavKey`；页面注册 `m_sLayout->addWidget(key, page)`，导航项用同一键。
 - 魔法数字进 `AgentConstants.h`（agent 参数）或 `LayoutConstants.h`（布局尺寸），不散落字面量。
-- 工具侧失败折叠为输出字符串交还 LLM，不抛异常、不弹窗。
-- lcc 移植规格权威：源码注释以 `lcc sXX + hash` 标注对应阶段（s03–s12），参照仓库 `3rdparty/lcc`（不入构建）。
+- 工具侧失败折叠为输出字符串交还 LLM，不抛异常、不弹窗。s13 团队 7 工具与队友侧同口径（引擎内核失败一律折叠为文本，含 worktree `Error:`/`Partial` 折叠形）。
+- lcc 移植规格权威：源码注释以 `lcc sXX + hash` 标注对应阶段（s03–s13），参照仓库 `3rdparty/lcc`（不入构建）。
 - FluentUI 头文件 `<FluUtils.h>`、`<FluThemeUtils.h>` 等位于 `3rdparty/FluentUI/{controls,utils}`。
 
 ## Git 提交

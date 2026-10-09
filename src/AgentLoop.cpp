@@ -363,6 +363,11 @@ void AgentLoop::stop()
     // lcc 31a99d1：用户停止 = 回合失败终局——在途 cron 批回队待下个空闲 tick 重投
     m_cron.finalizeInFlightDelivery(false);
 
+    // Gate③ MINOR-1：lcc loop.py:168-172 的 finally 覆盖 KeyboardInterrupt 分支——
+    // 用户停止同样必须退租（Lead 已完成任务的租约清算不因中断残留），只释放不注入
+    // （停止后无续跑回合，事件欠账留待下一自然回合/门铃唤醒收割）。幂等安全。
+    settleLeadLease();
+
     setRunning(false);
     persistHistory(); // 用户停止终局落盘（已累积历史不丢）
     emit error(tr("已停止。"));
@@ -393,7 +398,7 @@ void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
 //   下一次 usage 回读自然自校正（§9.7 已知项：todo reminder/后台注入尾拼接不计入，轻微低估有界）。
 // - 锚失效（首回合未回读/压缩/恢复/setWorkDir/换目录）：本地全量估算 =
 //   CompactManager::estimateTokens(m_messages)（含 system[0]）+ tools schema + 注入块。
-//   此为修 B4 的关键：旧字符口径触发漏计 system 与 18 工具 schema，本兜底一并计入。
+//   此为修 B4 的关键：旧字符口径触发漏计 system 与全量 tools schema（当时 18 工具，s13 起 25），本兜底一并计入。
 qsizetype AgentLoop::estimatedContextTokens() const
 {
     const qsizetype injectionTokens = AgentConst::estimateTokens(m_contextInjection);

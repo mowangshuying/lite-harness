@@ -15,6 +15,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QProcess>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -236,6 +237,74 @@ void testDefaultArgs(const QString &root)
     }
 }
 
+// ⑧ Gate③ m1 落地：目标存在时的 canonical 复校（词法关放行、canonical 关拦截 junction
+// 指向会话根外）。正向回归 + junction 夹具（mklink /J 不可用时诚实 SKIP 不计断言）。
+void testCanonicalRecheck(const QString &root)
+{
+    // —— 正向：send 后目录+文件均已存在，两处 canonical 复校必须放行正常目标
+    //（防盘符大小写/短名等 canonical 形态差异造成假拒——回归即假绿反例：门禁过严）
+    {
+        MessageBus bus = makeBus(root);
+        TestHarness::check(bus.send(QStringLiteral("a"), QStringLiteral("canon"),
+                                    QStringLiteral("p1")),
+                           "canon: first send creates dir+file ok");
+        // 第二次 send：cleanDir 与邮箱文件都已存在，走的全是 canonical 复校路径
+        TestHarness::check(bus.send(QStringLiteral("a"), QStringLiteral("canon"),
+                                    QStringLiteral("p2")),
+                           "canon: second send into existing dir+file still accepted");
+        TestHarness::check(bus.hasPending(QStringLiteral("canon")),
+                           "canon: doorbell armed through canonical recheck");
+        const QVector<BusMessage> msgs = bus.drain(QStringLiteral("canon"));
+        TestHarness::check(msgs.size() == 2, "canon: round-trip both messages intact");
+        if (msgs.size() == 2)
+            TestHarness::check(msgs[0].content == QLatin1String("p1")
+                                   && msgs[1].content == QLatin1String("p2"),
+                               "canon: content order preserved through recheck");
+    }
+
+    // —— junction 逃逸：会话根 = root/esc，.mailboxes 是指向 root/esc-outside 的
+    // junction（canonical 落在会话根外）。词法关放行（.mailboxes 名字干净），
+    // 新增 canonical 复校必须 fail-closed。夹具全部落在本套件 ScopedTempRoot
+    // 管辖树内（esc-outside 虽是逃逸目标，仍在 root 之下，清理不越界）。
+    {
+        const QString escRoot = QDir(root).filePath(QStringLiteral("esc"));
+        const QString outside = QDir(root).filePath(QStringLiteral("esc-outside"));
+        QDir().mkpath(escRoot);
+        QDir().mkpath(outside);
+        QFile marker(QDir(outside).filePath(QStringLiteral("m.txt")));
+        if (marker.open(QIODevice::WriteOnly)) {
+            marker.write("x");
+            marker.close();
+        }
+
+        const QString link = QDir(escRoot).filePath(AgentConst::kMailboxesDirName);
+        QProcess mk;
+        mk.start(QStringLiteral("cmd"),
+                 {QStringLiteral("/c"), QStringLiteral("mklink"), QStringLiteral("/J"),
+                  link, outside});
+        const bool fixture = mk.waitForFinished(15000)
+            && mk.exitCode() == 0 && QFileInfo(link).isDir();
+        if (!fixture) {
+            // 诚实 SKIP：junction 不可用（权限/非 Windows cmd 等），不计断言不留假绿
+            std::printf("SKIP: junction fixture unavailable (mklink /J rc=%d)\n",
+                        static_cast<int>(mk.exitCode()));
+            return;
+        }
+
+        MessageBus bus = makeBus(escRoot);
+        const bool sent = bus.send(QStringLiteral("a"), QStringLiteral("canon"),
+                                   QStringLiteral("x"));
+        TestHarness::check(!sent, "canon: send rejected through junction-escaping .mailboxes");
+        TestHarness::check(bus.lastError().contains(
+                               QStringLiteral("escapes session root")),
+                           "canon: lastError names session-root escape");
+        TestHarness::check(!bus.hasPending(QStringLiteral("canon")),
+                           "canon: doorbell false on escaped mailbox");
+        TestHarness::check(bus.drain(QStringLiteral("canon")).isEmpty(),
+                           "canon: drain empty on escaped mailbox");
+    }
+}
+
 } // namespace
 
 int tst_messagebus()
@@ -258,6 +327,7 @@ int tst_messagebus()
     testMalformedLinesSkipped(root);
     testAppendOrder(root);
     testDefaultArgs(root);
+    testCanonicalRecheck(root);
 
     return TestHarness::failCount() - before;
 }

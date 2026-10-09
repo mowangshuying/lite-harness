@@ -4,48 +4,48 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="82"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="70"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>The session has no data directory ID; cannot locate the history file</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="95"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="83"/>
         <source>无法打开历史文件：%1</source>
         <translation>Cannot open history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="103"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="91"/>
         <source>历史文件解析失败：%1</source>
         <translation>Failed to parse history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="186"/>
+        <location filename="../src/AgentLoop.cpp" line="211"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="136"/>
-        <location filename="../src/AgentLoopRequest.cpp" line="180"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="137"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="189"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>Tool call rounds exceeded the limit (%1 rounds); loop terminated.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="207"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="216"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>Reactive compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="257"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="268"/>
         <source>自动压缩（上下文超限）</source>
         <translation>Automatic compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="431"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="447"/>
         <source>主动压缩（compact 工具）</source>
         <translation>Manual compaction (compact tool)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="338"/>
+        <location filename="../src/AgentLoop.cpp" line="373"/>
         <source>已停止。</source>
         <translation>Stopped.</translation>
     </message>
@@ -200,17 +200,17 @@
         <translation>Show Sidebar</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="154"/>
+        <location filename="../src/ChatSessionPage.cpp" line="165"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent is still running. Please wait for it to finish before sending</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="216"/>
+        <location filename="../src/ChatSessionPage.cpp" line="230"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="256"/>
+        <location filename="../src/ChatSessionPage.cpp" line="276"/>
         <source>%1 %2:
 ```
 %3
@@ -231,14 +231,14 @@ Output:
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="441"/>
-        <location filename="../src/ChatSessionPage.cpp" line="497"/>
-        <location filename="../src/ChatSessionPage.cpp" line="516"/>
+        <location filename="../src/ChatSessionPage.cpp" line="471"/>
+        <location filename="../src/ChatSessionPage.cpp" line="527"/>
+        <location filename="../src/ChatSessionPage.cpp" line="546"/>
         <source>处理中…</source>
         <translation>Working…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="713"/>
+        <location filename="../src/ChatSessionPage.cpp" line="765"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -457,7 +457,7 @@ Output:
     <message>
         <location filename="../src/SettingsPage.cpp" line="533"/>
         <source>未配置 modelOptions 键，可用本卡「修改」填写。</source>
-        <translation>modelOptions key is not set; use "Change" on this card to configure it.</translation>
+        <translation>modelOptions key is not set; use &quot;Change&quot; on this card to configure it.</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="538"/>
@@ -574,7 +574,7 @@ Output:
 <context>
     <name>QOpenAi::AsyncRequest</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="652"/>
+        <location filename="../src/QOpenAi.cpp" line="665"/>
         <source>请求超时（%1 ms）。</source>
         <translation>Request timed out (%1 ms).</translation>
     </message>
@@ -582,32 +582,32 @@ Output:
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="177"/>
+        <location filename="../src/QOpenAi.cpp" line="209"/>
         <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
         <translation>No model service base URL or API key configured. Fill them in under Model Service on the Settings page.</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="279"/>
+        <location filename="../src/QOpenAi.cpp" line="311"/>
         <source>SSE 帧 JSON 解析失败: %1</source>
         <translation>Failed to parse SSE frame JSON: %1</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="416"/>
+        <location filename="../src/QOpenAi.cpp" line="448"/>
         <source>错误：%1</source>
         <translation>Error: %1</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="431"/>
+        <location filename="../src/QOpenAi.cpp" line="463"/>
         <source>服务器无响应（连续 %1 ms 未收到数据）。</source>
         <translation>Server unresponsive (no data received for %1 ms).</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="442"/>
+        <location filename="../src/QOpenAi.cpp" line="474"/>
         <source>流式响应超时（总时长超过 %1 ms）。</source>
         <translation>Stream timed out (total duration exceeded %1 ms).</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="488"/>
+        <location filename="../src/QOpenAi.cpp" line="518"/>
         <source>HTTP %1 错误: %2</source>
         <translation>HTTP %1 error: %2</translation>
     </message>
@@ -860,7 +860,7 @@ Output:
     <message>
         <location filename="../src/ToolBlock.cpp" line="35"/>
         <location filename="../src/ToolBlock.cpp" line="69"/>
-        <location filename="../src/ToolBlock.cpp" line="104"/>
+        <location filename="../src/ToolBlock.cpp" line="118"/>
         <source>已执行</source>
         <translation>Ran</translation>
     </message>
@@ -950,133 +950,203 @@ Output:
         <translation>Canceled cron job</translation>
     </message>
     <message>
+        <location filename="../src/ToolBlock.cpp" line="105"/>
+        <source>已建队友</source>
+        <translation>Created teammate</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="107"/>
+        <source>队友清单</source>
+        <translation>Listed teammates</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="109"/>
+        <source>已发消息</source>
+        <translation>Sent message</translation>
+    </message>
+    <message>
         <location filename="../src/ToolBlock.cpp" line="111"/>
-        <location filename="../src/ToolBlock.cpp" line="146"/>
+        <source>已请下线</source>
+        <translation>Requested shutdown</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="113"/>
+        <source>已索计划</source>
+        <translation>Requested plan</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="115"/>
+        <source>已评计划</source>
+        <translation>Reviewed plan</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="117"/>
+        <source>已建工作树</source>
+        <translation>Created worktree</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="125"/>
+        <location filename="../src/ToolBlock.cpp" line="174"/>
         <source>执行失败</source>
         <translation>Execution failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="113"/>
+        <location filename="../src/ToolBlock.cpp" line="127"/>
         <source>读取失败</source>
         <translation>Read failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="115"/>
+        <location filename="../src/ToolBlock.cpp" line="129"/>
         <source>写入失败</source>
         <translation>Write failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="117"/>
+        <location filename="../src/ToolBlock.cpp" line="131"/>
         <source>编辑失败</source>
         <translation>Edit failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="119"/>
+        <location filename="../src/ToolBlock.cpp" line="133"/>
         <source>查找失败</source>
         <translation>Search failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="121"/>
+        <location filename="../src/ToolBlock.cpp" line="135"/>
         <source>代办失败</source>
         <translation>Todo failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="123"/>
+        <location filename="../src/ToolBlock.cpp" line="137"/>
         <source>加载失败</source>
         <translation>Load failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="125"/>
+        <location filename="../src/ToolBlock.cpp" line="139"/>
         <source>压缩失败</source>
         <translation>Compact failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="127"/>
+        <location filename="../src/ToolBlock.cpp" line="141"/>
         <source>记忆失败</source>
         <translation>Memory failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="129"/>
+        <location filename="../src/ToolBlock.cpp" line="143"/>
         <source>建任务失败</source>
         <translation>Task creation failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="131"/>
+        <location filename="../src/ToolBlock.cpp" line="145"/>
         <source>依赖登记失败</source>
         <translation>Dependency link failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="133"/>
+        <location filename="../src/ToolBlock.cpp" line="147"/>
         <source>清单读取失败</source>
         <translation>Task list failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="135"/>
+        <location filename="../src/ToolBlock.cpp" line="149"/>
         <source>详情读取失败</source>
         <translation>Task details failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="137"/>
+        <location filename="../src/ToolBlock.cpp" line="151"/>
         <source>认领失败</source>
         <translation>Claim failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="139"/>
+        <location filename="../src/ToolBlock.cpp" line="153"/>
         <source>完结失败</source>
         <translation>Complete failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="141"/>
+        <location filename="../src/ToolBlock.cpp" line="155"/>
         <source>定时登记失败</source>
         <translation>Schedule failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="143"/>
+        <location filename="../src/ToolBlock.cpp" line="157"/>
         <source>定时清单读取失败</source>
         <translation>Cron list failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="145"/>
+        <location filename="../src/ToolBlock.cpp" line="159"/>
         <source>取消定时失败</source>
         <translation>Cron cancel failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="179"/>
+        <location filename="../src/ToolBlock.cpp" line="161"/>
+        <source>建队友失败</source>
+        <translation>Teammate spawn failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="163"/>
+        <source>队友清单读取失败</source>
+        <translation>Teammate list failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="165"/>
+        <source>消息投递失败</source>
+        <translation>Message delivery failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="167"/>
+        <source>下线请求失败</source>
+        <translation>Shutdown request failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="169"/>
+        <source>索计划失败</source>
+        <translation>Plan request failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="171"/>
+        <source>计划评审失败</source>
+        <translation>Plan review failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="173"/>
+        <source>工作树创建失败</source>
+        <translation>Worktree create failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ToolBlock.cpp" line="207"/>
         <source>(无输出)</source>
         <translation>(no output)</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="184"/>
+        <location filename="../src/ToolBlock.cpp" line="212"/>
         <source>──── 子代理最终结果 ────</source>
         <translation>──── Subagent final result ────</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="225"/>
+        <location filename="../src/ToolBlock.cpp" line="253"/>
         <source>子代理执行中</source>
         <translation>Subagent running</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="247"/>
+        <location filename="../src/ToolBlock.cpp" line="275"/>
         <source>第 %1 轮</source>
         <translation>Turn %1</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="286"/>
+        <location filename="../src/ToolBlock.cpp" line="314"/>
         <source>已中断</source>
         <translation>Interrupted</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="298"/>
+        <location filename="../src/ToolBlock.cpp" line="326"/>
         <source>执行中</source>
         <translation>Running</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="330"/>
+        <location filename="../src/ToolBlock.cpp" line="358"/>
         <source>已停止</source>
         <translation>Stopped</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="350"/>
+        <location filename="../src/ToolBlock.cpp" line="378"/>
         <source>…更早 %1 条进度已省略</source>
         <translation>…%1 earlier progress lines omitted</translation>
     </message>

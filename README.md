@@ -5,7 +5,7 @@
 ## 功能
 
 - **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引 `<workDir>/.lite-harness/index.json` + 每会话 history 持久化
-- **工具主循环（18 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）
+- **工具主循环（25 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）
 - **子代理**：`task` 工具派发独立上下文子代理，黑盒回传结果
 - **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则
 - **流式渲染**：打字机气泡 + 思考块 / 工具执行块折叠动画 + Todo 进度卡
@@ -83,7 +83,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 | 路径 | 说明 |
 | --- | --- |
-| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 13 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler…）+ FluentUI 页面与控件 |
+| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 14 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime…）+ FluentUI 页面与控件 |
 | `tests/` | ctest 纯函数单测（`TestHarness.h` 极简断言骨架 + `tst_<模块>.cpp`），产物 `build/tests/`，不进发布包 |
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
 | `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |

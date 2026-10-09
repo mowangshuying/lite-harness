@@ -45,7 +45,11 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
         // Qt 在 FailedToStart 的 errorOccurred 之后仍会发 finished，recorded 门闩保证恰好记一次
         auto recorded = std::make_shared<bool>(false);
 
-        BashRunner::start(command, m_workDir, this, &m_activeProcesses, timedOut,
+        // Gate③ MINOR-3：派发时刻解析租约 cwd（lcc background_tasks_manager.py
+        // :140-158——start(block, cwd=...) 派发时经 current_cwd 解析、记入 task、
+        // 透传 Popen cwd=cwd or workDirPath）。leadToolCwd() 在本同步调用点求值
+        // =派发时刻语义；进程生命周期内 cwd 不再漂移（与 lcc 一致）
+        BashRunner::start(command, leadToolCwd(), this, &m_activeProcesses, timedOut,
                           [this, taskId, timedOut, recorded](QProcess *process) {
             connect(process, &QProcess::errorOccurred, this,
                     [this, process, taskId, recorded](QProcess::ProcessError error) {
@@ -82,8 +86,8 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
 
     // s13 租约感知 cwd（挂载十四）：前台 bash 的执行目录走 leadToolCwd()——Lead 持租约
     // 且任务绑定 worktree 时进 worktree（lcc _run_base current_cwd 对 lead bash 同生效）；
-    // 无租约回落 m_workDir，与 s13 前逐字节一致。后台分支不动：台账语义为会话级，
-    // 且 start 时固化——偏差登记（lcc 后台 Popen 亦 current_cwd；lite 保守不切）。
+    // 无租约回落 m_workDir，与 s13 前逐字节一致。Gate③ MINOR-3 落地：后台分支同切
+    // leadToolCwd()（派发时刻求值，lcc 同型，见上方注释）——原「保守不切」偏差关闭。
     BashRunner::start(command, leadToolCwd(), this, &m_activeProcesses, timedOut,
                       [this, toolCall, command, timedOut, handled](QProcess *process) {
         // 启动失败显式收口（挂起审计防御加固，对齐后台分支的 errorOccurred 防线）：
