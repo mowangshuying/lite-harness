@@ -215,6 +215,46 @@ void AgentLoop::injectTeamEvents()
     qDebug().noquote() << QStringLiteral("[team] events\n%1").arg(joined);
 }
 
+void AgentLoop::tryDeliverTeamEvents()
+{
+    // Gate③ MAJOR-1：lcc loop.py:340-343/:401-408 wake 分支转译——Lead 空闲时
+    // 团队事件自动开新回合，兑现 spawn 成功文案「End this turn; the runtime will
+    // deliver its events.」与 teams 纪律段「运行时会投递团队事件并唤醒你」；
+    // m_running 卫兵=lcc 仅在 wait_for_cli_event 等待态消费（回合内三边界不受影响）。
+    if (m_running)
+        return;
+    // 门铃（lcc :342 peek("lead") 非破坏偷看同型）：收件名以现盘对账——
+    // AgentTeamsManager.cpp:23 kLeadName=QStringLiteral("lead")、consumeLeadInbox
+    // 经 :238 m_bus->drain(kLeadName) 收「lead」；oracle 报告处写 hasPending("agent")
+    // 系把 TaskStore owner 键（kLeadOwnerKey="agent"）误当邮箱名，采「lead」。
+    // 引擎常量未导出而引擎只读→宿主此处字面量 duplication，两处口径以注释互钉。
+    if (!m_bus.hasPending(QStringLiteral("lead")))
+        return;
+    // 破坏性收割（lcc :402 consume_lead_inbox）：M8 fail-closed（unlink 失败→空批
+    // +lastError）与 peek→drain 竞态空窗（事件已被他路收走）均折为空批——本拍放弃
+    // 不开空回合，下拍门铃再试（lcc :403-404 防御空窗 continue 同型）。
+    const QVector<BusMessage> events = m_teams.consumeLeadInbox();
+    if (events.isEmpty())
+        return;
+    const QString text = AgentTeamsManager::formatTeamEvents(events);
+    if (text.isEmpty()) // 偏G 同源卫兵：空渲染不开回合
+        return;
+    // 同栈直连宿主=与 tryDeliverCron（AgentLoopCron.cpp:44-63）完全同款路径，
+    // GUI 侧零改动：ChatSessionPage 既有槽（:408-414）addMessage(display)+
+    // startAssistantStream(request)→run() 同步置位 m_running（本拍随后的
+    // tryDeliverCron 因 priority inbox→cron 被卫兵跳过，见 AgentLoop.cpp tick 注）。
+    // displayText=activeRequestText=渲染块文本——lcc inject_team_events(text)+
+    // _run_turn(text) 双条 user 在 lite 并为一条（cron「N 条→1 条」先例同款偏差）；
+    // 新回合 run() 挂载点一的 injectTeamEvents 此刻邮箱已空=天然 no-op 不重复消费。
+    // 偏差登记：lcc skip_approval=True（:408）在 lite 无对应物——Lead 保留 ASK 卡
+    //（Gate③ 裁决「lite 增强非缺陷」）；bus 无 cron 式两段台账，无宿主接线时本批
+    // 丢失——与 lcc consume 后即弃的一次性语义同性质（GUI 恒接线，理论分支）。
+    emit scheduledUserMessage(text, text);
+    qInfo().noquote() << QStringLiteral("[team] wake: delivered %1 events").arg(events.size());
+    // m_teamWasActive 边沿无需在此维护：所开新回合的自然终局 leadTurnEndSettlement
+    // 统一刷新（lcc loop.py:419 每轮圈尾核对的 lite 落点）。
+}
+
 void AgentLoop::settleLeadLease()
 {
     // lcc agent_loop finally 的 release_completed_assignment("agent")：仅当租约指向
@@ -234,9 +274,9 @@ void AgentLoop::leadTurnEndSettlement()
     settleLeadLease();
     injectTeamEvents();
     // lcc check_team_offline_edge :160-164：active→全下线边沿记一次日志。
-    // 偏差登记：lcc 唤醒轮（wait_for_cli_event peek("lead")→立即开新回合
-    // :401-408，skip_approval=True）在 GUI 模型不适用——Lead 回合已自然结束，
-    // 事件在用户下一问或批尾边界显影；Ask 卡对 Lead 保留（skip_approval 无对应物）。
+    //（Gate③ MAJOR-1 更新：lcc wake 分支 :401-408 的「空闲即开新回合」已另立
+    // tick 路径 tryDeliverTeamEvents 落地——本函数三卫兵继续只负责回合内/回合尾
+    // 边界收割；skip_approval 无 lite 对应物，Ask 卡对 Lead 保留=增强非缺陷。）
     const bool active = !m_teams.teammateNames().isEmpty();
     if (m_teamWasActive && !active)
         qDebug() << "所有队友已下线，如需继续协作可再次 spawn_teammate";

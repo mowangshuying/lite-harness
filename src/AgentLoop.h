@@ -233,6 +233,10 @@ private:
     // 退出清算（析构体调用）：对在簿队友逐个 blockSignals→cancel→delete（引擎
     // settleLedgers 保证账本收口；manager/bus/store 此刻仍存活，FIND-L 契约成立）
     void settleTeamOnExit();
+    // 空闲态团队事件唤醒交付（Gate③ MAJOR-1：lcc loop.py:340-343 peek("lead") 优先级
+    // 首位 + :401-408 wake 分支转译）：cron tick 同拍调用，仅 !m_running 且 Lead 邮箱
+    // 有件时收割并经 scheduledUserMessage 同栈直连开新回合（tryDeliverCron 同款先例）
+    void tryDeliverTeamEvents();
     // 定时任务空闲交付（lcc s12/31a99d1 run_delivery 转译）：仅 m_running=false 时经
     // m_cron.runDelivery 收割——回调内 emit scheduledUserMessage 同栈直连（宿主同步 run()
     // 置位）后回读 m_running 作为接管结果：未接管（无 UI 接线/防御拒绝）→ runDelivery

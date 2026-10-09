@@ -96,6 +96,11 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
         if (!m_cron.isRuntimeStarted())
             return;
         m_cron.pollDueJobs(QDateTime::currentDateTime());
+        // s13 wake 交付（Gate③ MAJOR-1，lcc loop.py:401-408 wake 分支转译）：置于
+        // tryDeliverCron 之前对齐 lcc wait_for_cli_event 的 inbox→cron 优先级
+        //（:340-351）——同栈直连若已开团队回合，m_running 置位令 tryDeliverCron
+        // 卫兵自动跳过，到期任务待下个空闲 tick，与 lcc 单事件语义一致
+        tryDeliverTeamEvents();
         tryDeliverCron();
     });
     m_cronTick->start();
