@@ -35,6 +35,42 @@ QString pyReprLite(const QString &text)
     return QLatin1Char('\'') + text + QLatin1Char('\'');
 }
 
+// ---- FIND-C（Gate②）比较口径单源 ----------------------------------------------------
+// 裁决：worktree **路径/名字**比较一律大小写不敏感（Windows 文件系统语义——同一目录
+// 可有 d:/ 与 D:/ 两种拼法，git porcelain 输出与本地 sink 拼法漂移是常态，敏感比较=假
+// miss）。键**原样存储不折叠**（parseRegistry 的 QMap 键、byName 键均为 cleanPath 原文，
+// 大小写折叠只发生在比较点，防口径混用与「键已归一」的注释失真——原注释的失实即
+// FIND-C 根因）。lcc 为 python 大小写敏感 + resolve() 规范键，lite 登记偏差：
+// 词法键 + 比较点 CI（QFileSystem 语义优先于 lcc 字面 parity）。
+// 敏感比较的豁免族（逐条钉死）：任务 id / owner 是令牌非路径；branch/ref 名是 git
+// 引用语义（lcc _registered_entry :157 敏感比较，parity 保留）。
+
+// 路径/名字段的 CI 等值比较（单源）
+bool eqCi(const QString &a, const QString &b)
+{
+    return a.compare(b, Qt::CaseInsensitive) == 0;
+}
+
+// isWithinPath 的 CI 版：共享头 AgentPathGuard 不动（越界写域禁改），消费侧 toLower
+// 折叠后走同一词法判定 = 等价的大小写不敏感包含。等值返回 true 的既有语义不变，
+// 「path == root 也拒」仍由调用点 eqCi 显式把守（worktreePath 门③）。
+bool withinCi(const QString &child, const QString &parent)
+{
+    return AgentPathGuard::isWithinPath(child.toLower(), parent.toLower());
+}
+
+// 注册表/名单映射的 CI 查找（线性扫；规模=单仓 worktree 数，开销可忽略）。
+// 命中返回条目指针（指向 map 内部，const 引用生命周期内有效），未命中 nullptr。
+const WorktreeManager::Entry *findCi(const QMap<QString, WorktreeManager::Entry> &entries,
+                                     const QString &key)
+{
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        if (eqCi(it.key(), key))
+            return &it.value();
+    }
+    return nullptr;
+}
+
 } // namespace
 
 WorktreeManager::WorktreeManager(TaskStore *store,
@@ -79,8 +115,13 @@ QString WorktreeManager::worktreesRootDir() const
 
 bool WorktreeManager::worktreePath(const QString &name, QString *path, QString *error) const
 {
-    // 三关 fail-closed（照 lcc _worktree_path :47-65，宁报错不猜）。词法口径
-    // （cleanPath），canonical 复校归 P3 消费点（m1 预留件 isWithinPathCanonical）。
+    // 三关 fail-closed（照 lcc _worktree_path :47-65，宁报错不猜）。比较口径 FIND-C：
+    // 路径比较一律 CI（eqCi/withinCi 单源，Windows 语义）；m1（Gate① minor + Gate②
+    // 前置③）已落地——**目标已存在**时经 isWithinPathCanonical 复校，防 junction/符号
+    // 链接把 .worktrees（或其子项）重定向出会话根；**尚未创建**时保持词法
+    // （canonicalFilePath 对不存在路径返回空串，无可解析对象——与 send 首帧目录同理；
+    // lcc :59/:62 的 Path.resolve(strict=False) 能解析不存在路径，lite Qt 口径做不到，
+    // 登记偏差：不存在段留词法、存在段 canonical 复校，已存在目标的 resolve parity 恢复）。
     // ⓪ 名字校验（lcc create/remove 首行 validate_worktree_name，折叠文案 :150-152 锚）。
     //   偏差登记：lcc 两层校验的两种 ValueError 文案，lite 合一正则后统一回第一条
     //   （".." 类失配在 lcc 走第二条文案——文本差异，判定等价，测试按此登记断言）。
@@ -92,24 +133,37 @@ bool WorktreeManager::worktreePath(const QString &name, QString *path, QString *
     }
     // ① 隔离根必须在工作目录内（lcc :52-55）。sink 空串按非法状态 fail-closed——
     //   python 侧空段会抛错，lite 惰性 sink 返回空 = 宿主未装配，同样拒（登记偏差）。
+    //   withinCi：两侧均来自宿主字符串，盘符/拼写大小写差是同类越狱判定的假阴性来源，
+    //   口径统一走 FIND-C 单源。
     const QString cleanWorkDir = m_workDirSink ? QDir::cleanPath(m_workDirSink()) : QString();
     const QString cleanRoot = m_sessionRootSink().isEmpty()
                                   ? QString()
                                   : QDir::cleanPath(worktreesRootDir());
     if (cleanWorkDir.isEmpty() || cleanRoot.isEmpty() ||
-        !AgentPathGuard::isWithinPath(cleanRoot, cleanWorkDir)) {
+        !withinCi(cleanRoot, cleanWorkDir)) {
         *error = QStringLiteral("Worktrees root escapes the working directory");
         return false;
     }
     // ② 目录路径必须仍在隔离根内（防前缀合法后缀越狱；名字已禁 '/' 与 ".."，此为纵深防御）
+    //   （lexical 由 cleanRoot 直接拼接派生，本无关大小写错配，仍走 withinCi 归一口径防漂移）
     const QString lexical = QDir::cleanPath(cleanRoot + QLatin1Char('/') + name);
-    if (!AgentPathGuard::isWithinPath(lexical, cleanRoot)) {
+    if (!withinCi(lexical, cleanRoot)) {
         *error = QStringLiteral("Worktree path escapes directory: %1").arg(pyReprLite(name));
         return false;
     }
     // ③ lcc :58-65 易漏关：**path == root 本身也拒**（隔离根永远不得当一个 worktree）。
     //   AgentPathGuard::isWithinPath 等值返回 true，故在调用点另判 !=（头注释同款提醒）。
-    if (lexical.compare(cleanRoot, Qt::CaseInsensitive) == 0) {
+    if (eqCi(lexical, cleanRoot)) {
+        *error = QStringLiteral("Worktree path escapes directory: %1").arg(pyReprLite(name));
+        return false;
+    }
+    // m1 复校（仅目标已存在时）：把 child 以 canonicalFilePath（OS 拼写）喂给 helper，
+    // 与 helper 内部 canonicalParent（同为 OS 拼写）同源对齐，杜绝盘符大小写假拒；
+    // 断链解析为空串 → isWithinPath 判失败 → fail-closed 拒。lcc 本处即 resolve 后比较
+    // （:59/:62），此路恢复其 parity。
+    const QFileInfo lexicalInfo(lexical);
+    if (lexicalInfo.exists() &&
+        !AgentPathGuard::isWithinPathCanonical(lexicalInfo.canonicalFilePath(), cleanRoot)) {
         *error = QStringLiteral("Worktree path escapes directory: %1").arg(pyReprLite(name));
         return false;
     }
@@ -201,9 +255,12 @@ QMap<QString, WorktreeManager::Entry> WorktreeManager::parseRegistry(QString *re
             line.chop(1);
         if (line.isEmpty()) {
             if (hasFields && !current.worktreePath.isEmpty()) {
-                // 键 = cleanPath 归一（git Windows 输出正斜杠、本地拼法反斜杠，两侧归一
-                // 后比较；大小写不敏感——Windows 语义，与 leasesPointingAt 同口径，登记偏差：
-                // lcc 大小写敏感。全链路（②过滤/get 查找/⑤路径比对）统一走本归一口径防漂移）。
+                // 键 = cleanPath 归一（git Windows 输出正斜杠、本地拼法反斜杠，两侧归一后
+                // 可比）。FIND-C（Gate②）纠注释失实：**键保留原文大小写、不折叠**——QMap
+                // 键比较本来就是大小写敏感的，原注释宣称「大小写不敏感」并未生效。
+                // Windows 不敏感语义统一落在**比较点**：eqCi/withinCi/findCi（见文件顶部
+                // FIND-C 单源），全链路（②过滤/查找/⑩与 recheck 命中/解绑扫描）一律经其归一。
+                // 登记偏差：lcc 键=Path.resolve() 规范形 + 敏感比较；lite=词法原文键 + 比较点 CI。
                 entries.insert(QDir::cleanPath(current.worktreePath), current);
             }
             current = Entry();
@@ -260,9 +317,13 @@ QMap<QString, WorktreeManager::Entry> WorktreeManager::registeredWorktrees(QStri
 
     for (const Entry &entry : entries) {
         const QString entryPath = QDir::cleanPath(entry.worktreePath);
-        if (entryPath.compare(cleanRoot, Qt::CaseInsensitive) == 0)
+        // FIND-C（Gate②）：口径归一 eqCi/withinCi 单源。假漏靶心就在这两行——git
+        // porcelain 输出的盘符大小写与 sink 拼法可能错位（d:/ vs D:/），原
+        // AgentPathGuard::isWithinPath 词法大小写敏感 → 合法条目被当越界静默剔除，
+        // 注册表视图整体塌空。根过滤与路径包含一律 Windows 不敏感语义。
+        if (eqCi(entryPath, cleanRoot))
             continue; // 根自身不是 worktree（lcc :126）
-        if (cleanRoot.isEmpty() || !AgentPathGuard::isWithinPath(entryPath, cleanRoot))
+        if (cleanRoot.isEmpty() || !withinCi(entryPath, cleanRoot))
             continue; // 越界条目剔除（lcc relative_to :126-128；cleanRoot 不可用 = 全拦 fail-closed）
         // 名字从路径反推（lcc path.name → str：目录段原名）
         const QString name = entryPath.section(QLatin1Char('/'), -1);
@@ -286,36 +347,67 @@ bool WorktreeManager::isWorktreeRegistered(const QString &name) const
     if (name.isEmpty())
         return true;
     QString error;
-    return registeredWorktrees(&error).contains(name);
+    // FIND-C：name = 路径叶段（同一目录在 Windows 下不分大小写），键查找走 findCi
+    // 不敏感扫描（键仍按原样存储）。登记偏差：lcc :178 python `in dict` 大小写敏感。
+    return findCi(registeredWorktrees(&error), name) != nullptr;
 }
 
 bool WorktreeManager::registeredEntry(const QString &name, Entry *entry, QString *error) const
 {
     // lcc _registered_entry :143-166 逐字文案。
+    // FIND-A（Gate② minor）：原形 `entry &&` 短路在 entry==nullptr 时静默旁路分支
+    // 校验（lcc :159-165 是无条件检查，旁路即放行未验分支的条目 = 安全破口）。
+    // 现实两调用点（removeWorktree/resolveWorktreeCwd）恒传非空，公开 API 不可达
+    // ——属编程错误。择显式防御 fail-closed：拒绝并给内部缺陷标记串（不为此发明
+    // lcc 第二套文案面；不可达路径，注释登记不设测试）。
+    if (!entry) {
+        if (error)
+            *error = QStringLiteral("worktree '%1': internal lookup defect (null entry output)").arg(name);
+        return false;
+    }
     QString path;
     if (!worktreePath(name, &path, error))
-        return false; // lcc :144-146：路径三关错原样上抛
+        return false; // lcc :144-146：路径三关错原样上抛（含 worktreePath 内 m1 复校）
     QString registryError;
     const QMap<QString, Entry> entries = parseRegistry(&registryError);
     if (!registryError.isEmpty()) {
         *error = registryError; // lcc :147-149
         return false;
     }
-    const QString key = QDir::cleanPath(path);
-    auto it = entries.constFind(key);
-    if (it == entries.constEnd()) {
-        // lcc :150-152：未注册（**大小写不敏感查一次即定**——登记偏差同 parseRegistry 键口径）
+    // FIND-C：原 constFind 走 QMap 键比较=大小写敏感（旧注释声称不敏感=失实，即
+    // FIND-C 根因）。改为 findCi 不敏感扫描，键仍按原样存储。lcc 侧键是
+    // Path.resolve() canonical 形、比对严格相等——lite 词法键+CI 扫描，偏差登记。
+    const Entry *hit = findCi(entries, QDir::cleanPath(path));
+    if (!hit) {
+        // lcc :150-152：未注册
         *error = QStringLiteral("worktree '%1' is not registered with Git").arg(name);
         return false;
     }
-    if (entry)
-        *entry = it.value();
-    if (!QFileInfo::exists(path)) {
+    *entry = *hit;
+    const QFileInfo pathInfo(path);
+    if (!pathInfo.isDir()) {
+        // FIND-B（lcc :154 not path.is_dir()，registered_worktrees :137 同口径）：
+        // 原 QFileInfo::exists() 把「路径被普通文件伪装占据」误判为在世，放行到
+        // 分支校验甚至返回 cwd；lcc 判 missing。一词之改，文案不变。
         *error = QStringLiteral("worktree '%1' is missing at %2").arg(name, path); // lcc :155-158
         return false;
     }
+    // m1（Gate① minor + Gate② 前置③）canonical 复校：目录在世 → junction/符号链接
+    // 重定向防护。child 传 canonicalFilePath()（OS 拼写）与 helper 内 canonicalParent
+    // 同源对齐，杜绝盘符大小写假拒；破损链接解析为空串 → isWithinPath 必败 =
+    // fail-closed。登记偏差：lcc :154-158 此段无再解析复查（其键天然 resolve 过），
+    // lite 词法键体系在此补严。
+    const QString cleanRoot =
+        m_sessionRootSink().isEmpty() ? QString() : QDir::cleanPath(worktreesRootDir());
+    if (cleanRoot.isEmpty() ||
+        !AgentPathGuard::isWithinPathCanonical(pathInfo.canonicalFilePath(), cleanRoot)) {
+        *error = QStringLiteral("Worktree path escapes directory: %1").arg(pyReprLite(name));
+        return false;
+    }
     const QString branch = branchForWorktree(name);
-    if (entry && it->branch != QStringLiteral("refs/heads/") + branch) {
+    // 分支/ref 名比较保持大小写敏感（git ref 语义，lcc :159-165 parity——FIND-C
+    // 不敏感口径只覆盖路径/目录名段，ref 名不在此列）。
+    if (hit->branch != QStringLiteral("refs/heads/") + branch) {
         // lcc :159-165（{branch!r} = 单引号包裹）
         *error = QStringLiteral("worktree '%1' is not registered on expected branch '%2'")
                      .arg(name, branch);
@@ -379,24 +471,31 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
         return foldError(QStringLiteral("Task %1 already uses worktree '%2'")
                              .arg(taskId, found->worktree));
 
-    // 门④（lcc :259-264：名字未被**别的**任务占用——扫快照，M3 唯一视图）
+    // 门④（lcc :259-264：名字未被**别的**任务占用——扫快照，M3 唯一视图）。
+    // FIND-C（Gate②）：worktree 名 = 目录路径的叶段，Windows 文件系统大小写不敏感——
+    // 「W1」与「w1」指向同一目录，若按 lcc（python 大小写敏感）逐字比较，大小写错位可
+    // 造成双重绑定同一目录、互相踩工作区。故本比较走 eqCi（登记偏差：lcc :259 CS；
+    // snapshot.id != taskId 属任务 id token 族，维持 CS 口径不变）。
     for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
-        if (snapshot.id != taskId && snapshot.worktree == name)
+        if (snapshot.id != taskId && eqCi(snapshot.worktree, name))
             return foldError(QStringLiteral("Worktree '%1' is already bound to another task").arg(name));
     }
 
-    // 门⑤（lcc :265-267：目标路径不存在——已存在目录不做任何清理，看一眼就走）
+    // 门⑤（lcc :265-267：目标路径不存在——已存在目录不做任何清理，看一眼就走）。
+    // exists() 交 OS 判定，Windows OS 天然大小写不敏感，无字符串口径问题；m1 的
+    // junction/canonical 复校已由门⓪ worktreePath（返回 path 前）覆盖，此处不再重复。
     if (QFileInfo::exists(path))
         return foldError(QStringLiteral("Worktree path already exists: %1").arg(path));
 
     // 门⑥（lcc :268-276：workDir 必须是仓库 toplevel）。
     // 比对偏差登记：lcc 两侧 resolve()（canonical）相等；lite 词法 cleanPath + Windows
-    // 大小写不敏感（git 输出正斜杠/盘符大小写与本地拼法常不同形），canonical 复校归 P3。
+    // 大小写不敏感（git 输出正斜杠/盘符大小写与本地拼法常不同形）。FIND-C（Gate②）：
+    // 归一单源经 eqCi，注释里「canonical 复校归 P3」已由 m1 在 worktreePath 落地。
     const QString cleanWorkDir = QDir::cleanPath(m_workDirSink ? m_workDirSink() : QString());
     QString toplevel;
     const bool toplevelOk = runGit({QStringLiteral("rev-parse"), QStringLiteral("--show-toplevel")},
                                    &toplevel);
-    if (!toplevelOk || QDir::cleanPath(toplevel).compare(cleanWorkDir, Qt::CaseInsensitive) != 0)
+    if (!toplevelOk || !eqCi(QDir::cleanPath(toplevel), cleanWorkDir))
         return foldError(QStringLiteral("Working directory must be the root of a Git repository"));
 
     // 门⑦（lcc :277-282：分支名合法性交 git 自己裁决 check-ref-format --branch）
@@ -423,8 +522,10 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
     if (!registryError.isEmpty())
         return foldError(registryError);
 
-    // 门⑩（lcc :294-298：路径未注册）
-    if (entries.contains(QDir::cleanPath(path)))
+    // 门⑩（lcc :294-298：路径未注册）。FIND-C（Gate②）：QMap::contains 键比较大小写
+    // **敏感**（原实现即假 miss 风险：git 输出盘符大小写与本地拼法不同形时，同一路径
+    // 会被判「未注册」而放行双注册）→ 改 findCi 大小写不敏感扫描（键仍原文存储）。
+    if (findCi(entries, QDir::cleanPath(path)) != nullptr)
         return foldError(QStringLiteral("Worktree path is already registered: %1").arg(path));
 
     // ---- 真实操作（lcc :299-312）----
@@ -441,8 +542,10 @@ QString WorktreeManager::createWorktree(const QString &name, const QString &task
         const QMap<QString, Entry> recheck = parseRegistry(&recheckError);
         QStringList artifacts;
         const bool dirAppeared = QFileInfo::exists(path);
+        // FIND-C（Gate②）：残留重查与门⑩同口径走 findCi（两侧口径必须一致，否则
+        // 「门⑩放行但重查报未注册/反之」会让 Partial operation 文案失真）。
         const bool registeredAgain =
-            recheckError.isEmpty() && recheck.contains(QDir::cleanPath(path));
+            recheckError.isEmpty() && findCi(recheck, QDir::cleanPath(path)) != nullptr;
         QString recheckBranch;
         const bool branchAppeared = runGit({QStringLiteral("show-ref"), QStringLiteral("--verify"),
                                             QStringLiteral("--quiet"),
@@ -514,7 +617,9 @@ bool WorktreeManager::removeWorktree(const QString &name, bool discardChanges, Q
     QStringList boundIds;
     QStringList activeIds;
     for (const TaskStore::TaskSnapshot &snapshot : snapshots) {
-        if (snapshot.worktree == name) {
+        // FIND-C：绑定名比较走 eqCi 单一口径（与 create 门④对称）——name=路径叶段，
+        // Windows 下 W1/w1 同目录，解绑扫描若 CS 会漏掉大小写错位绑定、留孤儿绑定账。
+        if (eqCi(snapshot.worktree, name)) {
             boundIds.append(snapshot.id);
             if (snapshot.status != QStringLiteral("completed"))
                 activeIds.append(snapshot.id);

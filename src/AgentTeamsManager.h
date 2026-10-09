@@ -52,6 +52,13 @@ class TeammateRuntime;
  *   为工具输出」纪律返回 "Error: " + bus->lastError() 并回滚已登记的案卷/台账。
  * 偏F run_list_tasks 转发 TaskStore::runListTasks：lcc :780-796 的 [ ]/[>]/[x]
  *   文案与 lite s10 移植同源同款，不重抄第二份。
+ * 偏G formatTeamEvents 空批返空串：lcc :450 对空批仍产 "[Team events]\n"（空标题块）；
+ *   lite 早退 QString()——零事件零注入块（缓存友好，组11 钉为期望）。行为优于 lcc。
+ *   Gate② FIND-F 补录（原为码内注释，未入本清单）。
+ * 偏H 队友基工具无租约文案：lcc current_cwd :858-859 教学形 "Error: Claim a Task
+ *   before using workspace tools."；lite 随偏C 折叠为 "Error: Invalid task assignment:
+ *   <assignmentCwd 三分支文案>"（组9 钉 lite 文本）。均 fail-closed，仅措辞差。
+ *   Gate② FIND-K 补录（裁决=接受 lite 形态）。
  *
  * 回调接线（lcc :329-331 构造时挂 task_manager 三回调）在本类构造函数完成：
  * - onAssignmentAdvanced → 换工复位 plan gate（required）+ 清在审案号
@@ -161,9 +168,23 @@ public:
     // 在册队友名（字典序，lcc sorted() 口径）
     QStringList teammateNames() const;
 
+    // ── Gate② FIND-M 诊断面（P3b 宿主遥测消费，只读）──
+    // lcc 的 release 失败=fail-stop（异常炸穿线程即死）；lite fail-continue 以本通道
+    // 补偿记账：回合边界（TeammateRuntime::deliverTurnResult）、死亡清算（finish）、
+    // spawn 回滚（runSpawnTeammate FIND-E 路径）三处 release*Assignment 失败统一
+    // noteReleaseWarning，lastReleaseWarning 回读末次错误文本。
+    // **粘滞不清**：lcc 语义里失败后不存在「同点位又成功」的时机（线程已死/即将回滚），
+    // 成功路径清空反而会让宿主遥测看不见间歇性故障——消费方判 isEmpty 只作弱信号，
+    // 要精确须自记序号（本面刻意只做最低成本诊断，不做事件流）。
+    void noteReleaseWarning(const QString &text);
+    QString lastReleaseWarning() const;
+
     // ── P3 注入点（默认空 = 相应路径 fail-closed 或跳过）──
     // 返回新建的 TeammateRuntime 句柄（未拥有指针，所有权归调用栈上的宿主；
-    // 本类只登记不 dereference——偏A）。返回 nullptr = 创建失败，不登记句柄。
+    // 本类只登记不 dereference——偏A）。返回 nullptr = 创建失败：Gate② FIND-E 起
+    // spawn 侧 fail-closed——退租+弹四本账+折叠报错（对齐 lcc :676 thread.start()
+    // 失败 raise 不留幽灵），成功文案不再可达。launcher 自身创建失败时不得留下半
+    // 成品 runtime（P3 fix-5 契约：要么返有效句柄，要么纯 nullptr、资源自清）。
     using TeammateLauncher =
         std::function<TeammateRuntime *(const QString &name, const QString &role,
                                         const QString &prompt, const QString &taskId,
@@ -209,9 +230,11 @@ private:
     QHash<QString, QString> m_planRequestIds;                          // name → 在审案号
     QHash<QString, ProtocolState> m_pendingRequests;                   // request_id → 案卷
     QHash<QString, TeammateRuntime *> m_teammateHandles;               // name → 不透明句柄（偏A）
+
+    // Gate② FIND-M 诊断面存储：末次 release*Assignment 失败的错误文本（粘滞，见
+    // lastReleaseWarning 注释）。
+    QString m_lastReleaseWarning;
 };
 
-// 空闲心跳扫描间隔（lcc IDLE_SCAN_INTERVAL=2.0s，wait_for_work :998-1023 的轮询节拍）。
-// 有意偏离：魔法数字按本仓约定应进 AgentConstants.h，但该头属 fix-3（WorktreeManager）
-// 写域，本 lane 不得触碰——就近登记于此，P3 若统一收口可迁走。
-inline constexpr int kTeamIdleScanIntervalMs = 2000;
+// 空闲心跳扫描间隔常量已迁 AgentConstants.h::AgentConst::kTeamIdleScanIntervalMs
+// （Gate② FIND-N3，本仓魔法数字单源约定；消费方 TeammateRuntime 心跳 QTimer）。

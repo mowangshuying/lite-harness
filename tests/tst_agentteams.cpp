@@ -1,12 +1,13 @@
 // tst_agentteams.cpp — s13 Agent Teams 内核数据层（AgentTeamsManager）断言套件。
 //
 // lcc s13 34775c8 agent_teams_manager.py 移植验收证据（port-s13 P2 fix-4 · Gate② 补建）。
-// 覆盖 13 组：spawn 校验与回滚矩阵 / list_teammates 形态 / send_message /
+// 覆盖 14 组：spawn 校验与回滚矩阵 / list_teammates 形态 / send_message /
 // submitPlan 案卷与拒重提 / applyPlanResponse 11 门 / applyShutdownRequest 8 门 /
 // review_plan 五校验串与「Lead 不翻队友门」/ matchResponse 4 门 /
 // runTeammateTool 三门与 cwd 现读 / 释放三时点与回调接线 /
 // consumeLeadInbox 不吞协议 + formatTeamEvents 逐字行形 + M8 失败重试 /
-// genRequestId 形态 / claimNextTask 自拉活。
+// genRequestId 形态 / claimNextTask 自拉活 / Gate② P3a-B minor 批回归面
+// （FIND-D/E 断言随组1、组10 轨迹钉桩，组14 补 FIND-M 诊断面语义与 FIND-N3 常量单源）。
 //
 // 套件纪律：临时根一律 ScopedTempRoot（仅认 LITE_TEST_TMPROOT，未设即 SKIP 返 0）；
 // 期望文本从 src/AgentTeamsManager.cpp 与 src/TaskStore.cpp 实抄、与 lcc 逐字对照；
@@ -188,7 +189,10 @@ void testSpawnValidationAndRollback()
     TestHarness::check(mgr.planGate(QStringLiteral("zoe")) == AgentTeamsManager::PlanGate::Required,
                        "spawn(requirePlan=true): 门 required");
 
-    // 带单出生：launcher 先记账（回传 nullptr=创建失败但 spawn 文本不变，句柄分支不可观测）。
+    // 带单出生：Gate② FIND-E 新契约——launcher 返 nullptr = 创建失败 → spawn
+    // fail-closed 回滚（退租+弹四本账+折叠报错），旧「幽灵队友」形态（成功文案照返、
+    // 租约悬挂）永不可达。以下期望重写属该行为变更的合法期望更新（Gate② P3 前置
+    // 条件② 裁决，非弱化断言——断言面反而更宽：名册/租约/版本/文本四路对账）。
     int launcherCalls = 0;
     QString launcherSawName;
     QString launcherSawTask;
@@ -206,18 +210,25 @@ void testSpawnValidationAndRollback()
     const QString devText = mgr.runSpawnTeammate(QStringLiteral("dev"),
                                                  QStringLiteral("coder"),
                                                  QStringLiteral("p"), t1, false);
-    TestHarness::check(devText == QStringLiteral("Teammate 'dev' spawned as coder for %1. End this turn; the runtime will deliver its events.").arg(t1),
-                       "spawn成功: 带单文本逐字（for <id>）");
+    TestHarness::check(devText == QStringLiteral("Error: Teammate runtime failed to start for 'dev'"),
+                       "FIND-E: launcher 返 nullptr → 折叠报错文本逐字（成功文案不可达）");
     TestHarness::check(launcherCalls == 1 && launcherSawName == QStringLiteral("dev")
                            && launcherSawTask == t1 && !launcherSawPlan,
-                       "spawn成功: launcher 实参透传（先认领后拉线程，lcc :652-677 写序）");
-    const std::optional<TaskStore::Lease> devLease = store.leaseFor(QStringLiteral("dev"));
-    TestHarness::check(devLease.has_value() && devLease->taskId == t1,
-                       "spawn带单: 出生即建租约（租约三时点之出生）");
+                       "FIND-E: launcher 实参透传（先认领后创建，lcc :652-677 写序不变）");
+    TestHarness::check(!mgr.hasTeammate(QStringLiteral("dev")),
+                       "FIND-E: 回滚全链——名册弹出（幽灵不可达）");
+    TestHarness::check(!store.leaseFor(QStringLiteral("dev")).has_value(),
+                       "FIND-E: 回滚全链——出生租约已退（悬挂幽灵永绝）");
     TestHarness::check(store.assignmentVersion(QStringLiteral("dev")) == 1,
-                       "spawn带单: 认领使版本自增至 1");
+                       "FIND-E: 认领后版本仍 1（TaskStore 退租不降版本，偏差④同款）");
 
-    // 认领失败回滚：t1 已 in_progress → 门②'（status!=pending）文本 → 回滚镜像登记。
+    // 认领失败回滚：t1 需 in_progress → 门②'（status!=pending）文本 → 回滚镜像登记。
+    // FIND-E 改造后 dev 出生租约已随回滚退清、t1 打回 pending+无主——旧形态靠幽灵
+    // 租约占着 t1 的前提永不可达，改用 agent（Lead 保留 owner 键）真实认领造确定性
+    // in_progress 夹具。
+    TestHarness::check(store.runClaimTaskLeased(idArgs(t1), QStringLiteral("agent"))
+                           .startsWith(QStringLiteral("Claimed ")),
+                       "FIND-E级联夹具: agent 认领使 t1 回 in_progress");
     const int callsBeforeFail = launcherCalls;
     const QString carolText = mgr.runSpawnTeammate(QStringLiteral("carol"),
                                                    QStringLiteral("coder"),
@@ -245,6 +256,76 @@ void testSpawnValidationAndRollback()
                        "spawn回滚: 门②已有主文本（kernel 承重串透传）");
     TestHarness::check(!mgr.hasTeammate(QStringLiteral("newbie")),
                        "spawn回滚: requirePlan=true 失败同样撤登记");
+
+    // ————— Gate② FIND-E 回滚全链（磁盘健康形态）+ FIND-M 空记点交叉 —————
+    const QString t2 = newTask(store, QStringLiteral("second-job"));
+    TestHarness::check(!t2.isEmpty(), "FIND-E夹具: t2 创建成功");
+    const QString wraithText = mgr.runSpawnTeammate(QStringLiteral("wraith"),
+                                                    QStringLiteral("coder"),
+                                                    QStringLiteral("p"), t2, false);
+    TestHarness::check(wraithText == QStringLiteral("Error: Teammate runtime failed to start for 'wraith'"),
+                       "FIND-E: 报错文本逐字（第二例，名字入串）");
+    TestHarness::check(!mgr.hasTeammate(QStringLiteral("wraith")), "FIND-E: 名册弹出");
+    TestHarness::check(mgr.planGate(QStringLiteral("wraith")) == AgentTeamsManager::PlanGate::NotRequired,
+                       "FIND-E: 门账弹出（缺省语义）");
+    TestHarness::check(!store.leaseFor(QStringLiteral("wraith")).has_value(),
+                       "FIND-E: 出生租约已退");
+    QVector<TaskStore::TaskSnapshot> g1Snaps;
+    QString g1SnapErr;
+    TestHarness::check(store.listTaskSnapshots(&g1Snaps, &g1SnapErr), "FIND-E夹具: 快照可读");
+    bool t2Reverted = false;
+    for (const TaskStore::TaskSnapshot &s : g1Snaps) {
+        if (s.id == t2) {
+            t2Reverted = (s.status == kPending && s.owner.isEmpty());
+        }
+    }
+    TestHarness::check(t2Reverted, "FIND-E: 初始任务打回 pending+无主（死亡清算同款降级）");
+    TestHarness::check(mgr.lastReleaseWarning().isEmpty(),
+                       "FIND-M: 回滚退租成功不记点（诊断面保持空）");
+
+    // ————— FIND-E 阳性路径：launcher 返非空句柄 → 登记 + 成功文案（回滚分支不误伤） —————
+    // 哨兵指针：manager 侧对 m_teammateHandles 只 insert/remove、零解引用
+    // （Gate② 焦点③ 亲证），取本地 int 地址仅验「非 nullptr 即成功」分支可达。
+    mgr.setTeammateLauncher([&launcherCalls](const QString &, const QString &, const QString &,
+                                             const QString &, bool) -> TeammateRuntime * {
+        return reinterpret_cast<TeammateRuntime *>(static_cast<void *>(&launcherCalls));
+    });
+    const QString safeText = mgr.runSpawnTeammate(QStringLiteral("safe"),
+                                                  QStringLiteral("planner"),
+                                                  QStringLiteral("p"), QString(), true);
+    TestHarness::check(safeText == QStringLiteral("Teammate 'safe' spawned as planner without an initial Task. End this turn; the runtime will deliver its events."),
+                       "FIND-E阳性: 非空句柄 → 成功文本逐字");
+    TestHarness::check(mgr.hasTeammate(QStringLiteral("safe")), "FIND-E阳性: 名册登记可达");
+    TestHarness::check(mgr.planGate(QStringLiteral("safe")) == AgentTeamsManager::PlanGate::Required,
+                       "FIND-E阳性: requirePlan=true 出生牌不受回滚分支影响");
+
+    // ————— FIND-E×FIND-M 联合：回滚退租磁盘失败 → 内存照清 + 诊断面留痕 —————
+    const QString t3 = newTask(store, QStringLiteral("doomed-job"));
+    TestHarness::check(!t3.isEmpty(), "FIND-M夹具: t3 创建成功");
+    const QString t3File = QDir(QDir(root).filePath(QStringLiteral(".task")))
+                               .filePath(t3 + QStringLiteral(".json"));
+    mgr.setTeammateLauncher([t3File](const QString &, const QString &, const QString &,
+                                     const QString &, bool) -> TeammateRuntime * {
+        // launcher 模拟「认领已成、随后磁盘坏」：认领写盘之后才截断成非法 JSON
+        // （writeRawTaskFile 同款裸字节形），令回滚的 releaseTeammateAssignment
+        // 全盘扫描读 t3 不可读 → false + 错误文本。
+        QFile broken(t3File);
+        if (broken.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            broken.write("{ broken mid-write");
+            broken.close();
+        }
+        return nullptr;
+    });
+    const QString doomerText = mgr.runSpawnTeammate(QStringLiteral("doomer"),
+                                                    QStringLiteral("coder"),
+                                                    QStringLiteral("p"), t3, false);
+    TestHarness::check(doomerText == QStringLiteral("Error: Teammate runtime failed to start for 'doomer'"),
+                       "FIND-E: 磁盘清理失败仍折叠同一报错（不静默、不炸穿）");
+    TestHarness::check(!mgr.hasTeammate(QStringLiteral("doomer")), "FIND-E: 磁盘坏不挡弹账");
+    TestHarness::check(!store.leaseFor(QStringLiteral("doomer")).has_value(),
+                       "FIND-E: TaskStore finally 形态——盘不可读内存租约照样出清");
+    TestHarness::check(!mgr.lastReleaseWarning().isEmpty(),
+                       "FIND-M: 回滚退租失败记入诊断面（非空）");
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -1063,9 +1144,25 @@ void testReleaseTripointsAndCallbacks()
     TestHarness::check(store.releaseTeammateAssignment(QStringLiteral("sarah"), &err4),
                        "sarah: 无租约幂等退租 true（finally 无条件）");
     TestHarness::check(mgr.planGate(QStringLiteral("sarah")) == AgentTeamsManager::PlanGate::NotRequired
-                           && store.assignmentVersion(QStringLiteral("sarah")) == 0
-                           && mgr.currentPlanRequestId(QStringLiteral("sarah")) == ridS,
-                       "released 不清案号（lcc :365-368 parity 钉桩：门复位/版本不动/案号残留）");
+                            && store.assignmentVersion(QStringLiteral("sarah")) == 0
+                            && mgr.currentPlanRequestId(QStringLiteral("sarah")) == ridS,
+                        "released 不清案号（lcc :365-368 parity 钉桩：门复位/版本不动/案号残留）");
+
+    // (g) Gate② FIND-D 对齐钉桩：换工（advanced 回调）**无条件**清在审案号——
+    // lcc :363 的 planRequestIds.pop 长在 if 外。sarah 此刻门=NotRequired（f 步已复位）
+    // + 案号 ridS 残留：旧 lite 实现（remove 圈在发牌 if 内）对此形态跳过清除、
+    // currentPlanRequestId 恒读到 lcc 不存在的陈旧值——本断言在该实现下必红，
+    // 修复后才有绿（合法期望变更，行为对齐 lcc，非弱化）。
+    const QString tH = newTask(store, QStringLiteral("sarah-next"));
+    TestHarness::check(!store.leaseFor(QStringLiteral("sarah")).has_value(),
+                       "FIND-D夹具: sarah 无租约（可领新单）");
+    TestHarness::check(store.runClaimTaskLeased(idArgs(tH), QStringLiteral("sarah"))
+                           .startsWith(QStringLiteral("Claimed ")),
+                       "FIND-D夹具: sarah 认领触发 advanced 回调");
+    TestHarness::check(mgr.currentPlanRequestId(QStringLiteral("sarah")).isEmpty(),
+                       "FIND-D: 换工即作废案号（lcc :363 无条件 pop）");
+    TestHarness::check(mgr.planGate(QStringLiteral("sarah")) == AgentTeamsManager::PlanGate::NotRequired,
+                       "FIND-D: NotRequired 门换工不动（lcc :360-362 只复位发过牌的门）");
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -1222,6 +1319,40 @@ void testClaimNextTask()
                        "自拉活: 台账不可读 fail-closed nullopt（不抛异常）");
 }
 
+// ————————————————————————————————————————————————————————————————
+// 组14：Gate② P3a-B minor 批回归面——FIND-M 诊断面语义 + FIND-N3 心跳常量单源。
+// FIND-D/FIND-E 的承重断言随组1（回滚全链/磁盘失败留痕/阳性路径）与组10(g)
+// （advanced 无条件清案号）钉桩。FIND-L 析构安全网**不可进单元面**：
+// TeammateRuntime.cpp 不在测试目标（root CMakeLists 禁域不可增源），
+// 行为验证归 cl /c 语法编译 + P3 宿主冒烟——交付报告如实登记，不造摆动断言。
+// ————————————————————————————————————————————————————————————————
+void testGate2MinorBatchSurface()
+{
+    ScopedTempRoot tmp("agentteams");
+    if (!tmp.isValid()) {
+        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        return;
+    }
+    const QString root = tmp.path();
+    TaskStore store([root] { return root; });
+    MessageBus bus([root] { return root; });
+    AgentTeamsManager mgr(&bus, &store);
+
+    TestHarness::check(mgr.lastReleaseWarning().isEmpty(), "FIND-M: 新 mgr 诊断面为空");
+    mgr.noteReleaseWarning(QStringLiteral("boom-1"));
+    TestHarness::check(mgr.lastReleaseWarning() == QStringLiteral("boom-1"),
+                       "FIND-M: note 后逐字回读");
+    mgr.noteReleaseWarning(QStringLiteral("boom-2"));
+    TestHarness::check(mgr.lastReleaseWarning() == QStringLiteral("boom-2"),
+                       "FIND-M: 粘滞覆盖保末次（lcc fail-stop 无此概念，lite fail-continue 补偿语义）");
+    mgr.finalizeTeammate(QStringLiteral("nobody"));
+    TestHarness::check(mgr.lastReleaseWarning() == QStringLiteral("boom-2"),
+                       "FIND-M: 退场清算不清诊断面（间歇故障对宿主保持可见）");
+
+    TestHarness::check(AgentConst::kTeamIdleScanIntervalMs == 2000,
+                       "FIND-N3: 空闲心跳间隔单源在 AgentConst（2000ms=lcc :185 2.0s 逐值对位）");
+}
+
 } // namespace
 
 int tst_agentteams()
@@ -1240,5 +1371,6 @@ int tst_agentteams()
     testLeadInboxAndEventsFormat();
     testGenRequestId();
     testClaimNextTask();
+    testGate2MinorBatchSurface();
     return TestHarness::failCount() - before;
 }

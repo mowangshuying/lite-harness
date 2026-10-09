@@ -13,10 +13,12 @@
 //
 // 与 lcc 的线程形态对应关系（有意偏离，登记）：
 //   lcc 每队友一条 daemon 线程跑 run()（while work/wait_for_work，Condition 阻塞等信）
-//     → lite：QTimer 心跳（间隔 kTeamIdleScanIntervalMs，单源在 AgentTeamsManager.h）
-//       驱动「wait_for_work 的单次轮询形态」；干活回合由宿主信号驱动，心跳只在 Idle 态跑。
+//     → lite：QTimer 心跳（间隔 AgentConst::kTeamIdleScanIntervalMs，单源在
+//       AgentConstants.h，Gate② FIND-N3 迁入）驱动「wait_for_work 的单次轮询形态」；
+//       干活回合由宿主信号驱动，心跳只在 Idle 态跑。
 //   lcc daemon=True（宿主退出线程自然终止、从不 join/kill）
-//     → lite：QObject 层次随宿主销毁；合作式退场唯一路径是 shutdown 协议 → finish()。
+//     → lite：合作式退场正道是 shutdown 协议/cancel() → finish()；~TeammateRuntime
+//       为 Gate② FIND-L 安全网兜底（未清算则走无 emit 的账目核，见 dtor 注释）。
 //
 // 租约三时点闭环（lcc :1058 设计说明）：出生=claim（spawn 带单 / 心跳自拉活 / 模型显式
 // claim_task 都经 manager 或 TaskStore 落账）；回合边界=空闲出口调
@@ -62,6 +64,16 @@ public:
     // 宿主侧取消（关会话等）：等价 lcc daemon 随宿主进程终止——lite 里显式走一遍
     // finish() 的清算路径（退租 + 销账），内存台账不留幽灵。
     void cancel();
+
+    // Gate② FIND-L 析构安全网。**正道契约不变：宿主销毁序 = cancel() → delete，
+    // 且 manager/bus/taskStore 必须比本对象后死**（P3 fix-5 launcher 契约钉死项）。
+    // 本析构只是兜底：若宿主违约跳过 cancel() 直接 delete，仍把账目核走一遍
+    // （退租 + finalizeTeammate 弹账），杜绝租约泄漏与台账幽灵；析构期一律
+    // **禁 emit**（sendToLead/teamEvent/finished 都不发——Qt 惯例：析构中发信号不
+    // 安全，接收方可能随父级半销毁），清理失败仅 qWarning 记账。
+    // m_manager/m_bus/m_taskStore 裸指针若已被宿主先杀，则属契约违例的未定义域，
+    // 本兜底不试图自救（无磁盘恢复、无悬挂探测——D7 禁磁盘复活队友）。
+    ~TeammateRuntime() override;
 
     bool isFinished() const { return m_finished; }
     QString teammateName() const { return m_name; }
@@ -119,7 +131,14 @@ private:
 
     void enterIdle();  // 启动心跳（lcc：wait_for_work 的 Condition 等待段）
     void leaveIdle();  // 停心跳（lcc：开工/退场时退出等待）
-    void finish();     // lcc run() finally :1044-1057 清算序：退租→销账→finished
+    // 账目核（Gate② FIND-L 拆分）：闩锁→停心跳→退租→finalizeTeammate 弹账。
+    // **全程零 emit**——finish() 壳与 ~TeammateRuntime 兜底共用本核；返回 true=
+    // 本次调用完成清算，false=已清算过（幂等空转）；outCleanupError 仅在本次真正
+    // 执行且退租失败时带回错误文本（供 emit 壳上报，析构路径只 qWarning）。
+    bool settleLedgers(QString *outCleanupError);
+    // lcc run() finally :1044-1057 清算序的 emit 壳：settleLedgers + 失败上报
+    // （sendToLead error 信，lcc :1049-1055 逐字形态）+ emit finished。
+    void finish();
 
     bool trayHasContent() const { return !m_pendingTray.isEmpty(); }
 

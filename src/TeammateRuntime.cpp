@@ -7,6 +7,7 @@
 
 #include "TeammateRuntime.h"
 
+#include "AgentConstants.h"
 #include "AgentTeamsManager.h"
 #include "MessageBus.h"
 #include "TaskStore.h"
@@ -40,7 +41,7 @@ TeammateRuntime::TeammateRuntime(const QString &name, const QString &role,
     // 构造不启动：只有 enterIdle()（回合空收尾/自拉活失败）才武装心跳；
     // 干活回合期间停表（lcc 里 work() 与 wait_for_work() 天然互斥的对应）。
     m_heartbeat = new QTimer(this);
-    m_heartbeat->setInterval(kTeamIdleScanIntervalMs);
+    m_heartbeat->setInterval(AgentConst::kTeamIdleScanIntervalMs);
     m_heartbeat->setSingleShot(false);
     connect(m_heartbeat, &QTimer::timeout, this, &TeammateRuntime::onHeartbeat);
 }
@@ -330,12 +331,15 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
                                      AgentTeamsManager::TeammateStatus::WaitingApproval);
     } else {
         // 回合边界释放（lcc :990，fix-4 钉死第 4 条：状态机自调，completeTask 不管释放）。
-        // lcc 裸调用忽略返回值：false=无租约/未完成属幂等常态。有意偏离：TaskStore
-        // 的「租约任务不可读」类错误同样静默（lcc 该处抛 ValueError 会进外层 except
-        // 发 error 信——lite 判断：幂等噪音不值得打扰 Lead，qWarning 记账即可）。
+        // lcc 裸调用忽略返回值：false=无租约/未完成属幂等常态。有意偏离（Gate② FIND-M
+        // 补录诊断面）：TaskStore 的「租约任务不可读」类错误同样静默（lcc 该处抛
+        // ValueError 会进外层 except 发 error 信——lite 判断：幂等噪音不值得打扰 Lead）。
+        // 补偿通道：qWarning + manager 诊断面 noteReleaseWarning（P3b 宿主遥测可读
+        // lastReleaseWarning，连续失败不再只有滚走的日志）。
         QString releaseError;
         if (!m_taskStore->releaseCompletedAssignment(m_name, &releaseError)
             && !releaseError.isEmpty()) {
+            m_manager->noteReleaseWarning(releaseError);
             qWarning() << "[team] release_completed_assignment(" << m_name
                        << "):" << releaseError;
         }
@@ -347,26 +351,62 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
     enterIdle();
 }
 
-// lcc run() finally :1044-1057 清算序：退租 → 销账 → finished。全程无 force-kill。
-void TeammateRuntime::finish()
+// 账目核（Gate② FIND-L 拆分）：闩锁 → 停心跳 → 退租 → 弹四本账。**全程零 emit**，
+// 析构上下文可安全调用；失败上报职责留给 emit 壳/析构兜底各通道（见出参注释）。
+bool TeammateRuntime::settleLedgers(QString *outCleanupError)
 {
     if (m_finished) {
-        return; // 终态闩锁幂等
+        if (outCleanupError) {
+            outCleanupError->clear();
+        }
+        return false; // 终态闩锁幂等
     }
     m_finished = true;
-    leaveIdle();
+    leaveIdle(); // m_heartbeat 是本对象子 QTimer，stop() 在析构上下文同样安全
 
     // 死亡清算释放点（lcc :1048；fix-4 钉死第 4 条之二）：遗留 in_progress 打回
     // pending 让别的 idle 队友捡。lcc except→"Assignment cleanup failed: {型名}: {exc}"
     // error 信的 lite 形（TaskStore 已把失败折叠为 error 出参，型名段并入文案头）。
-    QString cleanupError;
-    if (!m_taskStore->releaseTeammateAssignment(m_name, &cleanupError)) {
-        sendToLead(QStringLiteral("Assignment cleanup failed: %1").arg(cleanupError),
-                   QStringLiteral("error"));
+    // 退租失败**不阻断销账**：TaskStore finally 形态已保证内存租约出清，四本账照弹，
+    // 失败文本经出参交上层选择上报通道（emit 壳=error 信，析构=qWarning）。
+    const bool released =
+        m_taskStore->releaseTeammateAssignment(m_name, outCleanupError);
+    if (!released && outCleanupError && !outCleanupError->isEmpty()) {
+        m_manager->noteReleaseWarning(*outCleanupError); // Gate② FIND-M 诊断面
     }
 
     m_manager->finalizeTeammate(m_name);
+    return true;
+}
+
+// lcc run() finally :1044-1057 清算序的 emit 壳：账目核 → 失败上报 → finished。
+// 全程无 force-kill。上报顺序说明：账已弹后才发 error 信/finished——lcc 是
+// 「except 上报先于 pop」，lite 可观测面（Lead 信箱读取在 Lead 回合边界、
+// finished 消费在宿主槽）均不区分这个先后，属无外部可见差异的重排。
+void TeammateRuntime::finish()
+{
+    QString cleanupError;
+    if (!settleLedgers(&cleanupError)) {
+        return;
+    }
+    if (!cleanupError.isEmpty()) {
+        sendToLead(QStringLiteral("Assignment cleanup failed: %1").arg(cleanupError),
+                   QStringLiteral("error"));
+    }
     emit finished(m_name);
+}
+
+// Gate② FIND-L 析构兜底：正道是宿主 cancel()→delete（契约见类头注释）；这里只接
+// 违约跳过 cancel 的宿主——账目核照走（退租+弹账），**一律不 emit**（析构期发信号
+// 不安全），清理失败降为 qWarning（诊断面已在核内记账）。心跳定时器为子对象，
+// 随 QObject 基类析构自然消亡，零线程无残留。
+TeammateRuntime::~TeammateRuntime()
+{
+    QString cleanupError;
+    if (settleLedgers(&cleanupError) && !cleanupError.isEmpty()) {
+        qWarning() << "[team] dtor settlement cleanup failed(" << m_name
+                   << "):" << cleanupError;
+    }
 }
 
 void TeammateRuntime::enterIdle()

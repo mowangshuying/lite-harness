@@ -27,8 +27,13 @@
  *
  * 名字正则与 AgentPathGuard::isValidAgentName **刻意不同源**（gate① M7）：worktree 名
  * 允许 '.'（版本号式命名）但禁内嵌 ".."，字符集/语义与邮箱名不同，两正则永不共享 helper。
- * 路径包含三关复用 AgentPathGuard::isWithinPath（词法口径）；canonical 复校留给 P3
- * 消费点（isWithinPathCanonical 预留件），本 lane 不解析符号链接。
+ * 路径包含三关复用 AgentPathGuard::isWithinPath；比较口径 **case-insensitive**（Windows
+ * 文件系统语义，FIND-C/Gate②：eqCi/withinCi 单源，键原文存储不折叠，CI 只活在比较点；
+ * 豁免族保持 CS：任务 id/owner 令牌 + branch/ref 名，git ref 语义，lcc :157 parity）。
+ * m1（Gate① minor/Gate② 前置③）已落地：目标**已存在**处经 isWithinPathCanonical 复校
+ * 防 junction/符号链接把 .worktrees 及其子项重定向出会话根；**未创建**时保持词法
+ * （canonicalFilePath 对不存在路径无解可析，同 send 首帧目录理据）——lcc :59/:62 的
+ * .resolve() 对已存在目标恢复同构，对不存在目标登记偏差。
  *
  * 失败折叠纪律（对齐 MessageBus）：createWorktree 直接把 lcc 的折叠串当返回值
  * （'Error: …' / 'Partial operation: …' / 'Partial success: …' / 成功文案），调用方即
@@ -82,13 +87,16 @@ public:
     // ---- P3 接线查询面 ----
     // 解析 `git worktree list --porcelain`（空行哨兵 flush + 逐行 partition 首空格，
     // 路径含空格安全），按 lcc registered_worktrees :118-141 三过滤（根自身/越界、
-    // 分支不符、目录缺失）后以**名字**为键返回。注册表不可读 → *error 置折叠串且返回
+    // 分支不符、目录缺失/**非目录**）后以**名字**为键返回。根过滤为 CI 口径
+    // （eqCi/withinCi，FIND-C：git porcelain 盘符大小写与 sink 拼写的拼写差是典型
+    // 假剔除源）。注册表不可读 → *error 置折叠串且返回
     // 空表（fail-closed，绝不返回空表冒充「没有 worktree」——lcc :101-116，fix-3 专属①）。
     QMap<QString, Entry> registeredWorktrees(QString *error) const;
 
     // 名字是否为合法已注册 worktree（空串=未绑、合法——镜像 lcc is_valid_worktree :176-179）。
     // 供 P3/fix-4 接线 TaskStore::setTaskWorktree 校验钩子（偏差⑦折进 resolver 之外的独立判定）。
-    // 注册表不可读一律 false（fail-closed）。
+    // 注册表不可读一律 false（fail-closed）。名字键查找经 findCi（CI 口径——name=路径
+    // 叶段，Windows CI 文件系统语义；键原文存储，登记偏差 lcc python `in dict` CS）。
     bool isWorktreeRegistered(const QString &name) const;
 
     // TaskStore::setCwdResolver 的目标形态（gate① M4 签名冻结：QString(const TaskSnapshot&,
@@ -113,8 +121,10 @@ public:
     // ② 目录路径必须仍在隔离根内（防前缀合法后缀越狱）；
     // ③ **path == root 也拒**（lcc :58-65 易漏关——隔离根本身永远不得当一个 worktree，
     //    否则 "任务 cwd 落在别的 worktree 里面" 的嵌套假象）。isWithinPath 等值返回
-    //    true，故本关须调用点另判 `!=`（AgentPathGuard.h 头注释同款提醒）。
-    // 词法口径（cleanPath），canonical 复校归 P3 消费点（m1 预留）。
+    //    true，故本关经 eqCi 单源另判等值（AgentPathGuard.h 头注释同款提醒）。
+    // 三关比较一律 CI（eqCi/withinCi 单源，FIND-C——盘符大小写差不得假报越界）；
+    // 目标已存在处经 isWithinPathCanonical 复校（m1 已落地，junction/符号链接逃逸
+    // fail-closed 拒），未创建保持词法（lcc resolve(strict=False) 差异，偏差已登记）。
     bool worktreePath(const QString &name, QString *path, QString *error) const;
 
     // worktree 名校验（lcc validate_worktree_name :33-45 的 lite 合一形）。
@@ -137,15 +147,25 @@ private:
     // 追加 "...[truncated]" 标记——账目里被裁掉的输出若不留痕，模型无从知道信息缺失）。
     static QString truncateForReport(const QString &output);
 
-    // 原始注册表解析（lcc _parse_registry :95-116）：键 = cleanPath 后的 worktree 路径原文，
-    // 未做任何合法性过滤。失败（git 非零/无法启动/超时）→ *registryError 置
+    // 原始注册表解析（lcc _parse_registry :95-116）：键 = cleanPath 后的 worktree 路径
+    // 原文（**大小写保留、不折叠**——QMap 键比较本征 CS，Windows CI 语义活在消费点
+    // findCi/eqCi/withinCi，FIND-C/Gate② 修正旧失实注释；lcc 键为 Path.resolve()
+    // 规范化形，lite 词法键 + CI 查找为登记偏差），未做任何合法性过滤。失败（git 非零/
+    // 无法启动/超时）→ *registryError 置
     // 'cannot read Git worktree registry: <输出>' 且返回空表。
     QMap<QString, Entry> parseRegistry(QString *registryError) const;
 
-    // 单条注册项的合法性核验（lcc _registered_entry :143-166 逐字文案）：
-    // 路径三关错 → 原样上抛；注册表不可读 → 上抛其错；路径不在注册表 →
-    // "worktree '<name>' is not registered with Git"；目录缺失 →
-    // "worktree '<name>' is missing at <path>"；分支 != refs/heads/wt/<name> →
+    // 单条注册项的合法性核验（lcc _registered_entry :143-166 逐字文案）。
+    // entry 为**必携**出参：null = 内部缺陷，FIND-A 显式防御直接拒绝——旧 `entry &&`
+    // 短路形会在 null 时静默旁路 branch 校验（lcc :157 是无条件检查）；公开 API 不可达，
+    // 不设专测。核验链：路径三关错 → 原样上抛；注册表不可读 → 上抛其错；路径不在
+    // 注册表（findCi CI 查找，FIND-C：git 键与本地拼法的盘符大小写差不得假报未注册）→
+    // "worktree '<name>' is not registered with Git"；路径缺失**或非目录**（FIND-B：
+    // lcc :154 is_dir()，普通文件伪装按 missing，判词沿用原文案）→
+    // "worktree '<name>' is missing at <path>"；目录在但 isWithinPathCanonical 复校
+    // 失败（junction/符号链接重定向出根，m1）→ "Worktree path escapes directory: …"
+    // （lcc 此处无复校、其键本为 resolve() 形——lite 更严，偏差登记）；
+    // 分支 != refs/heads/wt/<name>（**保持 CS**，git ref 名语义，lcc parity）→
     // "worktree '<name>' is not registered on expected branch 'wt/<name>'"。
     bool registeredEntry(const QString &name, Entry *entry, QString *error) const;
 

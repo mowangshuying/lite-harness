@@ -7,6 +7,7 @@
 #include "ToolNames.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QJsonObject>
 #include <QRandomGenerator>
 #include <QStringList>
@@ -58,12 +59,16 @@ AgentTeamsManager::AgentTeamsManager(MessageBus *bus, TaskStore *taskStore, QObj
 
     // lcc _on_assignment_advanced :356-363：换工 → 门复位 required + 清在审案号。
     // fix-4 钉死清单第 1 条：门复位只挂这里与释放回调，别处不翻。
+    // Gate② FIND-D 对齐：lcc :363 的 planRequestIds.pop 在 if **外**——换工即路由单
+    // 无条件作废；旧 lite 把 remove 圈在门发牌 if 内，留了「released(门 NotRequired、
+    // 案号按 lcc parity 残留)→再 claim」窗口的陈旧案号（协议路径已证收敛，但
+    // currentPlanRequestId 面会读到 lcc 不存在的值，P3 UI 消费即踩）。组10(g) 钉桩。
     m_taskStore->setOnAssignmentAdvanced([this](const QString &owner, const QString &) {
         auto it = m_planGates.find(owner);
         if (it != m_planGates.end() && it.value() != PlanGate::NotRequired) {
-            it.value() = PlanGate::Required;
-            m_planRequestIds.remove(owner);
+            it.value() = PlanGate::Required; // lcc :360-362：只对已发牌的门复位
         }
+        m_planRequestIds.remove(owner); // lcc :363：无条件 pop（owner 不在也等价 no-op）
     });
 
     // lcc _on_assignment_released :365-368：释放 → gate='not_required'。
@@ -177,6 +182,20 @@ QStringList AgentTeamsManager::teammateNames() const
     QStringList names = m_activeTeammates.keys();
     names.sort(); // lcc sorted(items)：按名字典序（大小写敏感，与 Python str 序一致）
     return names;
+}
+
+void AgentTeamsManager::noteReleaseWarning(const QString &text)
+{
+    // Gate② FIND-M 诊断面写入点（三处 release 失败统一经此：deliverTurnResult 回合
+    // 边界 / finish 死亡清算 / runSpawnTeammate FIND-E 回滚）。lcc 无此概念——它的
+    // release 失败是 fail-stop（异常终结线程），lite 的 fail-continue 必须留痕。
+    // 粘滞语义见头文件声明注释（成功路径不清，防掩盖间歇故障）。
+    m_lastReleaseWarning = text;
+}
+
+QString AgentTeamsManager::lastReleaseWarning() const
+{
+    return m_lastReleaseWarning;
 }
 
 bool AgentTeamsManager::matchResponse(const QString &msgType, const QString &requestId, bool approve,
@@ -540,9 +559,27 @@ QString AgentTeamsManager::runSpawnTeammate(const QString &name, const QString &
     // 启动延迟到调用栈返回后——见 setTeammateLauncher 契约注释）
     if (m_launcher) {
         TeammateRuntime *handle = m_launcher(name, role, prompt, taskId, requirePlan);
-        if (handle) {
-            m_teammateHandles.insert(name, handle); // 偏A：只存不碰
+        if (!handle) {
+            // Gate② FIND-E fail-closed：lcc :676 thread.start() 失败直接 raise（成功
+            // 文案不可达）；lite 的 launcher 契约违规（返 nullptr）不得留下「claim 已
+            // 成、账已登、无 runtime 驱动」的幽灵队友——整段入职回滚：
+            // ① 死亡清算同款退租（taskId 为空时是幽灵 owner 幂等 no-op，仍走=lcc
+            //    finally 无条件形态；磁盘清理失败不阻断内存清理，TaskStore :1014-1020
+            //    的 finally 段保证租约必出清）；
+            // ② 弹四本账（finalizeTeammate，名册/门/案号/句柄——句柄未登记，弹它是
+            //    防御性对账）；
+            // ③ 折叠为工具输出文本交还 Lead（本仓「失败折叠」纪律，勿恢复静默成功）。
+            QString rollbackError;
+            if (!m_taskStore->releaseTeammateAssignment(name, &rollbackError)
+                && !rollbackError.isEmpty()) {
+                noteReleaseWarning(rollbackError); // FIND-M：回滚退租失败留痕遥测
+                qWarning() << "[team] spawn rollback release(" << name
+                           << "):" << rollbackError;
+            }
+            finalizeTeammate(name);
+            return QStringLiteral("Error: Teammate runtime failed to start for '%1'").arg(name);
         }
+        m_teammateHandles.insert(name, handle); // 偏A：只存不碰
     }
 
     const QString assigned =

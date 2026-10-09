@@ -286,6 +286,12 @@ inline bool isReservedTeammateName(const QString &name)
     return false;
 }
 
+// ---- 团队空闲心跳节拍单源（Gate② FIND-N3：自 AgentTeamsManager.h 文件尾迁入本头）----
+// lcc agent_teams_manager.py:185 `IDLE_SCAN_INTERVAL = 2.0`（wait_for_work :998-1023 的
+// 轮询节拍，一拍的活=看信箱+扫任务板两张嘴）。消费方：TeammateRuntime 空闲心跳 QTimer
+// （毫秒域，故存 int 毫秒而非秒，2000ms=2.0s 逐值对位）。
+constexpr int kTeamIdleScanIntervalMs = 2000;
+
 // ---- glob 工具（runGlobIn）有界化参数 ----
 // runGlobIn 在 GUI 线程同步递归遍历（全仓零线程约定，不改线程模型），必须硬限界：
 // 原 QDirIterator 无上限且进入 .git/build 等巨型目录，大仓库直接冻结 UI。

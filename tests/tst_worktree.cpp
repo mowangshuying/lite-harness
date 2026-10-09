@@ -7,7 +7,11 @@
 //  · resolveWorktreeCwd：空绑定早退（零 git 进程）、破损绑定 fail-closed 钉死文案；
 //  · remove 五连门（活跃任务拒/租约在手指向拒/脏拒/干净成功+分支保留）；
 //  · discardChanges=true 只豁免脏门（借 --force 移除脏 worktree）；
-//  · 注册表解析对含空格路径安全（porcelain partition 首空格）。
+//  · 注册表解析对含空格路径安全（porcelain partition 首空格）；
+//  · FIND-C 大小写口径：盘符大小写翻转的 sink 读同一注册表/台账不产生假 miss
+//    （注册表键查找/根过滤/m1 canonical 复校；无盘符形态整组诚实 SKIP）；
+//  · FIND-B 非目录伪装：文件顶替 worktree 目录 → registeredEntry 判 missing、
+//    resolver fail-closed 钉死串、remove 门①拒、注册表 isDir 过滤剔除。
 //
 // 需要 git 可用 + LITE_TEST_TMPROOT 合规，二者缺一整组 SKIP（返回 0，不假造通过）。
 // 夹具 = 临时根下 git init 的真实小仓库（git worktree 语义只有真 git 能证）。
@@ -491,6 +495,173 @@ void testSpaceInPath(const QString &root)
     }
 }
 
+// ---------------------------------------------------------------------------
+// FIND-C（Gate② minor）大小写口径收口：盘符大小写翻转的 sink（Windows 大小写不敏感
+// 文件系统下指向同一目录、字符串口径却不同）读同一真台账/注册表，不得产生假 miss。
+// 修复前：registeredWorktrees 根过滤（原 isWithinPath 大小写敏感）把 git OS 拼写的
+// 条目假剔除=空表；registeredEntry 的 constFind（QMap 键本征 CS）对翻转拼写派生路径
+// 假报 not registered——即 lcc Path.resolve() 键 + python 大小写语义所不存在的问题，
+// lite 词法键口径必须由 CI 比较点补足（findCi/withinCi）。root 无盘符形态（如 CI 把
+// LITE_TEST_TMPROOT 指成相对串）时压力不可构造 → 整组诚实 SKIP（printf，不假造通过）。
+// ---------------------------------------------------------------------------
+QString flipDriveCase(const QString &path)
+{
+    QString flipped = path;
+    const QChar head = flipped.at(0);
+    flipped[0] = head.isUpper() ? head.toLower() : head.toUpper();
+    return flipped;
+}
+
+void testDriveCaseRegistry(TaskStore &store, WorktreeManager &manager, const QString &repo)
+{
+    if (!(repo.size() >= 2 && repo.at(1) == QLatin1Char(':') && repo.at(0).isLetter())) {
+        std::printf("SKIP: drive-case shape unavailable (non-drive root)\n");
+        return;
+    }
+    const QString session = QDir(repo).filePath(QStringLiteral(".lite-harness/sessions/t1"));
+    const QString flippedRepo = flipDriveCase(repo);
+    const QString flippedSession = flipDriveCase(session);
+
+    // ① 主侧建册 c1（压力对象的来源；主拼写=后续 alt 压力的「另一侧」）
+    const QString created1 = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                              QStringLiteral("drivecase-1")}});
+    const QString id1 = taskIdFromCreated(created1);
+    const QString text1 = manager.createWorktree(QStringLiteral("c1"), id1);
+    if (!text1.startsWith(QStringLiteral("Created worktree 'c1'"))) {
+        TestHarness::check(false, "drive-case 夹具：主侧 c1 建册未成");
+        return;
+    }
+
+    // ② alt 装配：翻转盘符的 sink 字符串读同一批目录（unique_ptr 形态同 makeFixture）
+    const QString fRepoCopy = flippedRepo;
+    const QString fSessionCopy = flippedSession;
+    std::unique_ptr<TaskStore> altStore(new TaskStore([fSessionCopy]() { return fSessionCopy; },
+                                                      [fRepoCopy]() { return fRepoCopy; }));
+    std::unique_ptr<WorktreeManager> altManager(new WorktreeManager(
+        altStore.get(), [fSessionCopy]() { return fSessionCopy; },
+        [fRepoCopy]() { return fRepoCopy; }));
+
+    QString altRegError;
+    const QMap<QString, WorktreeManager::Entry> altRegistered =
+        altManager->registeredWorktrees(&altRegError);
+    TestHarness::check(altRegError.isEmpty(), "drive-case：alt 注册表可读无错");
+    TestHarness::check(altRegistered.contains(QStringLiteral("c1")),
+                       "drive-case：alt 注册表根过滤不假剔（withinCi 口径）");
+    TestHarness::check(altManager->isWorktreeRegistered(QStringLiteral("c1")),
+                       "drive-case：alt isWorktreeRegistered 命中（名键 CI 扫描）");
+
+    // ③ alt resolver：registeredEntry findCi 命中；且 m1 canonical 复校不得因盘符
+    //    拼写差假拒（child 以 OS 拼写参与复校、与 helper 内 parent canonical 同源）
+    TaskStore::TaskSnapshot snap1;
+    if (!findSnapshot(*altStore, id1, &snap1)) {
+        TestHarness::check(false, "drive-case 夹具：alt 台账快照不可读");
+        return;
+    }
+    QString altResolveError;
+    const QString cwd1 = altManager->resolveWorktreeCwd(snap1, &altResolveError);
+    const QString expected1 = QDir::cleanPath(QDir(fSessionCopy).filePath(AgentConst::kWorktreesDirName)
+                                             + QLatin1Char('/') + QStringLiteral("c1"));
+    TestHarness::check(!cwd1.isEmpty() && altResolveError.isEmpty(),
+                       "drive-case：alt resolve 命中（findCi 注册表键查找）");
+    TestHarness::check(cwd1.compare(expected1, Qt::CaseInsensitive) == 0,
+                       "drive-case：alt resolve 指回（大小写等值）");
+
+    // ④ alt 侧全门通过新建 c2（门⓪~⑩混拼写放行：门⑥ toplevel eqCi、门⑤ OS 天然 CI、
+    //    m1 复校同源——「配置了却处处假失配」的正向对照）
+    const QString created2 = altStore->runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                                  QStringLiteral("drivecase-2")}});
+    const QString id2 = taskIdFromCreated(created2);
+    const QString text2 = altManager->createWorktree(QStringLiteral("c2"), id2);
+    TestHarness::check(text2.startsWith(QStringLiteral("Created worktree 'c2'")),
+                       "drive-case：alt 侧建 c2 成功（混拼写过全门）");
+
+    // ⑤ 反向：git 对 c2 存哪种盘符拼写不保证（OS 归一 or 原样留存），主侧按另一侧
+    //    混拼读回必须命中——两向都过才证明口径统一不是单向巧合
+    QString mainRegError;
+    const QMap<QString, WorktreeManager::Entry> mainRegistered =
+        manager.registeredWorktrees(&mainRegError);
+    TestHarness::check(mainRegError.isEmpty() && mainRegistered.contains(QStringLiteral("c2")),
+                       "drive-case：主侧注册表命中 alt 建册（反向混拼）");
+    TaskStore::TaskSnapshot snap2;
+    if (findSnapshot(store, id2, &snap2)) {
+        QString mainResolveError;
+        const QString cwd2 = manager.resolveWorktreeCwd(snap2, &mainResolveError);
+        TestHarness::check(!cwd2.isEmpty() && mainResolveError.isEmpty(),
+                           "drive-case：主侧 resolve 命中 c2");
+    } else {
+        TestHarness::check(false, "drive-case 夹具：主侧 c2 快照不可读");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FIND-B（lcc :154/:137 not path.is_dir()）+ m1 收口断言：worktree 路径退化为普通
+// 文件（目录被外部删掉、同名文件顶上）时 registeredEntry 必须按 missing 拒绝——
+// 修复前 exists() 把文件误判在世、branch 校验照过 → resolver 交出不可用 cwd（破口
+// 本体）。删除三重守卫（非空 + 叶段=fp1 + isDir + 前缀=<会话根>/.worktrees/），守卫
+// 不过=一个字节都不删（毁仓教训）；删除属本套件既有 tmp 内脏夹具同族操作（仅编排者
+// 执行）。git 未 prune 前注册表仍列 fp1——正是 isDir 过滤与 missing 判定的压力源。
+// ---------------------------------------------------------------------------
+void testFilePretender(TaskStore &store, WorktreeManager &manager, const QString &repo)
+{
+    const QString created = store.runCreateTask(QJsonObject{{QStringLiteral("subject"),
+                                                             QStringLiteral("pretender")}});
+    const QString taskId = taskIdFromCreated(created);
+    const QString text = manager.createWorktree(QStringLiteral("fp1"), taskId);
+    if (!text.startsWith(QStringLiteral("Created worktree 'fp1'"))) {
+        TestHarness::check(false, "pretender 夹具：create 未成");
+        return;
+    }
+    QString path;
+    QString pathError;
+    const QString session = QDir(repo).filePath(QStringLiteral(".lite-harness/sessions/t1"));
+    const QString wtRoot = QDir::cleanPath(QDir(session).filePath(AgentConst::kWorktreesDirName));
+    if (!manager.worktreePath(QStringLiteral("fp1"), &path, &pathError)
+        || path.isEmpty()
+        || path.section(QLatin1Char('/'), -1) != QStringLiteral("fp1")
+        || !path.startsWith(wtRoot + QLatin1Char('/'), Qt::CaseInsensitive)
+        || !QFileInfo(path).isDir()) {
+        TestHarness::check(false, "pretender 夹具：路径三重守卫未过");
+        return; // 守卫不过 = 绝不删除
+    }
+
+    QDir remover(path);
+    if (!remover.removeRecursively()) {
+        TestHarness::check(false, "pretender 夹具：目录清理未成");
+        return;
+    }
+    QFile pretender(path);
+    if (!pretender.open(QIODevice::WriteOnly)) {
+        TestHarness::check(false, "pretender 夹具：伪装文件落位未成");
+        return;
+    }
+    pretender.write("not-a-dir");
+    pretender.close();
+
+    // resolver fail-closed：registeredEntry 判 missing → 折叠为 M1 钉死串。
+    // （修复前 exists() 误判在世 → 此处会交出非空 cwd——本断言是 FIND-B 判别器。）
+    TaskStore::TaskSnapshot snap;
+    if (findSnapshot(store, taskId, &snap)) {
+        QString resolveError;
+        const QString cwd = manager.resolveWorktreeCwd(snap, &resolveError);
+        TestHarness::check(cwd.isEmpty(), "pretender：resolver 拒绝文件伪装（修复前假放行点）");
+        TestHarness::check(resolveError == QStringLiteral("worktree 'fp1' is not available for task %1").arg(taskId),
+                           "pretender：fail-closed 钉死文案（M1）");
+    } else {
+        TestHarness::check(false, "pretender 夹具：快照不可读");
+    }
+
+    // remove 门①拒（missing 文案）；公开注册表 isDir 过滤剔除（lcc :137 口径）
+    QString removeError;
+    const bool removed = manager.removeWorktree(QStringLiteral("fp1"), false, &removeError);
+    TestHarness::check(!removed, "pretender：remove 门①拒");
+    TestHarness::check(removeError.contains(QStringLiteral("is missing at")),
+                       "pretender：missing 文案在");
+    QString regError;
+    const QMap<QString, WorktreeManager::Entry> registered = manager.registeredWorktrees(&regError);
+    TestHarness::check(!registered.contains(QStringLiteral("fp1")),
+                       "pretender：注册表 isDir 过滤剔除");
+}
+
 } // namespace
 
 int tst_worktree()
@@ -524,6 +695,8 @@ int tst_worktree()
     testRemoveLifecycle(*store, *manager, repo);
     testDiscardChanges(*store, *manager);
     testSpaceInPath(root);
+    testDriveCaseRegistry(*store, *manager, repo);
+    testFilePretender(*store, *manager, repo);
 
     return TestHarness::failCount() - before;
 }
