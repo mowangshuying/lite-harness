@@ -51,6 +51,15 @@ void AgentLoop::initTeamEngine()
         TeammateRuntime *runtime =
             new TeammateRuntime(name, role, prompt, taskId, requirePlan,
                                 &m_teams, &m_bus, &m_taskStore, nullptr);
+        // 修① 上下文预算注入：全局 token 预算（AgentConst::contextTokenBudget，与主循环
+        // 同源）为满额；overhead = 队友 system prompt + 10 工具 schema 估算（非会话固定
+        // 开销，供 estimatedContextTokens 兜底路径补计）。launcher 处注入保证出生即带
+        // 预算；后续回合同值（设置改预算下一回合经 CompactManager 生效，队友等值对齐）。
+        runtime->setContextBudget(
+            AgentConst::contextTokenBudget(),
+            AgentConst::estimateTokens(runtime->systemPrompt())
+                + AgentConst::estimateTokens(QString::fromUtf8(QJsonDocument(
+                      AgentLoopTeam::teammateToolsDefinition()).toJson(QJsonDocument::Compact))));
         m_teammateRuntimes.insert(name, runtime);
         connect(runtime, &TeammateRuntime::turnRequested, this,
                 &AgentLoop::onTeammateTurnRequested);
@@ -358,17 +367,26 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
         return;
     if (m_teammateStreams.value(name))
         return; // 单飞防御：上一回合流未收口（正常时序不可达：deliver 后才再 request）
+    // 修①：回合发起前的主动压缩挂接——会话体逼近预算（4/5 闸门）时先整组裁剪
+    // 旧回合交换，再带收小后的历史出流（与主循环 applyCompactPipelineAsync 前置
+    // 挂接同语义；此处是引擎内同步段，无异步摘要链，直接在本调用栈完成）
+    runtime->compactConversationIfNeeded();
 
     // 请求体（SubAgent::startChatRequest 同型模板）：system 恒为 runtime 的
     // lcc :811-821 逐字提示词，历史为 runtime 自管的 m_messages（无 system 副本）。
-    // 偏差登记：不接 usage 锚（上下文计量只属 Lead 会话）、不开 enable_thinking
-    //（黑盒同 SubAgent 口径）、不带 stream_options.include_usage。
+    // 修①+修②：撤销原始偏差登记——队友回合现在携带 usage 计量（stream_options.
+    // include_usage 与主循环同键），usageReceived 回读落 runtime 自己的 token 锚
+    //（estimatedContextTokens → compactConversationIfNeeded 闸门）；修③：开启
+    // enable_thinking（与主循环/子代理同键；服务端不认则回退默认，不构成硬依赖）。
     QJsonArray messages;
     QJsonObject systemMsg;
     systemMsg[QStringLiteral("role")] = QStringLiteral("system");
     systemMsg[QStringLiteral("content")] = runtime->systemPrompt();
     messages.append(systemMsg);
     const QVector<QJsonObject> &history = runtime->messages();
+    // 发送点快照：usage 回读到达时以「当时发出的历史条数」落锚（主循环修4 同口径——
+    // messages 由 m_messages 快照而来、system 拆出，锚只覆盖会话本体）
+    const int countAtSend = history.size();
     for (const QJsonObject &msg : history)
         messages.append(msg);
 
@@ -377,12 +395,22 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
     request[QStringLiteral("messages")] = messages;
     request[QStringLiteral("tools")] = AgentLoopTeam::teammateToolsDefinition();
     request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
+    request[QStringLiteral("enable_thinking")] = true;
+    request[QStringLiteral("stream_options")] =
+        QJsonObject{{QStringLiteral("include_usage"), true}};
 
     QOpenAi::ChatStream *stream = QOpenAi::chat().createStream(request, this);
     m_teammateStreams.insert(name, stream);
     // QPointer 守卫：流回调到达时 runtime 可能已被清算（cancel→deleteLater 时序）
     QPointer<TeammateRuntime> guard(runtime);
 
+    // 修②：usage 末帧回读 → 队友自身 token 锚（成功路径、messageFinished 之前发；
+    // adoptUsageAnchor 内部校验口径同主循环——锚只认真值、非法值不改锚）
+    connect(stream, &QOpenAi::ChatStream::usageReceived, this,
+            [guard, countAtSend](const QJsonObject &usage) {
+        if (guard)
+            guard->adoptUsageAnchor(usage, countAtSend);
+    });
     connect(stream, &QOpenAi::ChatStream::messageFinished, this,
             [this, name, stream, guard](const QJsonObject &fullMsg) {
         if (m_teammateStreams.value(name) == stream)
@@ -401,8 +429,15 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
         stream->deleteLater();
         if (!guard || guard->isFinished())
             return;
-        // lcc work() except 形态 f"{type}: {exc}" → Qt 无异常，P2 钉死宿主侧
-        // 组装 APIError 前缀；非空 errorMessage 令 runtime 走 error 信箱 + finish()
+        // 修①b：上下文超限错误走队友自身反应式压缩（预算 1 次/turn）后重开流——
+        // 与主循环 reactive 会话级单飞同语义；读取新历史后本函数递归再发（单飞闸
+        // 已被上方 remove 释放，重发安全）。非溢出错误仍走原 kill 路径
+        //（lcc work() except 形态 f"{type}: {exc}" → P2 钉死宿主侧 APIError 前缀；
+        //  非空 errorMessage 令 runtime 走 error 信箱 + finish()）
+        if (AgentLoopDetail::isContextOverflowError(message) && guard->tryReactiveCompact()) {
+            onTeammateTurnRequested(name);
+            return;
+        }
         guard->deliverTurnResult(QString(), QJsonArray(),
                                  QStringLiteral("APIError: %1").arg(message));
     });

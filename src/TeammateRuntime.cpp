@@ -9,11 +9,13 @@
 
 #include "AgentConstants.h"
 #include "AgentTeamsManager.h"
+#include "CompactManager.h"
 #include "MessageBus.h"
 #include "TaskStore.h"
 
 #include <QDebug>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QTimer>
 
 #include <optional>
@@ -31,6 +33,128 @@ bool teamToolOutputLooksFailed(const QString &output)
         || output.startsWith(QStringLiteral("Unknown tool:"));
 }
 } // namespace
+
+// ── 修① 上下文预算与压缩────────────────────────────────────────────
+// 队友回合协议与主循环同源：≤ budget 平稳运行；超预算丢旧（保任务卡）+ usage 锚
+// 外推；服务端溢出 → 反应式强压缩重发恰一次。两目标比在 AgentConstants 语义域外
+// （预算单位是 token，比例只作用于换算后整数），系数取整为 qsizetype 防丢尾。
+namespace {
+// 常规压缩目标：预算的 80%（与主循环 CompactManager 压缩目标 0.8T' 同口径簇）
+constexpr qsizetype kCompactTargetRatioNumerator = 4;
+constexpr qsizetype kCompactTargetRatioDenominator = 5;
+// 反应式压缩目标：预算的 50%（溢出后要留足余量给新回合输出）
+constexpr qsizetype kReactiveTargetRatioNumerator = 1;
+constexpr qsizetype kReactiveTargetRatioDenominator = 2;
+} // namespace
+
+// 宿主注入预算（initTeamEngine 拉线：full = contextTokenBudget()，overhead 见 AgentLoopTeam）。
+void TeammateRuntime::setContextBudget(qsizetype fullBudgetTokens, qsizetype overheadTokens)
+{
+    m_fullBudgetTokens = qMax<qsizetype>(0, fullBudgetTokens);
+    m_overheadTokens = qMax<qsizetype>(0, overheadTokens);
+}
+
+// lcc 无锚：队友回合增量仅来自 m_messages 尾部追加（无 system 改写、无注入块），
+// 锚外推即「锚 prompt_tokens + 锚后每条消息估算」——与主循环 estimatedContextTokens
+// 同口径（AgentConst::estimateTokens 串行化一致）。锚失效（改写/越界/未锚）回落全量。
+qsizetype TeammateRuntime::estimatedContextTokens() const
+{
+    if (m_anchorPromptTokens > 0 && !m_rewrittenSinceAnchor && m_anchorMessageCount >= 0
+        && m_anchorMessageCount <= m_messages.size()) {
+        qint64 total = m_anchorPromptTokens;
+        for (int i = m_anchorMessageCount; i < m_messages.size(); ++i) {
+            total += AgentConst::estimateTokens(
+                QString::fromUtf8(QJsonDocument(m_messages.at(i)).toJson(QJsonDocument::Compact)));
+        }
+        return qMax<qint64>(0, total);
+    }
+    return CompactManager::estimateTokens(m_messages) + m_overheadTokens;
+}
+
+// 锚定：发送点快照 prompt_tokens + 消息条数。countAtSend 必须与请求体一致性
+// （AgentLoopTeam 构建 messages 时取 runtime->messages().size()），越界由锚有效性
+// 守卫兜底回落全量。
+void TeammateRuntime::adoptUsageAnchor(const QJsonObject &usage, int countAtSend)
+{
+    const double promptTokens = usage.value(QStringLiteral("prompt_tokens")).toDouble();
+    if (promptTokens <= 0 || countAtSend < 0 || countAtSend > m_messages.size()) {
+        return;
+    }
+    m_anchorPromptTokens = static_cast<qint64>(promptTokens);
+    m_anchorMessageCount = countAtSend;
+    m_rewrittenSinceAnchor = false;
+}
+
+// 主（非反应式）压缩：估算超预算才动手，目标 4/5 预算。丢旧只保留任务卡 [0]。
+// 返回是否动过（锚作废）；m_messages 只删不重组，OpenAI 形态配对（assistant 带
+// tool_calls 与其后连续 tool 是成组单元）在 compactConversationTo 内保证。
+bool TeammateRuntime::compactConversationIfNeeded()
+{
+    if (m_fullBudgetTokens <= 0 || m_messages.size() <= 1) {
+        return false;
+    }
+    const qsizetype target = m_fullBudgetTokens * kCompactTargetRatioNumerator
+                             / kCompactTargetRatioDenominator;
+    if (estimatedContextTokens() <= target) {
+        return false;
+    }
+    const bool changed = compactConversationTo(target);
+    return changed;
+}
+
+// 反应式：服务端已吐 400 溢出错误后才调，预算 1 次/回合（m_reactiveCompactUsed），
+// 成功回填在 deliverTurnResult 成功路径复位。目标 1/2 预算（要留余量）。
+bool TeammateRuntime::tryReactiveCompact()
+{
+    if (m_fullBudgetTokens <= 0 || m_reactiveCompactUsed || m_messages.size() <= 1) {
+        return false;
+    }
+    const qsizetype target = m_fullBudgetTokens * kReactiveTargetRatioNumerator
+                             / kReactiveTargetRatioDenominator;
+    if (!compactConversationTo(target)) {
+        return false;
+    }
+    m_reactiveCompactUsed = true;
+    return true;
+}
+
+// 私有压缩内核：从最旧开始找「可安全成组删除」的单元：
+//  - assistant 带 tool_calls：连同其随后连续 tool 结果一并删（tool 孤立删会破坏配对）
+//  - 其余单条（user / 无 tool_calls 的 assistant）：可独立删
+// 迭代直到估算低于目标或无可删单元。m_messages[0] 任务卡恒保留（索引 1 起扫）。
+// QVector::remove 逐段 O(n)，队友回合规模下可接受。
+bool TeammateRuntime::compactConversationTo(qsizetype targetTokens)
+{
+    bool changed = false;
+    qsizetype current = estimatedContextTokens();
+    int i = 1; // 任务卡 [0] 不删
+    while (current > targetTokens && i < m_messages.size()) {
+        const QJsonObject &head = m_messages.at(i);
+        const QString role = head.value(QStringLiteral("role")).toString();
+        if (role == QLatin1String("tool")) {
+            // 属于更早 assistant 的工具结果：不能独立删，继续向后找单元头
+            ++i;
+            continue;
+        }
+        int j = i + 1;
+        if (role == QLatin1String("assistant") && head.contains(QLatin1String("tool_calls"))) {
+            while (j < m_messages.size()
+                   && m_messages.at(j).value(QStringLiteral("role")).toString()
+                          == QLatin1String("tool")) {
+                ++j;
+            }
+        }
+        current -= CompactManager::estimateTokens(m_messages.mid(i, j - i));
+        m_messages.remove(i, j - i);
+        changed = true;
+        (void)role; // (无 tool_calls 的 assistant / user 单条) 默认单元 [i, j)
+    }
+    if (changed) {
+        m_rewrittenSinceAnchor = true;
+        m_anchorPromptTokens = -1;
+    }
+    return changed;
+}
 
 TeammateRuntime::TeammateRuntime(const QString &name, const QString &role,
                                  const QString &prompt, const QString &taskId,
@@ -71,9 +195,22 @@ QString TeammateRuntime::systemPrompt() const
                "submit_plan and wait for approval before bash or file changes. "
                "File and shell tools use the Task's working directory; that "
                "directory is not a sandbox. The runtime delivers your final text "
-               "to Lead. Use send_message only for intermediate coordination, and "
-               "address the coordinator as 'lead'.")
-        .arg(m_name, m_role);
+"to Lead. Use send_message only for intermediate coordination, and "
+                "address the coordinator as 'lead'.")
+        // 修④ prompt 硬约束（有意偏离 lcc，防队友无限工具循环）：完成判定与收尾契约。
+        // 要点：只有任务 description 里的交付物真实产出后才算完成；结束报告必须是无
+        // 工具调用的纯文本总结回合；不得提前 complete_task，也不得在交付后再灌水工具。
+        .arg(m_name, m_role)
+        + QStringLiteral(
+            " Treat the task as finished only when every deliverable named in the "
+            "task description actually exists and no further tool call would change "
+            "your report. When done, call complete_task, then end your turn with a "
+            "plain-text summary that contains NO tool calls — that final text-only "
+            "message is delivered to Lead as your result. Do not call complete_task "
+            "before the deliverables exist, and do not keep issuing tool calls after "
+            "they do: if the next round would only restate facts already written, "
+            "stop and finish instead of looping. While your plan is pending approval, "
+            "do not run file/shell tools or call complete_task.");
 }
 
 // lcc run()/__init__ 首条装配 :825-837 + work() 步① :944-946 的首轮 drain。
@@ -296,6 +433,10 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
         finish();
         return;
     }
+
+    // 修① 反应式压缩预算回填：只有「拿到合法回合产物」才复位——响应式压缩重发
+    // 本身不经过本函数（宿主直接再开流），成功路径到此即预算可用（1 次/turn）。
+    m_reactiveCompactUsed = false;
 
     appendAssistant(assistantText, toolCalls);
 

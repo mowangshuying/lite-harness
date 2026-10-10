@@ -96,6 +96,22 @@ public:
     void deliverTurnResult(const QString &assistantText, const QJsonArray &toolCalls,
                            const QString &errorMessage = QString());
 
+    // ── 修①：上下文预算与压缩（队友回合不再无边界增长 → 溢出被杀）──
+    // 宿主经本组接口注入预算并驱动压缩；锚/估算口径与主循环 estimatedContextTokens
+    // 同源（AgentConst::estimateTokens / CompactManager::estimateTokens）。
+    void setContextBudget(qsizetype fullBudgetTokens, qsizetype overheadTokens);
+    // usage 回读锚（修②）：prompt_tokens = 发送点真值（system+tools+messages，含 overhead）；
+    // countAtSend = 发送时 m_messages.size()（不含 system 消息——它是宿主侧单独下发的）。
+    // 锚有效期内增量用 AgentConst::estimateTokens 外推（与主循环 adoptUsageAnchor 同口径）。
+    void adoptUsageAnchor(const QJsonObject &usage, int countAtSend);
+    // 发送前调用：估算超预算 → 从旧到新丢弃整组可安全删除的旧回合（任务卡 [0] 恒保留），
+    // 返回是否动过；改动令锚作废（回落全量估算，下次 usage 再重锚）。
+    bool compactConversationIfNeeded();
+    // 反应式（上下文溢出错误路径）一次性预算：真则执行更强压缩并置已用标记；
+    // 下一合法回合产物回填（deliverTurnResult 成功分支）回填预算（1 次/turn）。
+    bool tryReactiveCompact();
+    qsizetype estimatedContextTokens() const;
+
 signals:
     // 请宿主发起一轮 LLM 调用（messages()/systemPrompt() 即请求体素材）。
     // lcc work() 内联的 client.messages.create 在 lite 里由宿主消费本信号实现——
@@ -207,6 +223,16 @@ private:
     // 回合计数（P8 观测面 turnNo 口径）：每次 emit turnRequested 前置增 = 开新模型回合，
     // 该回合内执行的工具活动行携带此编号（自 1 起；终态不重置——对象即将消亡）
     int m_turnNo = 0;
+
+    // ── 修① 上下文预算与压缩状态 ──
+    qsizetype m_fullBudgetTokens = 0;  // 队友回合全局 token 预算（含 overhead，宿主注入）
+    qsizetype m_overheadTokens = 0;    // system + tools schema 估算（fallback 全量估算时补计）
+    qint64 m_anchorPromptTokens = -1;  // 最近一次 usage 回读的 prompt_tokens（<=0 未锚定）
+    int m_anchorMessageCount = -1;     // 锚点对应发送时的消息条数
+    bool m_rewrittenSinceAnchor = false; // 压缩改写历史 → 锚作废（回落全量估算）
+    bool m_reactiveCompactUsed = false;  // 本回合反应式压缩预算已用（成功回填后复位）
+    // 压缩目标比例（基底 = m_fullBudgetTokens）：常规 0.8、反应式 0.5（取整为 qsizetype）
+    bool compactConversationTo(qsizetype targetTokens); // 就地丢旧至目标，保 [0] 任务卡
 };
 
 #endif // TEAMMATERUNTIME_H

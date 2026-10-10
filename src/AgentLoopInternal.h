@@ -56,4 +56,10 @@ QJsonObject parseToolArgsText(const QString &argsText);
 // 钩子链便捷读法：等价 parseToolCall(toolCall).args
 QJsonObject callToolArgs(const QJsonObject &toolCall);
 
+// 上下文超限错误判定单源（规格修3 §5.4）：小写包含式匹配主流 OpenAI 兼容端点的溢出
+// 文案族（含 4xx 响应体透传后的 message 文本）；命中即触发反应式压缩（预算 1 次不变）。
+// 定义于 AgentLoopRequest.cpp（主循环反应式压缩消费侧）；s13 队友流错误侧共享本判定
+//（AgentLoopTeam.cpp 经 guard->tryReactiveCompact 走队友自身压缩，预算独立）。
+bool isContextOverflowError(const QString &msg);
+
 } // namespace AgentLoopDetail

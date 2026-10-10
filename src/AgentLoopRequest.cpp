@@ -3,6 +3,7 @@
 
 #include "AgentLoop.h"
 
+#include "AgentLoopInternal.h"
 #include "SubAgent.h"
 #include "AgentConstants.h"
 #include "QOpenAi.h"
@@ -11,9 +12,12 @@
 #include <QJsonArray>
 #include <functional>
 
-namespace {
 // 上下文超限错误判定单源（规格修3 §5.4）：小写包含式匹配主流 OpenAI 兼容端点的溢出
-// 文案族（含 4xx 响应体透传后的 message 文本）；命中即触发反应式压缩（预算 1 次不变）
+// 文案族（含 4xx 响应体透传后的 message 文本）；命中即触发反应式压缩（预算 1 次不变）。
+// 归属本文件的原因：主循环反应式压缩是唯一消费方（s13 队友侧经 AgentLoopInternal.h
+// 声明共享同一判定，预算在队友自身运行时独立持有）。
+namespace AgentLoopDetail {
+
 bool isContextOverflowError(const QString &msg)
 {
     static const char *kPatterns[] = {
@@ -28,7 +32,8 @@ bool isContextOverflowError(const QString &msg)
     }
     return false;
 }
-} // namespace
+
+} // namespace AgentLoopDetail
 
 void AgentLoop::startChatRequest(const QJsonArray &messages)
 {
@@ -202,7 +207,7 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         // 反应式压缩（lcc s08）：上下文超限且重试预算未用尽 → 压缩历史后重发请求，
         // 否则落入原错误路径终止。修3 后 4xx 响应体已并入 error 文本，关键词表扩至
         // isContextOverflowError 单源；MAX_REACTIVE_RETRIES=1 为每轮用户提问的局部预算（run 归零）
-        if (isContextOverflowError(msg) && m_reactiveRetries < 1)
+        if (AgentLoopDetail::isContextOverflowError(msg) && m_reactiveRetries < 1)
         {
             // 重试预算在发起前消费（原同步段 ++ 位置不动，防重试风暴）；空对话短路时
             // 预算同样被消费——与原同步链行为一致（reactiveCompact 空对话原样返回后重发）
