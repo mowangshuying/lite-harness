@@ -376,6 +376,12 @@ void ToolBlock::appendTeammateProgress(const QString &type, const QString &conte
     if (m_live)
         m_titleLabel->setText(liveText());
 
+    // 回合推进（turn）纯心跳无信息量：不落活动行、不占折叠摘要——折叠栏头部要的是
+    // 当前执行中的命令（由 teammateToolProgress → appendSubagentProgress 的逐工具行进
+    // 驱动，bash 摘要即 command 本身）。其余事件照常记日志/驱动摘要。
+    if (type == QLatin1String("turn"))
+        return;
+
     // 单行 = 「词条 · 内容摘要」；content 为队友侧文本可能多行/超长：压单行 + 截断
     //（上限文件内常量——AgentConstants.h 不在本轮写域，偏差已登记）
     QString line = label;
