@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-   （`s13`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+   （`s13.1`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
    `.lite-harness/sessions/<id>/.temp/`；收口时把仍然成立的内容折进本文对应部分、过时者删除，
    不在 `docs/` 里另立 md 文件——孤立文件既无人引用、也无人负责同步（本目录刚刚就是因为六篇各自漂移
@@ -407,7 +407,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h` |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 13）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s13）|
+| 版本号 | CMake `project VERSION`（数字段 13.1）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s13.1）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；管线内即时估算另见 `CompactManager::estimateTokens` |
 | 上下文占用（侧栏占用条与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
@@ -579,7 +579,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（13）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s13`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s13` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（13.1）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s13.1`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s13.1` 不带多余 `v`
 
 ### 八、P2 记忆与子代理
 
