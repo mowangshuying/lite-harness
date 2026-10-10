@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-# 版本号与阶段 tag 对齐（当前 s12.6）：CMake project VERSION 只收数字点分，故存数字段 12.6，
+# 版本号与阶段 tag 对齐（当前 s13）：CMake project VERSION 只收数字点分，故存数字段 13，
 # 展示/打包用的 s 前缀统一在 LITE_VERSION 宏与 CPACK_PACKAGE_FILE_NAME 两处拼接（历史：s00 前身即 v0.1.0）
-project(lite-harness VERSION 12.6)
+project(lite-harness VERSION 13)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -76,7 +76,7 @@ target_include_directories(${TGT} PRIVATE
 # 不加 /WX：第三方/存量警告不致中断构建
 target_compile_options(${TGT} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 
-# 版本号单源：CMake project VERSION（数字段）→ LITE_VERSION 宏（拼 s 前缀=s12.6）→ 运行时 setApplicationVersion
+# 版本号单源：CMake project VERSION（数字段）→ LITE_VERSION 宏（拼 s 前缀=s13）→ 运行时 setApplicationVersion
 # → 设置页版本标签 / 侧栏页脚（原 tr("0.0.1") 硬编码与 CMake 版本脱节，另案修并入此）
 target_compile_definitions(${TGT} PRIVATE LITE_VERSION="s${PROJECT_VERSION}")
 

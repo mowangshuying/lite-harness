@@ -9,7 +9,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
 
     // 版本号进运行时：LITE_VERSION 宏由 CMake target_compile_definitions 注入
-    // （= project VERSION 拼 s 前缀，唯一真源，如 "s12.6"），供设置页等展示点取用
+    // （= project VERSION 拼 s 前缀，唯一真源，如 "s13"），供设置页等展示点取用
     QCoreApplication::setApplicationVersion(QStringLiteral(LITE_VERSION));
 
     // i18n 第八轮：translator 须在任何窗口构造前装载，控件构造期 tr() 即取目标
