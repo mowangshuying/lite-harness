@@ -34,9 +34,16 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
     // —— 窗口骨架：与 FluMessageBox 同款（遮罩 + 居中卡片），卡片稍高以容纳输入行 ——
     auto boxLayout = new QHBoxLayout(this);
 
+    // 遮罩刻意**不进布局**：它是纯子控件，几何由构造/resizeEvent/eventFilter 里那三处
+    // m_windowMask->resize(m_parentWidget->size()) 手动铺满（同 FluMessageBox 原版——其
+    // m_boxLayout 全文只 addWidget 卡片一处）。一旦 addWidget 进 QHBoxLayout，布局即接管
+    // 它的几何：空 QWidget 无 sizeHint、minimumSize 为 0，卡片又 fixedSize + stretch 1 吃掉
+    // 全部富余，遮罩实测被压成 **0x782** 且被 contentsMargins 内缩到起点 (9,9)，等于完全没有
+    // 遮罩；同时那三处手动 resize 全部沦为无效代码（被下一次布局激活覆盖）。改 stretch 也救不
+    // 了——横向布局里一个子件无法跨越另一个子件所占的那一格（实测 stretch 1 只得 597 宽）。
+    // 勿「顺手」把这行加回来。
     m_windowMask = new QWidget(this);
     m_windowMask->setObjectName("windowMask"); // 配色见 stylesheet/<theme>/FluentInputDialog.qss
-    boxLayout->addWidget(m_windowMask, 0);
 
     m_card = new QFrame(this);
     m_card->setObjectName("centerWidget");
