@@ -381,6 +381,11 @@ config/
 # agent scratch tooling (debug/edit scripts, logs)
 /.tools/
 
+# agent scratch drafts left at repo root by edit sessions (e.g. .tmp_doc5a.txt).
+# The `*.tmp` rule in the Visual Studio block above only matches names ENDING in .tmp,
+# so this leading-dot prefix form slipped through and showed up as untracked noise.
+.tmp_*
+
 # submodule registration removed; local checkout kept for reference only
 /3rdparty/sqlite_orm/
 
