@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
+#include <QFontMetrics> // WorkDirSettingCard 说明位的长路径中间省略（同 WorkDirPathBar 口径）
 #include <QLocale>
 #include "AppSettings.h"
 #include <QFileInfo>
@@ -35,7 +36,8 @@ void writeDefaultWorkDir(const QString &value)
     AppSettings::ini().setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 
-// 未设置时的占位提示（浅色卡片右侧值区展示）
+// 未设置时的占位文案（现占用卡片标题下方的说明位 m_infoLabel；
+// 与已存路径同源同格，二者互斥显示，长文本按当前宽度中间省略、ToolTip 兜底全量）
 QString workDirDisplayText(const QString &stored)
 {
     return stored.isEmpty() ? QObject::tr("未设置（使用进程当前目录）") : stored;
@@ -115,20 +117,25 @@ QString maskedApiToken(const QString &stored)
 } // namespace
 
 // 默认工作目录设置卡：复用 FluSettingsSelectBox 外观（图标+标题+说明），
-// 隐藏其右侧下拉框，替换为「路径值 + 修改 + 清除」操作行。
+// 隐藏其右侧下拉框，操作行只留「修改 + 清除」。
+// 路径值占用基类的**说明位**（m_infoLabel，标题下方那一格）——原「新建会话将继承该
+// 工作目录。」提示文案按需求移除，该格样式本就是 12px 次要灰（FluSettingsSelectBox.qss
+// #infoLabel），与 WorkDirPathBar 的路径字号一致，视觉重量天然匹配、无需另立样式。
 // 类声明在 SettingsPage.h（Q_OBJECT 上下文对齐译词条，注释见彼处）。
 WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
     : FluSettingsSelectBox(parent)
 {
-    setTitleInfo(tr("默认工作目录"), tr("新建会话将继承该工作目录。"));
+    setTitleInfo(tr("默认工作目录"), QString()); // 说明位留空，值由 updateValue 接管
     setIcon(FluAwesomeType::Folder);
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    // 路径进说明位后**必须允许压缩**：QLabel 不会自动省略，长路径的 sizeHint 会把说明列
+    // 撑宽、进而把右侧「修改/清除」挤出卡片。压缩口径与 WorkDirPathBar 完全一致
+    // （minimumWidth 0 + Expanding + ElideMiddle + ToolTip 全量 + Resize 重算），不另造一套。
+    m_infoLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
+    m_infoLabel->setMinimumWidth(0);
+    m_infoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_infoLabel->installEventFilter(this); // 说明位宽度变化时重算中间省略
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
     m_clearButton = new FluPushButton(tr("清除"), this);
@@ -137,7 +144,6 @@ WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     row->addWidget(m_clearButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
@@ -164,7 +170,8 @@ WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
 
 void WorkDirSettingCard::retranslate()
 {
-    setTitleInfo(tr("默认工作目录"), tr("新建会话将继承该工作目录。"));
+    // 说明位已让给路径，不再回填提示文案；标题重取 tr()，占位文案随 updateValue 重算
+    setTitleInfo(tr("默认工作目录"), QString());
     m_modifyButton->setText(tr("修改"));
     m_clearButton->setText(tr("清除"));
     updateValue();
@@ -173,8 +180,27 @@ void WorkDirSettingCard::retranslate()
 void WorkDirSettingCard::updateValue()
 {
     const QString stored = readDefaultWorkDir();
-    m_valueLabel->setText(workDirDisplayText(stored));
-    m_valueLabel->setToolTip(stored);
+    m_fullPath = stored;                     // ToolTip 用原始全量路径（未设置=空串，无提示）
+    m_displayText = workDirDisplayText(stored); // 可见文本可能是占位文案，按当前宽度省略
+    refreshDisplay();
+}
+
+// 说明位展示：口径同 WorkDirPathBar::refreshDisplay——可见文本按当前宽度中间省略，
+// 全量路径恒经 ToolTip 兜底；宽度未知（首帧前 w==0）时先放全文，Resize 事件到达即重算。
+void WorkDirSettingCard::refreshDisplay()
+{
+    m_infoLabel->setToolTip(m_fullPath);
+    const int w = m_infoLabel->width();
+    m_infoLabel->setText(w > 0 ? QFontMetrics(m_infoLabel->font())
+                                     .elidedText(m_displayText, Qt::ElideMiddle, w)
+                               : m_displayText);
+}
+
+bool WorkDirSettingCard::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_infoLabel && event->type() == QEvent::Resize)
+        refreshDisplay(); // 卡片/页面变宽变窄时重算省略，避免长路径把操作按钮挤出可视区
+    return FluSettingsSelectBox::eventFilter(watched, event);
 }
 
 // 上下文上限设置卡（第九轮）：同款 FluSettingsSelectBox 外观（图标+标题+说明），

@@ -21,13 +21,19 @@ public:
     explicit WorkDirSettingCard(QWidget* parent = nullptr);
 
     // LanguageChange 重译：setTitleInfo 实证为就地刷新（FluSettingsSelectBox.cpp），
-    // 按钮文案重取 tr()，值区占位文本随 updateValue 重算
+    // 按钮文案重取 tr()，路径与占位文案随 updateValue 重算（含中间省略）
     void retranslate();
+
+protected:
+    // m_infoLabel 的 Resize：可用宽度变化即重算中间省略（同 WorkDirPathBar 口径）
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void updateValue();
+    void refreshDisplay();
 
-    QLabel* m_valueLabel = nullptr;
+    QString m_displayText; // 展示源：已存路径，或「未设置」占位文案
+    QString m_fullPath;    // ToolTip 恒为全量路径；未设置时空串（无提示）
     FluPushButton* m_modifyButton = nullptr;
     FluPushButton* m_clearButton = nullptr;
 };
@@ -74,7 +80,10 @@ private:
     FluPushButton* m_modifyButton = nullptr;
 };
 
-// 服务地址设置卡（模型服务组）：WorkDirSettingCard 同款结构——值区 + 「修改 + 清除」操作行，
+// 服务地址设置卡（模型服务组）：**右侧值区** + 「修改 + 清除」操作行——本组其余两卡
+// （ApiTokenSettingCard / ModelOptionsSettingCard）均以本卡为同款结构基准。
+// 注：WorkDirSettingCard 已改为把路径显示在**标题下方说明位**（m_infoLabel），不再有值区，
+//     不再属于本结构；勿再拿它当"值区卡"的参照物。
 // 编辑弹 FluentInputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
 // 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
 // 生效语义：写 settings.ini 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
