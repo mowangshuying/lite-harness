@@ -431,12 +431,13 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    `toolSummary` 口径。**这是有意为之的例外**，别据此开「UI 可以吃内核内部头」的先例。
 3. **`SettingsPage` 直改全局运行时配置**（`QOpenAi::setUrl/setToken`）：设置页 → 引擎的直连边，
    生效语义见 `SettingsPage.h` 注释。
-4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序，实测行数）：`TaskStore.cpp` 1200、
+4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序，实测行数；**行数口径**=文件换行符数，
+   末行无换行符则 +1——按 `-split` 计数会因空尾元素每文件虚高 1，勿据此判漂移）：`TaskStore.cpp` 1200、
    `MemoryManager.cpp` 1116、`WorktreeManager.cpp` 917、`MessageBubbleWidget.cpp` 867、
-   `ChatSessionPage.cpp` 859、`AgentTeamsManager.cpp` 852、`SettingsPage.cpp` 773、
+   `ChatSessionPage.cpp` 859、`AgentTeamsManager.cpp` 852、`SettingsPage.cpp` 802、
    `QOpenAi.cpp` 767、`CompactManager.cpp` 724、`TeammateRuntime.cpp` 724（s13 队友预算 +147 行
    后新晋）、`AgentLoopTeam.cpp` 663（s13 接线 + 本轮 `stop()` 队友收口）、
-   `CronSchedulerManager.cpp` 631、`SessionSidebar.cpp` 547（`src/` 合计 22833 行）。
+   `CronSchedulerManager.cpp` 631、`SessionSidebar.cpp` 547（`src/` 合计 22903 行）。
    **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 590、
    `LiteHarness.cpp` 572、`ToolBlock.cpp` 562 未列入是**有意的**——前者的体量几乎全是静态 system
    prompt 与 25 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
@@ -537,6 +538,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 ### 四、P1 设置与数据路径
 
+- [ ] 设置页六卡说明位约定（共用基类 `InfoSlotSettingCard`）：值显示在**标题下方说明位**（基类 `m_infoLabel`，12px 次要灰），格式「简短解释：值」；解释前缀**恒完整、只省略值**（对整串 `ElideMiddle` 会把省略点切在交界上、说明与值两头都残，实证见 W=420 组）；右侧操作行只剩按钮；长值 ToolTip 兜底全量；分隔符走 `tr("：")`（英文回落 `": "`，其尾随空格经 lrelease + QTranslator 实测保留）。API Key 卡进说明位的**必须**是 `maskedApiToken` 摘要，明文绝不进值区也不进 ToolTip。已知边界：窄到连前缀都放不下（实测 ≤300px / infoW≈88）时退化为整串省略
 - [ ] 设置页「默认工作目录」：选新目录 → `settings.ini` `defaultWorkDir` 更新；对话框取消 → 保持原值；清除 → 展示「未设置（使用进程当前目录）」
 - [ ] 设置页「上下文上限（字符）」改为 300000 → 落盘即下一回合压缩管线现取生效（无需重启）；卡片展示千分位（QLocale::c() 固定，不随界面语言变），数值行带派生提示「≈N token」（= 字符上限/4，仅展示、键语义仍是字符）；侧栏占用同为 ≈token 口径（contextCharLimit/4 派生预算，非字符）
 - [ ] 上下文上限输入 9999 / 5000001 / 非数字 → 「无效数值」弹窗不落盘；输入带千分位的 `200,000` → 剥逗号解析成功；合法界 10000~5000000、默认 200000

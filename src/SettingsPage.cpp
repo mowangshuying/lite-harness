@@ -116,26 +116,71 @@ QString maskedApiToken(const QString &stored)
 
 } // namespace
 
-// 默认工作目录设置卡：复用 FluSettingsSelectBox 外观（图标+标题+说明），
-// 隐藏其右侧下拉框，操作行只留「修改 + 清除」。
-// 路径值占用基类的**说明位**（m_infoLabel，标题下方那一格）——原「新建会话将继承该
-// 工作目录。」提示文案按需求移除，该格样式本就是 12px 次要灰（FluSettingsSelectBox.qss
-// #infoLabel），与 WorkDirPathBar 的路径字号一致，视觉重量天然匹配、无需另立样式。
+// 说明位值卡基类：把「简短解释：值」渲染进 FluSettingsSelectBox 的 m_infoLabel
+// （标题下方那一格），右侧操作行只留按钮。六张设置卡共用，避免各写一份省略逻辑。
+// 压缩口径沿用 WorkDirPathBar / 原 WorkDirSettingCard：minimumWidth(0) + Expanding +
+// ElideMiddle + ToolTip 全量 + Resize 重算。QLabel 不会自动省略，不设 minimumWidth(0)
+// 时长值 sizeHint 会把右侧操作按钮挤出卡片（默认 Preferred 虽含 ShrinkFlag，仍受
+// minimumSizeHint 顶住，窄宽下顶不住）。
+InfoSlotSettingCard::InfoSlotSettingCard(QWidget *parent)
+    : FluSettingsSelectBox(parent)
+{
+    m_infoLabel->setTextFormat(Qt::PlainText); // 值按纯文本处理，避免被当作富文本解析
+    m_infoLabel->setMinimumWidth(0);
+    m_infoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_infoLabel->installEventFilter(this); // 说明位宽度变化时重算中间省略
+}
+
+void InfoSlotSettingCard::setInfoValue(const QString &prefix, const QString &value,
+                                       const QString &toolTip)
+{
+    m_prefix = prefix;
+    m_value = value;
+    m_toolTip = toolTip;
+    refreshInfoSlot();
+}
+
+// **只对值部分省略，前缀恒完整**：若对「前缀：值」整串做 ElideMiddle，省略点会落在前缀
+// 与值的交界上，等于同时毁掉说明和值。宽度未知（首帧前 w==0）时先放全文，Resize 到达即重算。
+void InfoSlotSettingCard::refreshInfoSlot()
+{
+    // 分隔符走 tr()：中文全角「：」，英文回落半角 ": "，避免英文界面出现 CJK 宽标点
+    const QString head = m_prefix.isEmpty() ? QString() : m_prefix + tr("：");
+    m_infoLabel->setToolTip(m_toolTip.isEmpty() ? head + m_value : m_toolTip);
+
+    const int w = m_infoLabel->width();
+    if (w <= 0)
+    {
+        m_infoLabel->setText(head + m_value);
+        return;
+    }
+    const QFontMetrics fm(m_infoLabel->font());
+    const int avail = w - fm.horizontalAdvance(head);
+    // avail<=0 表示窄到连前缀都放不下：退化为整串省略，至少不丢 ToolTip 全量
+    m_infoLabel->setText(avail > 0
+                             ? head + fm.elidedText(m_value, Qt::ElideMiddle, avail)
+                             : fm.elidedText(head + m_value, Qt::ElideMiddle, w));
+}
+
+bool InfoSlotSettingCard::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_infoLabel && event->type() == QEvent::Resize)
+        refreshInfoSlot(); // 卡片/页面变宽变窄时重算省略，避免长值把操作按钮挤出可视区
+    return FluSettingsSelectBox::eventFilter(watched, event);
+}
+
+// 默认工作目录设置卡：说明位展示当前路径，**无解释前缀**（原「新建会话将继承该工作目录。」
+// 提示文案按需求移除）。右侧操作行只留「修改 + 清除」。
+// 该格样式本就是 12px 次要灰（FluSettingsSelectBox.qss #infoLabel），与 WorkDirPathBar 的
+// 路径字号一致，视觉重量天然匹配、无需另立样式。
 // 类声明在 SettingsPage.h（Q_OBJECT 上下文对齐译词条，注释见彼处）。
 WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
     setTitleInfo(tr("默认工作目录"), QString()); // 说明位留空，值由 updateValue 接管
     setIcon(FluAwesomeType::Folder);
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    // 路径进说明位后**必须允许压缩**：QLabel 不会自动省略，长路径的 sizeHint 会把说明列
-    // 撑宽、进而把右侧「修改/清除」挤出卡片。压缩口径与 WorkDirPathBar 完全一致
-    // （minimumWidth 0 + Expanding + ElideMiddle + ToolTip 全量 + Resize 重算），不另造一套。
-    m_infoLabel->setTextFormat(Qt::PlainText); // 路径按纯文本处理，避免被当作富文本解析
-    m_infoLabel->setMinimumWidth(0);
-    m_infoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_infoLabel->installEventFilter(this); // 说明位宽度变化时重算中间省略
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
     m_clearButton = new FluPushButton(tr("清除"), this);
@@ -180,52 +225,28 @@ void WorkDirSettingCard::retranslate()
 void WorkDirSettingCard::updateValue()
 {
     const QString stored = readDefaultWorkDir();
-    m_fullPath = stored;                     // ToolTip 用原始全量路径（未设置=空串，无提示）
-    m_displayText = workDirDisplayText(stored); // 可见文本可能是占位文案，按当前宽度省略
-    refreshDisplay();
+    // 无前缀：可见文本是路径或「未设置」占位文案；ToolTip 用原始全量路径（未设置=空串，
+    // 此时基类回落为占位文案本身，无泄密面）
+    setInfoValue(QString(), workDirDisplayText(stored), stored);
 }
 
-// 说明位展示：口径同 WorkDirPathBar::refreshDisplay——可见文本按当前宽度中间省略，
-// 全量路径恒经 ToolTip 兜底；宽度未知（首帧前 w==0）时先放全文，Resize 事件到达即重算。
-void WorkDirSettingCard::refreshDisplay()
-{
-    m_infoLabel->setToolTip(m_fullPath);
-    const int w = m_infoLabel->width();
-    m_infoLabel->setText(w > 0 ? QFontMetrics(m_infoLabel->font())
-                                     .elidedText(m_displayText, Qt::ElideMiddle, w)
-                               : m_displayText);
-}
-
-bool WorkDirSettingCard::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == m_infoLabel && event->type() == QEvent::Resize)
-        refreshDisplay(); // 卡片/页面变宽变窄时重算省略，避免长路径把操作按钮挤出可视区
-    return FluSettingsSelectBox::eventFilter(watched, event);
-}
-
-// 上下文上限设置卡（第九轮）：同款 FluSettingsSelectBox 外观（图标+标题+说明），
-// 隐藏下拉框换「数值 + 修改」操作行。展示/回写均经 AgentConst::contextCharLimitValue()
-// 单点取值（未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
+// 上下文上限设置卡（第九轮）：说明位「超限自动压缩：200,000 字符（≈50,000 token）」，
+// 右侧只留「修改」。展示/回写均经 AgentConst::contextCharLimitValue() 单点取值
+// （未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
 // 写 settings.ini 后 CompactManager 下一回合管线现取即生效，无需重启。
 ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("上下文上限（字符）"), tr("会话上下文超过该字符数时自动压缩。"));
+    setTitleInfo(tr("上下文上限（字符）"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Trim); // 裁减语义
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText);
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
 
@@ -236,7 +257,7 @@ ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
 
 void ContextLimitSettingCard::retranslate()
 {
-    setTitleInfo(tr("上下文上限（字符）"), tr("会话上下文超过该字符数时自动压缩。"));
+    setTitleInfo(tr("上下文上限（字符）"), QString());
     m_modifyButton->setText(tr("修改"));
     updateValue();
 }
@@ -247,9 +268,10 @@ void ContextLimitSettingCard::updateValue()
     // 键语义保持字符域（规格修4：settings.ini 零新键零迁移）；括号内 token 仅为
     // 展示层派生提示 = contextCharLimit/4（计量预算口径，与侧栏/触发同源），不参与校验回写。
     const QLocale loc(QLocale::c());
-    m_valueLabel->setText(tr("%1 字符（≈%2 token）")
-                              .arg(loc.toString(AgentConst::contextCharLimitValue()),
-                                   loc.toString(AgentConst::contextTokenBudget())));
+    setInfoValue(tr("超限自动压缩"),
+                 tr("%1 字符（≈%2 token）")
+                     .arg(loc.toString(AgentConst::contextCharLimitValue()),
+                          loc.toString(AgentConst::contextTokenBudget())));
 }
 
 void ContextLimitSettingCard::promptEdit()
@@ -285,29 +307,25 @@ void ContextLimitSettingCard::promptEdit()
     updateValue();
 }
 
-// 单轮最大调用次数设置卡（第十二轮）：ContextLimitSettingCard 同款结构。
-// 展示/回写均经 AgentConst::maxToolIterationsValue() 单点取值（未设置/非法自动
-// 回退默认 500），与 AgentLoop 回合入口快照同源不分叉；写 settings.ini 后下一回合生效。
-// 数值域 [10,1000] 无需千分位，直接裸整数展示。
+// 单轮最大调用次数设置卡（第十二轮）：与上下文上限卡同款结构——说明位
+// 「超限即终止循环：500」+「修改」。展示/回写均经 AgentConst::maxToolIterationsValue()
+// 单点取值（未设置/非法自动回退默认 500），与 AgentLoop 回合入口快照同源不分叉；
+// 写 settings.ini 后下一回合生效。数值域 [10,1000] 无需千分位，直接裸整数展示。
+// 前缀「超限即终止循环」非拟测：撞上限走 AgentLoopRequest.cpp 的
+// error(「工具调用轮次超过上限（N 轮），终止循环。」) 分支。
 MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("单轮最大调用次数"), tr("限制单个回合内工具调用的最大轮数。"));
+    setTitleInfo(tr("单轮最大调用次数"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Calculator); // 计数语义（todo 卡同款图标族，轮次即计数）
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText);
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
 
@@ -318,14 +336,15 @@ MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
 
 void MaxRoundsSettingCard::retranslate()
 {
-    setTitleInfo(tr("单轮最大调用次数"), tr("限制单个回合内工具调用的最大轮数。"));
+    setTitleInfo(tr("单轮最大调用次数"), QString());
     m_modifyButton->setText(tr("修改"));
     updateValue();
 }
 
 void MaxRoundsSettingCard::updateValue()
 {
-    m_valueLabel->setText(QString::number(AgentConst::maxToolIterationsValue()));
+    setInfoValue(tr("超限即终止循环"),
+                 QString::number(AgentConst::maxToolIterationsValue()));
 }
 
 void MaxRoundsSettingCard::promptEdit()
@@ -360,21 +379,16 @@ void MaxRoundsSettingCard::promptEdit()
     updateValue();
 }
 
-// 服务地址设置卡：WorkDirSettingCard 同款外观与操作行（图标+标题+说明，右侧「值 + 修改 + 清除」）。
+// 服务地址设置卡：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
 // 编辑走 FluentInputDialog 单行输入（parent 传主窗口保遮罩铺满），预填存量值；
-// 校验不过弹 FluMessageBox 拒写，空串按清除处理。
+// 校验不过弹 FluMessageBox 拒写，空串按清除处理。URL 非机密，明文展示、ToolTip 回落全量。
 ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("服务地址"), tr("OpenAI 兼容 API 的基础 URL（如 https://api.example.com/v1）。"));
+    setTitleInfo(tr("服务地址"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Link); // 端点链接语义（Globe 已被语言卡占用）
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText); // URL 按纯文本处理，避免被当作富文本解析
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
     m_clearButton = new FluPushButton(tr("清除"), this);
@@ -383,7 +397,6 @@ ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     row->addWidget(m_clearButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
@@ -400,7 +413,7 @@ ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
 
 void ApiUrlSettingCard::retranslate()
 {
-    setTitleInfo(tr("服务地址"), tr("OpenAI 兼容 API 的基础 URL（如 https://api.example.com/v1）。"));
+    setTitleInfo(tr("服务地址"), QString());
     m_modifyButton->setText(tr("修改"));
     m_clearButton->setText(tr("清除"));
     updateValue();
@@ -409,8 +422,8 @@ void ApiUrlSettingCard::retranslate()
 void ApiUrlSettingCard::updateValue()
 {
     const QString stored = readApiBaseUrl();
-    m_valueLabel->setText(stored.isEmpty() ? tr("未设置") : stored);
-    m_valueLabel->setToolTip(stored);
+    // ToolTip 传原始全量 URL（长 URL 省略后仍可悬停读全）；未设置时空串，基类回落占位文案
+    setInfoValue(tr("OpenAI 兼容基址"), stored.isEmpty() ? tr("未设置") : stored, stored);
 }
 
 void ApiUrlSettingCard::promptEdit()
@@ -435,21 +448,17 @@ void ApiUrlSettingCard::promptEdit()
     updateValue();
 }
 
-// API Key 设置卡：结构与 URL 卡一致，差异全在「机密值」处理——值区只显脱敏摘要、
-// tooltip 不带明文；编辑框预填存量明文（本机 ini 属主可见可改，属用户裁决），
-// 提示行明确保存即覆盖旧值。
+// API Key 设置卡：结构与 URL 卡同款，差异全在「机密值」处理——说明位只显脱敏摘要，
+// **明文绝不上屏也不进 ToolTip**（基类会把 value 原样写进 ToolTip，故进说明位的必须
+// 已是 maskedApiToken 摘要，绝不能把 stored 明文交给基类）。
+// 编辑框不预填存量明文 + Password 回显；清除另有「清除」按钮，职责不重叠。
 ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("API Key"), tr("Bearer Token，明文保存于 exe 同目录 settings.ini。"));
+    setTitleInfo(tr("API Key"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Lock); // 凭据语义（枚举表无 Key 项）
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText);
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
     m_clearButton = new FluPushButton(tr("清除"), this);
@@ -458,7 +467,6 @@ ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     row->addWidget(m_clearButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位）
@@ -475,7 +483,7 @@ ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
 
 void ApiTokenSettingCard::retranslate()
 {
-    setTitleInfo(tr("API Key"), tr("Bearer Token，明文保存于 exe 同目录 settings.ini。"));
+    setTitleInfo(tr("API Key"), QString());
     m_modifyButton->setText(tr("修改"));
     m_clearButton->setText(tr("清除"));
     updateValue();
@@ -484,9 +492,11 @@ void ApiTokenSettingCard::retranslate()
 void ApiTokenSettingCard::updateValue()
 {
     const QString stored = readApiToken();
-    // 明文绝不上屏：值区只给摘要，tooltip 只给状态（不复制完整 key 到悬停提示）
-    m_valueLabel->setText(stored.isEmpty() ? tr("未设置") : maskedApiToken(stored));
-    m_valueLabel->setToolTip(stored.isEmpty() ? QString() : tr("已保存"));
+    // 安全收口：value 传脱敏摘要（非 stored），toolTip 显式传状态串而非全量值——
+    // 否则基类的「回落 prefix+value」会把摘要写进悬停提示，虽仍非明文，但「已保存」
+    // 的既有语义更贴合凭据卡（不重复罗列星号串）。
+    setInfoValue(tr("Bearer 凭据"), stored.isEmpty() ? tr("未设置") : maskedApiToken(stored),
+                 stored.isEmpty() ? QString() : tr("已保存"));
 }
 
 void ApiTokenSettingCard::promptEdit()
@@ -510,22 +520,19 @@ void ApiTokenSettingCard::promptEdit()
     updateValue();
 }
 
-// 可选模型清单设置卡：与 URL / Key 卡同款结构（图标+标题+说明，右侧「值 + 修改 + 清除」）。
-// 值区展示**生效清单**（含未配置时的内置回退），而非原始配置串——所见即下拉所得。
+// 可选模型清单设置卡：说明位「下拉候选：<清单>」+「修改 + 清除」操作行。
+// 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
+// 说明位展示的是**生效清单**（清洗去重后），非原始配置串——所见即下拉所得；
+// 原始串经 ToolTip 兜底（两者可能不同，留空不等于「没有模型可选」）。
 // 生效路径：本卡只写 settings.ini，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框下拉
 // 在每次弹层展开前重读该键并原地刷新，故改完配置无需重启即可选到新模型。
 ModelListSettingCard::ModelListSettingCard(QWidget *parent)
-    : FluSettingsSelectBox(parent)
+    : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("可选模型"), tr("输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。"));
+    setTitleInfo(tr("可选模型"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::ReadingList); // 清单语义（Link / Lock 已用于同组两卡）
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_valueLabel = new FluLabel(this);
-    m_valueLabel->setTextFormat(Qt::PlainText); // 模型名按纯文本处理，避免被当作富文本解析
-    m_valueLabel->setMaximumWidth(320);
-    m_valueLabel->setMinimumWidth(0);
-    m_valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_modifyButton = new FluPushButton(tr("修改"), this);
     m_modifyButton->setFixedSize(64, 30);
     m_clearButton = new FluPushButton(tr("清除"), this);
@@ -534,7 +541,6 @@ ModelListSettingCard::ModelListSettingCard(QWidget *parent)
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_valueLabel);
     row->addWidget(m_modifyButton);
     row->addWidget(m_clearButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
@@ -550,7 +556,7 @@ ModelListSettingCard::ModelListSettingCard(QWidget *parent)
 
 void ModelListSettingCard::retranslate()
 {
-    setTitleInfo(tr("可选模型"), tr("输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。"));
+    setTitleInfo(tr("可选模型"), QString());
     m_modifyButton->setText(tr("修改"));
     m_clearButton->setText(tr("清除"));
     updateValue();
@@ -562,16 +568,13 @@ void ModelListSettingCard::updateValue()
     const QString shown = AgentConst::modelOptions().join(QStringLiteral(", "));
     if (stored.isEmpty())
     {
-        // 未配置：值区仍展示回退后的内置清单（下拉里就是这些），并标注来源——留空不等于
-        // 「没有模型可选」，直接把空串摆上界面会让人以为功能坏了
-        m_valueLabel->setText(tr("内置默认：%1").arg(shown));
-        m_valueLabel->setToolTip(tr("未配置 modelOptions 键，可用本卡「修改」填写。"));
+        // 未配置：仍展示回退后的内置清单（下拉里就是这些），靠前缀标注来源
+        setInfoValue(tr("内置默认候选"), shown,
+                     tr("未配置 modelOptions 键，可用本卡「修改」填写。"));
+        return;
     }
-    else
-    {
-        m_valueLabel->setText(shown); // 展示清洗去重后的生效值，非原始录入串
-        m_valueLabel->setToolTip(tr("settings.ini: %1").arg(stored));
-    }
+    // 展示清洗去重后的生效值；原始录入串经 ToolTip 兜底（两者可能不同）
+    setInfoValue(tr("下拉候选"), shown, tr("settings.ini: %1").arg(stored));
 }
 
 void ModelListSettingCard::promptEdit()
