@@ -139,7 +139,7 @@ static void testWorktreeFieldCompat()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -260,7 +260,7 @@ static void testClaimSixGates()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -428,7 +428,7 @@ static void testClaimGate4FailClosed()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -457,7 +457,7 @@ static void testCompleteAndReleaseJourney()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -634,7 +634,7 @@ static void testLeaseSelfHeal()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -728,7 +728,7 @@ static void testReleaseTeammateJourney()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -820,7 +820,7 @@ static void testTwoOwnersIndependent()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -863,7 +863,7 @@ static void testFoldedWrappers()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -912,7 +912,7 @@ static void testSnapshotDescriptionPassthrough()
 {
     ScopedTempRoot tmp("taskstore-lease");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();

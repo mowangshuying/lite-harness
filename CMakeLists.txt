@@ -109,7 +109,8 @@ target_link_libraries(${TGT} PRIVATE
 )
 
 # ---- 单元测试（ctest）----
-# 只测纯函数（当前：LineEnding.h 行尾口径），不引 Qt6::Test/moc——测试对象无信号槽需求，
+# 只测纯函数（当前五套件：LineEnding 行尾口径 / MessageBus / TaskStore 租约 / WorktreeManager /
+# AgentTeamsManager），不引 Qt6::Test/moc——测试对象无信号槽需求，
 # 少一个组件依赖与 DLL 负担，本地 cl 与 CI 都能直接起来（取舍理由见 tests/TestHarness.h 顶部）。
 # 输出目录与主 exe 分开（build/tests 而非 build/bin）：CPack 的 staging 与根级 install(CODE)
 # 清理都围绕 bin/ 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删。
@@ -139,6 +140,8 @@ if (LITE_TESTS)
 	target_compile_options(lite-harness-tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 	target_link_libraries(lite-harness-tests PRIVATE Qt6::Core)
 	add_test(NAME lite-harness-tests COMMAND lite-harness-tests)
+	# 超时兜底：套件含 git 子进程与文件 IO，挂死时不得拖住 CI 到 workflow 的 45 分钟上限
+	set_tests_properties(lite-harness-tests PROPERTIES TIMEOUT 600)
 endif()
 
 # ---- CPack packaging (the single deployment/packaging path) ----

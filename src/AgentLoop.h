@@ -482,6 +482,14 @@ private:
     QHash<QString, TeammateRuntime *> m_teammateRuntimes;
     // 队友在途回合流（每队友至多一条，单飞防御；parent 到 this 随析构作废）
     QHash<QString, QPointer<QOpenAi::ChatStream>> m_teammateStreams;
+    // 队友在途 bash 进程登记表（与 Lead 的 m_activeProcesses 分表：队友进程 parent 恒为
+    // this 而非某 runtime，挂起窗口内 runtime 被清算时进程仍存活，需独立登记才能被
+    // stop()/析构定向 kill）。进程在 finished/errorOccurred 收口处自行 removeAll
+    QList<QProcess *> m_teammateProcesses;
+    // 用户显式 stop() 后抑制「Lead 空闲门铃自动开回合」（tryDeliverTeamEvents 卫兵）：
+    // 否则停止后下一个 1s tick 只要 lead 邮箱有信就同栈拉起新回合，用户看到「停了又自己
+    // 跑起来」。下一次 run() 入口复位（用户发言 = 明确恢复意图）
+    bool m_teamWakeSuppressed = false;
     // 上次广播的队友名册签名（name|status 以 ';' 连接）：updateTeamRosterBroadcast 边沿检测单源
     QString m_teamRosterSignature;
     // lcc _team_was_active：队友全部下线的边沿检测（每回合终局比对一次）

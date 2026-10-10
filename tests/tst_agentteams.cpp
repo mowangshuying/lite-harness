@@ -140,7 +140,7 @@ void testSpawnValidationAndRollback()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -337,7 +337,7 @@ void testListTeammatesAndNames()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -375,7 +375,7 @@ void testSendMessage()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -418,7 +418,7 @@ void testSubmitPlanLedger()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -473,7 +473,7 @@ void testApplyPlanResponseGates()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -579,7 +579,7 @@ void testShutdownJourney()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -660,7 +660,7 @@ void testReviewPlanFiveGates()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -749,7 +749,7 @@ void testMatchResponseGates()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -837,7 +837,7 @@ void testTeammateToolGatesAndCwd()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1043,7 +1043,7 @@ void testReleaseTripointsAndCallbacks()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1174,7 +1174,7 @@ void testLeadInboxAndEventsFormat()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1217,7 +1217,7 @@ void testLeadInboxAndEventsFormat()
         TestHarness::check(retried.size() == 1 && retried.at(0).content == QStringLiteral("later"),
                            "M8: 下拍重试收全量（信箱保留不丢信）");
     } else {
-        std::printf("SKIP: M8 句柄占用夹具不可用\n");
+        TestHarness::skip("SKIP: M8 句柄占用夹具不可用\n");
     }
 }
 
@@ -1228,7 +1228,7 @@ void testGenRequestId()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1261,7 +1261,7 @@ void testClaimNextTask()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1332,7 +1332,7 @@ void testGate2MinorBatchSurface()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();
@@ -1367,7 +1367,7 @@ void testAsyncToolBridge()
 {
     ScopedTempRoot tmp("agentteams");
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return;
     }
     const QString root = tmp.path();

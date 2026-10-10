@@ -286,7 +286,7 @@ void testCanonicalRecheck(const QString &root)
             && mk.exitCode() == 0 && QFileInfo(link).isDir();
         if (!fixture) {
             // 诚实 SKIP：junction 不可用（权限/非 Windows cmd 等），不计断言不留假绿
-            std::printf("SKIP: junction fixture unavailable (mklink /J rc=%d)\n",
+            TestHarness::skip("SKIP: junction fixture unavailable (mklink /J rc=%d)\n",
                         static_cast<int>(mk.exitCode()));
             return;
         }
@@ -311,8 +311,9 @@ int tst_messagebus()
 {
     ScopedTempRoot tmp(QStringLiteral("messagebus"));
     if (!tmp.isValid()) {
-        // TestHarness 无打印原语（仅 check/计数），SKIP 通知走 <cstdio>，不计失败、直接返回 0。
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        // SKIP 通知走 TestHarness::skip（计数但不计失败）：skipCount 由 main 汇总，
+        // CI 侧以 LITE_TEST_MIN_PASS 断言下界兜住「整组跳过仍判通过」的假绿
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return 0;
     }
 

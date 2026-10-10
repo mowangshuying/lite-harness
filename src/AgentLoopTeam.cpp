@@ -181,21 +181,27 @@ void AgentLoop::initTeamEngine()
         }
         const auto timedOut = std::make_shared<bool>(false);
         const auto settled = std::make_shared<bool>(false);
+        // 登记表传 &m_teammateProcesses（原传 nullptr：队友进程不进任何台账，stop() 的
+        // kill 循环与析构出清都摸不到它们——用户按停止后队友 PowerShell 继续跑并写任务板/
+        // 邮箱）。connect 的 context 均为 process，宿主析构级联销毁 process 即断回调，
+        // 捕获 this 无悬空风险
         BashRunner::start(
-            command, cwd, this, nullptr, timedOut,
-            [timedOut, settled, done](QProcess *process) {
+            command, cwd, this, &m_teammateProcesses, timedOut,
+            [this, timedOut, settled, done](QProcess *process) {
                 QObject::connect(process, &QProcess::errorOccurred, process,
-                                 [process, settled, done](QProcess::ProcessError error) {
+                                 [this, process, settled, done](QProcess::ProcessError error) {
                     if (error != QProcess::FailedToStart || *settled) {
                         return;
                     }
                     *settled = true;
+                    m_teammateProcesses.removeAll(process);
                     done(QStringLiteral("Error: bash 启动失败：powershell.exe 无法启动（%1）")
                              .arg(process->errorString()));
                     process->deleteLater();
                 });
                 QObject::connect(process, &QProcess::finished, process,
-                                 [process, timedOut, settled, done](int, QProcess::ExitStatus) {
+                                 [this, process, timedOut, settled, done](int, QProcess::ExitStatus) {
+                    m_teammateProcesses.removeAll(process);
                     if (*settled) {
                         return; // FailedToStart 时 errorOccurred/finished 连发，先到者收口
                     }
@@ -289,6 +295,11 @@ void AgentLoop::tryDeliverTeamEvents()
     // deliver its events.」与 teams 纪律段「运行时会投递团队事件并唤醒你」；
     // m_running 卫兵=lcc 仅在 wait_for_cli_event 等待态消费（回合内三边界不受影响）。
     if (m_running)
+        return;
+    // 门铃抑制卫兵（stop() 置位）：用户显式停止后，本节拍不得自动开新回合——否则停止后
+    // 下一个 1s tick 只要 lead 邮箱有信就经 scheduledUserMessage 同栈拉起新回合，表现为
+    // 「点了停止，一秒后又自己跑起来」。下一次 run() 入口复位（用户发言=恢复意图）
+    if (m_teamWakeSuppressed)
         return;
     // 门铃（lcc :342 peek("lead") 非破坏偷看同型）：收件名以现盘对账——
     // AgentTeamsManager.cpp:23 kLeadName=QStringLiteral("lead")、consumeLeadInbox
@@ -479,14 +490,31 @@ void AgentLoop::settleTeamOnExit()
     }
     m_teammateStreams.clear();
 
+    // 队友在途 bash 进程出清（与 Lead m_activeProcesses 同纪律；登记表由进程自身在
+    // finished/errorOccurred 里 removeAll，这里只兜「析构时仍在跑」的那批）
+    for (QProcess *p : m_teammateProcesses)
+    {
+        if (p)
+            p->kill();
+    }
+    m_teammateProcesses.clear();
+
     const QStringList names = m_teammateRuntimes.keys();
     for (const QString &name : names) {
-        // 观测面 a 终局兜底：blockSignals 会吞掉 runtime 的 finished——若不在此先发
-        // 「settled」中继，聊天流里的队友卡将永转「执行中」。页面幂等收口（QPointer）
+        // 析构期红线：本函数内**禁止 emit 任何信号**。AgentLoop 恒为 ChatSessionPage 的
+        // 子对象（唯一构造点 ChatSessionPage.cpp:135 传 this），Qt 析构时序是「派生类
+        // ChatSessionPage 的成员先析构 → ~QObject 才断开连接并 deleteChildren」，故此刻
+        // 到方的 lambda 仍挂在连接上，而它触碰的 m_liveTeammateCards（ChatSessionPage.h:115
+        // 的 QHash 成员）已成悬空对象——直连槽执行即未定义行为。
+        // 旧实现在此 emit teammateSettled("settled") 正是踩这条线（原注释以「卡将永转
+        // 执行中」为由，但那个前提不成立：本函数只在页面自身析构时到达，队友卡是页面
+        // 的孙级 widget，随页面一并销毁，无需也不许再收 UI 终态）。
+        // 运行期的终局收口另有三路，均不经本函数：completed（taskFinished 中继）、
+        // exited（onTeammateFinished）、settled（Lead runningChanged(false) 兜底扫，
+        // 见 ChatSessionPage.cpp:487-505）。
         TeammateRuntime *runtime = m_teammateRuntimes.take(name);
         if (!runtime)
             continue;
-        emit teammateSettled(name, QStringLiteral("settled"));
         runtime->blockSignals(true);
         runtime->cancel();
         delete runtime;

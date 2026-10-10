@@ -21,6 +21,7 @@
 
 #include "AgentLoop.h"
 
+#include "AgentLoopInternal.h"
 #include "SubAgent.h"
 #include "ToolNames.h"
 #include "AgentConstants.h"
@@ -215,6 +216,8 @@ void AgentLoop::run(const QString &userMessage)
     }
 
     setRunning(true); // 【红线】同步置位，先于本函数一切异步发起（见下方 P1 契约注释）
+    // 用户发言 = 恢复团队门铃消费（stop() 的抑制只覆盖「停止后到下一次发言」这段窗口）
+    m_teamWakeSuppressed = false;
     m_toolIterations = 0;
     // 轮次上限入口快照（第十二轮）：每回合读一次设置值，本回合内所有判定与报错文案
     // 统一用 m_maxToolIterations——与压缩上限 prepareAsync 入口单取同型纪律，
@@ -273,9 +276,7 @@ void AgentLoop::run(const QString &userMessage)
             // 目录读盘即时取（MEMORY.md 沉淀会全量重写索引，注入块每回合自然取新值）
             m_contextInjection = buildContextInjection(m_memory.readMemoryIndex(), recalled);
             // 快照历史并发起流式请求（事件驱动，不创建工作线程）
-            QJsonArray messagesJson;
-            for (const auto &msg : m_messages)
-                messagesJson.append(msg);
+            const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
             startChatRequest(messagesJson);
         });
     if (req)
@@ -298,12 +299,9 @@ void AgentLoop::stop()
     //（OpenAI 协议要求每个 tool_call 必有对应 tool 消息；不经 onToolFinished 以免续跑队列或发展示信号）
     if (m_awaitingPermission)
     {
-        QJsonObject toolResult;
-        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-        toolResult[QStringLiteral("tool_call_id")] =
-            m_pendingPermissionCall.value(QStringLiteral("id")).toString();
-        toolResult[QStringLiteral("content")] = QStringLiteral("Permission denied");
-        m_messages.append(toolResult);
+        m_messages.append(AgentLoopDetail::makeToolResult(
+            m_pendingPermissionCall.value(QStringLiteral("id")).toString(),
+            QStringLiteral("Permission denied")));
         m_pendingPermissionCall = QJsonObject();
         m_awaitingPermission = false;
     }
@@ -321,12 +319,9 @@ void AgentLoop::stop()
     m_toolResultsReady = QJsonArray();
     for (const auto &value : m_pendingToolCalls)
     {
-        QJsonObject toolResult;
-        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-        toolResult[QStringLiteral("tool_call_id")] =
-            value.toObject().value(QStringLiteral("id")).toString();
-        toolResult[QStringLiteral("content")] = QStringLiteral("(stopped)");
-        m_messages.append(toolResult);
+        m_messages.append(AgentLoopDetail::makeToolResult(
+            value.toObject().value(QStringLiteral("id")).toString(),
+            QStringLiteral("(stopped)")));
     }
     m_pendingToolCalls = QJsonArray();
 
@@ -346,6 +341,42 @@ void AgentLoop::stop()
         m_currentStream->deleteLater();
         m_currentStream = nullptr;
     }
+
+    // s13 队友收口（原 stop() 整段漏触队友侧，Gate 级缺陷）：此前只处置子代理/主流/侧链/
+    // Lead 进程四类，队友的 LLM 流与 PowerShell 子进程在用户按停止后**继续跑**并写任务板、
+    // 投邮箱——「停止」对用户不成立。三步：断队友在途回合流 → kill 队友在途 bash →
+    // 清算 runtime。
+    // runtime 走 blockSignals + cancel + deleteLater：blockSignals 断 finished→
+    // onTeammateFinished 的自销重入（与 settleTeamOnExit 同口径），而**不可即时 delete**
+    // （FIND-L 契约：本函数可从页面按钮/关窗守卫栈到达，未必独立于 runtime 回调栈）。
+    // UI 终局无需在此 emit teammateSettled：本函数末尾 setRunning(false) 触发页面兜底扫
+    // （ChatSessionPage.cpp:487-505），此刻名册已清空 → 所有活卡收口为 settled。
+    for (auto it = m_teammateStreams.begin(); it != m_teammateStreams.end(); ++it)
+    {
+        if (QOpenAi::ChatStream *stream = it.value())
+            stream->cancel();
+    }
+    m_teammateStreams.clear();
+    for (QProcess *p : m_teammateProcesses)
+    {
+        if (p)
+            p->kill();
+    }
+    m_teammateProcesses.clear();
+    const QStringList liveTeammates = m_teammateRuntimes.keys();
+    for (const QString &mateName : liveTeammates)
+    {
+        TeammateRuntime *runtime = m_teammateRuntimes.take(mateName);
+        if (!runtime)
+            continue;
+        runtime->blockSignals(true);
+        runtime->cancel();
+        runtime->deleteLater();
+    }
+    // 门铃抑制：用户停止意图必须压过「Lead 空闲即收割邮箱自动开回合」，否则下一个 1s tick
+    // 只要 lead 邮箱有信就同栈拉起新回合（tryDeliverTeamEvents），表现为「停了又自己跑起来」。
+    // 下一次 run() 入口复位——用户发言即明确恢复意图
+    m_teamWakeSuppressed = true;
 
     // 异步化 P1/P3（设计文档 §3.4/§6-7）：取消在途侧链请求（召回（P1）与三条压缩链——
     // prepare 全量段/批尾主动压缩/反应式压缩（P3）共用本槽，同槽异构故用 qobject_cast 而非

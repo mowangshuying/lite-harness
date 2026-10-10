@@ -14,7 +14,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目 install 规则 configure 期即注册进全树安装清单，单目标构建缺 gallery.exe/cmark.exe 会让 cpack `file(INSTALL)` 硬错误中止（s12.2 两条 run 实证），全量编出后由根级清理剥除。`v*`/`s*` tag 推送触发同一流水线并在末尾经 svenstaro/upload-release-action 把 zip 上传为该 tag 的 GitHub Release——官方语义：paths 过滤不拦 tag；`branches` 与 `tags` 必须显式同写，只写 tags 会静默丢掉分支验收流）
 - **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/doc.md` 第三部分「手工冒烟回归清单」（锚点 `#checklist`；P0/P1/P2 按改动面选组，提交前跑对应组）
 
-- **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）。`3rdparty/sqlite`（vendored sqlite3）目录残留但同样从不进构建图。
+- **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）；`3rdparty/sqlite`（vendored sqlite3，约 11MB）与 `cmake/FindSQLite3.cmake` 已同批 `git rm`——自摘除子构建起全仓零引用，属纯死码，勿再 vendored 回来。
 - **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s13-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
@@ -26,21 +26,32 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   `build/tests/lite-harness-tests.exe`（**输出目录与 `bin/` 分开**——CPack 的 staging 与根级
   `install(CODE)` 清理都围绕 `bin/` 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删）；测试目标
   只链 `Qt6::Core`，`/W4 /utf-8` 与主目标同口径。
-- **本地跑:** `cmake --build build --config Release --target lite-harness-tests`，再
+- **本地跑:** `cmake --build build --config Release --target lite-harness-tests`，再设
+  `$env:LITE_TEST_TMPROOT`（**值必须以 `tmp-test` 结尾**，`ScopedTempRoot` 的构造/析构双守卫之一）后跑
   `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由
-  install-qt-action 注入）。
-- **CI 位置:** 构建之后、打包之前——单测失败即中止流程，坏产物不进 zip。
+  install-qt-action 注入）。变量缺失时四个依赖夹具的套件整组 SKIP 且**不计失败**——见下条门禁。
+- **CI 位置:** 构建之后、打包之前——单测失败即中止流程，坏产物不进 zip。workflow 除注入
+  `LITE_TEST_TMPROOT` 外还注入 `LITE_TEST_MIN_PASS`（断言下界，`tests/main.cpp` 判定）：SKIP 通道本身
+  不产生断言也不报失败，早期 CI 未注入 TMPROOT 时 4/5 套件静默跳过仍判通过（假绿），下界门禁即为此设。
+  套件另受 `CMakeLists.txt` 的 `set_tests_properties(... TIMEOUT 600)` 保护，挂死不会拖满 workflow 上限。
 - **新增套件:** 写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`（内部用 `TestHarness::check` 断言，
   返回本套件失败数），在 `tests/main.cpp` 加一行调用；GLOB 自动纳入，**无需改 CMakeLists**。测试直接
   `#include` 生产头（`src/` 已入搜索路径），测的是真实编译产物而非算法副本。
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状（勿高估）:** 目前**只有 `LineEnding.h` 一个头有测试**（`tests/tst_lineending.cpp`）。其余
-  改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」，大面积行为回归**不可证**。
-  下一批最小切口（均已无 GUI 依赖）：`AgentLoopDetail::toolSummary` / `parseToolCall` /
-  `AgentLoop::isToolFailure` / `BashRunner::dangerWarning` / cron 表达式匹配 /
-  `AgentConst::estimateTokens` / SKILL.md frontmatter 解析。
+- **覆盖现状:** 五个套件——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
+  路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
+  名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环），全量实跑约 620 条断言。被测生产
+  源需显式列进 `CMakeLists.txt` 的测试目标清单（当前四个 TU），**仅允许 QtCore-only 的引擎入表**。
+  **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 14 TU、`SubAgent`、`TeammateRuntime`）
+  与网络层 `QOpenAi` **零覆盖**——阻塞点在 `QOpenAi` 的函数局部 static 单例无注入点，需先引入 transport
+  接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」。
+  下一批最小切口（均已无 GUI 依赖，零改动或极小搬移即可入表）：`CronSchedulerManager` 的
+  `validateCron`/`cronMatches`（已是 static）/ `BashRunner::dangerWarning`（安全关键却 0 直测）/
+  `AgentPathGuard` 三个 inline / `SessionStore` 六个 static / `AgentConst::estimateTokens` /
+  `AgentLoopDetail::toolSummary`/`parseToolCall`/`AgentLoop::isToolFailure`（困在带 moc 的 TU，
+  需仿 `LineEnding.h` 抽纯头）/ SKILL.md frontmatter 解析。
 
 ## 架构（src/）
 
@@ -62,7 +73,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **CompactManager** — 上下文压缩（lcc s08）：五段管线 toolResultBudget→snipCompact→microCompact→fitToolResults→compactHistory + 溢出反应式压缩；转录落 `<会话根>/.transcripts/*.jsonl`，超大工具输出卸载到 `.task_outputs/tool-results`。主字符上限可设置（见「数据与路径」）；**阈值判定对象已迁 token 域**：会话体预算 `T' = AgentConst::contextTokenBudget() − overhead`（overhead = system + tools schema + 注入块，钳位 `[T/4, T]`），batch=`4×T'`、单条大结果 `0.6×T'`、压缩目标 `0.8×T'`——比例与原字符口径一致，派生表达式写死在消费点防漂移；唯 summary 输入裁剪（`1.6S`）与预览长度仍是字符域（内容级启发不随迁）。snip 走双门槛回滞：条数 > 60 **且** 会话体估算过 token 闸门才归档，归档后总量 ≈50（10 条迟滞带内不重复触发）；归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写），会话内标记为恒定文本（无条数、无路径，缓存友好）。
 - **MemoryManager** — 记忆（lcc s09）：`<会话根>/.memory/`（MEMORY.md 索引 + slug.md 记录）；沉淀（会话自然结束）、召回（LLM 选择 + 关键词兜底 → **上下文注入块**，见上「提示词单源与注入块」条；system 不随召回变动）、整理（阈值重写带快照回滚）。
 - **Agent Teams 引擎群（lcc s13）** — 四个零 GUI 内核：`MessageBus`（`<会话根>/.mailboxes/<name>.jsonl` 破坏性读邮箱 = at-most-once；三重 fail-closed 路径门；M8 删除失败即空批+lastError）、`WorktreeManager`（git worktree 十门创建 / 五门移除、分支永留、remove 刻意非工具、落 `.worktrees/<name>` 分支 `wt/<name>`）、`AgentTeamsManager`（Lead 7 工具内核 + 五本账全内存重启作废 + 11/8/4 协议门，门翻转只在队友侧——Lead `runReviewPlan` 不触 planGates）、`TeammateRuntime`（QTimer 2s 心跳无头状态机，回合 LLM 由宿主 `turnRequested` deferred 驱动、`deliverTurnResult()` 回填，零线程零嵌套事件循环）。
-- **AgentLoopTeam.cpp（s13 宿主接线 TU）** — 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）、`leadToolCwd` 租约感知 cwd 单点（围栏根随租约 cwd）、三注入边界 + `tryDeliverTeamEvents` 空闲唤醒收割（挂 cron tick 1s 节拍、先于 cron 交付、经 `scheduledUserMessage` 开回合——Gate③ MAJOR-1）、队友回合环与退出清算（`settleTeamOnExit`，析构无 emit）。
+- **AgentLoopTeam.cpp（s13 宿主接线 TU）** — 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）、`leadToolCwd` 租约感知 cwd 单点（围栏根随租约 cwd）、三注入边界 + `tryDeliverTeamEvents` 空闲唤醒收割（挂 cron tick 1s 节拍、先于 cron 交付、经 `scheduledUserMessage` 开回合——Gate③ MAJOR-1）、队友回合环与退出清算（`settleTeamOnExit`）。**析构期红线：`settleTeamOnExit` 内禁止 emit 任何信号**——`AgentLoop` 恒为 `ChatSessionPage` 的子对象，Qt 析构时序是「派生类成员先析构 → `~QObject` 才断连并 `deleteChildren`」，此刻到方的 lambda 仍挂在连接上而它触碰的页面成员（如 `m_liveTeammateCards`）已成悬空对象，直连槽执行即 UB。运行期队友卡终局另有三路（`completed`/`exited`/Lead `runningChanged(false)` 兜底扫），均不经本函数。
 
 ### 会话层
 
@@ -177,5 +188,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   `lite-harness-0.1.0-win64/`），所以只改 GitHub 资产外层名会造成「下载名 s12.5、解压目录 0.1.0」
   的新不一致，比现状更糟；重打包又会改动已发布二进制。结论：历史包名保留不改，s12.6 起包名与
   tag 同名。
+
+
 
 

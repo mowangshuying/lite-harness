@@ -523,7 +523,7 @@ QString flipDriveCase(const QString &path)
 void testDriveCaseRegistry(TaskStore &store, WorktreeManager &manager, const QString &repo)
 {
     if (!(repo.size() >= 2 && repo.at(1) == QLatin1Char(':') && repo.at(0).isLetter())) {
-        std::printf("SKIP: drive-case shape unavailable (non-drive root)\n");
+        TestHarness::skip("SKIP: drive-case shape unavailable (non-drive root)\n");
         return;
     }
     const QString session = QDir(repo).filePath(QStringLiteral(".lite-harness/sessions/t1"));
@@ -813,11 +813,11 @@ int tst_worktree()
 {
     ScopedTempRoot tmp(QStringLiteral("worktree"));
     if (!tmp.isValid()) {
-        std::printf("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
+        TestHarness::skip("SKIP: LITE_TEST_TMPROOT unset/unwritable\n");
         return 0;
     }
     if (!probeGit()) {
-        std::printf("SKIP: git unavailable\n");
+        TestHarness::skip("SKIP: git unavailable\n");
         return 0;
     }
 
@@ -829,7 +829,7 @@ int tst_worktree()
     std::unique_ptr<WorktreeManager> manager;
     QString repo;
     if (!makeFixture(root, &store, &manager, &repo)) {
-        std::printf("SKIP: git fixture init failed\n");
+        TestHarness::skip("SKIP: git fixture init failed\n");
         return TestHarness::failCount() - before; // 夹具不成不跑断言，不假造通过
     }
 

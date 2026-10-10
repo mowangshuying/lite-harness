@@ -11,6 +11,7 @@
 // 新增套件：写 tests/tst_<模块>.cpp，暴露 `int tst_<模块>()`（内部用 TestHarness::check，
 // 返回本套件失败数），再到 tests/main.cpp 里调用一行。
 
+#include <cstdarg>
 #include <cstdio>
 
 namespace TestHarness {
@@ -28,6 +29,16 @@ inline int &failCount()
     return n;
 }
 
+// SKIP 计数（s13 后新增）：套件对「夹具不可用」的诚实通道是 printf + return 0，
+// 而 main 只累加失败数——于是未注入 LITE_TEST_TMPROOT 的 CI 里 4/5 套件整组跳过仍判
+// 通过（假绿）。计数本身不判失败（本机无夹具时照常绿行），门禁由 LITE_TEST_MIN_PASS
+// 断言下界承担，见 tests/main.cpp。
+inline int &skipCount()
+{
+    static int n = 0;
+    return n;
+}
+
 // 断言：失败即打印并计数，不中断后续用例（一次跑完看全貌，而非逐个修逐个跑）
 inline void check(bool ok, const char *what)
 {
@@ -38,6 +49,16 @@ inline void check(bool ok, const char *what)
     }
     ++failCount();
     std::printf("FAIL: %s\n", what);
+}
+
+// SKIP 通知：打印 + 计数。格式串沿用各处原样（自带结尾 \n），故本函数不再补换行
+inline void skip(const char *fmt, ...)
+{
+    ++skipCount();
+    va_list args;
+    va_start(args, fmt);
+    std::vprintf(fmt, args);
+    va_end(args);
 }
 
 } // namespace TestHarness

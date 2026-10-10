@@ -369,7 +369,8 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
   `Qt6::Core`，产物落 `build/tests/` 而非 `build/bin/`——CPack staging 与根级清理都围绕 `bin/`
   展开，测试 exe 既进不了包也不会被清理规则误删。
 - 只有一个可执行目标 `lite-harness`，链 `FluentUI::Controls/Utils` + `Qt6::Network`；
-  `3rdparty/FluentUI` 是子目录，`3rdparty/sqlite*` 与 `3rdparty/lcc` **不进构建图**。
+  `3rdparty/FluentUI` 是子目录（构建必需），`3rdparty/lcc` 为移植规格参考**不进构建图**；
+  `3rdparty/sqlite*` 与 `cmake/FindSQLite3.cmake` 已 `git rm`（摘除子构建后全仓零引用，纯死码）。
 - 应用数据全部内嵌资源：QSS → `:/stylesheet/`、图标 → `:/res/`、翻译 qm → `:/i18n/`。
   因此出包 = exe + Qt 运行时 + VC 运行库（CPack ZIP 唯一路径）。
 - CI（`.github/workflows/Windows-Qt6.9.0.yml`）**无 lint 步骤**：干净环境全量 configure +
@@ -416,20 +417,29 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    `toolSummary` 口径。**这是有意为之的例外**，别据此开「UI 可以吃内核内部头」的先例。
 3. **`SettingsPage` 直改全局运行时配置**（`QOpenAi::setUrl/setToken`）：设置页 → 引擎的直连边，
    生效语义见 `SettingsPage.h` 注释。
-4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序，实测行数）：`MemoryManager.cpp` 1116、
-   `MessageBubbleWidget.cpp` 836、`QOpenAi.cpp` 767、`SettingsPage.cpp` 764、
-   `CompactManager.cpp` 724、`ChatSessionPage.cpp` 717、`TaskStore.cpp` 684、
-   `CronSchedulerManager.cpp` 631、`SessionSidebar.cpp` 487。
-5. **自动化测试刚起步**：`tests/` + `enable_testing()`/`add_test` 已落地（`LITE_TESTS` 默认 ON，
-   产物 `build/tests/lite-harness-tests.exe`，CI 跑 `ctest`），但当前只覆盖 `LineEnding.h` 一个纯函数头。
-   其余改动的验证手段仍是「编译期等价 + 冒烟运行 + 移动代码逐字一致」，行为回归大面积**不可证**。
-   下一批最小切口是已无 GUI 依赖的纯函数：`AgentLoopDetail::toolSummary` / `parseToolCall` /
-   `BashRunner::dangerWarning` / `isToolFailure` / cron 表达式匹配 / token 估算 / frontmatter 解析——
-   每个都是「加一个 `tests/tst_<模块>.cpp` + `tests/main.cpp` 里一行调用」，GLOB 收集无需改 CMakeLists。
-    刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
+4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序，实测行数）：`TaskStore.cpp` 1200、
+   `MemoryManager.cpp` 1116、`WorktreeManager.cpp` 917、`MessageBubbleWidget.cpp` 867、
+   `ChatSessionPage.cpp` 859、`AgentTeamsManager.cpp` 852、`SettingsPage.cpp` 773、
+   `QOpenAi.cpp` 767、`CompactManager.cpp` 724、`CronSchedulerManager.cpp` 631、
+   `SessionSidebar.cpp` 547（`src/` 合计 22615 行）。
+5. **测试覆盖面**：五套件已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /
+   `tst_worktree` / `tst_agentteams`，静态断言点 605 处、全量实跑 pass≈624。被测生产源需显式列进
+   `CMakeLists.txt` 的测试目标清单（当前四个 QtCore-only TU）。**但 L4 主循环（`AgentLoop` 家族 14 TU、
+   `SubAgent`、`TeammateRuntime`）与网络层 `QOpenAi` 仍零覆盖**：阻塞点是 `QOpenAi` 的函数局部 static
+   单例无注入点，须先引入 transport 接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 +
+   移动代码逐字一致」，行为回归大面积**不可证**。
+   下一批最小切口（零改动或极小搬移即可入表）：`CronSchedulerManager::validateCron`/`cronMatches`
+   （已是 static）/ `BashRunner::dangerWarning`（安全关键却 0 直测）/ `AgentPathGuard` 三个 inline /
+   `SessionStore` 六个 static / `AgentConst::estimateTokens` / `AgentLoopDetail::toolSummary`
+   /`parseToolCall`/`isToolFailure`（困在带 moc 的 TU，需仿 `LineEnding.h` 抽纯头）/ frontmatter 解析。
+   **夹具前置是硬要求**：后四套件依赖 `LITE_TEST_TMPROOT`（值须以 `tmp-test` 结尾），缺失即整组
+   `TestHarness::skip`——SKIP 不计失败，CI 另以 `LITE_TEST_MIN_PASS` 断言下界兜假绿（见 AGENTS.md 测试节）。
+   刻意不引 `Qt6::Test`/moc：测试对象全是纯函数，无信号槽与数据驱动表需求（取舍见 `tests/TestHarness.h`）。
 6. **队友 bash 异步桥（Gate③ MINOR-4，Lane B 已落地 0654a48）**：队友前台 bash 经 `setToolAsyncAdapter` 信号驱动（哨兵 `<async-tool-pending>` 截批 + resume 续跑，原同步等待界常量已摘除）；残留=Lead `create_worktree` 仍同步 handler（病态 git 冻结 ≤30s，Gate④ MINOR-B，发布后 P4.1 接异步壳）与异步 git 失败分类无行为测试（NIT-B）。
 7. **SubAgent `task` 仍走遗留非租约路径**（裁决：不做租约切换）：`runClaimTask`/`runCompleteTask` 不经租约六门，与团队工具并存是刻意边界。
 8. **lcc 线程模型 → 主线程状态机转译（总偏差）**：lcc 守护线程/文件锁 → QTimer 心跳/deferred 驱动/内存台账（D7/D9）；Gate③ 各 MINOR/NIT 的处置与本轮文档同步（NIT-4）见 `.slim/deepwork/port-s13-agent-teams.md` 台账与 `gate3-oracle-report.md`。
+9. **压缩计量的 O(n²) 全量序列化仍在 GUI 线程**（本轮发现，**刻意未改**，需单独立项）：`CompactManager::microCompact` 与 `fitToolResults` 都在循环内对**整段历史**重算 `estimateTokens`（每条工具结果一次全量重算 = O(n²)），`prepareAsync` 各段之间另有 4-5 次全量重算，`AgentLoop::estimatedContextTokens` 的锚失效兜底路径与 `contextOverheadTokens` 每次发请求各算一遍全量。叠加「零线程」约定（AGENTS.md），这直接表现为流式输出期的可感知卡顿。改法是循环前算一次总量、每次替换做 `total += new - old` 的增量维护（同 token 口径，不改阈值语义）。**未随本轮做的原因**：压缩触发点变化属行为回归，而 L4 与 CompactManager 均无测试可证——须先补 `estimateTokens`/管线切口的单测，再改，否则改错了没人能发现。
+10. **`AgentConst` 取值函数每次读盘，但「加缓存」与既有契约冲突**（本轮发现，**待裁决**）：`contextCharLimitValue()`/`maxToolIterationsValue()`/`modelOptions()`/`defaultModel()` 每次调用都构造 `QSettings`（open + parse ini），而消费点已下沉到 per-tool 级（`ChatSessionPage` 每个工具结果读一次 `contextTokenBudget()`）——头文件注释「调用频率为回合级/交互级，读盘成本可忽略」的断言已不成立。**但简单 static 缓存是错的**：README「运行时配置」节明确支持「其余手改 ini 即可」，缓存会让手改值永不生效，属可观察的行为回归。可行解是缓存 `QSettings` 实例 + 按 ini 文件 mtime 惰性重载（stat 远比 parse 便宜，且保住手改语义），代价是要改 `AppSettings::ini()` 的所有权模型。本轮只做诊断，实施与否及是否接受 mtime 方案的时效权衡，留给用户裁决。
 
 ---
 
@@ -464,7 +474,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 ### 一、P0 启动与构建
 
-- [ ] 子模块前置 `git submodule update --init 3rdparty/FluentUI` → checkout 成功，configure 不再缺 `FluentUI::Controls`（`3rdparty/lcc`/`sqlite` 从不入构建图，无需 init）
+- [ ] 子模块前置 `git submodule update --init 3rdparty/FluentUI` → checkout 成功，configure 不再缺 `FluentUI::Controls`（`3rdparty/lcc` 从不入构建图无需 init；`3rdparty/sqlite` 已作死码删除）
 - [ ] 干净 configure `cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64` → 零报错，GLOB 拾取全部 `src/*.cpp|.h` 与 `stylesheet/**/*.qss`（新增源文件重 configure 自动拾取、不改 CMakeLists.txt）
 - [ ] Debug 构建 `cmake --build build --config Debug --target lite-harness` → 0 error；src/ 各编译单元 `/W4` 0 告警（FluentUI 第三方豁免）
 - [ ] 重链前先结束所有运行中的 `build/bin/lite-harness.exe`（含用户自开实例）→ 链接成功；若见 LNK1168 属已知坑（Debug/Release 共用 `build/bin/` 互相覆盖），非代码缺陷
@@ -588,7 +598,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] **P2** Lead 工具面恰 25 件闭环（静态核对 `createToolsDefinition` / handler 表 / toolSummary / ToolBlock 标题四处 +7；ToolTagKind 零新增类别）；`submit_plan` 只出现在队友 schema（`teammateToolsDefinition` 共 10 件）；团队纪律静态段字节恒定 `QStringLiteral` 禁翻（`.ts` 不得出现 schema 英文描述串——P4 Lane C 实测 0 泄漏）
 - [ ] **P2** 队友回合环：`turnRequested`→宿主 deferred 发 ChatStream→`deliverTurnResult` 回填（零嵌套事件循环）；权限询问经同一 `permissionRequired` 透明转发；队友工具失败折叠为文本回喂不抛异常
 - [ ] **P2** 重启即账销（D7）：五本账纯内存——重启后磁盘残留 in_progress 任务经 `releaseTeammateAssignment` 降级 pending、清空 owner，不自动复活队友
-- [ ] **P2** 关停与退出清算：`request_shutdown` 握手→队友 `finished`→宿主收口；会话关闭/`~AgentLoop` 经 `settleTeamOnExit`（不留活 QTimer、析构无 emit），运行中关窗守卫照常先 `stop()`
+- [ ] **P2** 关停与退出清算：`request_shutdown` 握手→队友 `finished`→宿主收口；会话关闭/`~AgentLoop` 经 `settleTeamOnExit`（不留活 QTimer；**析构期禁 emit**——页面成员此刻已析构，到方槽即 UB，见 AGENTS.md「AgentLoopTeam.cpp」条），运行中关窗守卫照常先 `stop()`
 
 ---
 
