@@ -3,6 +3,7 @@
 
 #include "AgentLoop.h"
 
+#include "AgentLoopInternal.h"
 #include "SessionStore.h"
 
 #include <QJsonDocument>
@@ -112,13 +113,10 @@ bool AgentLoop::loadSavedHistory(QString *error)
         {
             if (presentToolIds.contains(id))
                 continue;
-            QJsonObject synth;
-            synth[QStringLiteral("role")] = QStringLiteral("tool");
-            synth[QStringLiteral("tool_call_id")] = id;
             // C 类禁翻区（第十一轮 F3a）：本串落盘 history.json 并回灌 LLM 上下文，
             // 若走 tr() 英文界面下会把译文污染进模型输入——一律恒中文源，不进翻译
-            synth[QStringLiteral("content")] = QStringLiteral("(恢复：工具结果不可用)");
-            rebuilt.append(synth);
+            rebuilt.append(AgentLoopDetail::makeToolResult(
+                id, QStringLiteral("(恢复：工具结果不可用)")));
             presentToolIds.insert(id);
         }
         pendingAssistantCallIds.clear();

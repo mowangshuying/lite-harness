@@ -465,13 +465,22 @@ void ApiTokenSettingCard::updateValue()
 
 void ApiTokenSettingCard::promptEdit()
 {
+    // 安全收口：此前把已存 token **明文预填**进编辑框，而全仓无一处 setEchoMode——与同文件
+    // updateValue() 里「明文绝不上屏」的注释自相矛盾（值区脱敏了，点「修改」反而把完整 key
+    // 摊在截屏/肩窥里）。现改为不预填 + Password 回显。
+    // 语义随之调整：空输入＝不修改。否则「不预填」会让「打开就直接点确定」变成误删 token；
+    // 清除另有卡上的「清除」按钮（见构造函数 m_clearButton 的连接），职责不重叠。
     const auto [input, accepted] = FluentInputDialog::getInputText(
-        window(), tr("设置 API Key"), tr("留空表示清除；保存将覆盖已配置的 Key。"), readApiToken());
+        window(), tr("设置 API Key"),
+        tr("输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。"),
+        QString(), QLineEdit::EchoMode::Password);
     if (!accepted)
         return; // 取消：保持原值
     const QString cleaned = input.trimmed();
+    if (cleaned.isEmpty())
+        return; // 留空＝不修改
     writeApiToken(cleaned);
-    QOpenAi::setToken(cleaned); // 即时生效（空串=清除），无需重启
+    QOpenAi::setToken(cleaned); // 即时生效，无需重启
     updateValue();
 }
 

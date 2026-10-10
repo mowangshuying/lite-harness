@@ -384,7 +384,17 @@ config/
 # submodule registration removed; local checkout kept for reference only
 /3rdparty/sqlite_orm/
 
-# 打包输出
 /dist/
-# FluentUI configure 副作用产物目录（非源码）
-/cmake/
+
+
+# User config single source: settings.ini next to the exe stores apiToken in PLAINTEXT.
+# It was not matched by any rule before, so `git add -A` would commit the token into the
+# repo history. This is the last mandatory gate (see README "Runtime config").
+settings.ini
+
+# NOTE: a former `/cmake/` rule here was meant to ignore FluentUI configure output, but it
+# also ignored this repo's source dir cmake/ (Find*.cmake helper modules, which
+# CMakeLists.txt adds to CMAKE_MODULE_PATH) -- a new Find module would silently stay
+# untracked. Build output is already covered by /build, so the rule is dropped;
+# do not add it back. If you need to ignore a generated file under cmake/, name it
+# explicitly instead of ignoring the whole source directory.

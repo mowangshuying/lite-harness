@@ -112,6 +112,23 @@ QJsonObject callToolArgs(const QJsonObject &toolCall)
 {
     return parseToolCall(toolCall).args;
 }
+
+QJsonObject makeToolResult(const QString &callId, const QString &content)
+{
+    QJsonObject toolResult;
+    toolResult[QStringLiteral("role")] = QStringLiteral("tool");
+    toolResult[QStringLiteral("tool_call_id")] = callId;
+    toolResult[QStringLiteral("content")] = content;
+    return toolResult;
+}
+
+QJsonArray snapshotMessages(const QVector<QJsonObject> &messages)
+{
+    QJsonArray snapshot;
+    for (const QJsonObject &msg : messages)
+        snapshot.append(msg);
+    return snapshot;
+}
 } // namespace AgentLoopDetail
 
 void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolName,
@@ -124,11 +141,8 @@ void AgentLoop::onToolFinished(const QJsonObject &toolCall, const QString &toolN
     emit toolOutputReady(toolName, summary, output, !isToolFailure(output));
 
     // 构建 tool 结果消息回填上下文
-    QJsonObject toolResult;
-    toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-    toolResult[QStringLiteral("tool_call_id")] = toolCall.value(QStringLiteral("id")).toString();
-    toolResult[QStringLiteral("content")] = output;
-    m_toolResultsReady.append(toolResult);
+    m_toolResultsReady.append(AgentLoopDetail::makeToolResult(
+        toolCall.value(QStringLiteral("id")).toString(), output));
 
     runNextTool();
 }

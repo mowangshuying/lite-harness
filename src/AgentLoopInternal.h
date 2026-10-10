@@ -9,7 +9,9 @@
 //   - toolSummary / callToolName / callToolArgs  定义于 AgentLoopTools.cpp（工具分发侧）
 //   - askPrefix / bashDenyList                   定义于 AgentLoopPermission.cpp（权限门侧）
 
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QVector>
 #include <QString>
 #include <QStringList>
 
@@ -62,4 +64,17 @@ QJsonObject callToolArgs(const QJsonObject &toolCall);
 //（AgentLoopTeam.cpp 经 guard->tryReactiveCompact 走队友自身压缩，预算独立）。
 bool isContextOverflowError(const QString &msg);
 
+// tool_result 消息合成单源（OpenAI 协议硬要求：每个 tool_call 必须有对应 tool 消息，
+// 断配对即上游 400）。此前 {role, tool_call_id, content} 三字段在六处手写装配——stop() 的
+// "Permission denied" 与 "(stopped)"、cancelSubAgent 的两处 "(cancelled)"、onToolFinished
+// 的正常回填、历史恢复占位——配对完整性靠人肉同步维持。收敛后协议键拼写与字段装配只有一个
+// 事实源；content 一律由调用方给出（含 C 类禁翻区中文源，本函数不做 tr()）。
+QJsonObject makeToolResult(const QString &callId, const QString &content);
+
+// 会话历史 → wire messages 数组的快照单源（首轮请求、压缩后重发、续跑重发、子代理请求
+// 共用）。此前同款 for-append 循环散落七处，且「排除 system」的 mid(1) 口径另散五处——
+// 本函数只负责快照，口径（全量 / mid(1)）仍由调用方显式表达，勿在此隐式裁剪。
+QJsonArray snapshotMessages(const QVector<QJsonObject> &messages);
+
 } // namespace AgentLoopDetail
+

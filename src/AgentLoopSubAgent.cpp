@@ -57,12 +57,9 @@ void AgentLoop::cancelSubAgent()
     // 配对（不经 onToolFinished：停发展示信号、不续跑队列——s03 stop() 待决权限的同款收口）
     if (!m_pendingTaskCall.isEmpty())
     {
-        QJsonObject toolResult;
-        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-        toolResult[QStringLiteral("tool_call_id")] =
-            m_pendingTaskCall.value(QStringLiteral("id")).toString();
-        toolResult[QStringLiteral("content")] = QStringLiteral("(cancelled)");
-        m_messages.append(toolResult);
+        m_messages.append(AgentLoopDetail::makeToolResult(
+            m_pendingTaskCall.value(QStringLiteral("id")).toString(),
+            QStringLiteral("(cancelled)")));
         m_pendingTaskCall = QJsonObject();
     }
     // 半途批其余成员一并收口（实证缺陷：曾裸清空两队列）：子代理卡队时，队列里
@@ -75,12 +72,9 @@ void AgentLoop::cancelSubAgent()
     m_toolResultsReady = QJsonArray();
     for (const auto &value : m_pendingToolCalls)
     {
-        QJsonObject toolResult;
-        toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-        toolResult[QStringLiteral("tool_call_id")] =
-            value.toObject().value(QStringLiteral("id")).toString();
-        toolResult[QStringLiteral("content")] = QStringLiteral("(cancelled)");
-        m_messages.append(toolResult);
+        m_messages.append(AgentLoopDetail::makeToolResult(
+            value.toObject().value(QStringLiteral("id")).toString(),
+            QStringLiteral("(cancelled)")));
     }
     m_pendingToolCalls = QJsonArray();
 }

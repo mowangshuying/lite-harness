@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QLineEdit> // EchoMode 枚举（密钥输入框脱敏）
 #include <QPair>
 #include <QString>
 
@@ -27,9 +28,15 @@ public:
     static QPair<QString, bool> getInputText(QWidget *parent,
                                              const QString &title,
                                              const QString &label = QString(),
-                                             const QString &text = QString());
+                                             const QString &text = QString(),
+                                             QLineEdit::EchoMode echoMode = QLineEdit::Normal);
 
     explicit FluentInputDialog(QWidget *parent = nullptr);
+
+    // 输入框回显模式：默认 Normal。密钥类输入传 QLineEdit::Password，避免明文上屏
+    // （肩窥/截屏泄漏）。此前全仓 grep echoMode 零命中，与 SettingsPage 里
+    // 「明文绝不上屏」的注释自相矛盾——值区脱敏了，编辑框却把完整 key 预填出来。
+    void setEchoMode(QLineEdit::EchoMode mode);
 
     void setTitle(const QString &title);
     void setLabel(const QString &label); // 空串隐藏提示行

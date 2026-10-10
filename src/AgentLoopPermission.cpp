@@ -21,6 +21,7 @@ namespace AgentLoopDetail
 const QStringList &bashDenyList()
 {
     static const QStringList list = {
+        // --- lcc 原表：条目与顺序逐字保留，维持移植 parity（lcc permission.py:8）---
         QStringLiteral("rm -rf /"),
         QStringLiteral("sudo"),
         QStringLiteral("shutdown"),
@@ -28,6 +29,24 @@ const QStringList &bashDenyList()
         QStringLiteral("mkfs"),
         QStringLiteral("dd if="),
         QStringLiteral("> /dev/"),
+        // --- lite 专属追加（有意偏离 lcc，理由即本注释）---
+        // 宿主是 powershell.exe -Command（见 BashRunner 启动段），上面七条全是 Unix 词，
+        // 在 Windows 上近乎装饰：`> /dev/` 永不命中，`rm -rf  /`（双空格）与 `rm -rf ~`
+        // 绕过精确子串，而真正致命的 Format-Volume/diskpart/-EncodedCommand 一条都没有。
+        // 追加判据 = 「PowerShell 下真能造成不可逆破坏」且「大小写不敏感子串匹配误伤率极低」。
+        // 删除类动词（rm/del/Remove-Item）刻意不进硬拒表——合法清理太常见，仍由 ASK 层的
+        // containsDestructiveCommand 升级询问兜住。
+        // 本表由 AgentLoopDetail::bashDenyList 单源，前台/后台/子代理/队友四处共用；
+        // 后台分支虽跳过 executeBashAsync 内的同步短路，但 PreToolUse 钩子的 checkDenyList
+        // 始终执行（见 AgentLoopHooks.cpp「拒绝先于用户意志」），故追加项对后台同样生效。
+        QStringLiteral("rm -rf"),          // 覆盖 rm -rf / 的空白与目标变体（~、双空格、C:\ 路径）
+        QStringLiteral("format-volume"),   // 格式化卷
+        QStringLiteral("diskpart"),        // 分区操作
+        QStringLiteral("vssadmin"),        // 删卷影副本（勒索软件标准步骤）
+        QStringLiteral("cipher /w"),       // 空闲空间擦除
+        QStringLiteral("reg delete"),      // 删注册表键
+        QStringLiteral("-EncodedCommand"), // 混淆载荷入口（短写 -enc 易误伤 --encoding，不收）
+        QStringLiteral("Invoke-Expression"),
     };
     return list;
 }

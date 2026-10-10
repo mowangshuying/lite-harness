@@ -122,10 +122,7 @@ void SubAgent::startChatRequest()
 
     QJsonObject request;
     request[QStringLiteral("model")] = m_model;
-    QJsonArray messagesJson;
-    for (const QJsonObject &msg : m_messages)
-        messagesJson.append(msg);
-    request[QStringLiteral("messages")] = messagesJson;
+    request[QStringLiteral("messages")] = AgentLoopDetail::snapshotMessages(m_messages);
     // 成员函数内调用私有静态（friend 生效），过滤交给自由函数
     request[QStringLiteral("tools")] = filterSubTools(AgentLoop::createToolsDefinition());
     // lcc s06：显式输出上限（与主循环同取 AgentConst::kMaxTokens）；子代理不开 enable_thinking（黑盒无思考展示）
@@ -276,10 +273,8 @@ void SubAgent::onToolFinished(const QJsonObject &toolCall, const QString &output
     }
 
     // 黑盒收口：只回填 tool 结果，不发 toolOutputReady——task 对外可见性由宿主收口一次
-    QJsonObject toolResult;
-    toolResult[QStringLiteral("role")] = QStringLiteral("tool");
-    toolResult[QStringLiteral("tool_call_id")] = toolCall.value(QStringLiteral("id")).toString();
-    toolResult[QStringLiteral("content")] = output;
+    QJsonObject toolResult = AgentLoopDetail::makeToolResult(
+        toolCall.value(QStringLiteral("id")).toString(), output);
     m_toolResultsReady.append(toolResult);
 
     runNextTool();

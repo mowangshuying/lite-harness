@@ -45,7 +45,7 @@
         <translation>主动压缩（compact 工具）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="375"/>
+        <location filename="../src/AgentLoop.cpp" line="413"/>
         <source>已停止。</source>
         <translation>已停止。</translation>
     </message>
@@ -87,14 +87,14 @@
         <translation>已保存</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="469"/>
+        <location filename="../src/SettingsPage.cpp" line="474"/>
         <source>设置 API Key</source>
         <translation>设置 API Key</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="469"/>
-        <source>留空表示清除；保存将覆盖已配置的 Key。</source>
-        <translation>留空表示清除；保存将覆盖已配置的 Key。</translation>
+        <location filename="../src/SettingsPage.cpp" line="475"/>
+        <source>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</source>
+        <translation>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</translation>
     </message>
 </context>
 <context>
@@ -231,14 +231,14 @@
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="538"/>
-        <location filename="../src/ChatSessionPage.cpp" line="594"/>
-        <location filename="../src/ChatSessionPage.cpp" line="613"/>
+        <location filename="../src/ChatSessionPage.cpp" line="561"/>
+        <location filename="../src/ChatSessionPage.cpp" line="617"/>
+        <location filename="../src/ChatSessionPage.cpp" line="636"/>
         <source>处理中…</source>
         <translation>处理中…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="832"/>
+        <location filename="../src/ChatSessionPage.cpp" line="855"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -292,12 +292,12 @@
 <context>
     <name>FluentInputDialog</name>
     <message>
-        <location filename="../src/FluentInputDialog.cpp" line="84"/>
+        <location filename="../src/FluentInputDialog.cpp" line="86"/>
         <source>确定</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location filename="../src/FluentInputDialog.cpp" line="89"/>
+        <location filename="../src/FluentInputDialog.cpp" line="91"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
@@ -426,51 +426,51 @@
 <context>
     <name>ModelListSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="485"/>
-        <location filename="../src/SettingsPage.cpp" line="518"/>
+        <location filename="../src/SettingsPage.cpp" line="494"/>
+        <location filename="../src/SettingsPage.cpp" line="527"/>
         <source>可选模型</source>
         <translation>可选模型</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="485"/>
-        <location filename="../src/SettingsPage.cpp" line="518"/>
+        <location filename="../src/SettingsPage.cpp" line="494"/>
+        <location filename="../src/SettingsPage.cpp" line="527"/>
         <source>输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。</source>
         <translation>输入框模型下拉的候选清单，逗号分隔；留空即内置默认项。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="494"/>
-        <location filename="../src/SettingsPage.cpp" line="519"/>
+        <location filename="../src/SettingsPage.cpp" line="503"/>
+        <location filename="../src/SettingsPage.cpp" line="528"/>
         <source>修改</source>
         <translation>修改</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="496"/>
-        <location filename="../src/SettingsPage.cpp" line="520"/>
+        <location filename="../src/SettingsPage.cpp" line="505"/>
+        <location filename="../src/SettingsPage.cpp" line="529"/>
         <source>清除</source>
         <translation>清除</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="532"/>
+        <location filename="../src/SettingsPage.cpp" line="541"/>
         <source>内置默认：%1</source>
         <translation>内置默认：%1</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="533"/>
+        <location filename="../src/SettingsPage.cpp" line="542"/>
         <source>未配置 modelOptions 键，可用本卡「修改」填写。</source>
         <translation>未配置 modelOptions 键，可用本卡「修改」填写。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="538"/>
+        <location filename="../src/SettingsPage.cpp" line="547"/>
         <source>settings.ini: %1</source>
         <translation>settings.ini: %1</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="545"/>
+        <location filename="../src/SettingsPage.cpp" line="554"/>
         <source>设置可选模型</source>
         <translation>设置可选模型</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="545"/>
+        <location filename="../src/SettingsPage.cpp" line="554"/>
         <source>多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。</source>
         <translation>多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。</translation>
     </message>
@@ -743,107 +743,107 @@
 <context>
     <name>SettingsPage</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="569"/>
-        <location filename="../src/SettingsPage.cpp" line="729"/>
+        <location filename="../src/SettingsPage.cpp" line="578"/>
+        <location filename="../src/SettingsPage.cpp" line="738"/>
         <source>外观与行为</source>
         <translation>外观与行为</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="575"/>
-        <location filename="../src/SettingsPage.cpp" line="731"/>
+        <location filename="../src/SettingsPage.cpp" line="584"/>
+        <location filename="../src/SettingsPage.cpp" line="740"/>
         <source>应用主题</source>
         <translation>应用主题</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="575"/>
-        <location filename="../src/SettingsPage.cpp" line="731"/>
+        <location filename="../src/SettingsPage.cpp" line="584"/>
+        <location filename="../src/SettingsPage.cpp" line="740"/>
         <source>选择应用显示的主题。</source>
         <translation>选择应用显示的主题。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="577"/>
-        <location filename="../src/SettingsPage.cpp" line="732"/>
+        <location filename="../src/SettingsPage.cpp" line="586"/>
+        <location filename="../src/SettingsPage.cpp" line="741"/>
         <source>浅色</source>
         <translation>浅色</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="578"/>
-        <location filename="../src/SettingsPage.cpp" line="733"/>
+        <location filename="../src/SettingsPage.cpp" line="587"/>
+        <location filename="../src/SettingsPage.cpp" line="742"/>
         <source>深色</source>
         <translation>深色</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="579"/>
-        <location filename="../src/SettingsPage.cpp" line="734"/>
+        <location filename="../src/SettingsPage.cpp" line="588"/>
+        <location filename="../src/SettingsPage.cpp" line="743"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="599"/>
-        <location filename="../src/SettingsPage.cpp" line="736"/>
+        <location filename="../src/SettingsPage.cpp" line="608"/>
+        <location filename="../src/SettingsPage.cpp" line="745"/>
         <source>语言</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="599"/>
-        <location filename="../src/SettingsPage.cpp" line="736"/>
+        <location filename="../src/SettingsPage.cpp" line="608"/>
+        <location filename="../src/SettingsPage.cpp" line="745"/>
         <source>选择界面显示的语言。</source>
         <translation>选择界面显示的语言。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="614"/>
+        <location filename="../src/SettingsPage.cpp" line="623"/>
         <source>语言设置</source>
         <translation>语言设置</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="614"/>
+        <location filename="../src/SettingsPage.cpp" line="623"/>
         <source>语言切换将在重启后生效。是否立即重启？</source>
         <translation>语言切换将在重启后生效。是否立即重启？</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="628"/>
-        <location filename="../src/SettingsPage.cpp" line="739"/>
+        <location filename="../src/SettingsPage.cpp" line="637"/>
+        <location filename="../src/SettingsPage.cpp" line="748"/>
         <source>工作目录</source>
         <translation>工作目录</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="641"/>
-        <location filename="../src/SettingsPage.cpp" line="743"/>
+        <location filename="../src/SettingsPage.cpp" line="650"/>
+        <location filename="../src/SettingsPage.cpp" line="752"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="654"/>
-        <location filename="../src/SettingsPage.cpp" line="747"/>
+        <location filename="../src/SettingsPage.cpp" line="663"/>
+        <location filename="../src/SettingsPage.cpp" line="756"/>
         <source>最大轮次</source>
         <translation>最大轮次</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="667"/>
-        <location filename="../src/SettingsPage.cpp" line="751"/>
+        <location filename="../src/SettingsPage.cpp" line="676"/>
+        <location filename="../src/SettingsPage.cpp" line="760"/>
         <source>模型服务</source>
         <translation>模型服务</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="687"/>
-        <location filename="../src/SettingsPage.cpp" line="759"/>
+        <location filename="../src/SettingsPage.cpp" line="696"/>
+        <location filename="../src/SettingsPage.cpp" line="768"/>
         <source>关于</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="692"/>
+        <location filename="../src/SettingsPage.cpp" line="701"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="693"/>
-        <location filename="../src/SettingsPage.cpp" line="760"/>
+        <location filename="../src/SettingsPage.cpp" line="702"/>
+        <location filename="../src/SettingsPage.cpp" line="769"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. 保留所有权利。</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="706"/>
-        <location filename="../src/SettingsPage.cpp" line="762"/>
+        <location filename="../src/SettingsPage.cpp" line="715"/>
+        <location filename="../src/SettingsPage.cpp" line="771"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</translation>
     </message>
@@ -1182,62 +1182,62 @@
     </message>
     <message>
         <location filename="../src/ToolBlock.cpp" line="335"/>
-        <location filename="../src/ToolBlock.cpp" line="372"/>
+        <location filename="../src/ToolBlock.cpp" line="375"/>
         <source>队友 %1 执行中</source>
         <translation>队友 %1 执行中</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="357"/>
+        <location filename="../src/ToolBlock.cpp" line="360"/>
         <source>回合推进</source>
         <translation>回合推进</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="359"/>
+        <location filename="../src/ToolBlock.cpp" line="362"/>
         <source>交付成果</source>
         <translation>交付成果</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="361"/>
+        <location filename="../src/ToolBlock.cpp" line="364"/>
         <source>出错</source>
         <translation>出错</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="363"/>
+        <location filename="../src/ToolBlock.cpp" line="366"/>
         <source>空闲待命</source>
         <translation>空闲待命</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="370"/>
+        <location filename="../src/ToolBlock.cpp" line="373"/>
         <source>队友 %1 空闲待命</source>
         <translation>队友 %1 空闲待命</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="418"/>
+        <location filename="../src/ToolBlock.cpp" line="421"/>
         <source>队友 %1 已交付</source>
         <translation>队友 %1 已交付</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="423"/>
+        <location filename="../src/ToolBlock.cpp" line="426"/>
         <source>队友 %1 已退出</source>
         <translation>队友 %1 已退出</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="428"/>
+        <location filename="../src/ToolBlock.cpp" line="431"/>
         <source>队友 %1 已中止</source>
         <translation>队友 %1 已中止</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="441"/>
+        <location filename="../src/ToolBlock.cpp" line="444"/>
         <source>执行中</source>
         <translation>执行中</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="473"/>
+        <location filename="../src/ToolBlock.cpp" line="476"/>
         <source>已停止</source>
         <translation>已停止</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="493"/>
+        <location filename="../src/ToolBlock.cpp" line="496"/>
         <source>…更早 %1 条进度已省略</source>
         <translation>…更早 %1 条进度已省略</translation>
     </message>

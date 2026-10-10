@@ -17,12 +17,14 @@
 QPair<QString, bool> FluentInputDialog::getInputText(QWidget *parent,
                                                      const QString &title,
                                                      const QString &label,
-                                                     const QString &text)
+                                                     const QString &text,
+                                                     QLineEdit::EchoMode echoMode)
 {
     FluentInputDialog dialog(parent);
     dialog.setTitle(title);
     dialog.setLabel(label);
     dialog.setText(text);
+    dialog.setEchoMode(echoMode);
     const bool accepted = dialog.exec() == QDialog::Accepted;
     return {dialog.text(), accepted};
 }
@@ -132,6 +134,11 @@ void FluentInputDialog::setLabel(const QString &label)
 void FluentInputDialog::setText(const QString &text)
 {
     m_lineEdit->setText(text);
+}
+
+void FluentInputDialog::setEchoMode(QLineEdit::EchoMode mode)
+{
+    m_lineEdit->setEchoMode(mode);
 }
 
 QString FluentInputDialog::text() const

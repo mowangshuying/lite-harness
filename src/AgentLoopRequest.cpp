@@ -142,9 +142,7 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                     emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(m_maxToolIterations));
                     return;
                 }
-                QJsonArray messagesJson;
-                for (const auto &msg : m_messages)
-                    messagesJson.append(msg);
+                const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
                 startChatRequest(messagesJson);
                 return;
             }
@@ -223,9 +221,7 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                     if (!m_running)
                         return;
                     applyCompressedConversation(replaced);
-                    QJsonArray retryMessages;
-                    for (const auto &msg2 : m_messages)
-                        retryMessages.append(msg2);
+                    const QJsonArray retryMessages = AgentLoopDetail::snapshotMessages(m_messages);
                     startChatRequest(retryMessages);
                 });
             if (req)
@@ -279,9 +275,7 @@ void AgentLoop::applyCompactPipelineAsync(const QJsonArray &callerMessages,
             if (changed)
             {
                 applyCompressedConversation(conversation);
-                requestMessages = QJsonArray();
-                for (const auto &msg : m_messages)
-                    requestMessages.append(msg);
+                requestMessages = AgentLoopDetail::snapshotMessages(m_messages);
             }
             if (next)
                 next(requestMessages);
@@ -456,9 +450,7 @@ void AgentLoop::runNextTool()
                     applyCompressedConversation(replaced);
                     // 批尾落盘检查点（随续延平移）：注入与压缩后的最终状态被捕获
                     persistHistory();
-                    QJsonArray messagesJson;
-                    for (const auto &msg : m_messages)
-                        messagesJson.append(msg);
+                    const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
                     startChatRequest(messagesJson);
                 });
             if (req)
@@ -471,9 +463,7 @@ void AgentLoop::runNextTool()
         // m_toolResultsReady 清空处；触发压缩时本检查点随续延在压缩替换后执行，见上）
         persistHistory();
 
-        QJsonArray messagesJson;
-        for (const auto &msg : m_messages)
-            messagesJson.append(msg);
+        const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
         startChatRequest(messagesJson);
         return;
     }
