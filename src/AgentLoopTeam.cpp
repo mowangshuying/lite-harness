@@ -5,6 +5,7 @@
 // （turnRequested→ChatStream→deliverTurnResult），零嵌套事件循环、零线程（AGENTS 铁律）。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 #include "AgentLoopTeam.h"
 #include "AgentLoopInternal.h"
@@ -246,7 +247,7 @@ QString AgentLoop::leadToolCwd()
     {
         // 租约失真分支（assignmentCwd=false 仅出现在有租约但盘校失败；Lead 无租约
         // 走①号 true 回落）：与「无租约回落」区分留痕，日志各走各路
-        qWarning().noquote()
+        LOG_WARN
             << QStringLiteral("[team] lead lease invalid, falling back to workDir: %1").arg(error);
     }
     return m_workDir;
@@ -285,7 +286,7 @@ void AgentLoop::injectTeamEvents()
         m_messages.append(injected);
     }
 
-    qDebug().noquote() << QStringLiteral("[team] events\n%1").arg(joined);
+    LOG_DEBUG << QStringLiteral("[team] events\n%1").arg(joined);
 }
 
 void AgentLoop::tryDeliverTeamEvents()
@@ -328,7 +329,7 @@ void AgentLoop::tryDeliverTeamEvents()
     //（Gate③ 裁决「lite 增强非缺陷」）；bus 无 cron 式两段台账，无宿主接线时本批
     // 丢失——与 lcc consume 后即弃的一次性语义同性质（GUI 恒接线，理论分支）。
     emit scheduledUserMessage(text, text);
-    qInfo().noquote() << QStringLiteral("[team] wake: delivered %1 events").arg(events.size());
+    LOG_INFO << QStringLiteral("[team] wake: delivered %1 events").arg(events.size());
     // m_teamWasActive 边沿无需在此维护：所开新回合的任一终局均经 settleLeadLease
     // 统一刷新（Gate③ NIT-1 下沉；lcc loop.py:419 每轮圈尾核对的 lite 落点）。
 }
@@ -349,7 +350,7 @@ void AgentLoop::settleLeadLease()
     // 每终局核对一次，文案与语义不变。
     const bool active = !m_teams.teammateNames().isEmpty();
     if (m_teamWasActive && !active)
-        qDebug() << "所有队友已下线，如需继续协作可再次 spawn_teammate";
+        LOG_DEBUG << "所有队友已下线，如需继续协作可再次 spawn_teammate";
     m_teamWasActive = active;
 }
 

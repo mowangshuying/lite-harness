@@ -1,4 +1,5 @@
 #include "TaskStore.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h" // 中间目录名单源（kTaskDirName，与 CompactManager 等拼接方共用）
 
@@ -385,8 +386,8 @@ bool TaskStore::dependsOn(const QString &startId, const QString &targetId, bool 
         Task node;
         QString loadError;
         if (!loadTask(current, &node, &loadError)) {
-            qWarning().noquote() << QStringLiteral("[task] cycle check skipped unloadable task: %1")
-                                        .arg(loadError);
+            LOG_WARN << QStringLiteral("[task] cycle check skipped unloadable task: %1")
+                                       .arg(loadError);
             continue; // 容错：该节点出边视为不可达
         }
         stack.append(node.blockedBy);
@@ -541,7 +542,7 @@ bool TaskStore::claimTaskUnleased(const QString &taskId, const QString &owner, Q
     task.status = QStringLiteral("in_progress");
     if (!saveTask(task, error))
         return false;
-    qDebug().noquote() << QStringLiteral("[task] claim %1 -> in_progress (owner: %2)").arg(task.subject, owner);
+    LOG_DEBUG << QStringLiteral("[task] claim %1 -> in_progress (owner: %2)").arg(task.subject, owner);
     *result = QStringLiteral("Claimed %1 %2").arg(task.id, task.subject);
     return true;
 }
@@ -599,11 +600,11 @@ bool TaskStore::completeTaskUnleased(const QString &taskId, const QString &owner
         if (startable)
             unblocked.append(candidate.subject);
     }
-    qDebug().noquote() << QStringLiteral("[task] complete %1").arg(task.subject);
+    LOG_DEBUG << QStringLiteral("[task] complete %1").arg(task.subject);
     QString message = QStringLiteral("Completed %1 (%2)").arg(task.id, task.subject);
     if (!unblocked.isEmpty()) {
         message += QStringLiteral("\nUnblocked: %1").arg(unblocked.join(QStringLiteral(", ")));
-        qDebug().noquote() << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
+        LOG_DEBUG << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
     }
     *result = message;
     return true;
@@ -619,7 +620,7 @@ QString TaskStore::runCreateTask(const QJsonObject &args) const
     QString error;
     if (!createTask(subject, description, &task, &error))
         return QStringLiteral("Error: ") + error; // lcc 裸抛 → lite 折叠为错误文本；'Error: ' 前缀对齐全仓失败文案族（B1 成败判定单源）
-    qDebug().noquote() << QStringLiteral("[task] create %1").arg(task.subject); // lcc run_create_task print
+    LOG_DEBUG << QStringLiteral("[task] create %1").arg(task.subject); // lcc run_create_task print
     return QStringLiteral("Created %1: %2").arg(task.id, task.subject);
 }
 
@@ -639,7 +640,7 @@ QString TaskStore::runUpdateTask(const QJsonObject &args) const
     QString dependencies = updated.blockedBy.join(QStringLiteral(", "));
     if (dependencies.isEmpty())
         dependencies = QStringLiteral("(none)");
-    qDebug().noquote() << QStringLiteral("[task] update %1 blockedBy: %2").arg(updated.subject, dependencies);
+    LOG_DEBUG << QStringLiteral("[task] update %1 blockedBy: %2").arg(updated.subject, dependencies);
     return QStringLiteral("Updated %1 blockedBy: %2").arg(updated.id, dependencies);
 }
 
@@ -874,7 +875,7 @@ bool TaskStore::claimTask(const QString &taskId, const QString &owner, QString *
     lease.cwd = cwd;
     m_assignments.insert(owner, lease);
     advanceAssignmentVersion(owner, taskId);
-    qDebug().noquote()
+    LOG_DEBUG
         << QStringLiteral("[task] claim %1 -> in_progress (lease owner: %2)").arg(task.subject, owner);
     // 偏差③承重契约：'Claimed ' 前缀被 lcc 跨模块 startswith 判成功（spawn/pull 通道）；
     // 本版本带括号是 s13 形（'Claimed <id> (<subject>)'），与遗留 s10 无括号形有意不同，勿"统一"。
@@ -954,11 +955,11 @@ bool TaskStore::completeTask(const QString &taskId, const QString &owner, QStrin
         if (startable)
             unblocked.append(candidate.subject);
     }
-    qDebug().noquote() << QStringLiteral("[task] complete %1").arg(task.subject);
+    LOG_DEBUG << QStringLiteral("[task] complete %1").arg(task.subject);
     QString message = QStringLiteral("Completed %1 (%2)").arg(task.id, task.subject);
     if (!unblocked.isEmpty()) {
         message += QStringLiteral("\nUnblocked: %1").arg(unblocked.join(QStringLiteral(", ")));
-        qDebug().noquote() << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
+        LOG_DEBUG << QStringLiteral("[task] unblocked %1").arg(unblocked.join(QStringLiteral(", ")));
     }
     *result = message;
     return true; // 铁律：此处不 remove 租约、不 advanceAssignmentVersion

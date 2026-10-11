@@ -7,6 +7,7 @@
 // 复用 CronSchedulerManager durable 落盘纪律：mkpath + QSaveFile + Indented + commit。
 
 #include <QJsonArray>
+#include "LiteLog.h"
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QDir>
@@ -58,7 +59,7 @@ public:
     static void warnIfSaveFailed(bool saved, const QString &root, const QString &op)
     {
         if (!saved)
-            qWarning() << "SessionStore:" << op << "写索引失败:" << indexFilePath(root);
+            LOG_WARN << "SessionStore: " << op << " 写索引失败: " << indexFilePath(root);
     }
 
     // 登记/刷新单条会话索引项：命中 dataId 就地更新（title/model/workDir 非空才覆盖）并刷新

@@ -1,4 +1,5 @@
 #include "LiteHarness.h"
+#include "LiteLog.h"
 #include <FramelessHelper/Core/framelessmanager.h>
 #include <FramelessHelper/Widgets/framelesswidgetshelper.h>
 #include <FramelessHelper/Widgets/standardsystembutton.h>
@@ -92,7 +93,7 @@ void LiteHarness::initUi()
     }
     else
     {
-        qWarning() << "LiteHarness: unexpected titlebar layout structure, theme button not inserted";
+        LOG_WARN << "LiteHarness: unexpected titlebar layout structure, theme button not inserted";
     }
 
     m_navView = new FluVNavigationView;
@@ -465,7 +466,7 @@ void LiteHarness::deleteSession(const QString &key)
     {
         QTimer::singleShot(0, this, [dataRoot] {
             if (!QDir(dataRoot).removeRecursively())
-                qWarning() << "session data dir removal failed:" << dataRoot;
+                LOG_WARN << "session data dir removal failed: " << dataRoot;
         });
     }
 }

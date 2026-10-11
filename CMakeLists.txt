@@ -63,7 +63,12 @@ source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${res})
 
 set(TGT lite-harness)
 # 原 ${inc} 引用随空的 set(inc "") 一并删除（从未有内容，死变量）
-add_executable(${TGT} ${src} "${CMAKE_CURRENT_SOURCE_DIR}/LiteHarness.rc")
+# WIN32：链接成 GUI 子系统（PE subsystem=2）。原先缺省形态走 /SUBSYSTEM:CONSOLE（=3），
+# 双击 exe 时 Windows 会额外分配一个黑控制台窗口（Qt 无控制台入口，窗口里也没有任何输出，
+# 纯噪音）。入口仍是 App.cpp 的 int main()：Qt6::Gui 传递引入的 Qt6::EntryPoint 按
+# WIN32_EXECUTABLE 属性选择 WinMain→main 桥接，源码零改动。
+# 单测目标 lite-harness-tests 保持 CONSOLE（ctest 要读 stdout），不在此列。
+add_executable(${TGT} WIN32 ${src} "${CMAKE_CURRENT_SOURCE_DIR}/LiteHarness.rc")
 
 # FluentUI 头文件搜索路径：由全局 include_directories 迁移为仅作用于本目标，
 # 避免污染后续 add_subdirectory 的构建（等价性：原全局块位于 FluentUI 子构建之后，仅本可执行消费）
@@ -138,6 +143,11 @@ if (LITE_TESTS)
 	)
 	# 与主目标同款 /W4 /utf-8；Qt6::Core 由上方 Widgets 的依赖传递保证可用，无需再 find_package
 	target_compile_options(lite-harness-tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
+	# LITE_NO_FLU_LOG：TaskStore.cpp / AgentTeamsManager.cpp 同进主目标与本测试目标，二者已迁
+	# (LOG_XXX).noquote() 宏（FluLogUtils 前缀，见 src/LiteLog.h）。测试只链 Qt6::Core、不引
+	# FluentUI::Utils，故本宏让 LiteLog.h 走退化分支（LOG_DEBUG→qDebug），(qDebug()).noquote()
+	# 语法同样成立：ctest 继续读 stdout，测试 exe 也不被拖进 Qt6::Gui 的 DLL 依赖。
+	target_compile_definitions(lite-harness-tests PRIVATE LITE_NO_FLU_LOG)
 	target_link_libraries(lite-harness-tests PRIVATE Qt6::Core)
 	add_test(NAME lite-harness-tests COMMAND lite-harness-tests)
 	# 超时兜底：套件含 git 子进程与文件 IO，挂死时不得拖住 CI 到 workflow 的 45 分钟上限

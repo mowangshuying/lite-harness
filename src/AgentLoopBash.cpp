@@ -2,6 +2,7 @@
 // 危险命令判定与超时/截断文案单源见 BashRunner + AgentLoopPermission.cpp。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
 #include "ToolNames.h"
@@ -76,7 +77,7 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
 
         // lcc 在 Popen 成功后打印；QProcess 启动是异步的，无法同步检测启动失败——
         // 登记后乐观打印，失败随后经 errorOccurred 补记（已知偏差）
-        qDebug().noquote() << QStringLiteral("[bg] started %1 %2").arg(taskId, command.left(60));
+        LOG_DEBUG << QStringLiteral("[bg] started %1 %2").arg(taskId, command.left(60));
         return;
     }
 
@@ -163,5 +164,5 @@ void AgentLoop::injectBackgroundResults()
         m_messages.append(injected);
     }
 
-    qDebug().noquote() << QStringLiteral("[bg] notifications\n%1").arg(joined);
+    LOG_DEBUG << QStringLiteral("[bg] notifications\n%1").arg(joined);
 }

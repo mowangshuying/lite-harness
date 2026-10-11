@@ -2,6 +2,7 @@
 // 用户裁决续跑。黑名单与 ASK 前缀经 AgentLoopInternal.h 供工具链/钩子链/子代理共用。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
 #include "SubAgent.h"
@@ -87,7 +88,7 @@ QString AgentLoop::checkDenyList(const QString &command)
         {
             // lcc permission.py:42 log_error(reason) 转译：拒绝事件补 [permission] tag 控制台日志
             //（级别取 qWarning，lcc 走 stderr 通道——登记偏差）；返回值文案不动
-            qWarning().noquote() << QStringLiteral("[permission] Permission denied by deny list");
+            LOG_WARN << QStringLiteral("[permission] Permission denied by deny list");
             return QStringLiteral("Blocked: %1 is on the deny list").arg(pattern);
         }
     }

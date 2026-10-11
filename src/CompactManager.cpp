@@ -1,4 +1,5 @@
 #include "CompactManager.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h" // 会话数据根下中间目录名单源（拼法涉既有落盘兼容，禁止字面量漂移）
 #include "QOpenAi.h"
@@ -197,7 +198,7 @@ QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
         // 偏差登记：lcc 此处抛异常中断；lite 返回空串由调用方降级（不中断会话）
-        qWarning().noquote() << QStringLiteral("[compact] 无法创建转写文件 %1").arg(path);
+        LOG_WARN << QStringLiteral("[compact] 无法创建转写文件 %1").arg(path);
         return QString();
     }
     // 保持 QFile 逐行追加（NewOnly 独占创建，非覆盖场景，原子写纪律不适用），
@@ -205,7 +206,7 @@ QString CompactManager::writeTranscript(const QVector<QJsonObject> &conversation
     for (const QJsonObject &message : conversation) {
         const QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact).trimmed();
         if (file.write(line) != line.size() || file.write("\n") != 1) {
-            qWarning().noquote()
+            LOG_WARN
                 << QStringLiteral("[compact] 转写文件写入失败 %1: %2").arg(path, file.errorString());
             break;
         }
@@ -227,14 +228,14 @@ QString CompactManager::appendSnipTranscript(const QVector<QJsonObject> &archive
     const QString path = QDir(transcriptDir()).filePath(kSnipTranscriptFileName);
     QFile file(path);
     if (!file.open(QIODevice::Append | QIODevice::Text)) {
-        qWarning().noquote()
+        LOG_WARN
             << QStringLiteral("[compact] 无法追加 snip 转写文件 %1: %2").arg(path, file.errorString());
         return QString();
     }
     for (const QJsonObject &message : archived) {
         const QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact).trimmed();
         if (file.write(line) != line.size() || file.write("\n") != 1) {
-            qWarning().noquote()
+            LOG_WARN
                 << QStringLiteral("[compact] snip 转写文件写入失败 %1: %2").arg(path, file.errorString());
             break;
         }
@@ -273,16 +274,16 @@ bool CompactManager::saveOutput(const QString &toolUseId, const QString &output,
     // 失败时 cancelWriting 丢弃临时文件不伤目标
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {
-        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
-                                    .arg(path, file.errorString());
+        LOG_WARN << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
+                                   .arg(path, file.errorString());
         return false;
     }
     const QByteArray bytes = output.toUtf8();
     if (file.write(bytes) != bytes.size() || !file.commit()) {
         const QString reason = file.errorString();
         file.cancelWriting();
-        qWarning().noquote() << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
-                                    .arg(path, reason);
+        LOG_WARN << QStringLiteral("[compact] 无法写入工具输出文件 %1: %2")
+                                   .arg(path, reason);
         return false;
     }
     if (savedPath)
@@ -549,7 +550,7 @@ CompactManager::summarizeHistoryAsync(const QVector<QJsonObject> &conversation, 
             QString summary;
             if (!error.isEmpty()) {
                 // 与原同步链 error 键分支同款降级日志（超时/4xx/重试用尽/网络错误统一入口）
-                qWarning().noquote() << QStringLiteral("[compact] 摘要调用失败 %1").arg(error);
+                LOG_WARN << QStringLiteral("[compact] 摘要调用失败 %1").arg(error);
             } else {
                 summary = content.trimmed();
             }
@@ -689,10 +690,10 @@ CompactManager::prepareAsync(QVector<QJsonObject> conversation, qsizetype conver
     const qsizetype convBudget = qBound(
         budget / 4, budget > overheadTokens ? budget - overheadTokens : budget / 4, budget);
     // 验收期观测点（修4 口径换算校准用）：跑通后可降级 qCDebug 或移除，勿留噪音
-    qInfo().noquote() << QStringLiteral("[compact] prepare 入口 conv=%1 overhead=%2 T'=%3")
-                             .arg(conversationTokens)
-                             .arg(overheadTokens)
-                             .arg(convBudget);
+    LOG_INFO << QStringLiteral("[compact] prepare 入口 conv=%1 overhead=%2 T'=%3")
+                               .arg(conversationTokens)
+                               .arg(overheadTokens)
+                               .arg(convBudget);
     auto convTokens = [](const QVector<QJsonObject> &c) { return estimateTokens(c); };
 
     toolResultBudget(conversation, convBudget);

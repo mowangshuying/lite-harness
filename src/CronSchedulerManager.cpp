@@ -1,5 +1,6 @@
 // CronSchedulerManager —— lcc s12 cron_scheduler.py 的 lite 转译（偏差登记见头文件注释块）
 #include "CronSchedulerManager.h"
+#include "LiteLog.h"
 
 #include <QDebug>
 #include <QDir>
@@ -327,7 +328,7 @@ QString CronSchedulerManager::scheduleJob(const QString &cron, const QString &pr
         return QStringLiteral("failed to save scheduled_tasks.json"); // lcc 抛错，折叠偏差
     }
 
-    qInfo().noquote() << QStringLiteral("[cron] scheduled %1: %2 -> %3").arg(id, cron, prompt.left(60));
+    LOG_INFO << QStringLiteral("[cron] scheduled %1: %2 -> %3").arg(id, cron, prompt.left(60));
     if (out)
         *out = job;
     return QString();
@@ -355,7 +356,7 @@ QString CronSchedulerManager::cancelJob(const QString &id)
         return QStringLiteral("failed to save scheduled_tasks.json"); // lcc 抛错，折叠偏差
     }
 
-    qInfo().noquote() << QStringLiteral("[cron] cancelled %1").arg(id);
+    LOG_INFO << QStringLiteral("[cron] cancelled %1").arg(id);
     return QStringLiteral("Cancelled %1").arg(id);
 }
 
@@ -403,7 +404,7 @@ void CronSchedulerManager::pollDueJobs(const QDateTime &moment)
             continue;
 
         if (enqueueDueJob(job.id, marker))
-            qInfo().noquote() << QStringLiteral("[cron] due %1: %2").arg(job.id, job.prompt.left(60));
+            LOG_INFO << QStringLiteral("[cron] due %1: %2").arg(job.id, job.prompt.left(60));
         else
             qCritical().noquote() << QStringLiteral("[cron] could not enqueue %1: failed to save scheduled_tasks.json").arg(job.id);
     }
@@ -609,7 +610,7 @@ void CronSchedulerManager::loadDurableJobs()
         QString error;
         if (!parseSavedJob(value, &job, &error))
         {
-            qWarning().noquote() << QStringLiteral("[cron] skipped invalid saved job: %1").arg(error);
+            LOG_WARN << QStringLiteral("[cron] skipped invalid saved job: %1").arg(error);
             continue;
         }
 
@@ -627,5 +628,5 @@ void CronSchedulerManager::loadDurableJobs()
     }
 
     if (loaded > 0)
-        qInfo().noquote() << QStringLiteral("[cron] loaded %1 durable job(s)").arg(loaded);
+        LOG_INFO << QStringLiteral("[cron] loaded %1 durable job(s)").arg(loaded);
 }

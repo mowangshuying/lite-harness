@@ -6,6 +6,7 @@
 // 对话记录装配与租约三时点清算。
 
 #include "TeammateRuntime.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h"
 #include "AgentTeamsManager.h"
@@ -478,8 +479,8 @@ void TeammateRuntime::deliverTurnResult(const QString &assistantText,
         if (!m_taskStore->releaseCompletedAssignment(m_name, &releaseError)
             && !releaseError.isEmpty()) {
             m_manager->noteReleaseWarning(releaseError);
-            qWarning() << "[team] release_completed_assignment(" << m_name
-                       << "):" << releaseError;
+            LOG_WARN << "[team] release_completed_assignment( " << m_name
+                     << "): " << releaseError;
         }
         m_manager->setTeammateStatus(m_name, AgentTeamsManager::TeammateStatus::Idle);
         sendToLead(QStringLiteral("Waiting for more work."),
@@ -642,8 +643,8 @@ TeammateRuntime::~TeammateRuntime()
 {
     QString cleanupError;
     if (settleLedgers(&cleanupError) && !cleanupError.isEmpty()) {
-        qWarning() << "[team] dtor settlement cleanup failed(" << m_name
-                   << "):" << cleanupError;
+        LOG_WARN << "[team] dtor settlement cleanup failed( " << m_name
+                 << "): " << cleanupError;
     }
 }
 
@@ -715,7 +716,7 @@ void TeammateRuntime::sendToLead(const QString &content, const QString &type,
         // 尽力而为（偏离登记）：lcc 裸 send 抛错会进 run() 外层 except → error 信；
         // lite MessageBus 失败已折叠为 lastError，此处 qWarning 记账不再二次上报
         // （上报本身也是 send，失败即递归无意义）。
-        qWarning() << "[team] send to lead failed:" << m_bus->lastError();
+        LOG_WARN << "[team] send to lead failed: " << m_bus->lastError();
         return;
     }
     // 展示信号双通道之一（界面点；信箱是给 Lead 模型的）。

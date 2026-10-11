@@ -1,4 +1,5 @@
 #include "MemoryManager.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h"
 #include "QOpenAi.h"
@@ -568,7 +569,7 @@ void MemoryManager::rebuildMemoryIndex() const
                          lines.join(QLatin1Char('\n')) +
                              (lines.isEmpty() ? QString() : QStringLiteral("\n")),
                          &error))
-        qWarning().noquote() << QStringLiteral("[memory] index rebuild failed: %1").arg(error);
+        LOG_WARN << QStringLiteral("[memory] index rebuild failed: %1").arg(error);
 }
 
 bool MemoryManager::writeMemoryFile(const QString &name, const QString &type,
@@ -852,7 +853,7 @@ int MemoryManager::processExtractReply(const QString &reply,
                              &error))
         {
             // lcc 抛异常 → 外层 except：打印 skipped 并 return 0；已写文件保留（两侧皆非原子）
-            qWarning().noquote() << QStringLiteral("[memory] extraction skipped: %1").arg(error);
+            LOG_WARN << QStringLiteral("[memory] extraction skipped: %1").arg(error);
             return 0;
         }
         MemoryRecord written;
@@ -917,7 +918,7 @@ QOpenAi::AsyncRequest *MemoryManager::extractMemoriesAsync(
             if (error.isEmpty())
                 stored = processExtractReply(content, existingRecords);
             else
-                qWarning().noquote() << QStringLiteral("[memory] extraction skipped: %1").arg(error);
+                LOG_WARN << QStringLiteral("[memory] extraction skipped: %1").arg(error);
             if (done)
                 done(stored);
         });
@@ -944,7 +945,7 @@ QString MemoryManager::buildConsolidatePrompt(const QVector<MemoryRecord> &recor
     //（等价重排：原段先组 prompt 再查 catalog 尺寸，模板拼接无副作用，先后不可观测）
     if (catalog.size() > kConsolidateInputCharLimit)
     {
-        qWarning().noquote() << QStringLiteral(
+        LOG_WARN << QStringLiteral(
             "[memory] consolidation skipped: memory store is too large for one consolidation pass");
         return QString();
     }
@@ -996,7 +997,7 @@ QOpenAi::AsyncRequest *MemoryManager::consolidateMemoriesAsync(
             if (error.isEmpty())
                 consolidated = applyConsolidateReply(content, records);
             else
-                qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1").arg(error);
+                LOG_WARN << QStringLiteral("[memory] consolidation skipped: %1").arg(error);
             if (done)
                 done(consolidated);
         });
@@ -1027,7 +1028,7 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
     }
     if (consolidated.isEmpty() || slugSet.size() != slugCount)
     {
-        qWarning().noquote() << QStringLiteral(
+        LOG_WARN << QStringLiteral(
             "[memory] consolidation skipped: consolidation returned empty or duplicate records");
         return 0;
     }
@@ -1039,8 +1040,8 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
         QString text;
         if (!readMemoryText(QDir(storeDir()).filePath(record.filename), &text))
         {
-            qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1")
-                                        .arg(QStringLiteral("failed to snapshot %1").arg(record.filename));
+            LOG_WARN << QStringLiteral("[memory] consolidation skipped: %1")
+                                       .arg(QStringLiteral("failed to snapshot %1").arg(record.filename));
             return 0;
         }
         snapshot.insert(record.filename, text);
@@ -1094,8 +1095,8 @@ int MemoryManager::applyConsolidateReply(const QString &reply,
                                 snapshot.value(record.filename), nullptr);
         }
         rebuildMemoryIndex();
-        qWarning().noquote() << QStringLiteral("[memory] consolidation skipped: %1")
-                                    .arg(error.isEmpty() ? QStringLiteral("consolidation write failed; "
+        LOG_WARN << QStringLiteral("[memory] consolidation skipped: %1")
+                                   .arg(error.isEmpty() ? QStringLiteral("consolidation write failed; "
                                                                           "store rolled back")
                                                          : error);
         return 0;

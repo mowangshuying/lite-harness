@@ -1,4 +1,5 @@
 #include "BackgroundTasksManager.h"
+#include "LiteLog.h"
 
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）
 
@@ -40,7 +41,7 @@ void BackgroundTasksManager::recordResult(const QString &taskId, const QString &
     m_results.insert(taskId, formatBashResult(output, exitCode, timedOut));
     m_ready.append(taskId);
     // lcc 在 collect() 打印本行；lite 按移植规格在记账时打印（有意偏差，见头文件注释）
-    qDebug().noquote() << QStringLiteral("[bg] collected %1: %2").arg(taskId, it->status);
+    LOG_DEBUG << QStringLiteral("[bg] collected %1: %2").arg(taskId, it->status);
 }
 
 QStringList BackgroundTasksManager::collect()

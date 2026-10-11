@@ -1,4 +1,5 @@
 #include "I18n.h"
+#include "LiteLog.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -27,13 +28,13 @@ bool installTranslator(const QString &resourcePath)
 {
     auto *translator = new QTranslator(qApp);
     if (!translator->load(resourcePath)) {
-        qWarning().noquote() << "[i18n] translator not loaded:" << resourcePath;
+        LOG_WARN << "[i18n] translator not loaded: " << resourcePath;
         delete translator;
         return false;
     }
     qApp->installTranslator(translator);
     g_translators.append(translator);
-    qDebug().noquote() << "[i18n] loaded translator:" << resourcePath;
+    LOG_DEBUG << "[i18n] loaded translator: " << resourcePath;
     return true;
 }
 

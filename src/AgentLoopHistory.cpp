@@ -2,6 +2,7 @@
 // （保留 [0] system、回填孤儿 tool_call 占位、恢复模型）。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
 #include "SessionStore.h"
@@ -39,15 +40,15 @@ void AgentLoop::persistHistory()
     // 失败不再静默 return：会话历史丢失属数据完整性事故，必须留痕（路径 + 原因）便于排查
     if (!file.open(QIODevice::WriteOnly))
     {
-        qWarning().noquote() << QStringLiteral("[history] persistHistory 打开失败 %1: %2")
-                                    .arg(path, file.errorString());
+        LOG_WARN << QStringLiteral("[history] persistHistory 打开失败 %1: %2")
+                                   .arg(path, file.errorString());
         return;
     }
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     if (!file.commit())
     {
-        qWarning().noquote() << QStringLiteral("[history] persistHistory 提交失败 %1: %2")
-                                    .arg(path, file.errorString());
+        LOG_WARN << QStringLiteral("[history] persistHistory 提交失败 %1: %2")
+                                   .arg(path, file.errorString());
         return;
     }
 

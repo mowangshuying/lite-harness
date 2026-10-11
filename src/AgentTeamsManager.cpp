@@ -1,4 +1,5 @@
 #include "AgentTeamsManager.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h"
 #include "AgentPathGuard.h"
@@ -609,8 +610,8 @@ QString AgentTeamsManager::runSpawnTeammate(const QString &name, const QString &
             if (!m_taskStore->releaseTeammateAssignment(name, &rollbackError)
                 && !rollbackError.isEmpty()) {
                 noteReleaseWarning(rollbackError); // FIND-M：回滚退租失败留痕遥测
-                qWarning() << "[team] spawn rollback release(" << name
-                           << "):" << rollbackError;
+                LOG_WARN << "[team] spawn rollback release( " << name
+                         << "): " << rollbackError;
             }
             finalizeTeammate(name);
             return QStringLiteral("Error: Teammate runtime failed to start for '%1'").arg(name);

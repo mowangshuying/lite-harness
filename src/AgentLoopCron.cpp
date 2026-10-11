@@ -2,6 +2,7 @@
 // 台账读写与 cron 语法匹配在 CronSchedulerManager，本文件只做宿主侧接线。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 
 QString AgentLoop::runScheduleCron(const QJsonObject &args)
@@ -58,7 +59,7 @@ void AgentLoop::tryDeliverCron()
 
         // lcc deliver 在回合执行前打印 delivered——时序保持一致
         for (const CronSchedulerManager::CronJob &job : fired)
-            qInfo().noquote() << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
+            LOG_INFO << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
         return m_running; // 宿主是否接管 = 本批交付成功与否
     });
 }

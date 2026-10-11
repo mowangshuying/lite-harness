@@ -1,4 +1,5 @@
 #include "SubAgent.h"
+#include "LiteLog.h"
 
 #include "QOpenAi.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
@@ -237,7 +238,7 @@ void SubAgent::executeTool(const QJsonObject &toolCall, bool permissionGranted)
         // 永远前台执行；降级提示仅打控制台、不进模型可见输出（lcc log_warn 语义）
         QJsonObject bashArgs = args;
         if (bashArgs.take(QStringLiteral("run_in_background")).toBool())
-                qWarning() << "[bg] not allowed in this context, running in foreground";
+                LOG_WARN << "[bg] not allowed in this context, running in foreground";
         executeBashAsync(toolCall, bashArgs);
         return;
     }

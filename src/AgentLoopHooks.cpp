@@ -2,6 +2,7 @@
 // 返回值约定：空串＝放行；PreToolUse 非空＝硬拦截文本，带 ASK: 前缀＝触发异步询问。
 
 #include "AgentLoop.h"
+#include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
 #include "ToolNames.h"
@@ -47,7 +48,7 @@ void AgentLoop::registerBuiltinHooks()
     // UserPromptSubmit: context_inject —— 打印会话工作目录（lcc 用 Path.cwd()，此处对应 m_workDir）。
     // （lcc 终态已修正 "UserPromptSubmit" 拼写，同步跟进）
     m_userPromptSubmitHooks.append([this](const QString &) -> QString {
-        qDebug().noquote() << QStringLiteral("[hook] UserPromptSubmit: working in %1").arg(m_workDir);
+        LOG_DEBUG << QStringLiteral("[hook] UserPromptSubmit: working in %1").arg(m_workDir);
         return QString();
     });
 
@@ -77,8 +78,8 @@ void AgentLoop::registerBuiltinHooks()
 
     // PreToolUse #2: log_before —— 打印工具名与参数预览（lcc: [hook] name(args_preview)）
     m_preToolUseHooks.append([](const QJsonObject &toolCall, bool) -> QString {
-        qDebug().noquote() << QStringLiteral("[hook] %1(%2)")
-                                  .arg(AgentLoopDetail::callToolName(toolCall), argsPreview(AgentLoopDetail::callToolArgs(toolCall)));
+        LOG_DEBUG << QStringLiteral("[hook] %1(%2)")
+                                    .arg(AgentLoopDetail::callToolName(toolCall), argsPreview(AgentLoopDetail::callToolArgs(toolCall)));
         return QString();
     });
 
@@ -86,14 +87,14 @@ void AgentLoop::registerBuiltinHooks()
     // lcc 在此再次打印 tool_use 行，与 log_before 有意重复，原样保留）
     m_postToolUseHooks.append([](const QJsonObject &toolCall, const QString &output) -> QString {
         const QString toolName = AgentLoopDetail::callToolName(toolCall);
-        qDebug().noquote() << QStringLiteral("[hook] tool_use: %1 - %2")
-                                  .arg(toolName, toolUseInfo(toolName, AgentLoopDetail::callToolArgs(toolCall)));
+        LOG_DEBUG << QStringLiteral("[hook] tool_use: %1 - %2")
+                                    .arg(toolName, toolUseInfo(toolName, AgentLoopDetail::callToolArgs(toolCall)));
         // 完整工具输出可达 kOutputCharLimit（50000 字符），QString::arg(output) 的格式化与内存分配
         // 在 Release 下同样发生、且本钩子跑在主线程——每个工具调用无条件打印全文是热点开销。
         // 默认只打上面的 tool_use 简报行，仅显式设置 LITE_VERBOSE_TOOLS 环境变量时才输出全文（调试用）。
         static const bool verboseTools = qEnvironmentVariableIsSet("LITE_VERBOSE_TOOLS");
         if (verboseTools)
-            qDebug().noquote() << QStringLiteral("[hook] tool_result:\n%1").arg(output);
+            LOG_DEBUG << QStringLiteral("[hook] tool_result:\n%1").arg(output);
         return QString();
     });
 
@@ -107,7 +108,7 @@ void AgentLoop::registerBuiltinHooks()
             if (msg.value(QStringLiteral("role")).toString() == QStringLiteral("tool"))
                 ++toolCount;
         }
-        qDebug().noquote() << QStringLiteral("[hook] Stop: session used %1 tool calls").arg(toolCount);
+        LOG_DEBUG << QStringLiteral("[hook] Stop: session used %1 tool calls").arg(toolCount);
         return QString();
     });
 }

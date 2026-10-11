@@ -1,4 +1,5 @@
 #include "QOpenAi.h"
+#include "LiteLog.h"
 
 #include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）
 #include "AppSettings.h"    // settings.ini 单源（apiBaseUrl / apiToken 两个键）
@@ -137,7 +138,7 @@ ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
     connect(d->timeoutTimer, &QTimer::timeout, this, [this] {
         d->timedOut = true;
         if (client().verbose)
-            qDebug() << "QOpenAi [timeout] 服务器静默超过" << client().streamIdleTimeout << "ms";
+            LOG_DEBUG << "QOpenAi [timeout] 服务器静默超过 " << client().streamIdleTimeout << " ms";
         if (d->reply)
             d->reply->abort();
     });
@@ -151,7 +152,7 @@ ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
     connect(d->totalTimer, &QTimer::timeout, this, [this] {
         d->totalTimedOut = true;
         if (client().verbose)
-            qDebug() << "QOpenAi [timeout] 流式响应总时长超过" << client().streamTotalTimeout << "ms";
+            LOG_DEBUG << "QOpenAi [timeout] 流式响应总时长超过 " << client().streamTotalTimeout << " ms";
         if (d->reply)
             d->reply->abort();
     });
@@ -218,7 +219,7 @@ void ChatStream::sendRequest()
 
     const QByteArray body = QJsonDocument(d->input).toJson(QJsonDocument::Compact);
     if (c.verbose)
-        qDebug() << "QOpenAi [request]" << "url=" << endpoint << "body=" << QString::fromUtf8(body);
+        LOG_DEBUG << "QOpenAi [request] " << "url=" << endpoint << " body=" << QString::fromUtf8(body);
 
     d->timedOut = false;
     d->totalTimedOut = false;
@@ -283,7 +284,7 @@ void ChatStream::processFrame(const QByteArray &frame)
     if (d->done)
         return; // 已收尾，忽略残留帧（如 [DONE] 后额外数据）
     if (client().verbose)
-        qDebug() << "QOpenAi [sse]" << frame;
+        LOG_DEBUG << "QOpenAi [sse] " << frame;
 
     QByteArray line = frame.trimmed();
     if (!line.startsWith("data:"))
@@ -447,7 +448,7 @@ void ChatStream::finishStream()
         const QString note = hasError
             ? tr("错误：%1").arg(d->reply->errorString())
             : QStringLiteral("ok");
-        qDebug() << "QOpenAi [response]" << "status=" << httpStatus << note;
+        LOG_DEBUG << "QOpenAi [response] " << "status=" << httpStatus << " " << note;
     }
 
     // 检查网络错误并分层处理
@@ -561,8 +562,8 @@ void ChatStream::scheduleRetry()
     const int delayMs = retryDelayMs(retryNumber);
 
     if (c.verbose)
-        qDebug() << "QOpenAi [retry]" << retryNumber << "/" << c.maxRetries
-                 << "after" << delayMs << "ms";
+        LOG_DEBUG << "QOpenAi [retry] " << retryNumber << " / " << c.maxRetries
+                  << "after " << delayMs << " ms";
 
     cleanupReply();
 
@@ -761,7 +762,7 @@ void initFromSettings()
     // 原默认 0 且全仓无调用方，429/5xx 退避链路运行时不可达
     setMaxRetries(AgentConst::maxRetriesValue());
     if (c.url.isEmpty() || c.token.isEmpty())
-        qWarning() << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
+        LOG_WARN << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
 }
 
 } // namespace QOpenAi
