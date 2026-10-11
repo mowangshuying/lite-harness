@@ -46,7 +46,6 @@ TodoCard {
 /* 行基态；行高/边距常量与 TodoCard.cpp kRowHeight 等注释保持耦合 */
 #todoRow {
     background-color: transparent;
-    border-radius: 4px;
 }
 
 /* 三态记号（○/●/✓ 文本字形，颜色随状态） */
