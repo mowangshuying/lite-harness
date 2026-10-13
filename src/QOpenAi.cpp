@@ -1,8 +1,9 @@
 #include "QOpenAi.h"
 #include "LiteLog.h"
 
-#include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）
+#include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）+ s15 恢复常量（kMaxConsecutive529）
 #include "AppSettings.h"    // settings.ini 单源（apiBaseUrl / apiToken 两个键）
+#include "AgentRecovery.h"  // s15 过载文本判据单源（RecoveryRules::isOverloadedText，lcc s15 af26862）
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -29,6 +30,7 @@ public:
     // 流式总时长哨兵（毫秒）：idle 每收字节即重置，杀不死"慢而不断"的流（持续有字节、
     // 永不发 [DONE]），需总量防线——与 AsyncRequest 的总超时同机制；取值进 AgentConstants.h
     int streamTotalTimeout = AgentConst::kStreamTotalTimeoutMs;
+    QString fallbackModelId;     // s15 过载换模后备模型（空=禁用）；启动由 initFromSettings 读 settings.ini 键 fallbackModelId 注入
     bool verbose = false;        // 调试日志开关
 };
 
@@ -129,6 +131,11 @@ public:
     QJsonObject usage;            // 捕获的 usage 对象（服务端原样透出，不进 assistantMsg）
     bool usageRequested = false;  // 本次请求体是否带 stream_options（仅 Chat 模式武装）
     bool sawFinishReason = false; // 已见 finish_reason 且进入宽限（usage 尾 chunk 到达即提前收口）
+
+    // ---- s15 错误恢复传输层状态（lcc s15 af26862 recovery.py withRetry 语义下沉）----
+    QString finishReason;         // 最近一次 finish_reason 值（随 messageFinished 上抛；重试清零重积）
+    int consecutive529 = 0;       // 连续过载错误计数（任一有效帧到达 / 换模 / 非过载可重试错误即清零）
+    bool usedFallback = false;    // 是否已消耗 fallback 换模机会（每流至多一次，lcc switched_model 口径）
 };
 
 ChatStream::ChatStream(QObject *parent) : QObject(parent), d(new Private)
@@ -185,6 +192,11 @@ void ChatStream::cancel()
         d->reply->abort();
         cleanupReply();
     }
+}
+
+bool ChatStream::switchedToFallback() const
+{
+    return d->usedFallback;
 }
 
 void ChatStream::startRequest(const QJsonObject &input, Mode mode)
@@ -314,6 +326,9 @@ void ChatStream::processFrame(const QByteArray &frame)
     }
     const QJsonObject root = doc.object();
 
+    // s15（lcc s15 af26862 recovery.py）：收到有效帧即证明服务端存活——过载连续计数清零（成功即清零）
+    d->consecutive529 = 0;
+
     // 修3：usage 捕获必须先于 choices 检查——include_usage 语义下末帧 choices=[] 且带
     // usage，若按原顺序会被 isEmpty 分支静默丢弃
     const QJsonValue usageVal = root.value(QStringLiteral("usage"));
@@ -343,8 +358,12 @@ void ChatStream::processFrame(const QByteArray &frame)
             d->content += text;
             emit textDelta(text);
         }
-        if (!choice.value(QStringLiteral("finish_reason")).toString().isEmpty())
+        const QString legacyReason = choice.value(QStringLiteral("finish_reason")).toString();
+        if (!legacyReason.isEmpty())
+        {
+            d->finishReason = legacyReason; // s15：记录值随 messageFinished 上抛（仅开通道，不改行为）
             finishStream();
+        }
         return;
     }
 
@@ -417,6 +436,7 @@ void ChatStream::processFrame(const QByteArray &frame)
     const QString finishReason = choice.value(QStringLiteral("finish_reason")).toString();
     if (!finishReason.isEmpty())
     {
+        d->finishReason = finishReason; // s15（lcc s15 af26862）：记录值随 messageFinished 上抛（仅开通道，不改行为）
         if (d->usageRequested && d->usage.isEmpty() && !d->sawFinishReason)
         {
             d->sawFinishReason = true;
@@ -456,9 +476,20 @@ void ChatStream::finishStream()
     {
         const QString errorMsg = d->reply->errorString();
 
-        // 静默超时中止（区别于主动取消）：服务器连续无字节输出
+        // 静默超时中止（区别于主动取消）：服务器连续无字节输出。
+        // s15（lcc s15 af26862 recovery.py 把 timeout 归入可重试瞬态错误）：重试预算尚存则与
+        // 429/5xx 同走 scheduleRetry 退避重发通道；预算耗尽维持原终态文案（与接入前逐字节一致）。
+        // 偏差登记：lcc 判 timeout 用异常类型名鸭子匹配，lite 由超时标志位触发本分支、不经文本判据，语义等价。
         if (d->timedOut)
         {
+            if (d->retriesLeft > 0)
+            {
+                --d->retriesLeft;
+                LOG_WARN << "QOpenAi [recovery] idle timeout retry "
+                         << (c.maxRetries - d->retriesLeft) << " / " << c.maxRetries;
+                scheduleRetry();
+                return;
+            }
             d->done = true;
             cleanupReply();
             emit error(tr("服务器无响应（连续 %1 ms 未收到数据）。").arg(c.streamIdleTimeout));
@@ -467,7 +498,9 @@ void ChatStream::finishStream()
 
         // 总时长哨兵中止（同样区别于主动取消）："慢而不断"的流——idle 窗口内始终有字节，
         // 静默防线永不触发，由本分支收口。须排在 OperationCanceledError 吞掉分支之前，
-        // 否则 abort 产生的取消错误会被当作主动取消静默丢弃
+        // 否则 abort 产生的取消错误会被当作主动取消静默丢弃。
+        // s15 偏差登记（对照 lcc timeout 可重试）：lite 总超时是最终兜底防线，重发会让单回合
+        // 总等待翻倍，故保持直接终态、不占重试预算
         if (d->totalTimedOut)
         {
             d->done = true;
@@ -491,6 +524,33 @@ void ChatStream::finishStream()
             // 5xx 服务端错误 / 429 限流：指数退避重试
             if (d->retriesLeft > 0)
             {
+                // s15 过载连续计数与 fallback 换模（lcc s15 af26862 recovery.py withRetry：连续 529
+                // 达 MAX_CONSECUTIVE_529 且配置了 fallbackModel → 换模重试，每 loop 至多一次）。
+                // 偏差：lcc 包在 loop 外层、lite 把等价语义下沉到传输层；overloaded 判定把 lcc 鸭子
+                // 判据（类型名/消息含 overloaded、消息含 529）折叠为「HTTP 状态 529 或错误体文本
+                // 命中 RecoveryRules::isOverloadedText」。非过载族可重试错误（429/500 等）清零计数。
+                // 换模重发沿用 lite 既有退避 1s,2s,4s…封顶 64s 无抖动（lcc 为 500ms·2^n 封顶 32s
+                // + 25% 抖动，语义等价，见类头偏差清单）。
+                const QString detail = parseErrorDetail(d->pendingFrame, d->buffer, d->reply, errorMsg);
+                const bool overloaded =
+                    httpStatus == 529 || RecoveryRules::isOverloadedText(detail);
+                if (overloaded)
+                    ++d->consecutive529;
+                else
+                    d->consecutive529 = 0;
+
+                if (d->consecutive529 >= AgentConst::kMaxConsecutive529
+                    && !c.fallbackModelId.isEmpty() && !d->usedFallback)
+                {
+                    // 消耗换模机会：重发体 model 字段改为 fallback（每流至多一次）；计数清零，
+                    // 本次重发照走下方既有退避通道（retriesLeft 仍由统一入口扣减）
+                    d->usedFallback = true;
+                    d->consecutive529 = 0;
+                    d->input[QStringLiteral("model")] = c.fallbackModelId;
+                    LOG_WARN << "QOpenAi [recovery] 529 consecutive, switch to fallback model: "
+                             << c.fallbackModelId;
+                }
+
                 --d->retriesLeft;
                 scheduleRetry();
                 return;
@@ -552,7 +612,7 @@ void ChatStream::finishStream()
     // 直连顺序有保证，不并入 assistantMsg（落盘历史会污染持久化与计量）
     if (!d->usage.isEmpty())
         emit usageReceived(d->usage);
-    emit messageFinished(assistantMsg);
+    emit messageFinished(assistantMsg, d->finishReason);
 }
 
 void ChatStream::scheduleRetry()
@@ -569,6 +629,12 @@ void ChatStream::scheduleRetry()
 
     // 重试从头开始，清空累积状态
     d->buffer.clear();
+    // s15（lcc s15 af26862）：半行残留与已捕获的 finish_reason 一并复位，重试 attempt 从零重收
+    // （finishReason 与 sawFinishReason 同口径；pendingFrame 清理是 idle 超时重试路径的必须配套——
+    // 静默超时可能截在帧中间，残半帧会拼进新 attempt 首行毁协议；429/5xx 路径下错误体多已被
+    // parseErrorDetail 读尽，该潜在缺陷此前被掩盖）
+    d->pendingFrame.clear();
+    d->finishReason.clear();
     d->thinking.clear();
     d->content.clear();
     d->toolCalls = QJsonArray();
@@ -649,7 +715,8 @@ void AsyncRequest::start(const QJsonObject &input, int totalTimeoutMs)
     // 下方 connect 在事件循环返回前同步完成，该路径必被 error 分支接住、不崩不发。
     m_stream = chat().createStream(input, this);
     // context 一律取 this：终态后对象 deleteLater，连接随析构自动断开，无悬挂回调
-    connect(m_stream, &ChatStream::messageFinished, this, [this](const QJsonObject &msg) {
+    connect(m_stream, &ChatStream::messageFinished, this,
+            [this](const QJsonObject &msg, const QString & /*finishReason*/) {
         // 只提取正文：ChatStream::finishStream 收尾时已将累积 delta 组装进 message.content；
         // reasoning_content / tool_calls 丢弃——本类契约即纯文本
         fireDone(msg.value(QStringLiteral("content")).toString(), QString());
@@ -732,6 +799,17 @@ int maxRetries()
     return client().maxRetries;
 }
 
+void setFallbackModelId(const QString &modelId)
+{
+    // lcc env.py 归一口径：strip 后空串=禁用换模（fallbackModelIdValue 已 trim，此处再防外部调用方塞空白）
+    client().fallbackModelId = modelId.trimmed();
+}
+
+QString fallbackModelId()
+{
+    return client().fallbackModelId;
+}
+
 void setTimeout(int milliseconds)
 {
     client().streamIdleTimeout = qMax(0, milliseconds);
@@ -761,6 +839,9 @@ void initFromSettings()
     // 重试次数同源于 settings.ini（键 maxRetries，默认/校验界见 AgentConst::kMaxRetries*）：
     // 原默认 0 且全仓无调用方，429/5xx 退避链路运行时不可达
     setMaxRetries(AgentConst::maxRetriesValue());
+    // s15 后备模型同源于 settings.ini（键 fallbackModelId，空=禁用换模；对照 lcc env.py
+    // FALLBACK_MODEL_ID "or None" 口径——未配置则全程不换模，行为与 s15 前逐字节一致）
+    setFallbackModelId(AgentConst::fallbackModelIdValue());
     if (c.url.isEmpty() || c.token.isEmpty())
         LOG_WARN << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
 }

@@ -6,6 +6,7 @@
 
 #include "AgentLoopInternal.h"
 #include "ToolNames.h"
+#include "AgentRecovery.h"
 
 #include <QDebug>
 
@@ -71,14 +72,27 @@ void AgentLoop::registerBuiltinHooks()
 
         const QString reason = checkPermissionRules(m_workDir, toolName, args);
         if (!reason.isEmpty())
+        {
+            // lcc s15 af26862 异步回合 fail-closed：无人值守回合（wake/bg/cron）不得挂在永久审批卡上，
+            // 返回定值长拒串（无 ASK: 前缀 → 走 executeTool 既有硬拒回填通道，不挂起队列、不出卡）。
+            // 逐字串单源 RecoveryRules::asyncApprovalDenied()。deny 表硬拒顺序在最前不受影响。
+            if (m_asyncTurn)
+                return RecoveryRules::asyncApprovalDenied();
             return AgentLoopDetail::askPrefix() + reason; // 需询问：异步协议，由 executeTool 挂起队列
+        }
 
         // s14: MCP 策略门（lcc s14 7b4ac1c permission.py——置于 deny 链与 check_rules 之后；
         // mcp__ 名不命中前两者天然互斥。fail-closed：宿主表未登记 allow 一律询问）。
         // permissionGranted 短路的续跑分支在上方已 return，批准重入时直接放行，不动此顺序。
         if (toolName.startsWith(ToolNames::MCP_PREFIX)
             && m_mcp.toolPolicy(toolName) != QLatin1String("allow"))
+        {
+            // lcc s15 af26862 异步回合 fail-closed：MCP confirm 门同样不得挂在审批卡上，
+            // 与上方 ASK 门同口径返回定值长拒串（无 ASK: 前缀 → 既有硬拒回填通道）
+            if (m_asyncTurn)
+                return RecoveryRules::asyncApprovalDenied();
             return AgentLoopDetail::askPrefix() + QStringLiteral("MCP tool policy requires confirmation");
+        }
 
         return QString();
     });

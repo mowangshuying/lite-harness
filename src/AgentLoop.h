@@ -95,9 +95,10 @@ public:
     QList<QPair<QString, QString>> teammateRoster() const;
 
     // 工具输出成败判定单源（B1）：工具侧一切失败一律折叠为输出文本，文案族固定——
-    // "Error:" 前缀（handler 校验/超时/危险拦截/TaskStore 补前缀族）、精确
-    // "Permission denied"（权限门拒绝）、"Blocked:" 前缀（deny 列表硬拒）、
-    // "[Background task start error]"（后台启动失败）、"Unknown tool:"（未注册名）。
+    // "Error:" 前缀（handler 校验/超时/危险拦截/TaskStore 补前缀族/后台启动失败 s15 文案族）、
+    // "Permission denied" 前缀（权限门拒绝；lcc s15 af26862 起由等值改前缀判定——异步回合
+    // fail-closed 长拒串 "Permission denied: interactive…" 必须同样判败，等值会把绿标挂错）、
+    // "Blocked:" 前缀（deny 列表硬拒）、"Unknown tool:"（未注册名）。
     // 发射点据此算 ok 随 toolOutputReady 带出；历史回放侧以 tool 消息 content 同判据复用
     static bool isToolFailure(const QString &output);
 
@@ -275,6 +276,10 @@ private:
     // 内部 restoreCronJobs 待下个 tick 重试；已接管 → 本批转入在途，ack 推迟至回合终局
     // （正常收尾/停止/流错误/轮次上限）finalizeInFlightDelivery 收口（lcc 双形态文本见信号注释）
     void tryDeliverCron();
+    // 后台任务唤醒空回合（lcc s15 af26862 background wake-up，第 4 事件源）：空闲且台账有
+    // 已终态未收割结果时，置异步瞬态标志并经 scheduledUserMessage 同栈直连开空回合——
+    // 收割本身由 run() 圈顶 injectBackgroundResults 完成，本函数不注入任何文本
+    void tryDeliverBackgroundWakeup();
     // task 工具（lcc s06）：启动 SubAgent 异步链（独立上下文黑盒；权限询问经本类
     // permissionRequired 转发；完成回调以汇总文本走 onToolFinished 收口）
     void startSubAgentTask(const QJsonObject &toolCall, const QJsonObject &args);
@@ -446,7 +451,7 @@ private:
     // 上下文压缩（lcc s08）：引擎以回调取宿主 workDir/model/卡片出口，本对象构造时注入
     CompactManager m_compact;            // 压缩引擎（转写与落盘目录随 workDir 动态解析）
     bool m_compactRequested = false;     // compact 工具被调用（批尾以 compact_history 替换历史后消费）
-    int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc MAX_REACTIVE_RETRIES=1，每次 run 归零）
+    int m_reactiveRetries = 0;           // 反应式压缩重试计数（lcc s15 af26862 hasAttemptedReactiveCompact：per-用户回合一次性旗标，仅在 run() 入口归零，回合内成功不复活预算）
     QString m_activeRequest;             // 本轮用户请求原文（摘要消息 "Current user request" 字段）
     // 记忆系统（lcc s09）：引擎以回调取宿主 workDir/model，卡片复用四参 toolOutputReady（"memory"）
     MemoryManager m_memory;              // 记忆引擎（召回/提取/合并，异步回调式，构造时注入回调）
@@ -498,6 +503,20 @@ private:
     // 否则停止后下一个 1s tick 只要 lead 邮箱有信就同栈拉起新回合，用户看到「停了又自己
     // 跑起来」。下一次 run() 入口复位（用户发言 = 明确恢复意图）
     bool m_teamWakeSuppressed = false;
+    // ---- lcc s15 af26862 恢复态 per-回合字段（对应 recovery.py RecoveryState，复位点在 run() 入口）----
+    // 瞬态旗标：空闲交付（cron/team/bg 唤醒）emit scheduledUserMessage 前置位，
+    // 同栈直连的 run() 入口锁存进 m_asyncTurn 后立即清零
+    bool m_pendingAsyncTurn = false;
+    // 本回合锁存值：异步回合 = 非用户输入源开启的无人值守回合
+    //（lcc s15 skip_approval=True 线程化语义的 lite 映射，权限钩子据此 fail-closed）
+    bool m_asyncTurn = false;
+    // 回合内换模粘滞（对应 RecoveryState.currentModel）：传输层 529 连续错切 fallback 后，
+    // 本回合后续请求一律改用 fallback；空 = 用 m_model（会话值），回合结束复位、下回合重新起算
+    QString m_recoveryCurrentModel;
+    // max_tokens 两拍恢复的第一拍是否已消费（对应 recovery.py length 处理）：回合内 8000→16000 仅一次
+    bool m_maxTokensEscalated = false;
+    // length 截断续打已用次数（对应 recovery.py 续打预算）：上限 AgentConst::kMaxRecoveryRetries
+    int m_recoveryCount = 0;
     // 上次广播的队友名册签名（name|status 以 ';' 连接）：updateTeamRosterBroadcast 边沿检测单源
     QString m_teamRosterSignature;
     // lcc _team_was_active：队友全部下线的边沿检测（每回合终局比对一次）

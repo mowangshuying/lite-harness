@@ -59,18 +59,29 @@ QStringList BackgroundTasksManager::collect()
         const Task task = it.value();
         m_tasks.erase(it);
 
-        // lcc collect 的通知模板逐字移植；result 截前 500 字符、无截断标记。
+        // lcc collect 的通知模板逐字移植（模板对照 lcc s15 af26862 :116-123）：
+        // 字段名 <summary>、截前 200 字符（lcc 原文 result[:200]，等价 left(200)）。
+        // 已知坑登记（lcc §11-3）：截断无「已截断」标记，尾部关键报错会被切掉——沿 lcc 不修。
+        // failed 与 completed 共用本模板，由 <status> 标签区分语义（lcc 同构，现状保持）。
         // 单次 arg(a,b,c,d) 替换语义：值中的 '%' 不会被二次展开（同 makeSystemPrompt 纪律）
         notifications.append(QStringLiteral(
             "<task_notification>\n"
             "  <task_id>%1</task_id>\n"
             "  <status>%2</status>\n"
             "  <command>%3</command>\n"
-            "  <result>%4</result>\n"
+            "  <summary>%4</summary>\n"
             "</task_notification>")
-            .arg(taskId, task.status, task.command, result.left(500)));
+            .arg(taskId, task.status, task.command, result.left(200)));
     }
     return notifications;
+}
+
+bool BackgroundTasksManager::hasPending() const
+{
+    // lcc s15 af26862 has_pending :132-135：只查不清零，收割唯一归 collect()。
+    // lcc 扫 tasks 判 status ∈ {completed, failed}；本仓就绪台账 m_ready 与其一一对应
+    // （recordResult 置 status 即 append、collect 收割即清空），读 m_ready 即同语义。
+    return !m_ready.isEmpty();
 }
 
 QString BackgroundTasksManager::formatBashResult(const QString &output, int exitCode,

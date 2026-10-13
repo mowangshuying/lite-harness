@@ -53,6 +53,9 @@ void AgentLoop::tryDeliverCron()
             requestParts << job.prompt;
         }
 
+        // lcc s15 af26862：cron 交付回合 = 异步回合（skip_approval 语义）——emit 前置瞬态
+        // 标志，同栈直连的 run() 入口锁存进 m_asyncTurn；权限钩子据此 fail-closed
+        m_pendingAsyncTurn = true;
         // 直连同栈：emit 返回时宿主 run() 已置位 m_running（或已走 error 链拒绝）
         emit scheduledUserMessage(displayParts.join(QLatin1Char('\n')),
                                   requestParts.join(QLatin1Char('\n')));
@@ -62,4 +65,22 @@ void AgentLoop::tryDeliverCron()
             LOG_INFO << QStringLiteral("[cron] delivered %1: %2").arg(job.id, job.prompt.left(60));
         return m_running; // 宿主是否接管 = 本批交付成功与否
     });
+}
+
+void AgentLoop::tryDeliverBackgroundWakeup()
+{
+    // lcc s15 af26862 background wake-up（第 4 事件源）：后台任务终态结果此前要等用户
+    // 下一次自然输入才随圈顶收割到达模型（「完成回合等待用户」缺陷）——空闲且有未收割
+    // 结果时开一个空回合收割。收割本体仍在 run() 圈顶 injectBackgroundResults（挂载点一），
+    // 本函数只按门铃：空 prompt 不注入任何 user 文本（对照 lcc :409-411 bg 分支）
+    if (m_running || !m_backgroundTasks.hasPending())
+        return;
+    // 异步回合瞬态标志：emit 前置位，同栈直连的 run() 入口锁存（s15 fail-closed 审批口径）
+    m_pendingAsyncTurn = true;
+    LOG_INFO << QStringLiteral("[bg] 唤醒空回合收割");
+    // displayText 空串 → ChatSessionPage 槽跳过空用户气泡（s15 卫兵）；activeRequestText
+    // 空串 → run() 判空跳过 user append（AgentLoop.cpp s15 卫兵）。无两段台账——UI 未接线
+    // 时门铃每个空闲 tick 重敲，hasPending 只查询不清零，幂等无害（与 cron 的
+    // restore 回队形态不同，登记差异）
+    emit scheduledUserMessage(QString(), QString());
 }

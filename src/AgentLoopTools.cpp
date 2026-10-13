@@ -219,19 +219,26 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
             QString output;
             if (taskId.isEmpty())
             {
-                // lcc: Popen 前校验失败（ValueError）折叠为 start error 文案，不起进程
-                output = QStringLiteral("[Background task start error] %1").arg(error);
+                // lcc s15 af26862 tools_manager.py 逐字失败文案族 "Error: Failed to start background
+                // task: {Type}: {msg}"；lite 无 Python 异常类型概念，{Type} 省略（偏差登记）。
+                // "Error:" 前缀天然被 isToolFailure 判失败（旧 "[Background task start error]" 判据随之删除）。
+                // 本路径（起进程前校验失败）无进程可完成，不触发完成钩子——lcc 同样未达 worker 线程
+                output = QStringLiteral("Error: Failed to start background task: %1").arg(error);
             }
             else
             {
+                // lcc s15 af26862 tools_manager.py 逐字占位句（旧尾句 "The result will be collected
+                // on a later turn." 删除）：向模型声明真实结果将以后续回合的 task_notification 到达
                 output = QStringLiteral(
-                    "[Background task %1 started] The result will be collected on a later turn.")
+                    "[Background task %1 started] Result will arrive as a task_notification.")
                     .arg(taskId);
                 executeBashAsync(toolCall, args, /*background=*/true, taskId);
             }
 
-            // lcc execute_tool 统一尾部：后台分支的占位输出同样触发 PostToolUse 后收口
-            triggerPostToolUseHooks(toolCall, output);
+            // lcc s15 af26862 钩子时点搬移：bg 分支就地返回，不再以占位/失败输出在派发时刻触发
+            // PostToolUse；成功起跑的任务改由 AgentLoopBash.cpp finished 收口以真实终态结果触发
+            // （lcc §8-⑨ 在 worker 线程触发，lite 零线程在主线程完成回调触发——时点等价、钩子链不变）。
+            // onToolFinished 仍以占位就地回填，闭合 tool_use↔tool_result 配对不破坏
             onToolFinished(toolCall, ToolNames::BASH, command, output);
             return;
         }
@@ -290,10 +297,13 @@ bool AgentLoop::isToolFailure(const QString &output)
     // 成败判定单源（见头文件注释）：文案族为全仓既成约定——各 handler/钩子/BashRunner/
     // TaskStore（本任务起统一补 "Error: " 前缀）的失败输出必居其一；stop 链的
     // "(stopped)"/"(cancelled)" 直写历史不经本判定（不发 toolOutputReady）。
+    // lcc s15 af26862：① Permission denied 改前缀判定——异步回合定值长拒串（"Permission denied:
+    // interactive…"，单源 RecoveryRules::asyncApprovalDenied()）必须判失败，resolvePermission/
+    // SubAgent 的逐字短拒串由前缀天然覆盖（不动回填文本）；② 删 "[Background task start error]"
+    // 整行——bg 起进程失败文案已改 "Error: Failed to start background task: "，Error: 前缀覆盖
     return output.startsWith(QStringLiteral("Error:"))
-        || output == QLatin1String("Permission denied")
+        || output.startsWith(QStringLiteral("Permission denied"))
         || output.startsWith(QStringLiteral("Blocked:"))
-        || output.startsWith(QStringLiteral("[Background task start error]"))
         || output.startsWith(QStringLiteral("Unknown tool:"));
 }
 

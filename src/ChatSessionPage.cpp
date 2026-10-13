@@ -467,7 +467,13 @@ void ChatSessionPage::wireAgent()
             [this](const QString &displayText, const QString &activeRequestText) {
         if (m_agentLoop->isRunning())
             return;
-        addMessage(MessageBubbleWidget::Role::User, displayText);
+        // lcc s15 af26862 bg 唤醒空回合（第 4 事件源）：displayText 为空则不建用户气泡——
+        // addMessage 无条件 new 气泡且联动标题捕获，空串会留空气泡、并把会话标题提前定稿为
+        // 「新会话」并锁死 maybeCaptureSessionTitle（真实首条用户消息将失去标题派生）。
+        // 收割内容由 run() 圈顶 injectBackgroundResults 注入历史，UI 无需用户气泡
+        // （对照 lcc bg 分支空 prompt 不注入 user 消息）；cron/team 唤醒文本非空走原路径
+        if (!displayText.isEmpty())
+            addMessage(MessageBubbleWidget::Role::User, displayText);
         startAssistantStream(activeRequestText);
     });
 

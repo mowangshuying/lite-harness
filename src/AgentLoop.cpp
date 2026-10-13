@@ -103,6 +103,11 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
         // 卫兵自动跳过，到期任务待下个空闲 tick，与 lcc 单事件语义一致
         tryDeliverTeamEvents();
         tryDeliverCron();
+        // lcc s15 af26862：bg 唤醒为第 4 事件源——lcc wait_for_cli_event 优先序
+        // inbox→cron→bg→stdin 映射为 team→cron→bg（同栈直连开回合后 m_running 置位，
+        // 后位事件源自动被卫兵跳过，单事件语义与 lcc 一致）；lcc 轮询 0.25s，
+        // lite 沿用既有 1s tick 不另立节拍（登记偏差）
+        tryDeliverBackgroundWakeup();
         // s13 观测面 b：名册变更边沿广播（1s 节拍搭车，零新 QTimer；签名相同则不发）
         updateTeamRosterBroadcast();
     });
@@ -229,17 +234,33 @@ void AgentLoop::run(const QString &userMessage)
     // active_request 记录本轮请求原文，供摘要消息 "Current user request" 字段使用
     m_compactRequested = false;
     m_reactiveRetries = 0;
+    // lcc s15 af26862：RecoveryState 为 loop() 局部、per-用户回合生命周期——换模粘滞/
+    // 升档旗标/续打计数都在回合入口从零起步（lcc 原版另有 maxRecoveryRetries=2 常量字段，
+    // lite 不入成员、直接取 AgentConst::kMaxRecoveryRetries，登记形态差异）
+    m_recoveryCurrentModel.clear();
+    m_maxTokensEscalated = false;
+    m_recoveryCount = 0;
+    // lcc s15 af26862：异步回合锁存——空闲交付（cron/team/bg 唤醒）在 emit 前放好的瞬态
+    // 标志在此消费；用户输入回合恒为 false（交互式审批可用）
+    m_asyncTurn = m_pendingAsyncTurn;
+    m_pendingAsyncTurn = false;
     m_activeRequest = userMessage;
 
     // UserPromptSubmit 钩子（lcc s04）：用户消息入历史前触发
     // （内置 context_inject 打印当前工作目录；返回值在 lcc 中亦被忽略）
     triggerUserPromptSubmitHooks(userMessage);
 
-    // 追加用户消息到会话历史
-    QJsonObject userMessageObj;
-    userMessageObj[QStringLiteral("role")] = QStringLiteral("user");
-    userMessageObj[QStringLiteral("content")] = userMessage;
-    m_messages.append(userMessageObj);
+    // 追加用户消息到会话历史（lcc s15 af26862：bg 唤醒回合传空文本——对照 lcc :409-411
+    // bg 分支空 prompt 不注入 user 消息；空 user 消息会污染历史与记忆沉淀，判空跳过
+    // append、其余流程照跑。圈顶 injectBackgroundResults 此刻末条非 user → 走新增
+    // user 消息分支，收割通知天然承载本回合的用户侧内容）
+    if (!userMessage.isEmpty())
+    {
+        QJsonObject userMessageObj;
+        userMessageObj[QStringLiteral("role")] = QStringLiteral("user");
+        userMessageObj[QStringLiteral("content")] = userMessage;
+        m_messages.append(userMessageObj);
+    }
 
     // 后台任务收割注入（lcc s11 inject_background_results 挂载点一）：此刻末条即刚追加的
     // user 消息 → 通知并入其 content 尾部（lcc 末条 user 合并语义）；无通知不动作

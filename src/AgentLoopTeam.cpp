@@ -132,7 +132,14 @@ void AgentLoop::initTeamEngine()
             return triggerPostToolUseHooks(toolCall, output);
         if (eventName != QLatin1String("PreToolUse"))
             return QString();
+        // lcc s15 af26862：队友回合恒等价 skip_approval=True——本钩子同步调用窗口内
+        // 临时锁存异步态（同栈执行无并发，调用后立即恢复，不污染 Lead 自身回合值）。
+        // permission/MCP 两处询问在 m_asyncTurn 下改返 fail-closed 长拒串（非 ASK 前缀），
+        // 天然走下方非空 gate 直通通道交还队友，挂起语义仍不可被队友触发（注入④红线不变）
+        const bool asyncSaved = m_asyncTurn;
+        m_asyncTurn = true;
         QString gate = triggerPreToolUseHooks(toolCall, false);
+        m_asyncTurn = asyncSaved;
         const QString ask = AgentLoopDetail::askPrefix();
         if (gate.startsWith(ask))
             gate = QStringLiteral("Permission required: ") + gate.mid(ask.size());
@@ -325,9 +332,14 @@ void AgentLoop::tryDeliverTeamEvents()
     // displayText=activeRequestText=渲染块文本——lcc inject_team_events(text)+
     // _run_turn(text) 双条 user 在 lite 并为一条（cron「N 条→1 条」先例同款偏差）；
     // 新回合 run() 挂载点一的 injectTeamEvents 此刻邮箱已空=天然 no-op 不重复消费。
-    // 偏差登记：lcc skip_approval=True（:408）在 lite 无对应物——Lead 保留 ASK 卡
-    //（Gate③ 裁决「lite 增强非缺陷」）；bus 无 cron 式两段台账，无宿主接线时本批
+    // s15 af26862 裁决翻转（对齐 lcc skip_approval=True :408）：Lead 空闲唤醒回合改走
+    // 异步 fail-closed——原 Gate③「Lead 保留 ASK 卡、lite 增强非缺陷」的登记废止。
+    // 理由：无人值守回合不得挂在永久审批卡上（唤醒回合无预期应答者，卡片会阻塞队列
+    // 直至用户手动停止）；ASK 类询问经 m_asyncTurn 返回定值长拒串走既有硬拒回填通道，
+    // 回合照常执行、仅受权限询问的工具被拒（与 cron 回合 s15 同口径文案族）。
+    // bus 无 cron 式两段台账，无宿主接线时本批
     // 丢失——与 lcc consume 后即弃的一次性语义同性质（GUI 恒接线，理论分支）。
+    m_pendingAsyncTurn = true; // emit 前置位，同栈 run() 入口锁存
     emit scheduledUserMessage(text, text);
     LOG_INFO << QStringLiteral("[team] wake: delivered %1 events").arg(events.size());
     // m_teamWasActive 边沿无需在此维护：所开新回合的任一终局均经 settleLeadLease
@@ -424,7 +436,7 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
             guard->adoptUsageAnchor(usage, countAtSend);
     });
     connect(stream, &QOpenAi::ChatStream::messageFinished, this,
-            [this, name, stream, guard](const QJsonObject &fullMsg) {
+            [this, name, stream, guard](const QJsonObject &fullMsg, const QString & /*finishReason*/) {
         if (m_teammateStreams.value(name) == stream)
             m_teammateStreams.remove(name);
         stream->deleteLater();

@@ -25,12 +25,16 @@ namespace {
 // P8 观测面 ok 判定：镜像 AgentLoop::isToolFailure 的折叠失败文案族前缀（单源在
 // GUI 层 TU，本 TU 层律禁 include AgentLoop.h/AgentLoopInternal.h——镜像副本登记
 // 偏差；改动文案族时两处同步）。仅供 teammateToolActivity 的 ok 诊断位，UI 不着色。
+// 与 AgentLoop::isToolFailure 单源同步（lcc s15 af26862，见 AgentLoopTools.cpp :300-303）：
+// ① "Permission denied" 相等改前缀判定——异步回合定值长拒串（单源
+//   RecoveryRules::asyncApprovalDenied()，"Permission denied: interactive…"）必须判
+//   失败，短拒串由前缀天然覆盖；② 删 "[Background task start error]" 整行——bg 起进程
+//   失败文案已改 "Error: …" 前缀族，由首条判据覆盖（与主循环同因）。
 bool teamToolOutputLooksFailed(const QString &output)
 {
     return output.startsWith(QStringLiteral("Error:"))
-        || output == QStringLiteral("Permission denied")
+        || output.startsWith(QStringLiteral("Permission denied"))
         || output.startsWith(QStringLiteral("Blocked:"))
-        || output.startsWith(QStringLiteral("[Background task start error]"))
         || output.startsWith(QStringLiteral("Unknown tool:"));
 }
 } // namespace

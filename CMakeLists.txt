@@ -114,8 +114,9 @@ target_link_libraries(${TGT} PRIVATE
 )
 
 # ---- 单元测试（ctest）----
-# 只测纯函数（当前六套件：LineEnding 行尾口径 / MessageBus / TaskStore 租约 / WorktreeManager /
-# AgentTeamsManager / McpManager（s14）），不引 Qt6::Test/moc——测试对象无信号槽需求，
+# 只测纯函数（当前八套件：LineEnding 行尾口径 / MessageBus / TaskStore 租约 / WorktreeManager /
+# AgentTeamsManager / McpManager（s14）/ AgentRecovery 逐字串与判据（s15）/
+# BackgroundTasksManager 收割台账（s15）），不引 Qt6::Test/moc——测试对象无信号槽需求，
 # 少一个组件依赖与 DLL 负担，本地 cl 与 CI 都能直接起来（取舍理由见 tests/TestHarness.h 顶部）。
 # 输出目录与主 exe 分开（build/tests 而非 build/bin）：CPack 的 staging 与根级 install(CODE)
 # 清理都围绕 bin/ 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删。
@@ -130,6 +131,7 @@ if (LITE_TESTS)
 		src/WorktreeManager.cpp
 		src/AgentTeamsManager.cpp
 		src/McpManager.cpp
+		src/BackgroundTasksManager.cpp
 	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
@@ -144,7 +146,8 @@ if (LITE_TESTS)
 	)
 	# 与主目标同款 /W4 /utf-8；Qt6::Core 由上方 Widgets 的依赖传递保证可用，无需再 find_package
 	target_compile_options(lite-harness-tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
-	# LITE_NO_FLU_LOG：TaskStore.cpp / AgentTeamsManager.cpp 同进主目标与本测试目标，二者已迁
+	# LITE_NO_FLU_LOG：TaskStore.cpp / AgentTeamsManager.cpp / BackgroundTasksManager.cpp 等
+	# 同进主目标与本测试目标，均已迁
 	# (LOG_XXX).noquote() 宏（FluLogUtils 前缀，见 src/LiteLog.h）。测试只链 Qt6::Core、不引
 	# FluentUI::Utils，故本宏让 LiteLog.h 走退化分支（LOG_DEBUG→qDebug），(qDebug()).noquote()
 	# 语法同样成立：ctest 继续读 stdout，测试 exe 也不被拖进 Qt6::Gui 的 DLL 依赖。

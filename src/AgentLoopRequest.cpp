@@ -6,7 +6,9 @@
 #include "AgentLoopInternal.h"
 #include "SubAgent.h"
 #include "AgentConstants.h"
+#include "AgentRecovery.h"
 #include "QOpenAi.h"
+#include "LiteLog.h"
 
 #include <QTimer>
 #include <QJsonArray>
@@ -57,7 +59,11 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         return;
 
     QJsonObject request;
-    request[QStringLiteral("model")] = m_model;
+    // lcc s15 af26862 RecoveryState.currentModel：529 连续命中触发 fallback 换模后，本回合后续
+    // create 粘滞用新模型（m_recoveryCurrentModel），run() 入口复位、不跨回合。为空则不切换
+    // （正常回合 payload 与旧版逐字节一致）
+    request[QStringLiteral("model")] =
+        m_recoveryCurrentModel.isEmpty() ? m_model : m_recoveryCurrentModel;
     // 修1（D1）：记忆注入块作为独立 user 消息追加在 payload 尾部——不落 m_messages/
     // history.json（历史与 UI 零污染、会话恢复无残留），跨回合的分歧点恒在序列末端，
     // messages[0..n-1] 前缀字节稳定 → OpenAI 兼容端点的前缀缓存全保
@@ -111,8 +117,11 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     // 采样参数：对齐 opencode（低温决策更稳）；端点不认则回退服务端默认
     request[QStringLiteral("temperature")] = AgentConst::kTemperature;
     request[QStringLiteral("top_p")] = AgentConst::kTopP;
-    // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致，取自单源常量）
-    request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
+    // 输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致，取自单源常量）。
+    // lcc s15 af26862 max_tokens 两拍：第一拍升档后本回合后续 create 用 16000（kEscalatedMaxTokens），
+    // 粘滞读 m_maxTokensEscalated，run() 入口复位（per-回合，对照 RecoveryState.maxTokensEscalated）
+    request[QStringLiteral("max_tokens")] =
+        m_maxTokensEscalated ? AgentConst::kEscalatedMaxTokens : AgentConst::kMaxTokens;
     // 修3：流式回读 usage（OpenAI 兼容扩展，末帧携带 prompt_tokens 等）——仅主循环注入；
     // 侧链压缩与 SubAgent 请求不带此键，token 锚只认真值来源（端点不认则静默忽略，走本地兜底）
     request[QStringLiteral("stream_options")] =
@@ -134,7 +143,8 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     connect(s, &QOpenAi::ChatStream::usageReceived, this,
             [this](const QJsonObject &usage) { adoptUsageAnchor(usage); });
 
-    connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
+    connect(s, &QOpenAi::ChatStream::messageFinished, this,
+            [this, s](const QJsonObject &fullMsg, const QString &finishReason) {
         // 卫兵（第六轮审计 C1 纵深防御）：坏 JSON 帧 error 后流已成终局，但 error 回调
         // 链可能已在栈内完成回合终局（setRunning(false)），此刻残留帧再触发本信号则
         // 必须弃收——否则向已终局的历史追加孤儿 tool_calls 消息，下一回合上游 400。
@@ -143,8 +153,56 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             return;
         m_currentStream = nullptr;
         s->deleteLater();
-        // lcc s08：成功收到响应即视为上下文已可容纳，反应式重试预算复位（loop.py create 后 :50）
-        m_reactiveRetries = 0;
+        // C1 粘滞读取（lcc s15 af26862）：传输层已因 529 连续命中切换 fallback 模型时，
+        // 宿主侧锁存粘滞值——本回合后续 create 立即生效（RecoveryState.currentModel 语义），
+        // run() 入口复位不跨回合。fallback 未配置则不粘滞（lcc FALLBACK_MODEL_ID 唯一开关对照）
+        if (s->switchedToFallback() && !QOpenAi::fallbackModelId().isEmpty()
+            && m_recoveryCurrentModel != QOpenAi::fallbackModelId())
+        {
+            m_recoveryCurrentModel = QOpenAi::fallbackModelId();
+            LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("回合粘滞 fallback 模型: ")
+                     << m_recoveryCurrentModel;
+        }
+        // lcc s15 af26862：删除成功路径的预算复位——反应式压缩旗标为 per-用户回合一次性
+        // （对照 hasAttemptedReactiveCompact：同一回合试过一次即不复活预算），单源复位在 run()
+        // 入口（AgentLoop.cpp）；error 分支的 m_reactiveRetries < 1 预算门语义不变
+
+        // lcc s15 af26862 max_tokens 两拍恢复（finish_reason == "length" 即输出被截断）。
+        // 非 length 正常回合不做任何复位动作——复位只在 run() 入口（lcc RecoveryState per-用户回合）
+        if (finishReason.compare(QStringLiteral("length"), Qt::CaseInsensitive) == 0)
+        {
+            if (!m_maxTokensEscalated)
+            {
+                // 第一拍：升档重打。半截响应不入账（对照 lcc recovery 第一拍丢弃截断响应再重发）——
+                // m_messages 尾部即本轮既有历史，复用既有续打通道（仿反应式压缩续延形态）
+                m_maxTokensEscalated = true;
+                LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("max_tokens 升档 8000→16000 重打");
+                const QJsonArray escalatedMessages = AgentLoopDetail::snapshotMessages(m_messages);
+                startChatRequest(escalatedMessages);
+                return; // 防 fallthrough 入账
+            }
+            // 第二拍（已升档仍 length）：半截 assistant 由既有逻辑入账——tool_calls 非空时照常
+            // fallthrough 走 continueWithToolResults 工具环（截断坏 JSON 参数由既有工具链解析失败
+            // 回文本，对照 lcc 同路径不为截断拆特例；悬空 tool_use 配对风险 lcc 同未处理，登记）。
+            // 无待执行工具且续打预算未用尽 → 半截入账后注入续打提示重发
+            const QJsonArray partialCalls = fullMsg.value(QStringLiteral("tool_calls")).toArray();
+            if (partialCalls.isEmpty() && m_recoveryCount < AgentConst::kMaxRecoveryRetries)
+            {
+                ++m_recoveryCount;
+                m_messages.append(fullMsg); // 半截响应先入账，再跟续打 user 消息（OpenAI 角色顺序）
+                QJsonObject contUser;
+                contUser[QStringLiteral("role")] = QStringLiteral("user");
+                contUser[QStringLiteral("content")] = RecoveryRules::continuationPrompt();
+                m_messages.append(contUser);
+                LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("续打 ")
+                         << m_recoveryCount << QStringLiteral(" / ") << AgentConst::kMaxRecoveryRetries;
+                const QJsonArray resumeMessages = AgentLoopDetail::snapshotMessages(m_messages);
+                startChatRequest(resumeMessages);
+                return;
+            }
+            // 续打预算耗尽 → 落既有成功终局收尾（下方）：半截文本按最终回复定稿、回合正常结束。
+            // 偏差登记：lcc 耗尽同样收尾不发 error，但 lite 成功终局会 emit finished（UI 正常气泡）
+        }
 
         // 无工具调用 -> 最终回复，循环结束
         const QJsonArray toolCalls = fullMsg.value(QStringLiteral("tool_calls")).toArray();
@@ -233,6 +291,15 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     connect(s, &QOpenAi::ChatStream::error, this, [this, s](const QString &msg) {
         m_currentStream = nullptr;
         s->deleteLater();
+        // C1 粘滞读取（lcc s15 af26862，与 messageFinished lambda 同口径）：529 换模后即便本帧
+        // 走向错误终局也先锁存——同栈若在回合窗口内重发（如反应式压缩续延 create）立即生效
+        if (s->switchedToFallback() && !QOpenAi::fallbackModelId().isEmpty()
+            && m_recoveryCurrentModel != QOpenAi::fallbackModelId())
+        {
+            m_recoveryCurrentModel = QOpenAi::fallbackModelId();
+            LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("回合粘滞 fallback 模型: ")
+                     << m_recoveryCurrentModel;
+        }
         // lcc s06 R1 收口三路之一：错误链同样级联取消子代理并合成 "(cancelled)" 回填
         // （串行队列下宿主流错误与子代理运行实际互斥，此处为防御性接线）
         cancelSubAgent();
@@ -262,6 +329,15 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
                 m_sideRequest = req;
             return;
         }
+        // C3（lcc s15 af26862 [Error] 降级入账）：失败终局落一条 assistant 错误摘要进历史——
+        // 模型下回合可见本轮失败（对照 lcc recovery 降级返回形态；append 形态逐字仿本文件
+        // MCP assemble 发现期失败先例）。反应式压缩重发分支非终局、上方已 return，不落 [Error]。
+        // 偏差登记：lcc 仅静默降级 return 不发 error；lite 保留 emit error（用户裁决：UI 红气泡可见）
+        QJsonObject err;
+        err[QStringLiteral("role")] = QStringLiteral("assistant");
+        err[QStringLiteral("content")] = QStringLiteral("[Error] ") + msg;
+        m_messages.append(err);
+
         // s13：流错误失败终局同样退租（反应式压缩重发分支非终局，上方已 return 不处理）
         settleLeadLease();
         // lcc 31a99d1：流错误失败终局——在途 cron 批回队（反应式压缩重发分支非终局，不处理）

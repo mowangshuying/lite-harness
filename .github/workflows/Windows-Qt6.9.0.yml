@@ -96,15 +96,18 @@ jobs:
       # Qt6Core.dll 由 install-qt-action 注入的 PATH 提供，无需额外部署。
       #
       # LITE_TEST_TMPROOT 必须在此注入，且路径尾缀必须是 tmp-test（tests/ScopedTempRoot.h
-       # 的构造/析构双守卫之一）。缺它时 4/6 套件整组走 SKIP 通道——SKIP 既不计失败也不产生
+       # 的构造/析构双守卫之一）。缺它时 4/8 套件整组走 SKIP 通道（s15 新增两套件零夹具、
+       # 不受本变量影响）——SKIP 既不计失败也不产生
       # 断言，进程返回 0，ctest 判通过：s13 起本步一直是这种假绿，实际只守了 LineEnding.h。
       # LITE_TEST_MIN_PASS 是断言下界门禁（tests/main.cpp），把「跑到了多少断言」变成硬条件；
-      # 量级 = 六套件全实跑的 pass 计数下浮值，新增套件时同步上调。
+      # 量级 = 八套件全实跑的 pass 计数下浮值，新增套件时同步上调。
+      # s15 口径：原六套件全量约 670，新增 tst_agentrecovery(24) + tst_backgroundtasks(37)
+      # = 61，合计约 731；取下界 655 ≈ 留 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '545'
+          $env:LITE_TEST_MIN_PASS = '655'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

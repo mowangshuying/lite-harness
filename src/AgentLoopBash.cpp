@@ -42,16 +42,23 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
     // 原时序由 BashRunner::start 内部的 arm 钩子（start 前调用）保证
     if (background)
     {
-        // 后台收口（lcc run() 的转译）：不 onToolFinished、不触发钩子，仅记账。
-        // Qt 在 FailedToStart 的 errorOccurred 之后仍会发 finished，recorded 门闩保证恰好记一次
+        // 后台收口（lcc run() 的转译）：不 onToolFinished，仅记账。
+        // Qt 在 FailedToStart 的 errorOccurred 之后仍会发 finished，recorded 门闩保证恰好记一次。
+        // lcc s15 af26862 钩子时点搬移：PostToolUse 不再由 Tools.cpp 派发分支以占位输出在派发时刻
+        // 触发，改在下方 finished 完成收口以真实终态结果触发（lcc §8-⑨ 在 worker 线程触发；lite
+        // 零线程，主线程 finished 回调触发——偏差登记：钩子返回值不回填、无 [hook error] 降级语义，
+        // lite 仅搬时点+喂真实结果）。偏差：进程层 FailedToStart 路径（errorOccurred 已置 recorded、
+        // finished 被门闩拦）不触发钩子——lcc worker 统一在收尾触发，lite 不复刻该分支
         auto recorded = std::make_shared<bool>(false);
 
         // Gate③ MINOR-3：派发时刻解析租约 cwd（lcc background_tasks_manager.py
         // :140-158——start(block, cwd=...) 派发时经 current_cwd 解析、记入 task、
         // 透传 Popen cwd=cwd or workDirPath）。leadToolCwd() 在本同步调用点求值
-        // =派发时刻语义；进程生命周期内 cwd 不再漂移（与 lcc 一致）
+        // =派发时刻语义；进程生命周期内 cwd 不再漂移（与 lcc 一致）。
+        // s15：toolCall 随闭包捕获（按值拷贝），供完成收口触发 PostToolUse 钩子链——
+        // 不新增台账持久形态，钩子只需原始 toolCall 引用，无需跨回合存活
         BashRunner::start(command, leadToolCwd(), this, &m_activeProcesses, timedOut,
-                          [this, taskId, timedOut, recorded](QProcess *process) {
+                          [this, toolCall, taskId, timedOut, recorded](QProcess *process) {
             connect(process, &QProcess::errorOccurred, this,
                     [this, process, taskId, recorded](QProcess::ProcessError error) {
                 if (error != QProcess::FailedToStart || *recorded)
@@ -63,13 +70,15 @@ void AgentLoop::executeBashAsync(const QJsonObject &toolCall, const QJsonObject 
             });
 
             connect(process, &QProcess::finished, this,
-                    [this, process, taskId, timedOut, recorded](int exitCode, QProcess::ExitStatus) {
+                    [this, process, toolCall, taskId, timedOut, recorded](int exitCode, QProcess::ExitStatus) {
                 m_activeProcesses.removeAll(process);
                 if (!*recorded)
                 {
                     *recorded = true;
-                    m_backgroundTasks.recordResult(
-                        taskId, BashRunner::finalizeOutput(process, *timedOut), exitCode, *timedOut);
+                    const QString output = BashRunner::finalizeOutput(process, *timedOut);
+                    m_backgroundTasks.recordResult(taskId, output, exitCode, *timedOut);
+                    // lcc s15 af26862：完成时刻以真实终态结果触发既有钩子链（时点自 Tools.cpp 派发分支搬入）
+                    triggerPostToolUseHooks(toolCall, output);
                 }
                 process->deleteLater();
             });

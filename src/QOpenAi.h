@@ -9,6 +9,26 @@ class QTimer;
 
 namespace QOpenAi {
 
+// ---- SSE 流式客户端（传输层）----
+//
+// s15 错误恢复扩展（lcc s15 af26862 recovery.py withRetry 语义下沉，本轮接线）：
+//   ① idle 静默超时转可重试：重试预算尚存则与 429/5xx 同走 scheduleRetry 退避重发通道，
+//      预算耗尽维持原终态文案（口径逐字节不变）；
+//   ② 过载（529/overloaded）连续计数：达到 AgentConst::kMaxConsecutive529 界且配置了
+//      fallback 模型（settings.ini 键 fallbackModelId，空=禁用）即自动换模重发，
+//      每条流至多换一次；收到任一有效 SSE 帧即清零（lcc 成功即清零语义）；
+//   ③ finish_reason 值随 messageFinished 一并上抛——length 两拍恢复的上层消费在后续 lane，
+//      本轮只开通道、不改任何既有行为。
+//
+// 与 lcc 的偏差清单（均刻意，勿「修」回 lcc 口径）：
+//   - lcc 的 withRetry 包在 loop 外层（每次 LLM 调用过一遍恢复层）；lite 包在传输层内——
+//     ChatStream 一次请求即 lcc 的一次完整调用，重试/换模语义等价，仅包裹层级不同；
+//   - 退避序列保持 lite 既有 1s,2s,4s…封顶 64s 无抖动（lcc 为 500ms·2^n 封顶 32s + 25%
+//     抖动；语义等价，不采抖动以保行为可复现）；
+//   - lcc 的 timeout 判据含异常类型名鸭子匹配；lite 由超时标志位触发本分支，不经文本判据；
+//   - lite 总时长哨兵保持直接终态不重试（lcc timeout 可重试；总超时是最终兜底，
+//     重发会让单回合总等待翻倍）；
+//   - max_tokens 两拍恢复与 [Error] 降级返回发生在 loop 层、不属于本类（后续 lane）。
 class ChatStream : public QObject
 {
     Q_OBJECT
@@ -26,13 +46,19 @@ public:
     // 主动取消流（调用后不再 emit 任何信号）
     void cancel();
 
+    // 本流是否已因连续过载切换到 fallback 模型（s15，lcc s15 af26862）。
+    // 传输层内部以此保证每条流至多换一次；上层（后续 lane）可据此在日志/展示标注换模。
+    bool switchedToFallback() const;
+
 signals:
     // enable_thinking 推理增量
     void thinkingDelta(const QString &delta);
     // 正式回答增量
     void textDelta(const QString &delta);
-    // 完整 assistant 消息（含 content / reasoning_content / tool_calls）
-    void messageFinished(const QJsonObject &fullMessage);
+    // 完整 assistant 消息（含 content / reasoning_content / tool_calls）。
+    // s15（lcc s15 af26862）：附 finish_reason 值（服务端原文 stop/length/tool_calls 等，
+    // 未见则为空串）——length 两拍恢复的上层消费在后续 lane，本轮仅开通道。
+    void messageFinished(const QJsonObject &fullMessage, const QString &finishReason);
     // 错误
     void error(const QString &message);
     // 服务端 usage 对象（prompt_tokens / completion_tokens / total_tokens 等原样透出）。
@@ -137,6 +163,12 @@ QString token();
 void setMaxRetries(int retries);
 int maxRetries();
 
+// 设置 / 获取过载换模后备模型 ID（s15，lcc s15 af26862 recovery.py fallbackModel；默认空=禁用）。
+// 启动由 initFromSettings 读 settings.ini 的 fallbackModelId 键注入；529/overloaded 族错误
+// 连续达 AgentConst::kMaxConsecutive529 时，ChatStream 重发体的 model 字段改用此值（每流至多一次）。
+void setFallbackModelId(const QString &modelId);
+QString fallbackModelId();
+
 // 设置 / 获取流式静默超时（毫秒，默认 60000）：每收到数据即重置，长回复不误杀；<=0 表示不限时
 void setTimeout(int milliseconds);
 int timeout();
@@ -145,7 +177,8 @@ int timeout();
 void setVerbose(bool enabled);
 bool verbose();
 
-// 初始化：从 settings.ini 键 apiBaseUrl / apiToken 读取配置
+// 初始化：从 settings.ini 键 apiBaseUrl / apiToken 读取配置，并注入 maxRetries / fallbackModelId
+// （后两者经 AgentConst 单点取值，见 AgentConstants.h）
 void initFromSettings();
 
 } // namespace QOpenAi

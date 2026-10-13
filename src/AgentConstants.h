@@ -76,8 +76,29 @@ inline QString defaultModel()
     return options.first();
 }
 
+// ---- s15 过载换模后备模型（lcc s15 af26862 recovery.py fallbackModel / env.py FALLBACK_MODEL_ID）----
+// 传输层连续过载（529/overloaded）达 kMaxConsecutive529 上限时，重发体 model 字段改用此值。
+// 空串 = 禁用换模（对照 lcc env.py 的 "or None" 归一：未配置则全程不换模，行为与 s15 前逐字节一致）。
+// 刻意**不做** defaultModel 式的「清单内才采信」校验：fallback 语义是给清单外的另一服务兜底，
+// 且换模失败自然回落既有错误链，无须入口设闸。读值必须经 iniTextValue（同清单键纪律，防逗号串形态误判未配置）。
+inline const QString kFallbackModelKey = QStringLiteral("fallbackModelId");
+inline QString fallbackModelIdValue()
+{
+    return iniTextValue(kFallbackModelKey).trimmed();
+}
+
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
 constexpr int kMaxTokens = 8000;
+
+// ---- s15 错误恢复参数（对照 lcc s15 af26862 recovery.py 常量块 :17-21）----
+// kMaxConsecutive529 本轮由 QOpenAi 传输层消费；另两个的消费点在 AgentLoop 恢复接线（后续 lane），
+// 先入本头单源，防后续 lane 各处字面量分叉。
+// 偏差登记：lcc 的 MAX_RETRIES=3 与退避（500ms·2^n 封顶 32s + 25% 抖动）**不采**——lite 重试预算
+// 与退避沿用 settings.ini 键 maxRetries 的既有口径（1s,2s,4s…封顶 64s 无抖动），语义等价，
+// 不引入随机抖动也保证事件驱动下的行为可复现。
+constexpr int kEscalatedMaxTokens = 16000; // max_tokens 溢出第一拍：升档到该值重发（lcc ESCALATED_MAX_TOKENS）
+constexpr int kMaxConsecutive529 = 2;      // 连续过载计数界：达到即换 fallback 模型（lcc MAX_CONSECUTIVE_529）
+constexpr int kMaxRecoveryRetries = 2;     // 恢复级重试预算（lcc MAX_RECOVERY_RETRIES，后续 lane 消费）
 
 // 推理强度档位（OpenAI 兼容端点 reasoning_effort）：端点按档位分配思考预算，
 // 对齐 opencode 的 xhigh 观感（长思考、少工具轮）。端点不认此字段时行为回退

@@ -17,6 +17,8 @@ int tst_taskstore_lease();
 int tst_worktree();
 int tst_agentteams();
 int tst_mcpmanager();
+int tst_agentrecovery();      // s15：零夹具，任何环境全跑
+int tst_backgroundtasks();    // s15：零夹具，任何环境全跑
 
 int main()
 {
@@ -27,6 +29,8 @@ int main()
     failed += tst_worktree();
     failed += tst_agentteams();
     failed += tst_mcpmanager();
+    failed += tst_agentrecovery();
+    failed += tst_backgroundtasks();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

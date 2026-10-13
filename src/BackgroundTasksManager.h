@@ -43,9 +43,16 @@ public:
     // results 存 formatBashResult 产物，入收割队列并打印记账行（lcc "collected" 文案）
     void recordResult(const QString &taskId, const QString &output, int exitCode, bool timedOut);
 
-    // 收割（lcc collect）：快照并清空 ready 队列，逐条 pop task/result，
-    // 渲染 <task_notification> 列表（result 取前 500 字符、无截断标记——lcc 文案逐字）
+    // 收割（lcc collect，模板对照 lcc s15 af26862 :116-123）：快照并清空 ready 队列，逐条 pop task/result，
+    // 渲染 <task_notification> 列表（summary 取前 200 字符、无截断标记——lcc 文案逐字）
     QStringList collect();
+
+    // 是否已有终态（completed/failed）后台任务待收割（lcc s15 af26862 has_pending :132-135）。
+    // 只查询、不清零，收割仍唯一归 collect()。
+    // 用途：供宿主 tick 作第 4 事件源判定唤醒回合（inbox→cron→bg→stdin 优先级链的 bg 档）。
+    // 实现口径：lcc 扫 tasks 的 status ∈ {completed, failed}；本仓 recordResult 置 status 与
+    // append m_ready 同发生命周期、collect 同时清空两处，故 m_ready 非空 ⟺ lcc 判据，取就绪台账。
+    bool hasPending() const;
 
     // lcc format_bash_result 等价：超时（对应 lcc exit_code None）或退出码 0 → 原样返回；
     // 否则前缀 "Error: command exited with status %1:\n%2"。主循环前台路径共用

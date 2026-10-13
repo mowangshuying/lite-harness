@@ -134,7 +134,8 @@ void SubAgent::startChatRequest()
 
     // 黑盒：有意不连接 thinkingDelta/textDelta——子代理过程不进入 UI
 
-    connect(s, &QOpenAi::ChatStream::messageFinished, this, [this, s](const QJsonObject &fullMsg) {
+    connect(s, &QOpenAi::ChatStream::messageFinished, this,
+            [this, s](const QJsonObject &fullMsg, const QString & /*finishReason*/) {
         m_currentStream = nullptr;
         s->deleteLater();
         if (m_cancelled)
