@@ -99,12 +99,12 @@ jobs:
       # 的构造/析构双守卫之一）。缺它时 4/5 套件整组走 SKIP 通道——SKIP 既不计失败也不产生
       # 断言，进程返回 0，ctest 判通过：s13 起本步一直是这种假绿，实际只守了 LineEnding.h。
       # LITE_TEST_MIN_PASS 是断言下界门禁（tests/main.cpp），把「跑到了多少断言」变成硬条件；
-      # 量级 = 五套件全实跑的 pass 计数下浮值，新增套件时同步上调。
+      # 量级 = 六套件全实跑的 pass 计数下浮值，新增套件时同步上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '500'
+          $env:LITE_TEST_MIN_PASS = '545'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

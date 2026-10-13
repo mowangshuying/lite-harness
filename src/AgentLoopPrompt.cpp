@@ -1,5 +1,6 @@
 // 提示词与工具 schema：system prompt 静态组装（lcc build_system_prompt 等价；规格修1：记忆目录/召回记录
-// 搬出 system，改经请求尾部注入块下发）、25 个工具（18 基础 + 7 团队）的 OpenAI function 定义（仅被 LLM 消费，禁翻区）。
+// 搬出 system，改经请求尾部注入块下发）、26 个工具（18 基础 + 7 团队 + 1 MCP 入口 connect_mcp，
+// s14；动态 mcp__ 工具不在此静态表，经 McpManager::assemble 每轮追加）的 OpenAI function 定义（仅被 LLM 消费，禁翻区）。
 
 #include "AgentLoop.h"
 
@@ -104,7 +105,15 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
                               "spawn 之后结束当前 turn，不要轮询邮箱或反复查询队友状态——"
                               "运行时会投递团队事件并唤醒你，收到事件后再作反应。\n"
                               "协调完成后调用 request_shutdown 关停队友。");
-    return head + tempDir + tail + teams;
+    // s14: MCP 外部工具指引（仿 teams 段先例；lcc s14 7b4ac1c loop.py prompt_mcp）。
+    // 与 teams 段同属禁翻区——C 类串发往 LLM，QStringLiteral 硬隔离不包 tr()；纯静态、
+    // 无占位符，system prompt 仍全会话字节恒定（前缀缓存纪律不破坏）。
+    const QString mcp = QStringLiteral(
+                            "\n\n"
+                            "MCP 外部工具指引：\n"
+                            "调用 connect_mcp 连接 server 后，其工具以 mcp__{server}__{tool} 名字在下一轮加入工具池；"
+                            "使用前若宿主策略未放行会向用户请求确认。");
+    return head + tempDir + tail + teams + mcp;
 }
 
 // 请求尾部注入块（规格修1 / D1；D2 裁决回填技能目录——模型需知道存在哪些 skill 才可能用
@@ -121,7 +130,7 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
 // 与 Relevant memory records 双段皆非空」的产物逐字节相同；'+' 与 join 不解释 '%'（同文件
 // 顶部 makeSystemPrompt 注释既定纪律）。
 QString makeContextInjection(const QString &skillCatalog, const QString &memoryIndex,
-                             const QString &memoryText)
+                             const QString &memoryText, const QString &mcpNote)
 {
     // 哨兵归一为空（见上注释）
     const QString skills =
@@ -133,7 +142,13 @@ QString makeContextInjection(const QString &skillCatalog, const QString &memoryI
         sections.append(QStringLiteral("Memory catalog:\n%1").arg(memoryIndex));
     if (!memoryText.isEmpty())
         sections.append(QStringLiteral("Relevant memory records:\n%1").arg(memoryText));
-    // 三段皆空（含哨兵归一）→ 不注入
+    // s14: MCP 已连 server 感知段（lcc s14 7b4ac1c 每轮拼进 system 的动态段，lite 不改静态
+    // system，改走本注入块通道——偏差：本段随 payload 尾部下发，模型「下一轮」才可见，与
+    // lcc 当轮 system 即时可见等价度不同，裁决登记在案）。mcpNote 自带 "Connected MCP
+    // servers: " 前缀（单源 McpManager::systemPromptNote），故原文 append、不再套段标题。
+    if (!mcpNote.isEmpty())
+        sections.append(mcpNote);
+    // 各段皆空（含哨兵归一）→ 不注入
     if (sections.isEmpty())
         return QString();
     return QStringLiteral("<agent_context>\n") + sections.join(QStringLiteral("\n\n"))
@@ -160,12 +175,15 @@ void AgentLoop::rebuildSystemPromptMessage()
 QString AgentLoop::buildContextInjection(const QString &memoryIndex,
                                          const QString &memoryText) const
 {
-    return makeContextInjection(skillsCatalog(), memoryIndex, memoryText);
+    // s14: 第四实参 = MCP 已连 server 感知段（空注册表/未连接时 systemPromptNote() 返回空串，
+    // 注入块产物与旧状逐字节一致）
+    return makeContextInjection(skillsCatalog(), memoryIndex, memoryText,
+                                m_mcp.systemPromptNote());
 }
 
 QJsonArray AgentLoop::createToolsDefinition()
 {
-    // 缓存理由：25 个工具 schema 全为静态字面量、无运行期可变态、无 tr()（C 类禁翻区 QStringLiteral），
+    // 缓存理由：26 个工具 schema 全为静态字面量、无运行期可变态、无 tr()（C 类禁翻区 QStringLiteral），
     // 每个 LLM 请求（含 SubAgent 与重试路径）从零重建属重复分配；改为函数局部 static 惰性一次性初始化。
     // 零线程原则（全仓主线程事件驱动）下，函数局部 static 的初始化与读取均无线程安全问题。
     // 按值返回 QJsonArray 依赖 Qt 隐式共享（CoW），拷贝廉价，调用点无需改动。
@@ -575,6 +593,33 @@ QJsonArray AgentLoop::createToolsDefinition()
         function[QStringLiteral("name")] = ToolNames::CREATE_WORKTREE;
         function[QStringLiteral("description")] =
             QStringLiteral("Create and bind a task worktree.");
+        function[QStringLiteral("parameters")] = inputSchema;
+
+        QJsonObject tool;
+        tool[QStringLiteral("type")] = QStringLiteral("function");
+        tool[QStringLiteral("function")] = function;
+        tools.append(tool);
+    }
+
+    // s14 connect_mcp（lcc s14 7b4ac1c CONNECT_TOOL 移植；仿 create_worktree 先例手工构造，
+    // 因需保持「无 enum」偏差——空注册表无候选名可枚举，lcc 的 enum [docs,deploy] 随 mock 弃，
+    // 偏差登记见 McpManager.h 顶部第 2 条，勿"修回"加 enum）。
+    {
+        QJsonObject nameSchema;
+        nameSchema[QStringLiteral("type")] = QStringLiteral("string");
+
+        QJsonObject props;
+        props[QStringLiteral("name")] = nameSchema;
+
+        QJsonObject inputSchema;
+        inputSchema[QStringLiteral("type")] = QStringLiteral("object");
+        inputSchema[QStringLiteral("properties")] = props;
+        inputSchema[QStringLiteral("required")] = QJsonArray{ QStringLiteral("name") };
+
+        QJsonObject function;
+        function[QStringLiteral("name")] = ToolNames::CONNECT_MCP;
+        function[QStringLiteral("description")] =
+            QStringLiteral("Connect to an MCP server and discover its tools.");
         function[QStringLiteral("parameters")] = inputSchema;
 
         QJsonObject tool;

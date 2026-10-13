@@ -16,6 +16,7 @@ int tst_messagebus();
 int tst_taskstore_lease();
 int tst_worktree();
 int tst_agentteams();
+int tst_mcpmanager();
 
 int main()
 {
@@ -25,6 +26,7 @@ int main()
     failed += tst_taskstore_lease();
     failed += tst_worktree();
     failed += tst_agentteams();
+    failed += tst_mcpmanager();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

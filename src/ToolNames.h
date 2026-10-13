@@ -7,6 +7,9 @@
 // s13 追加 7 个团队工具名（共 25）：逐字对齐 lcc agent_teams_manager.py 的 TEAM_TOOLS
 // 注册名（SPAWN_TEAMMATE/LIST_TEAMMATES/SEND_MESSAGE/REQUEST_SHUTDOWN/REQUEST_PLAN/
 // REVIEW_PLAN/CREATE_WORKTREE）——lcc tool_names.py 无这些常量，属移植并表。
+// s14 追加 2 个 MCP 名字（共 27）：对齐 lcc s14 tool_names.py（CONNECT_MCP/MCP_PREFIX）。
+// MCP_PREFIX 放本表而非 McpManager：权限钩子需在不依赖 McpManager 的前提下识别 mcp__
+// 前缀工具名，单一事实源惯例与 lcc tool_names.py 注释一致。
 // AgentLoop（schema 注册 / mainToolHandlers / executeTool 特判 / toolSummary / 钩子比较）、
 // SubAgent（白名单 / bash 分支）、ToolBlock（标题表）一律引用本文件，不再散写字面量。
 //
@@ -48,5 +51,9 @@ inline const QString REQUEST_SHUTDOWN = QStringLiteral("request_shutdown");
 inline const QString REQUEST_PLAN = QStringLiteral("request_plan");
 inline const QString REVIEW_PLAN = QStringLiteral("review_plan");
 inline const QString CREATE_WORKTREE = QStringLiteral("create_worktree");
+
+// s14 MCP（connect_mcp 入口 + 动态工具名前缀 mcp__{server}__{tool}）
+inline const QString CONNECT_MCP = QStringLiteral("connect_mcp");
+inline const QString MCP_PREFIX = QStringLiteral("mcp__");
 
 } // namespace ToolNames

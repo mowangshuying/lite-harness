@@ -73,6 +73,13 @@ void AgentLoop::registerBuiltinHooks()
         if (!reason.isEmpty())
             return AgentLoopDetail::askPrefix() + reason; // 需询问：异步协议，由 executeTool 挂起队列
 
+        // s14: MCP 策略门（lcc s14 7b4ac1c permission.py——置于 deny 链与 check_rules 之后；
+        // mcp__ 名不命中前两者天然互斥。fail-closed：宿主表未登记 allow 一律询问）。
+        // permissionGranted 短路的续跑分支在上方已 return，批准重入时直接放行，不动此顺序。
+        if (toolName.startsWith(ToolNames::MCP_PREFIX)
+            && m_mcp.toolPolicy(toolName) != QLatin1String("allow"))
+            return AgentLoopDetail::askPrefix() + QStringLiteral("MCP tool policy requires confirmation");
+
         return QString();
     });
 

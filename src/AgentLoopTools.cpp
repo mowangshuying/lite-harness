@@ -61,6 +61,8 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
         return args.value(QStringLiteral("request_id")).toString();
     if (toolName == ToolNames::CREATE_WORKTREE)
         return args.value(QStringLiteral("name")).toString();
+    if (toolName == ToolNames::CONNECT_MCP)
+        return args.value(QStringLiteral("name")).toString(); // s14: 仿 load_skill 取 name（lcc 无对应，lite 自拟先例）
     return QString();
 }
 
@@ -247,10 +249,27 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
 
     // 其余工具经 handler 表同步路由；未注册名称不中断循环，错误内容作为结果回填
     // （对齐 lcc Unknown 分支；lite-harness 文案 "Unknown tool: %1" 保持不变）
+    // s14: MCP 动态工具兜底路由（lcc s14 7b4ac1c execute_tool 每轮以整表 pool_handlers 查处的
+    // 转译）。宿主 handlers 是惰性构建的缓存表、恒不含动态 handler，故表未命中且工具名带
+    // mcp__ 前缀时现查 McpManager::handlerFor；仍查不到才回落 Unknown tool。此单点同时覆盖
+    // 正常回合与权限挂起-恢复两条续跑路径（二者都经本 executeTool 落此路由），与 lcc
+    // 「每轮重建 handler 表」等价。
     const auto it = handlers.constFind(toolName);
-    const QString output = it == handlers.constEnd()
-        ? QStringLiteral("Unknown tool: %1").arg(toolName)
-        : it.value()(args);
+    QString output;
+    if (it != handlers.constEnd())
+    {
+        output = it.value()(args);
+    }
+    else if (toolName.startsWith(ToolNames::MCP_PREFIX))
+    {
+        const McpToolHandler handler = m_mcp.handlerFor(toolName);
+        output = handler ? handler(args)
+                         : QStringLiteral("Unknown tool: %1").arg(toolName);
+    }
+    else
+    {
+        output = QStringLiteral("Unknown tool: %1").arg(toolName);
+    }
 
     // lcc s05 语义保留：只要 todo_write 的 handler 跑过即视为本轮已用 todo（校验错误输出
     // 同样算）；被权限门拦截的不会走到这里，不置位（lcc s06 中拦截也置位，此为 s05 行为红线，
@@ -402,6 +421,10 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
         return m_teams.runCreateWorktree(
             args.value(QStringLiteral("name")).toString(),
             args.value(QStringLiteral("task_id")).toString());
+    });
+    // s14: MCP 连接入口（Lead 独占——SubAgent 白名单不含此名，天然排除；lcc s14 7b4ac1c）
+    handlers.insert(ToolNames::CONNECT_MCP, [this](const QJsonObject &args) {
+        return m_mcp.runConnectMcp(args.value(QStringLiteral("name")).toString());
     });
     return handlers;
 }

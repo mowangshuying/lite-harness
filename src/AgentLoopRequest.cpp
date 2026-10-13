@@ -69,7 +69,41 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         payload.append(injection);
     }
     request[QStringLiteral("messages")] = payload;
-    request[QStringLiteral("tools")] = createToolsDefinition();
+
+    // s14: 每轮工具池重组装（lcc s14 7b4ac1c 主循环每轮 assemble）。基础工具名清单遍历
+    // createToolsDefinition() 现取（进 origins 溯源表种子、供碰撞报错文案），**勿另立硬编码清单**
+    // 以免与静态表漂移。空注册表下 assemble 恒成功、dynamicTools() 为空数组，本回合工具池与
+    // 旧「createToolsDefinition() 直填」逐字节一致。
+    QStringList baseNames;
+    for (const QJsonValue &v : createToolsDefinition())
+        baseNames.append(v.toObject().value(QStringLiteral("function")).toObject()
+                            .value(QStringLiteral("name")).toString());
+
+    QString mcpError;
+    if (!m_mcp.assemble(baseNames, &mcpError))
+    {
+        // 发现期错误终止本轮（对齐 lcc：loop 每轮 assemble 处 raise ValueError 即终止本回合；
+        // 区别于调用期错误「回流给模型、不终止」）。此刻流未起、无子代理在途，故不调
+        // cancelSubAgent。错误文本作为一条 assistant 消息入历史（结构照抄本文件 Stop 钩子
+        // 注入 user 消息的先例，仅角色改 assistant），收口序列严格照撞上限终局/流错误终局先例
+        QJsonObject err;
+        err[QStringLiteral("role")] = QStringLiteral("assistant");
+        err[QStringLiteral("content")] = QStringLiteral("[Error] ") + mcpError;
+        m_messages.append(err);
+
+        settleLeadLease();
+        m_cron.finalizeInFlightDelivery(false);
+        setRunning(false);
+        persistHistory();
+        emit error(mcpError);
+        return;
+    }
+
+    QJsonArray tools = createToolsDefinition();
+    // Qt 6.9 QJsonArray 无数组级 append(const QJsonArray&) 重载（已核实头文件），逐条并入
+    for (const QJsonValue &v : m_mcp.dynamicTools())
+        tools.append(v);
+    request[QStringLiteral("tools")] = tools;
     // 默认开启思考
     request[QStringLiteral("enable_thinking")] = true;
     // 推理强度档位：对齐 opencode xhigh 观感（长思考、少工具轮）；端点不认则回退服务端默认

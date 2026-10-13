@@ -24,6 +24,8 @@
 #include "WorktreeManager.h"
 #include "AgentTeamsManager.h"
 #include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
+// s14 MCP（机制层 + 空注册表，Lead 独占）：按值成员需完整类型
+#include "McpManager.h"
 
 class QProcess;
 class SubAgent;
@@ -306,9 +308,11 @@ private:
     // / create_task / update_task / list_tasks / get_task / claim_task / complete_task
     // / schedule_cron / list_crons / cancel_cron
     // / spawn_teammate / list_teammates / send_message / request_shutdown / request_plan
-    // / review_plan / create_worktree，共 25 个；
+    // / review_plan / create_worktree / connect_mcp，共 26 个；
     // s10 六个任务图工具仅注册进主循环表，子代理白名单不含；lcc s12 cron 三件套同为仅主循环注册；
     // s13 团队七件套同为仅主循环注册（lcc TEAM_TOOLS，AGENT_LOOP tools 面）；
+    // s14 connect_mcp 同为仅主循环注册（MCP 入口，SubAgent 白名单不含；动态 mcp__ 工具另经
+    // McpManager::assemble 每轮追加，不在本静态表内）；
     // 队友侧 10 工具 schema 另立于 AgentLoopTeam.cpp（D5：不动本缓存）
     static QJsonArray createToolsDefinition();
 
@@ -477,6 +481,10 @@ private:
     MessageBus m_bus;                          // 团队邮箱总线（会话根 .mailboxes，P1）
     WorktreeManager m_worktrees;               // git worktree 隔离（s13 P2a，需 &m_taskStore）
     AgentTeamsManager m_teams;                 // 团队编排引擎（s13 P2，需 &m_bus &m_taskStore）
+    // s14 MCP 机制层引擎（lcc s14 7b4ac1c 移植；方案裁决：机制在、注册表恒空 = 仅留接缝）。
+    // Lead 独占——SubAgent 白名单不含 connect_mcp，动态 mcp__ 名亦不经其工具池。
+    // 声明序=初始化序：纯内存无 IO、无构造入参，置于团队三件套之后与 s13 装配段相邻。
+    McpManager m_mcp;
     // 队友运行时宿主所有权表（引擎 handles 为不拥有引用，偏A）：launcher 建、
     // onTeammateFinished/settleTeamOnExit 销
     QHash<QString, TeammateRuntime *> m_teammateRuntimes;
