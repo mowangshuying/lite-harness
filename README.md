@@ -7,13 +7,14 @@
 - **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引 `<workDir>/.lite-harness/index.json` + 每会话 history 持久化
 - **工具主循环（26 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）/ MCP 入口（connect_mcp）
 - **子代理**：`task` 工具派发独立上下文子代理，黑盒回传结果
-- **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则
+- **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则；异步回合（cron / 团队唤醒 / 后台唤醒）fail-closed——不弹卡，直接定值拒绝
 - **流式渲染**：打字机气泡 + 思考块 / 工具执行块折叠动画 + Todo 进度卡
 - **会话侧栏**：标题 / 模型 / 工作目录 / 上下文占用条 / 状态灯 / 待办清单；可收起，偏好持久化后由浮动钮恢复
 - **记忆**：会话结束自动沉淀、下轮召回注入上下文（以 `<agent_context>` 注入块随请求尾部下发，system 全程字节恒定）、超阈值整理（Markdown 存储）
 - **上下文压缩**：五段管线 + 溢出反应式压缩，阈值按 token 预算判定（以 `usage.prompt_tokens` 锚定估算占用），转录与超大工具输出落盘
 - **cron 定时任务**：5 段表达式、JSON 持久账本、at-least-once 投递
-- **后台 bash**：`run_in_background` 异步执行，结果以通知注入后续回合
+- **后台 bash**：`run_in_background` 异步执行，结果以 `<task_notification>`（`<summary>` 摘要）注入后续回合；完成后 ≤1s 级 tick 自动开空回合收割（第 4 事件源）
+- **错误恢复**：429/5xx/idle 超时指数退避，连续 529 过载可换 `fallbackModelId` 兜底模型；max_tokens 两拍（升档重打 + 续打提示）；流错误以 `[Error]` 降级入历史（UI 报错照旧可见）
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
 - **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
 - **模型选择**：下拉切换（生效清单与缺省项由 `settings.ini` 键 `modelOptions` / `defaultModel` 决定，未配置或非法则回落内置 `kBuiltinModelOptions`），API 经设置页配置
@@ -32,6 +33,7 @@
 | `contextCharLimit` | 上下文压缩主上限（字符，校验界 10000~5000000；token 预算由此换算） | 200000 |
 | `maxToolIterations` | 单轮最大工具调用次数（校验界 10~1000；子代理预算同源） | 500 |
 | `maxRetries` | 429/5xx 指数退避重试上限（校验界 0~5） | 2 |
+| `fallbackModelId` | 连续 529 过载后换用的兜底模型（空=禁用换模，仅退避；设置页无编辑卡，手改 ini） | 空 |
 | `language` | 界面语言（`zh-CN` / `en-US`，切换需重启） | `zh-CN` |
 | `sidebarVisible` | 会话侧栏显隐偏好 | 显示 |
 
@@ -64,9 +66,9 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖六个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门），全量实跑约 670 条断言。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖八个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据），全量实跑约 730 条断言。
 
-**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：后四个套件依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了 `LineEnding.h`。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
+**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了零夹具套件（`LineEnding` / `McpManager` / s15 两套件）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
 ### 手工回归
 
