@@ -30,7 +30,7 @@ inline int &failCount()
 }
 
 // SKIP 计数（s13 后新增）：套件对「夹具不可用」的诚实通道是 printf + return 0，
-// 而 main 只累加失败数——于是未注入 LITE_TEST_TMPROOT 的 CI 里 4/5 套件整组跳过仍判
+// 而 main 只累加失败数——于是未注入 LITE_TEST_TMPROOT 的 CI 里 4/6 套件整组跳过仍判
 // 通过（假绿）。计数本身不判失败（本机无夹具时照常绿行），门禁由 LITE_TEST_MIN_PASS
 // 断言下界承担，见 tests/main.cpp。
 inline int &skipCount()

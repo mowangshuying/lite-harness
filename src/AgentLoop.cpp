@@ -14,7 +14,7 @@
 //   AgentLoopCron.cpp        定时任务 handler 与空闲交付
 //   AgentLoopHooks.cpp       生命周期钩子注册表（UserPromptSubmit / PreToolUse / PostToolUse / Stop）
 //   AgentLoopHistory.cpp     history.json 落盘与恢复
-//   AgentLoopPrompt.cpp      system prompt 组装与 25 工具 schema
+//   AgentLoopPrompt.cpp      system prompt 组装与 26 工具 schema
 //   AgentLoopTeam.cpp        s13 Agent Teams 宿主装配：引擎六注入、Lead 租约感知 cwd、
 //                            团队事件收割注入、队友回合驱动（turnRequested→deliverTurnResult）
 // 跨单元共享的内部工具集中在 AgentLoopInternal.h（非公开 API）。

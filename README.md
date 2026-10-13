@@ -5,7 +5,7 @@
 ## 功能
 
 - **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引 `<workDir>/.lite-harness/index.json` + 每会话 history 持久化
-- **工具主循环（25 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）
+- **工具主循环（26 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）/ MCP 入口（connect_mcp）
 - **子代理**：`task` 工具派发独立上下文子代理，黑盒回传结果
 - **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则
 - **流式渲染**：打字机气泡 + 思考块 / 工具执行块折叠动画 + Todo 进度卡
@@ -64,7 +64,7 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖五个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议），全量实跑约 620 条断言。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖六个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门），全量实跑约 670 条断言。
 
 **本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：后四个套件依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了 `LineEnding.h`。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
