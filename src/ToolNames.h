@@ -8,6 +8,8 @@
 // 注册名（SPAWN_TEAMMATE/LIST_TEAMMATES/SEND_MESSAGE/REQUEST_SHUTDOWN/REQUEST_PLAN/
 // REVIEW_PLAN/CREATE_WORKTREE）——lcc tool_names.py 无这些常量，属移植并表。
 // s14 追加 2 个 MCP 名字（共 27）：对齐 lcc s14 tool_names.py（CONNECT_MCP/MCP_PREFIX）。
+// s16 追加 1 个 workflow 工具名（共 28，主工具池 27 名）：lcc s16 workflow.py 工具入口，
+// Lead 独占（仅主循环注册；SubAgent 白名单不含此名，动态派发走 executeTool 特判）。
 // MCP_PREFIX 放本表而非 McpManager：权限钩子需在不依赖 McpManager 的前提下识别 mcp__
 // 前缀工具名，单一事实源惯例与 lcc tool_names.py 注释一致。
 // AgentLoop（schema 注册 / mainToolHandlers / executeTool 特判 / toolSummary / 钩子比较）、
@@ -55,5 +57,8 @@ inline const QString CREATE_WORKTREE = QStringLiteral("create_worktree");
 // s14 MCP（connect_mcp 入口 + 动态工具名前缀 mcp__{server}__{tool}）
 inline const QString CONNECT_MCP = QStringLiteral("connect_mcp");
 inline const QString MCP_PREFIX = QStringLiteral("mcp__");
+
+// s16 Workflow（编排工具入口，Lead 独占，仅主循环注册，不入 SubAgent 白名单）
+inline const QString WORKFLOW = QStringLiteral("workflow");
 
 } // namespace ToolNames

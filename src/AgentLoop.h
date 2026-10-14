@@ -26,6 +26,10 @@
 #include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
 // s14 MCP（机制层 + 空注册表，Lead 独占）：按值成员需完整类型
 #include "McpManager.h"
+// s16 Workflow（Lane C 宿主接线）：引擎按值成员需完整类型；
+// WorkflowRuntime 非 QObject（头注释明示），槽用 std::shared_ptr 而非 QPointer
+#include "WorkflowManager.h"
+#include "WorkflowRuntime.h"
 
 class QProcess;
 class SubAgent;
@@ -288,6 +292,20 @@ private:
     // 剩余调用合成 "(cancelled)"）后清父队列，绝不裸清空致配对断裂；
     // stop()/错误链/析构三路复用
     void cancelSubAgent();
+    // ---- s16 Workflow（Lead 独占编排工具，实现单源 AgentLoopWorkflow.cpp）----
+    // workflow 工具派发（lcc s16 execute_tool 分支 lite 转译）：单飞卫兵（lite 增项，lcc
+    // 无停止路径故无此约束）→ 新建 WorkflowRuntime → start(manager, toolCall, runner, out)。
+    // runner 桥把 WfAgentRunner 落到 QOpenAi::AsyncRequest（一 agent 一请求，无 usage 时
+    // tokens 本地估算=偏差登记）；out 回调经 QPointer 卫兵走 onToolFinished 收口（异步
+    // 延迟回填=lite 偏差：lcc 同步阻塞编排，lite 零线程原则不采）
+    void startWorkflowRun(const QJsonObject &toolCall, const QJsonObject &args);
+    // workflow 统一收口（stop/错误链/析构三路复用，仿 cancelSubAgent）：
+    // requestCancel()（B 契约：下一续跑点折叠 "workflow: run cancelled" 终态；已终局则
+    // 无操作）→ 清在途 AsyncRequest（cancel 后 done 永久静默）→ 若 out 不会再来（槽尚
+    // 在=回调未执行）为待决 toolCall 合成 "(stopped)" tool_result 直写历史配对，
+    // 半批 tool_use 由调用方（stop 的 m_pendingToolCalls 循环 / cancelSubAgent 同款
+    // 收口）一并处理——防孤儿 tool_use 致下一请求 400
+    void cancelActiveWorkflow();
     // 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：发送请求前对会话——不含
     // system——跑五级压缩，有变化则回写 m_messages，裁决 g 保留 m_messages[0] system）：
     // 本地段同步跑，仅触发全量压缩时挂起；
@@ -448,6 +466,14 @@ private:
     // task 子代理（lcc s06）：串行队列保证同一时刻至多一个；随本对象父子销毁，QPointer 防回调竞态
     QPointer<SubAgent> m_activeSub;      // 正在运行的子代理（无则为 null）
     QJsonObject m_pendingTaskCall;       // 其对应的 tool call（cancelSubAgent 收口 "(cancelled)" 用）
+    // s16 Workflow（lcc s16 单飞语义 lite 增项：lcc 无并发卫兵亦无停止路径）：
+    // WorkflowRuntime 非 QObject（头注释明示），QPointer 不可用——改 shared_ptr 槽 +
+    // 指针匹配卫兵（out 闭包捕获 rt 裸指针与本槽比较，防迟到回填）
+    std::shared_ptr<class WorkflowRuntime> m_activeWorkflow;
+    QJsonObject m_pendingWorkflowCall;   // 其对应的 tool call（cancelActiveWorkflow 收口 "(stopped)" 用）
+    // runner 桥在途请求表（lcc 同步阻塞编排不采=异步延迟回填偏差）：AsyncRequest done 里自摘除，
+    // stop/析构路统一 cancel()（cancel 后 done 永不触发，B 续跑链断在半截，配对由宿主合成）
+    QVector<QPointer<QOpenAi::AsyncRequest>> m_workflowInFlight;
     // 上下文压缩（lcc s08）：引擎以回调取宿主 workDir/model/卡片出口，本对象构造时注入
     CompactManager m_compact;            // 压缩引擎（转写与落盘目录随 workDir 动态解析）
     bool m_compactRequested = false;     // compact 工具被调用（批尾以 compact_history 替换历史后消费）
@@ -490,6 +516,10 @@ private:
     // Lead 独占——SubAgent 白名单不含 connect_mcp，动态 mcp__ 名亦不经其工具池。
     // 声明序=初始化序：纯内存无 IO、无构造入参，置于团队三件套之后与 s13 装配段相邻。
     McpManager m_mcp;
+    // s16 Workflow 编排引擎（lcc s16 workflow.py 移植，Lane A 纯引擎、值成员接线，仿 m_mcp）：
+    // 注册表 / journal 台账 / 宿主策略表；storeDir 由宿主在会话数据根变更点推入（push 形，
+    // 目录创建自愈在 Lane A ensureStoreDirs——宿主不 mkdir）。Lead 独占——SubAgent 不经此工具。
+    WorkflowManager m_workflow;
     // 队友运行时宿主所有权表（引擎 handles 为不拥有引用，偏A）：launcher 建、
     // onTeammateFinished/settleTeamOnExit 销
     QHash<QString, TeammateRuntime *> m_teammateRuntimes;

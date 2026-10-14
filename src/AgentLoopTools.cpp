@@ -63,6 +63,8 @@ QString toolSummary(const QString &toolName, const QJsonObject &args)
         return args.value(QStringLiteral("name")).toString();
     if (toolName == ToolNames::CONNECT_MCP)
         return args.value(QStringLiteral("name")).toString(); // s14: 仿 load_skill 取 name（lcc 无对应，lite 自拟先例）
+    if (toolName == ToolNames::WORKFLOW)
+        return args.value(QStringLiteral("name")).toString(); // s16: 仿 connect_mcp 取工作流名作摘要（lcc s16 42a555d 工具名即参数）
     return QString();
 }
 
@@ -251,6 +253,15 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
     if (toolName == ToolNames::TASK)
     {
         startSubAgentTask(toolCall, args);
+        return;
+    }
+
+    // s16 workflow 走编排引擎异步链（lcc s16 42a555d execute_tool 的 workflow 特判）：
+    // lite 不采 lcc 同步阻塞编排——零线程原则下走 startWorkflowRun 延迟回填（偏差登记）。
+    // 单飞槽/权限门/收口纪律见 AgentLoopWorkflow.cpp 头注释。
+    if (toolName == ToolNames::WORKFLOW)
+    {
+        startWorkflowRun(toolCall, args);
         return;
     }
 

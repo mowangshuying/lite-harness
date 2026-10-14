@@ -20,6 +20,11 @@ QString PermissionCard::translateReason(const QString &reason)
         return tr("正在尝试访问工作区之外的路径");
     if (reason == QLatin1String("Potentially destructive command"))
         return tr("疑似破坏性命令");
+    // s14/s16 补登记：此前 MCP 门 reason 未词条化（s14 遗留缺口），workflow 门同批补入。
+    if (reason == QLatin1String("MCP tool policy requires confirmation"))
+        return tr("MCP 工具策略要求确认");
+    if (reason == QLatin1String("Workflow policy requires confirmation"))
+        return tr("工作流策略要求确认");
     return reason;
 }
 

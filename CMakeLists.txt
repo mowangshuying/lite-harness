@@ -114,9 +114,10 @@ target_link_libraries(${TGT} PRIVATE
 )
 
 # ---- 单元测试（ctest）----
-# 只测纯函数（当前八套件：LineEnding 行尾口径 / MessageBus / TaskStore 租约 / WorktreeManager /
+# 只测纯函数（当前十套件：LineEnding 行尾口径 / MessageBus / TaskStore 租约 / WorktreeManager /
 # AgentTeamsManager / McpManager（s14）/ AgentRecovery 逐字串与判据（s15）/
-# BackgroundTasksManager 收割台账（s15）），不引 Qt6::Test/moc——测试对象无信号槽需求，
+# BackgroundTasksManager 收割台账（s15）/ WorkflowManager 身份·journal·快照（s16）/
+# WorkflowRuntime 编排状态机与 review-changes（s16）），不引 Qt6::Test/moc——测试对象无信号槽需求，
 # 少一个组件依赖与 DLL 负担，本地 cl 与 CI 都能直接起来（取舍理由见 tests/TestHarness.h 顶部）。
 # 输出目录与主 exe 分开（build/tests 而非 build/bin）：CPack 的 staging 与根级 install(CODE)
 # 清理都围绕 bin/ 展开，测试 exe 不进去，杜绝被误打包或被清理规则误删。
@@ -132,6 +133,8 @@ if (LITE_TESTS)
 		src/AgentTeamsManager.cpp
 		src/McpManager.cpp
 		src/BackgroundTasksManager.cpp
+		src/WorkflowManager.cpp
+		src/WorkflowRuntime.cpp
 	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"

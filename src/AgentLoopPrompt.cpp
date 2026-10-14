@@ -1,5 +1,5 @@
 // 提示词与工具 schema：system prompt 静态组装（lcc build_system_prompt 等价；规格修1：记忆目录/召回记录
-// 搬出 system，改经请求尾部注入块下发）、26 个工具（18 基础 + 7 团队 + 1 MCP 入口 connect_mcp，
+// 搬出 system，改经请求尾部注入块下发）、27 个工具（18 基础 + 7 团队 + 1 MCP 入口 connect_mcp + 1 编排入口 workflow（s16），
 // s14；动态 mcp__ 工具不在此静态表，经 McpManager::assemble 每轮追加）的 OpenAI function 定义（仅被 LLM 消费，禁翻区）。
 
 #include "AgentLoop.h"
@@ -7,6 +7,7 @@
 #include "SubAgent.h"
 #include "ToolNames.h"
 #include "AgentConstants.h"
+#include "WorkflowManager.h" // s16：workflow 信封单源 WorkflowManager::toolInfo()
 #include "BashRunner.h"
 
 #include <QPair>
@@ -113,7 +114,22 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
                             "MCP 外部工具指引：\n"
                             "调用 connect_mcp 连接 server 后，其工具以 mcp__{server}__{tool} 名字在下一轮加入工具池；"
                             "使用前若宿主策略未放行会向用户请求确认。");
-    return head + tempDir + tail + teams + mcp;
+    // s16: Workflow 编排纪律段（lcc s16 42a555d loop.py prompt_workflow :87-94 逐字转译 + lite
+    // 自有增补句；仿 teams/mcp 段先例形。禁翻区：C 类串 QStringLiteral 不包 tr()；纯静态无占位符，
+    // system 全会话字节恒定不破坏前缀缓存。
+    // 偏差登记：尾三句为 lite 自有增补（取自注入块清单/单飞并发/被拒勿换名重试），对应宿主单飞卫兵
+    // 与三态策略门，lcc 原文无；lcc 的每轮 workflow_note 追加 system 在 lite 改走注入块第五段。）
+    const QString workflow = QStringLiteral(
+                            "\n\n"
+                            "Workflow 编排：当任务的步骤与依赖事先确定、且需要并行/结构化结果/可恢复性时，"
+                            "调用 workflow 工具执行宿主已保存的工作流，只传 name 与 args；"
+                            "你无法也绝不应当提交可执行代码。运行结果与 journal 会落盘，被打断后可用返回的 "
+                            "runId 作为 resume_from_run_id 复跑，未变化的步骤直接命中缓存。"
+                            "路径取决于上一步发现的任务仍走普通工具循环，不要用 workflow 代替思考。\n"
+                            "name 必须取自注入块中的已注册工作流清单，不得臆造名字；同一时刻只允许一个 "
+                            "workflow 在途运行，未收到终局结果前不要追发第二个；"
+                            "被宿主策略或用户拒绝后勿改用其他名字重试。");
+    return head + tempDir + tail + teams + mcp + workflow;
 }
 
 // 请求尾部注入块（规格修1 / D1；D2 裁决回填技能目录——模型需知道存在哪些 skill 才可能用
@@ -130,7 +146,8 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
 // 与 Relevant memory records 双段皆非空」的产物逐字节相同；'+' 与 join 不解释 '%'（同文件
 // 顶部 makeSystemPrompt 注释既定纪律）。
 QString makeContextInjection(const QString &skillCatalog, const QString &memoryIndex,
-                             const QString &memoryText, const QString &mcpNote)
+                             const QString &memoryText, const QString &mcpNote,
+                             const QString &wfNote)
 {
     // 哨兵归一为空（见上注释）
     const QString skills =
@@ -148,6 +165,12 @@ QString makeContextInjection(const QString &skillCatalog, const QString &memoryI
     // servers: " 前缀（单源 McpManager::systemPromptNote），故原文 append、不再套段标题。
     if (!mcpNote.isEmpty())
         sections.append(mcpNote);
+    // s16: workflow 注册清单感知段（lcc s16 systemPromptNote 对照）：与 mcpNote 同形走注入块下发
+    // （下一轮才可见，s14 偏差注同样适用），wfNote 自带 "Registered workflows…" 引导语
+    // （单源 WorkflowManager::systemPromptNote），故原文 append 不再套段标题；
+    // 空注册表→空串→注入块产物与旧状逐字节一致。
+    if (!wfNote.isEmpty())
+        sections.append(wfNote);
     // 各段皆空（含哨兵归一）→ 不注入
     if (sections.isEmpty())
         return QString();
@@ -176,14 +199,14 @@ QString AgentLoop::buildContextInjection(const QString &memoryIndex,
                                          const QString &memoryText) const
 {
     // s14: 第四实参 = MCP 已连 server 感知段（空注册表/未连接时 systemPromptNote() 返回空串，
-    // 注入块产物与旧状逐字节一致）
+    // 注入块产物与旧状逐字节一致）；s16: 第五实参 = workflow 注册清单感知段，同纪律
     return makeContextInjection(skillsCatalog(), memoryIndex, memoryText,
-                                m_mcp.systemPromptNote());
+                                m_mcp.systemPromptNote(), m_workflow.systemPromptNote());
 }
 
 QJsonArray AgentLoop::createToolsDefinition()
 {
-    // 缓存理由：26 个工具 schema 全为静态字面量、无运行期可变态、无 tr()（C 类禁翻区 QStringLiteral），
+    // 缓存理由：27 个工具 schema 全为静态字面量、无运行期可变态、无 tr()（C 类禁翻区 QStringLiteral），
     // 每个 LLM 请求（含 SubAgent 与重试路径）从零重建属重复分配；改为函数局部 static 惰性一次性初始化。
     // 零线程原则（全仓主线程事件驱动）下，函数局部 static 的初始化与读取均无线程安全问题。
     // 按值返回 QJsonArray 依赖 Qt 隐式共享（CoW），拷贝廉价，调用点无需改动。
@@ -626,6 +649,17 @@ QJsonArray AgentLoop::createToolsDefinition()
         tool[QStringLiteral("type")] = QStringLiteral("function");
         tool[QStringLiteral("function")] = function;
         tools.append(tool);
+    }
+
+    // s16 workflow（lcc s16 workflow.py 工具入口对照）：信封直接取 Lane A WorkflowManager::toolInfo()——
+    // 名字/描述/参数 schema 单源，免手工二次书写漂移（connect_mcp 当年手工构造是为保「无 enum」偏差，
+    // 此处 toolInfo() 与需求逐字节一致可全量复用，无手工段）。选形登记：toolInfo 为成员非静态→
+    // cached lambda 内临时构造原型对象取值；WorkflowManager 构造纯内存注册表、不建目录不触盘
+    // （Lane A ensureStoreDirs 自愈在写/读入口，见 WorkflowManager.cpp:152-168），主线程零线程原则
+    // 下 cached 一次性初始化无并发风险；toolInfo() 不含任何 per-实例可变态，产物恒定。
+    {
+        const WorkflowManager wfPrototype;
+        tools.append(wfPrototype.toolInfo());
     }
 
     return tools;

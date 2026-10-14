@@ -143,6 +143,12 @@ void AgentLoop::setWorkDir(const QString &dir)
     // 记忆目录（会话根/.memory/，见 sessionDataRoot）随注入的会话工作目录与 ID 解析，索引随新目录重读
     // （s07 重扫超集语义延伸至 s09）
     rebuildSystemPromptMessage();
+
+    // s16：会话数据根变更点推 workflow 台账目录（lcc s16 env _ensure_store 语义）。
+    // Lane A setStoreDir 为 push 形且只存路径不建目录（WorkflowManager.cpp:152-168 实证，
+    // 目录自愈在 ensureStoreDirs 写/读入口）——宿主无需 mkdir。构造体首调本函数即完成首推
+    // （登记：不在构造体另加行）；换目录后 journal 指向新会话根。
+    m_workflow.setStoreDir(QDir(sessionDataRoot()).filePath(AgentConst::kWorkflowDirName));
 }
 
 QString AgentLoop::workDir() const
@@ -155,6 +161,9 @@ void AgentLoop::setSessionDataId(const QString &id)
     // 仅供未走构造注入的扩展路径；须在首次落盘前调用（正常会话经 ChatSessionPage 构造注入）。
     // 不做 durable 重载：构造体内 m_cron.start() 已按当时会话根装载，中途改 ID 不重复装载（登记约束）。
     m_sessionDataId = id;
+    // s16：与 setWorkDir 同纪律推 workflow 台账目录（cron 的「不重载」约束不适用于 workflow——
+    // 本头 journal 为按需直读盘模型，改 ID 只影响后续读写路径，无启动期装载态）
+    m_workflow.setStoreDir(QDir(sessionDataRoot()).filePath(AgentConst::kWorkflowDirName));
 }
 
 QString AgentLoop::sessionDataId() const
@@ -184,6 +193,10 @@ AgentLoop::~AgentLoop()
     // lcc s06 R1 收口三路之一（析构）：先级联取消子代理——cancel 抑制其完成回调，
     // "(cancelled)" 回填进即将清空的历史属良性无害
     cancelSubAgent();
+
+    // s16：workflow 收口（Lane B 头注释接线纪律：宿主析构前应先 requestCancel()）。
+    // 与 stop() 同调用、同静默纪律——"(stopped)" 配对直写历史不 emit（析构红线一族）
+    cancelActiveWorkflow();
 
     // s13 P3 退出清算（lcc finally 的 lite 转译，登记偏差：不做 courteous shutdown 广播——
     // 析构后无事件循环可收应答；引擎 settleLedgers 保证账本收口）：必须在成员析构前于本
@@ -315,6 +328,11 @@ void AgentLoop::stop()
     // lcc s06 R1：task 子代理在跑则先级联取消并合成 "(cancelled)" 配对回填。
     // 串行队列下"宿主待裁决"与"子代理运行中"互斥，随后的待决权限分支自然空转
     cancelSubAgent();
+
+    // s16：workflow 在跑则先收口（requestCancel + 在途 runner 请求 cancel + "(stopped)" 配对
+    // 直写历史，仿 cancelSubAgent 纪律；lcc 无停止路径=lite 新增路，登记偏差）。
+    // 串行队列下与子代理/待决权限互斥，置于其后同段空转安全
+    cancelActiveWorkflow();
 
     // 待决权限询问：视为 deny，直接回填历史保持 tool_use/tool_result 配对完整
     //（OpenAI 协议要求每个 tool_call 必有对应 tool 消息；不经 onToolFinished 以免续跑队列或发展示信号）

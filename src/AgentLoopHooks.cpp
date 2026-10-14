@@ -94,6 +94,23 @@ void AgentLoop::registerBuiltinHooks()
             return AgentLoopDetail::askPrefix() + QStringLiteral("MCP tool policy requires confirmation");
         }
 
+        // s16: Workflow 策略门（lcc s16 42a555d permission.py s16 三态）：按 args.name 查
+        // Lane A 策略表——deny 定值硬拒 / 非 allow 询问（fail-closed：未登记名与空名皆 confirm）/
+        // allow 落末放行。异步回合与 ASK 门、MCP 门同口径改返定值长拒串；granted 短路续跑分支在
+        // 上方已 return，批准重入时直接放行，不动此顺序。
+        if (toolName == ToolNames::WORKFLOW)
+        {
+            const QString policy = m_workflow.policyFor(args.value(QStringLiteral("name")).toString());
+            if (policy == QLatin1String("deny"))
+                return QStringLiteral("Permission denied by host policy"); // 定值硬拒回填通道
+            if (policy != QLatin1String("allow"))
+            {
+                if (m_asyncTurn)
+                    return RecoveryRules::asyncApprovalDenied();
+                return AgentLoopDetail::askPrefix() + QStringLiteral("Workflow policy requires confirmation");
+            }
+        }
+
         return QString();
     });
 
