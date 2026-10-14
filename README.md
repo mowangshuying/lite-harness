@@ -5,7 +5,7 @@
 ## 功能
 
 - **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引 `<workDir>/.lite-harness/index.json` + 每会话 history 持久化
-- **工具主循环（26 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）/ MCP 入口（connect_mcp）
+- **工具主循环（27 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）/ MCP 入口（connect_mcp）/ 编排入口（workflow，s16）
 - **子代理**：`task` 工具派发独立上下文子代理，黑盒回传结果
 - **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则；异步回合（cron / 团队唤醒 / 后台唤醒）fail-closed——不弹卡，直接定值拒绝
 - **流式渲染**：打字机气泡 + 思考块 / 工具执行块折叠动画 + Todo 进度卡
@@ -15,6 +15,7 @@
 - **cron 定时任务**：5 段表达式、JSON 持久账本、at-least-once 投递
 - **后台 bash**：`run_in_background` 异步执行，结果以 `<task_notification>`（`<summary>` 摘要）注入后续回合；完成后 ≤1s 级 tick 自动开空回合收割（第 4 事件源）
 - **错误恢复**：429/5xx/idle 超时指数退避，连续 529 过载可换 `fallbackModelId` 兜底模型；max_tokens 两拍（升档重打 + 续打提示）；流错误以 `[Error]` 降级入历史（UI 报错照旧可见）
+- **工作流编排（s16）**：`workflow` 工具启动宿主预注册编排流程（当前唯一条目 `review-changes` 审查工作流）；六原语 agent/parallel/pipeline/phase/log/workflow 零线程异步状态机，journal 落盘、`resume_from_run_id` 续跑未变步骤直接命中缓存；宿主单飞卫兵 + 异步延迟回填；策略三态门 deny 硬拒 / confirm 弹卡（异步回合 fail-closed）/ allow 放行
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
 - **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
 - **模型选择**：下拉切换（生效清单与缺省项由 `settings.ini` 键 `modelOptions` / `defaultModel` 决定，未配置或非法则回落内置 `kBuiltinModelOptions`），API 经设置页配置
@@ -66,9 +67,9 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖八个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据），全量实跑约 730 条断言。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端），全量实跑约 972 条断言。
 
-**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了零夹具套件（`LineEnding` / `McpManager` / s15 两套件）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
+**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非整组 SKIP 的套件（`LineEnding` / `McpManager` / s15 两套件 / s16 两引擎套件的恒跑组——其文件组与端到端组自带夹具门控）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
 ### 手工回归
 
@@ -88,7 +89,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 | 路径 | 说明 |
 | --- | --- |
-| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 14 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime…）+ FluentUI 页面与控件 |
+| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 15 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime / WorkflowManager / WorkflowRuntime…）+ FluentUI 页面与控件 |
 | `tests/` | ctest 纯函数单测（`TestHarness.h` 极简断言骨架 + `tst_<模块>.cpp`），产物 `build/tests/`，不进发布包 |
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
 | `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |
