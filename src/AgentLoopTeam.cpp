@@ -430,10 +430,15 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
 
     // 修②：usage 末帧回读 → 队友自身 token 锚（成功路径、messageFinished 之前发；
     // adoptUsageAnchor 内部校验口径同主循环——锚只认真值、非法值不改锚）
+    //
+    // 消耗账记在**宿主**、不记在 runtime：队友 runtime 随清算消亡（settleTeamOnExit /
+    // cancel→deleteLater），记在它身上等于账本跟着尸体进土——已花掉的 token 会从累计里消失。
+    // guard 只守锚（runtime 没了就不需要锚），账无条件走：这正是 QPointer 守卫与本行的分工。
     connect(stream, &QOpenAi::ChatStream::usageReceived, this,
-            [guard, countAtSend](const QJsonObject &usage) {
+            [this, guard, countAtSend](const QJsonObject &usage) {
         if (guard)
             guard->adoptUsageAnchor(usage, countAtSend);
+        m_usageTotals.add(UsageTokens::fromUsage(usage));
     });
     connect(stream, &QOpenAi::ChatStream::messageFinished, this,
             [this, name, stream, guard](const QJsonObject &fullMsg, const QString & /*finishReason*/) {

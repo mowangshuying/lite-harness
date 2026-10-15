@@ -104,11 +104,15 @@ jobs:
        # s16 口径：s15 全量实测 730，新增 tst_workflowmanager(155) + tst_workflowruntime(约 87)
        # = 全量实测 972；再新增 tst_compacttokens(实跑 48) = 1020；本轮新增 tst_settingscache(实跑 75)
        # = 全量实测 1095；取下界 990 ≈ 留约 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
+       # 用量计量口径：新增 tst_usagetokens(本机实跑 49 断言全绿，UsageTokens.h 纯头，零夹具恒跑)。
+       # 1144 = 上一轮 CI 实测 1095 + 本套件 49，是**推算值**（本改动未在 CI 上跑过全量，勿当实测引用）；
+       # 下界同幅上调 990→1039，维持原约 10% 余量口径（上调的是同一道余量的平移，不是重新估量级）。
+       # 若 CI 首跑 pass 数明显低于 1144，说明推算偏差，按实测回落本行与下方阈值。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '990'
+          $env:LITE_TEST_MIN_PASS = '1039'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

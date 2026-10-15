@@ -24,6 +24,7 @@
 #include "WorktreeManager.h"
 #include "AgentTeamsManager.h"
 #include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
+#include "UsageTokens.h"     // 会话用量累计器值成员需完整类型（纯头，QtCore-only）
 // s14 MCP（机制层 + 空注册表，Lead 独占）：按值成员需完整类型
 #include "McpManager.h"
 // s16 Workflow（Lane C 宿主接线）：引擎按值成员需完整类型；
@@ -88,6 +89,12 @@ public:
     // tools schema、注入块——修 B4 触发漏计）。估算单源 AgentConst::estimateTokens /
     // CompactManager::estimateTokens（字符→token 折算）。
     qsizetype estimatedContextTokens() const;
+
+    // 会话 token **消耗**累计（与上面的「占用」是两回事：占用是当前窗口填充量，本数是
+    // 已花掉的输入/输出/缓存命中量，只增不减）。口径 = 主循环 + 队友回合两处 usage 回读；
+    // **不含**压缩摘要/记忆链/workflow runner——它们走 AsyncRequest，该类型无 usage 通道。
+    // 故这是部分消耗，不是会话真实总开销（边界详见 UsageTokens.h 头注释，UI tooltip 同步声明）。
+    const UsageTokens::Totals &sessionUsageTotals() const { return m_usageTotals; }
 
     // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
@@ -492,6 +499,10 @@ private:
     qsizetype m_lastSendInjectionTokens = 0; // 发送点快照：请求发出时注入块估算
     bool m_historyRewrittenSinceAnchor = false; // 锚后历史被压缩/恢复改写 → 锚作废
     mutable qsizetype m_toolsSchemaTokens = 0;  // tools schema 估算惰性缓存（构造后字节恒定）
+    // 会话消耗累计（区别于上面的锚：锚是「窗口现在多大」的瞬时真值，会被后续回读覆盖；
+    // 本累计是「已经花了多少」的只增账）。采纳点两处：主循环 adoptUsageAnchor + 队友回合
+    // （AgentLoopTeam 的 usageReceived 汇入本对象——队友 runtime 随清算消亡，账不能记在它身上）
+    UsageTokens::Totals m_usageTotals;
     // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然
     // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由
     // executeBashAsync 后台模式异步驱动，仅主线程访问，无锁

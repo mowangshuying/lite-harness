@@ -6,6 +6,8 @@
 #include <QJsonArray>
 #include <QtGlobal> // qsizetype
 
+#include "UsageTokens.h" // setTokenUsage 形参（纯头，QtCore-only；视图仍不自己算，数据由页面推入）
+
 class QLabel;
 class QVBoxLayout;
 class QToolButton;
@@ -43,6 +45,10 @@ public:
     void setWorkDir(const QString& dir);
     /// 上下文占用：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0% 展示）
     void setContextUsage(qsizetype usedTokens, qsizetype limitTokens);
+    /// 上下文**消耗**（区别于上面的占用）：本会话已花掉的输入/输出/缓存命中，只增不减。
+    /// 空累计（还没收到任何 usage 回读）隐藏整行——不留「0」骗人，也不留空行占位。
+    /// 口径边界写进 tooltip：只含主循环 + 队友回合，不含压缩/记忆/workflow（AsyncRequest 无 usage 通道）
+    void setTokenUsage(const UsageTokens::Totals &totals);
     /// 运行状态灯（AgentLoop::runningChanged 转发）
     void setRunning(bool running);
     /// 审批等待灯（permissionRequired 置亮；应答/回合终结由接线侧回灭）

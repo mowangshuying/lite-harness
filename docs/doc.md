@@ -99,6 +99,7 @@ L5 引擎/传输     QOpenAi · BashRunner · CompactManager · MemoryManager ·
                         ↓
 L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · AppSettings.h · SettingsCache.h
                  I18n · ThemeAware · ToolTagKind.h · AgentLoopInternal.h · LineEnding.h · CompactTokens.h
+                 · UsageTokens.h
 ```
 
 **两条铁律（本仓最重要的两条边方向）**
@@ -185,6 +186,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopInternal.h` | `AgentLoopDetail` 跨 TU 内部工具**声明**单源（§4） |
 | `LineEnding.h` | 文本文件行尾口径单源：`dominant`（主导行尾判定，平局偏 CRLF）/ `toLf`（匹配域归一，孤立 CR 不动）/ `apply`（写回域还原，幂等）/ `replaceOnce`（两级匹配单次替换）。`edit_file` 与 `write_file` 共用，杜绝「read_file 交还 LF 文本、edit_file 按原文字节匹配」导致的多行失配与混合行尾。`countOccurrences` 报命中次数（经 `replaceOnce` 的 `matchCount` 出参，与 `matched` 同为 nullptr 容错），供 `edit_file` 拒绝歧义编辑 |
 | `CompactTokens.h` | 会话体 token 计量纯头（header-only，零 CMake 改动即入 ctest）：`messageTokens`（单条项，只依赖入参自身）/ `conversationTokens`（逐条独立求和）。**承重不变量①②③写在头注释**：项间零耦合 ⇒ 替换一条后 `新总量 == 原总量-旧项+新项` 是数学恒等而非近似，`microCompact`/`fitToolResults` 的增量维护据此成立；改成整段一次序列化会同时破 ①② 并让压缩触发点静默漂移，`tst_compacttokens` 即为此设的红线。`CompactManager::estimateTokens` 退化为它的转发，宿主（`AgentLoop`/`TeammateRuntime`）与压缩管线共用同一实现 |
+| `UsageTokens.h` | 服务端 usage 用量计量纯头（header-only，零 CMake 改动即入 ctest）：`fromUsage`（usage 对象 → `Snapshot`）+ `Totals`（会话级只增累加 + `hitRatio`/`uncachedPrompt` 派生）。**与 `CompactTokens.h` 是两套东西，勿混**：后者算「窗口现在多大」（占用，会被后续回读覆盖），本头算「已经花掉多少」（消耗，只增不减）。**承重不变量写在头注释**：①有效性判据 `prompt_tokens>0` 与 `adoptUsageAnchor` 落锚门同一条——无效读数整条作废、不进分母，破了就会把「端点没回 usage」显示成「已用 0 token」，用户读作「没花钱」，两种状态对成本判断作用相反；②嵌套 `*_tokens_details` 缺失是常态（取不到即 0，不算解析失败，OpenAI 标准里本就可选）；③`hitRatio` 上界钳 1.0、`uncachedPrompt` 钳非负（实测个别兼容端点把 cached 报得大于 prompt，不钳即显示 120% 荒值，钳后原值仍在账上可查）。**覆盖面是部分口径、不是会话真实总开销**：只有带 `stream_options.include_usage` 的 ChatStream 路径回 usage（主循环 + 队友回合），压缩摘要/记忆链/workflow runner 走 `AsyncRequest`（该类型无 usage 通道）完全不在账上——UI tooltip 必须声明这条边界，否则数字误导成本判断。`tst_usagetokens` 49 断言钉①③ |
 | `SettingsCache.h` | 设置读缓存纯头（header-only，零 CMake 改动即入 ctest）：`Identity`（文件身份三元组 exists/mtime/size）+ `sameIdentity` + `identityOf` + `Reader`（一个 ini 路径的读写门面，读带缓存、写带失效）。**承重不变量①~⑤写在头注释**：①失效判据是文件身份（改 TTL/永久缓存即破 README「手改 ini 即可」承诺）②三元组缺一不可 ③写侧「先 sync 后 invalidate」顺序不可颠倒 ④查表大小写不敏感（对齐 IniFormat 的 `IniCaseSensitivity`）⑤无锁依赖零线程约定。路径构造期注入是它能进 ctest 的全部原因（`AppSettings` 绑死 `applicationDirPath()`，测试里造不出也不该往 exe 目录写盘）。**口径纠正**：原登记说每次读「open + parse 整个 ini」不准确——Qt 自带 `ConfFileCache` 且在 size+mtime 未变时短路，本修复省掉的是每次调用的 QObject 分配 + 全局锁 + 缓存探测 + stat + 键折叠查表 + 析构 sync 簿记，收益真实但不大（勿按旧说法宣称成「消除了重复磁盘解析」） |
 | `AgentRecovery.h` | s15 恢复契约串与文本判据纯头（`RecoveryRules` 命名空间，禁翻区）：逐字 `continuationPrompt()` / `asyncApprovalDenied()`（两拍续打、异步定值拒、isToolFailure 前缀判定、测试逐字断言的单源——改文案须同步 `tst_agentrecovery`、`isToolFailure` 判据与 TeammateRuntime 镜像）；`isRateLimitText` / `isOverloadedText` 鸭子文本判据供 `QOpenAi` 可重试判定 |
 
@@ -328,6 +330,22 @@ AgentLoop::estimatedContextTokens()：
 消费两处，同一个函数：ChatSessionPage::refreshContextUsage → SessionSidebar::setContextUsage；
 AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBudget()−overhead）
 字符→token 折算单源 AgentConst::estimateTokens，基准 kCharsPerTokenBudget=4（见 AGENTS「数据与路径」）
+
+⑦b 上下文消耗（与 ⑦「占用」语义正交：占用=窗口现在多大、会被后续回读覆盖；
+   消耗=已经花掉多少、只增不减。同一条显示里混用两者会互相误导）
+同一 usageReceived 载荷的第二个消费者：adoptUsageAnchor → UsageTokens::fromUsage → Totals::add
+  · 主循环：AgentLoop::adoptUsageAnchor 内累加，且走在锚的 prompt_tokens>0 门**之前**——
+    锚还要求发送点快照自洽，而消耗是既成事实，usage 有效就该记账
+  · 队友：AgentLoopTeam 的 usageReceived lambda 累加进**宿主** m_usageTotals，不记在
+    TeammateRuntime 身上——runtime 随清算消亡（settleTeamOnExit / cancel→deleteLater），
+    记在它身上等于账本跟着尸体进土，已花的 token 会从累计里消失。QPointer guard 只守锚，
+    账无条件走（这就是 guard 与本行的分工）
+  · 派生：hitRatio = cached/prompt（上界钳 1.0）；uncachedPrompt = prompt-cached（钳非负）
+消费一处：ChatSessionPage::refreshContextUsage → SessionSidebar::setTokenUsage
+  （与占用同一刷新时机、同一数据源，不另起信号链）；calls==0 即整行隐藏——
+  显示「0 token」会被读成「没花钱」，而真相是「还没拿到数据」，两者对成本判断作用相反
+**部分口径**：仅主循环 + 队友回合（带 include_usage 的 ChatStream）；压缩摘要/记忆链/
+  workflow runner 走 AsyncRequest 无 usage 通道，不在账上。tooltip 必须声明这条边界
 ```
 
 **回填 UI 总表**（全部集中在 `ChatSessionPage::wireAgent()`，别处不接 AgentLoop 信号）
@@ -424,6 +442,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
+| 上下文消耗（侧栏消耗行；与上面的占用语义正交，勿混用） | `AgentLoop::sessionUsageTotals()` → `UsageTokens.h`（`fromUsage` 解析 + `Totals` 只增累加 + `hitRatio`/`uncachedPrompt` 派生）。**部分口径**：只含主循环与队友回合，不含压缩/记忆/workflow（`AsyncRequest` 无 usage 通道）——UI tooltip 同步声明该边界 |
 | 工具名清单（27 个 = 18 基础 + 7 团队 + 1 MCP 入口 connect_mcp + 1 编排入口 workflow（s16）；`submit_plan` 不入表） | `ToolNames.h`（schema / handler 表 / 权限门 / 子代理白名单 / ToolBlock 标题 / 回归清单核对项全部引用它） |
 | 导航/堆叠键 | `NavItem.h::NavKey` |
 | 团队数据目录名 / 编排台账目录名 | `AgentConst::kMailboxesDirName`（`.mailboxes`，`AgentConstants.h:284`）/ `kWorktreesDirName`（`.worktrees`，`:285`）/ `kWorkflowDirName`（`.workflows`，s16，`:286`）——各引擎禁另拼 |

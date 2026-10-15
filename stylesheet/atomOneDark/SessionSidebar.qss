@@ -93,6 +93,11 @@
     color: rgb(171, 178, 191);
     font: 11px "Consolas";
 }
+/* 消耗行：占用数字再淡一档（次要信息，不与占用条抢焦点） */
+#ctxConsumption {
+    color: rgb(139, 148, 158);
+    font: 11px "Consolas";
+}
 
 /* ---- 状态灯行（waiting 与消息流审批卡同语言：淡染底，无描边） ---- */
 /* 单侧 border 会让行内容右移 3px（行 setContentsMargins 8,0,8,0 之下 QSS 盒模型

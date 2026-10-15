@@ -177,8 +177,16 @@ public:
         m_numbers->setObjectName(QStringLiteral("ctxNumbers"));
         m_numbers->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
+        // 消耗行：与上面的占用条**语义正交**（占用=窗口现在多大、会被后续回读覆盖；
+        // 消耗=已经花掉多少、只增不减）。同色阶但更淡一档，避免与占用数字抢焦点。
+        m_consumption = new QLabel(this);
+        m_consumption->setObjectName(QStringLiteral("ctxConsumption"));
+        m_consumption->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_consumption->setVisible(false);
+
         v->addWidget(m_track);
         v->addWidget(m_numbers);
+        v->addWidget(m_consumption);
     }
 
     /// ratio 钳到 [0,1]；warn 阈值（≥0.8）由此切琥珀色并触发属性重 polish
@@ -194,6 +202,13 @@ public:
         relayoutFill();
     }
 
+    /// 消耗行文案；空串即整行隐藏（还没收到任何 usage 回读时不显示「0」骗人）
+    void setConsumption(const QString& text, const QString& toolTip) {
+        m_consumption->setText(text);
+        m_consumption->setToolTip(toolTip);
+        m_consumption->setVisible(!text.isEmpty());
+    }
+
 protected:
     void resizeEvent(QResizeEvent*) override { relayoutFill(); }
 
@@ -207,6 +222,7 @@ private:
     QWidget* m_track = nullptr;
     QWidget* m_fill = nullptr;
     QLabel* m_numbers = nullptr;
+    QLabel* m_consumption = nullptr;
     double m_ratio = 0.0;
 };
 
@@ -422,6 +438,36 @@ void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens
                                   loc.toString(limitTokens),
                                   QString::number(ratio * 100.0, 'f', 1));
     m_meter->setUsage(ratio, text);
+}
+
+void SessionSidebar::setTokenUsage(const UsageTokens::Totals &totals) {
+    const QLocale loc(QLocale::c());
+    if (totals.isEmpty()) {
+        // 一次有效回读都没有：整行隐藏。显示「0 token」会被读成「没花钱」，
+        // 而真相是「还没拿到数据」——两者对成本判断的作用相反，宁可不显示。
+        m_meter->setConsumption(QString(), QString());
+        return;
+    }
+    const QString text = tr("已用 %1 / 产出 %2 · 缓存命中 %3%")
+                             .arg(loc.toString(totals.prompt),
+                                  loc.toString(totals.completion),
+                                  QString::number(totals.hitRatio() * 100.0, 'f', 1));
+    // tooltip 逐条摊开明细 + 口径边界。边界必须写：本累计只覆盖带 include_usage 的
+    // ChatStream 路径（主循环 + 队友回合），压缩摘要/记忆链/workflow runner 走
+    // AsyncRequest（该类型无 usage 通道），完全不在账上。不写这句，用户会把它当会话总开销。
+    const QString tip = tr("本会话累计 token 消耗（只增不减，与上方占用条口径无关）。\n"
+                           "输入 %1 token，其中缓存命中 %2（未命中 %3）。\n"
+                           "产出 %4 token，其中思考 %5。\n"
+                           "有效回读 %6 次。\n"
+                           "口径边界：仅统计主循环与队友回合；压缩摘要 / 记忆链 / "
+                           "workflow runner 走 AsyncRequest 无 usage 回传，未计入本数。")
+                            .arg(loc.toString(totals.prompt),
+                                 loc.toString(totals.cached),
+                                 loc.toString(totals.uncachedPrompt()),
+                                 loc.toString(totals.completion),
+                                 loc.toString(totals.reasoning),
+                                 loc.toString(totals.calls));
+    m_meter->setConsumption(text, tip);
 }
 
 void SessionSidebar::setRunning(bool running) {

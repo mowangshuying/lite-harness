@@ -469,6 +469,11 @@ void AgentLoop::stop()
 // 故 anchorCount/anchorInjection 均取发送点快照，与当前 m_messages/m_contextInjection 对齐。
 void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
 {
+    // 消耗累计先走：它与「锚能不能落」是两件事——锚还要求发送点快照自洽（见下方
+    // estimatedContextTokens 的锚有效性判据），而消耗是既成事实，只要 usage 本身有效就该记账。
+    // 判据单源 UsageTokens::fromUsage（prompt_tokens>0），与本函数第一道门同一条。
+    m_usageTotals.add(UsageTokens::fromUsage(usage));
+
     const qint64 promptTokens = qint64(usage.value(QStringLiteral("prompt_tokens")).toDouble());
     if (promptTokens <= 0)
         return;
