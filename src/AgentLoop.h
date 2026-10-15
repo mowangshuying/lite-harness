@@ -517,8 +517,11 @@ private:
     // 声明序=初始化序：纯内存无 IO、无构造入参，置于团队三件套之后与 s13 装配段相邻。
     McpManager m_mcp;
     // s16 Workflow 编排引擎（lcc s16 workflow.py 移植，Lane A 纯引擎、值成员接线，仿 m_mcp）：
-    // 注册表 / journal 台账 / 宿主策略表；storeDir 由宿主在会话数据根变更点推入（push 形，
-    // 目录创建自愈在 Lane A ensureStoreDirs——宿主不 mkdir）。Lead 独占——SubAgent 不经此工具。
+    // 注册表 / journal 台账 / 宿主策略表；storeDir 由宿主推入（push 形，目录创建自愈在 Lane A
+    // ensureStoreDirs——宿主不 mkdir）。推入点有两类且**缺一不可**：① 构造体内首推（workDir/
+    // 会话 ID 走 init-list 注入，构造体不调 setWorkDir，只靠 setter 会恒空——s16 曾踩此坑致
+    // workflow 工具生产路径整体不可用，详见 AgentLoop.cpp 构造体注释）；② setWorkDir/
+    // setSessionDataId 内重推（换根后 journal 跟随）。Lead 独占——SubAgent 不经此工具。
     WorkflowManager m_workflow;
     // 队友运行时宿主所有权表（引擎 handles 为不拥有引用，偏A）：launcher 建、
     // onTeammateFinished/settleTeamOnExit 销
