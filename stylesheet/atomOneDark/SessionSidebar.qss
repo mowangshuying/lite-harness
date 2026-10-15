@@ -94,7 +94,9 @@
     font: 11px "Consolas";
 }
 
-/* ---- 状态灯行（waiting 与消息流审批卡同语言：淡染底 + 左描边） ---- */
+/* ---- 状态灯行（waiting 与消息流审批卡同语言：淡染底，无描边） ---- */
+/* 单侧 border 会让行内容右移 3px（行 setContentsMargins 8,0,8,0 之下 QSS 盒模型
+   把 border 画在控件矩形内侧），与 #sbRow[status="active"] 同理由一并去除 */
 #statusRow {
     background: transparent;
     border: none;
@@ -103,7 +105,6 @@
 #statusRow[state="running"] { background: rgba(82, 139, 255, 18); }
 #statusRow[state="waiting"] {
     background: rgba(229, 192, 123, 16);
-    border-left: 3px solid rgba(229, 192, 123, 160);
 }
 #statusDot { font: 11px "Segoe UI"; color: rgb(139, 148, 158); background: transparent; }
 #statusText {
@@ -130,7 +131,6 @@
 }
 #sbRow[status="active"] {
     background: rgba(229, 192, 123, 14);
-    border-left: 3px solid rgba(229, 192, 123, 150);
 }
 #sbRow[status="active"] #sbMark { color: rgb(229, 192, 123); }
 #sbRow[status="active"] #sbText { color: rgb(212, 216, 224); font-weight: bold; }

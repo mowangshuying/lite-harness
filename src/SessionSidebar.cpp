@@ -211,7 +211,11 @@ private:
 };
 
 /// 运行状态灯行：圆点 + 文案；state 属性（idle|running|waiting）驱动整行 QSS 着色，
-/// waiting 与 TodoCard active 同语言（淡染底 + 左描边）。
+/// waiting 与 TodoCard active 同语言（淡染底，**无描边**）。
+/// 描边已撤：QSS 单侧 border 画在控件矩形内侧，会让该行圆点与文字比相邻行右移
+/// 3px（行 setContentsMargins 8,0,8,0），强调改由淡染底 + 加粗 + 琥珀色承载；
+/// #sbRow[status="active"]（任务清单 in_progress 与队友名册 working/waiting_approval
+/// 共用）同批撤除，两处保持一致。
 class StatusRow : public QWidget {
 public:
     explicit StatusRow(QWidget* parent = nullptr) : QWidget(parent) {
