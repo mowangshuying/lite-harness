@@ -3,7 +3,7 @@
 //       src/AgentConstants.h（s15 恢复常量门 :99-101）
 //
 // 本套件零夹具依赖（不读 LITE_TEST_TMPROOT），任何环境全量执行。
-// 刻意跳过 fallbackModelIdValue() 的断言：它经 AppSettings::ini() 读
+// 刻意跳过 fallbackModelIdValue() 的断言：它经 AppSettings::value() 读
 // applicationDirPath()/settings.ini，该文件是否存在属环境状态而非被测契约——断言之
 // 会让结果随环境漂绿漂红，宁缺勿错（配置解析口径已由设置页冒烟覆盖）。
 // 判据断言用 QStringLiteral 承载中文测试文本：/utf-8 下 src/ 已有 32 处同款先例。

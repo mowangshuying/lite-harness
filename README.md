@@ -22,7 +22,7 @@
 
 ## 运行时配置
 
-用户配置单源为 **exe 同目录 `settings.ini`**（`AppSettings.h`，QSettings IniFormat；弃用注册表）。设置页可编辑大部分键，其余手改 ini 即可（非法值由各消费点校验后回退默认）：
+用户配置单源为 **exe 同目录 `settings.ini`**（`AppSettings.h`，QSettings IniFormat；弃用注册表）。设置页可编辑大部分键，其余手改 ini 即可（非法值由各消费点校验后回退默认）——读侧带按文件身份 `(exists,mtime,size)` 的惰性重载缓存（`SettingsCache.h`），**手改在下一次取值即生效，不需要重启**；写侧落盘与缓存失效成对发生：
 
 | 键 | 含义 | 默认 |
 | --- | --- | --- |
@@ -67,7 +67,7 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端），全量实跑约 972 条断言。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十二个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据），全量实跑 1095 条断言。
 
 **本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非整组 SKIP 的套件（`LineEnding` / `McpManager` / s15 两套件 / s16 两引擎套件的恒跑组——其文件组与端到端组自带夹具门控）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 

@@ -100,14 +100,15 @@ jobs:
         # 均为纯函数组恒跑、夹具组局部 skip，不整组跳过）——SKIP 既不计失败也不产生
        # 断言，进程返回 0，ctest 判通过：s13 起本步一直是这种假绿，实际只守了 LineEnding.h。
        # LITE_TEST_MIN_PASS 是断言下界门禁（tests/main.cpp），把「跑到了多少断言」变成硬条件；
-       # 量级 = 十套件全实跑的 pass 计数下浮值，新增套件时同步上调。
+       # 量级 = 十二套件全实跑的 pass 计数下浮值，新增套件时同步上调。
        # s16 口径：s15 全量实测 730，新增 tst_workflowmanager(155) + tst_workflowruntime(约 87)
-       # = 全量实测 972；取下界 870 ≈ 留 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
+       # = 全量实测 972；再新增 tst_compacttokens(实跑 48) = 1020；本轮新增 tst_settingscache(实跑 75)
+       # = 全量实测 1095；取下界 990 ≈ 留约 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '870'
+          $env:LITE_TEST_MIN_PASS = '990'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

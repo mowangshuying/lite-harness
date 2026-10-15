@@ -139,7 +139,7 @@ void NewChatPage::showEvent(QShowEvent *event)
 void NewChatPage::applyStoredWorkDir()
 {
     // 读 settings.ini 默认工作目录（存在且为目录时）优先，否则进程当前目录
-    const QString stored = AppSettings::ini().value(QStringLiteral("defaultWorkDir")).toString();
+    const QString stored = AppSettings::value(QStringLiteral("defaultWorkDir")).toString();
     m_workDirBar->setPath(!stored.isEmpty() && QFileInfo(stored).isDir()
                               ? stored
                               : QDir::currentPath());

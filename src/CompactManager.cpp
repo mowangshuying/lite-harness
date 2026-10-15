@@ -1,4 +1,5 @@
 #include "CompactManager.h"
+#include "CompactTokens.h" // 计量单源纯头（逐条独立求和，增量维护的恒等性由它保证）
 #include "LiteLog.h"
 
 #include "AgentConstants.h" // 会话数据根下中间目录名单源（拼法涉既有落盘兼容，禁止字面量漂移）
@@ -155,14 +156,12 @@ qsizetype CompactManager::estimateChars(const QVector<QJsonObject> &conversation
 // AgentConst::estimateTokens 求和。与 estimateChars 同族近似（登记偏差同源），
 // 但换算目标从「字符总量 ÷ 字符上限」升级为「token 估算 ÷ token 预算」。
 // 复杂度与 estimateChars 相当（每条一次序列化）；仅换调用方，不新增劣化（B3 纪律）。
+// 函数体已逐字搬进 CompactTokens::conversationTokens（纯头，可进 ctest——见该头注释），
+// 本静态方法退化为转发：外部调用方（AgentLoop / TeammateRuntime）口径零变更，
+// 且「逐条独立求和」这条承重性质只剩一处实现，杜绝转发层与本体日后各写一套。
 qsizetype CompactManager::estimateTokens(const QVector<QJsonObject> &conversation)
 {
-    qsizetype total = 0;
-    for (const QJsonObject &message : conversation) {
-        total += AgentConst::estimateTokens(
-            QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
-    }
-    return total;
+    return CompactTokens::conversationTokens(conversation);
 }
 
 // lcc 尾段回退（单步）的 OpenAI 推广：见头文件注释
@@ -444,13 +443,22 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
             consumed.append(i);
     }
     const qsizetype processCount = consumed.size() - kKeepRecentResults;
+    if (processCount <= 0)
+        return; // 无可替换项：原实现此路径零次全量估算，前置总量亦须跳过（不劣化）
+    // 总量前置一次、循环内增量维护（原每轮全量重估 = O(n²) 且跑在 GUI 线程，§9.9）。
+    // **恒等而非近似**：conversationTokens 是逐条独立项之和（CompactTokens.h 不变量①），
+    // 本轮只有 index 那条变化，故 total += 新项 - 旧项 与此刻全量重估逐值相等。
+    // 断言见 tests/tst_compacttokens.cpp（含同款替换序列的逐步对表）。
+    qsizetype total = CompactTokens::conversationTokens(conversation);
     for (qsizetype k = 0; k < processCount; ++k) {
-        if (estimateTokens(conversation) <= targetTokens)
-            break; // lcc 每轮对整体重新估算
+        if (total <= targetTokens)
+            break; // lcc 每轮对整体重新估算（等价改读增量 total）
         const qsizetype index = consumed.at(k);
         QString output = conversation.at(index).value(QStringLiteral("content")).toString();
         if (output.size() <= kMicroExemptChars)
-            continue; // 短结果不值得动
+            continue; // 短结果不值得动（未改写，total 不动）
+        // 旧项须在改写前取：persistedOutputPath/saveOutput 只触盘、不改 conversation
+        const qsizetype beforeTokens = CompactTokens::messageTokens(conversation.at(index));
         QString saved = persistedOutputPath(output);
         if (saved.isEmpty()) {
             const QString id = conversation.at(index)
@@ -459,11 +467,13 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
             if (!saveOutput(id.isEmpty() ? QStringLiteral("unknown") : id, output, &saved)) {
                 conversation[index][QStringLiteral("content")] =
                     QStringLiteral("Error: failed to persist tool output: %1").arg(id);
+                total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
                 continue; // 偏差登记（裁决 g）：lcc 抛异常，lite 写错误串继续
             }
         }
         conversation[index][QStringLiteral("content")] =
             QStringLiteral("[Earlier tool result saved at %1]").arg(saved);
+        total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
     }
 }
 
@@ -484,8 +494,13 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
     };
     std::sort(indices.begin(), indices.end(),
               [&contentSize](qsizetype a, qsizetype b) { return contentSize(a) > contentSize(b); });
+    if (indices.isEmpty())
+        return; // 无工具结果：原实现循环体不执行、零次估算，前置总量亦须跳过（勿多算一次）
+    // 同 micro 段纪律：总量前置一次、循环内增量维护（恒等性依据见 CompactTokens.h ①②）。
+    // 排序阶段不改 conversation，故此处前置取值与逐轮重估的起点同态。
+    qsizetype total = CompactTokens::conversationTokens(conversation);
     for (const qsizetype index : indices) {
-        if (estimateTokens(conversation) <= targetTokens)
+        if (total <= targetTokens)
             break;
         const QString output = conversation.at(index).value(QStringLiteral("content")).toString();
         const QString id = conversation.at(index)
@@ -493,8 +508,12 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
                                .toString();
         const QString replacement =
             persistedPreview(id.isEmpty() ? QStringLiteral("unknown") : id, output, kFitPreviewChars);
-        if (replacement.size() < output.size())
+        if (replacement.size() < output.size()) {
+            // 旧项须在改写前取；未走替换分支时 total 不动（与逐轮重估同态）
+            const qsizetype beforeTokens = CompactTokens::messageTokens(conversation.at(index));
             conversation[index][QStringLiteral("content")] = replacement;
+            total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
+        }
     }
 }
 

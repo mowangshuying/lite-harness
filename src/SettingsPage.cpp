@@ -28,12 +28,12 @@ const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 
 QString readDefaultWorkDir()
 {
-    return AppSettings::ini().value(kDefaultWorkDirKey).toString();
+    return AppSettings::value(kDefaultWorkDirKey).toString();
 }
 
 void writeDefaultWorkDir(const QString &value)
 {
-    AppSettings::ini().setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
+    AppSettings::setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 
 // 未设置时的占位文案（现占用卡片标题下方的说明位 m_infoLabel；
@@ -51,22 +51,22 @@ const QString kApiTokenKey = QStringLiteral("apiToken");
 
 QString readApiBaseUrl()
 {
-    return AppSettings::ini().value(kApiBaseUrlKey).toString();
+    return AppSettings::value(kApiBaseUrlKey).toString();
 }
 
 void writeApiBaseUrl(const QString &value)
 {
-    AppSettings::ini().setValue(kApiBaseUrlKey, value); // 空串=清除，读取侧 isEmpty 判缺省
+    AppSettings::setValue(kApiBaseUrlKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 
 QString readApiToken()
 {
-    return AppSettings::ini().value(kApiTokenKey).toString();
+    return AppSettings::value(kApiTokenKey).toString();
 }
 
 void writeApiToken(const QString &value)
 {
-    AppSettings::ini().setValue(kApiTokenKey, value);
+    AppSettings::setValue(kApiTokenKey, value);
 }
 
 // 可选模型清单：settings.ini 键 modelOptions（逗号分隔）。解析与回退单源在
@@ -81,7 +81,7 @@ QString readModelOptionsRaw()
 
 void writeModelOptions(const QString &value)
 {
-    AppSettings::ini().setValue(kModelOptionsKey, value); // 空串=清除，读取侧回退内置清单
+    AppSettings::setValue(kModelOptionsKey, value); // 空串=清除，读取侧回退内置清单
 }
 
 // 录入规范化：逐项去空白、丢空项、保序去重（重名会让下拉出现同文两项，选中歧义且
@@ -303,7 +303,7 @@ void ContextLimitSettingCard::promptEdit()
             .exec();
         return;
     }
-    AppSettings::ini().setValue(AgentConst::kContextCharLimitKey, parsed);
+    AppSettings::setValue(AgentConst::kContextCharLimitKey, parsed);
     updateValue();
 }
 
@@ -375,7 +375,7 @@ void MaxRoundsSettingCard::promptEdit()
             .exec();
         return;
     }
-    AppSettings::ini().setValue(AgentConst::kMaxToolIterationsKey, parsed);
+    AppSettings::setValue(AgentConst::kMaxToolIterationsKey, parsed);
     updateValue();
 }
 

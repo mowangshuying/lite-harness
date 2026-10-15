@@ -29,9 +29,11 @@ inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 // QSettings ini 语法的列表写法——它被解析成 QStringList，此时 .toString() 返回空串（Qt 6.9 实测），
 // 配置就被误判成「未配置」而静默回退内置清单。故统一走这里：QStringList 用逗号回接（Qt 解析时已逐项
 // trim），其余形态按字符串取。标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
+// 取原始值走 AppSettings::value()（缓存解析产物，按文件身份惰性重载）而非现构造 QSettings——
+// 本函数被 modelOptions/defaultModel/fallbackModelIdValue 共用，消费点已下沉到 per-tool 级。
 inline QString iniTextValue(const QString &key)
 {
-    const QVariant stored = AppSettings::ini().value(key);
+    const QVariant stored = AppSettings::value(key);
     if (stored.metaType() == QMetaType::fromType<QStringList>())
         return stored.toStringList().join(QLatin1Char(','));
     return stored.toString();
@@ -123,12 +125,11 @@ inline const QString kMaxToolIterationsKey = QStringLiteral("maxToolIterations")
 // 轮次上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // AgentLoop（回合入口快照）共用同一实现，避免多处读盘/校验口径分叉；缺失、
 // 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
-// （exe 同目录 settings.ini）；调用频率为回合级/交互级，读盘成本可忽略。
+// （exe 同目录 settings.ini）；取值经 AppSettings::value() 的读缓存，调用频率不再受读盘成本约束。
 inline int maxToolIterationsValue()
 {
-    QSettings settings = AppSettings::ini();
     bool ok = false;
-    const qlonglong stored = settings.value(kMaxToolIterationsKey).toLongLong(&ok);
+    const qlonglong stored = AppSettings::value(kMaxToolIterationsKey).toLongLong(&ok);
     if (!ok || stored < kMaxToolIterationsMin || stored > kMaxToolIterationsMax)
         return kMaxToolIterationsDefault;
     return static_cast<int>(stored);
@@ -143,13 +144,13 @@ constexpr int kMaxRetriesMin = 0;     // 校验下界（0 = 关闭重试）
 constexpr int kMaxRetriesMax = 5;     // 校验上界
 inline const QString kMaxRetriesKey = QStringLiteral("maxRetries");
 
-// 重试次数单点取值：settings.ini 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律）。
+// 重试次数单点取值：settings.ini 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律，
+// 含同走 AppSettings::value() 读缓存）。
 // 消费方：QOpenAi::initFromSettings（启动注入）；缺失、非整数、越界一律回退默认值。
 inline int maxRetriesValue()
 {
-    QSettings settings = AppSettings::ini();
     bool ok = false;
-    const qlonglong stored = settings.value(kMaxRetriesKey).toLongLong(&ok);
+    const qlonglong stored = AppSettings::value(kMaxRetriesKey).toLongLong(&ok);
     if (!ok || stored < kMaxRetriesMin || stored > kMaxRetriesMax)
         return kMaxRetriesDefault;
     return static_cast<int>(stored);
@@ -220,12 +221,13 @@ inline const QString kContextCharLimitKey = QStringLiteral("contextCharLimit");
 // 主上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // CompactManager（管线消费）共用同一实现，避免多处读盘/校验口径分叉；缺失、
 // 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
-// （exe 同目录 settings.ini）；调用频率为管线级/交互级，读盘成本可忽略。
+// （exe 同目录 settings.ini）；取值经 AppSettings::value() 读缓存——本函数被
+// contextTokenBudget 复用，而后者已下沉到 per-tool 级消费点（ChatSessionPage 侧栏刷新），
+// 每次现构造 QSettings 的读盘成本不再可忽略（§9.10 问题②）。
 inline qsizetype contextCharLimitValue()
 {
-    QSettings settings = AppSettings::ini();
     bool ok = false;
-    const qlonglong stored = settings.value(kContextCharLimitKey).toLongLong(&ok);
+    const qlonglong stored = AppSettings::value(kContextCharLimitKey).toLongLong(&ok);
     if (!ok || stored < kContextCharLimitMin || stored > kContextCharLimitMax)
         return kContextCharLimitDefault;
     return static_cast<qsizetype>(stored);

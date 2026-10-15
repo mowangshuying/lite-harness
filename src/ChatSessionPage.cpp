@@ -110,7 +110,7 @@ void ChatSessionPage::buildLayout()
     });
 
     // 显隐偏好恢复（settings.ini 键 sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
-    setSidebarVisible(AppSettings::ini().value(QStringLiteral("sidebarVisible"), true).toBool());
+    setSidebarVisible(AppSettings::value(QStringLiteral("sidebarVisible"), true).toBool());
 }
 
 ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &workDir,
@@ -783,7 +783,7 @@ void ChatSessionPage::stop()
 // 消息列重钳。构造期 buildLayout 尾部也走此函数完成首帧恢复
 void ChatSessionPage::setSidebarVisible(bool visible)
 {
-    AppSettings::ini().setValue(QStringLiteral("sidebarVisible"), visible);
+    AppSettings::setValue(QStringLiteral("sidebarVisible"), visible);
     m_sidebar->setVisible(visible);
     m_restoreBtn->setVisible(!visible);
     if (!visible)

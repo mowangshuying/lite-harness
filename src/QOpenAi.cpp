@@ -833,9 +833,9 @@ bool verbose()
 void initFromSettings()
 {
     OpenAiClient &c = client();
-    const QSettings settings = AppSettings::ini();
-    setUrl(settings.value(QStringLiteral("apiBaseUrl")).toString());
-    c.token = settings.value(QStringLiteral("apiToken")).toString();
+    // 读侧统一走 AppSettings::value()（缓存解析产物），不再为两个键现构造 QSettings
+    setUrl(AppSettings::value(QStringLiteral("apiBaseUrl")).toString());
+    c.token = AppSettings::value(QStringLiteral("apiToken")).toString();
     // 重试次数同源于 settings.ini（键 maxRetries，默认/校验界见 AgentConst::kMaxRetries*）：
     // 原默认 0 且全仓无调用方，429/5xx 退避链路运行时不可达
     setMaxRetries(AgentConst::maxRetriesValue());
