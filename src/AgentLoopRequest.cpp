@@ -135,13 +135,27 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
 
     QOpenAi::ChatStream *s = QOpenAi::chat().createStream(request, this);
     m_currentStream = s;
+    // 输出速度起表（t0）：每次请求重开，per-请求态；流内重试不重开（退避计入 TTFT）
+    startRateWindow();
 
     // 增量转发（this 上下文：AgentLoop 销毁自动断连，s 为 this 子对象自动释放）
-    connect(s, &QOpenAi::ChatStream::thinkingDelta, this, &AgentLoop::thinkingDelta);
-    connect(s, &QOpenAi::ChatStream::textDelta, this, &AgentLoop::textDelta);
+    // 转发前打生成起点（t1）——只认本轮首个增量，后续帧不再改写；纯 tool_calls 回合
+    // 没有 delta 信号，t1 无从观测，收窗时窗口判为无效（不拿 TTFT 冒充生成窗口）
+    connect(s, &QOpenAi::ChatStream::thinkingDelta, this, [this](const QString &delta) {
+        markFirstOutputDelta();
+        emit thinkingDelta(delta);
+    });
+    connect(s, &QOpenAi::ChatStream::textDelta, this, [this](const QString &delta) {
+        markFirstOutputDelta();
+        emit textDelta(delta);
+    });
     // 修3/修4：usage 末帧回读 → token 锚（契约 C-2：成功路径、messageFinished 之前发）
+    // 同一帧也是生成窗口的终点（t2）：先落锚再收窗，两者共用同一份 usage 判据
     connect(s, &QOpenAi::ChatStream::usageReceived, this,
-            [this](const QJsonObject &usage) { adoptUsageAnchor(usage); });
+            [this](const QJsonObject &usage) {
+        adoptUsageAnchor(usage);
+        closeRateWindow(usage);
+    });
 
     connect(s, &QOpenAi::ChatStream::messageFinished, this,
             [this, s](const QJsonObject &fullMsg, const QString &finishReason) {
@@ -581,4 +595,32 @@ void AgentLoop::runNextTool()
     const QJsonObject toolCall = m_pendingToolCalls.takeAt(0).toObject();
     // 效率 P4：传缓存表（ensureToolHandlers 首用构建/setWorkDir 失效），替代旧每工具调用整表重建
     executeTool(toolCall, ensureToolHandlers(), /*permissionGranted=*/false);
+}
+
+// ---- 输出速度定窗（判据单源在 StreamRate.h；本 TU 只观测三个时刻）----
+// 三个方法都在请求回合内，故落本文件（§10 决策树）。折算与有效性判据一个都不在这里——
+// 这里只回答「t0/t1/t2 分别是什么时候」，算术归纯头、测试归 tst_streamrate。
+
+// t0：每次请求重开表（per-请求态）。QElapsedTimer::start() 兼具 restart 语义。
+void AgentLoop::startRateWindow()
+{
+    m_rateFirstDeltaMs = -1;
+    m_rateClock.start();
+}
+
+// t1：本轮首个增量。纯 tool_calls 回合的 delta 只有 tool_calls 字段、不触发 delta 信号，
+// 本值保持 -1 → 窗口无从定义 → 收窗时判无效（宁可不算，也不把 TTFT 冒充生成速度）。
+void AgentLoop::markFirstOutputDelta()
+{
+    if (m_rateFirstDeltaMs >= 0)
+        return; // 只认首个增量，后续帧不改写
+    m_rateFirstDeltaMs = m_rateClock.elapsed();
+}
+
+// t2：usage 末帧到达（契约 C-2，恒先于 messageFinished）。判据全在 makeWindow：
+// 无效读数 / 无起点 / 零长度一律作废，Meter::add 直接丢弃，不进会话分母。
+void AgentLoop::closeRateWindow(const QJsonObject &usage)
+{
+    const UsageTokens::Snapshot snapshot = UsageTokens::fromUsage(usage);
+    m_outputRate.add(StreamRate::makeWindow(snapshot, m_rateFirstDeltaMs, m_rateClock.elapsed()));
 }

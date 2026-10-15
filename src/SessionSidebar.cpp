@@ -184,9 +184,17 @@ public:
         m_consumption->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         m_consumption->setVisible(false);
 
+        // 速度行：与消耗行同层级、同色阶（同为次要信息），但语义正交——消耗回答「已经花掉多少」，
+        // 速度回答「模型吐字有多快」。空账整行隐藏（与消耗行同纪律：不显示 0 tok/s 骗人）。
+        m_rate = new QLabel(this);
+        m_rate->setObjectName(QStringLiteral("ctxRate"));
+        m_rate->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_rate->setVisible(false);
+
         v->addWidget(m_track);
         v->addWidget(m_numbers);
         v->addWidget(m_consumption);
+        v->addWidget(m_rate);
     }
 
     /// ratio 钳到 [0,1]；warn 阈值（≥0.8）由此切琥珀色并触发属性重 polish
@@ -209,6 +217,13 @@ public:
         m_consumption->setVisible(!text.isEmpty());
     }
 
+    /// 速度行文案；空串即整行隐藏（还没拿到任何可定窗的请求时不显示「0 tok/s」骗人）
+    void setRate(const QString& text, const QString& toolTip) {
+        m_rate->setText(text);
+        m_rate->setToolTip(toolTip);
+        m_rate->setVisible(!text.isEmpty());
+    }
+
 protected:
     void resizeEvent(QResizeEvent*) override { relayoutFill(); }
 
@@ -223,6 +238,7 @@ private:
     QWidget* m_fill = nullptr;
     QLabel* m_numbers = nullptr;
     QLabel* m_consumption = nullptr;
+    QLabel* m_rate = nullptr;
     double m_ratio = 0.0;
 };
 
@@ -468,6 +484,32 @@ void SessionSidebar::setTokenUsage(const UsageTokens::Totals &totals) {
                                  loc.toString(totals.reasoning),
                                  loc.toString(totals.calls));
     m_meter->setConsumption(text, tip);
+}
+
+void SessionSidebar::setOutputRate(const StreamRate::Meter &meter) {
+    const QLocale loc(QLocale::c());
+    if (meter.isEmpty()) {
+        // 一个有效窗口都没有：整行隐藏。显示「0 tok/s」会被读成「模型很慢」，而真相是
+        // 「还没拿到能定窗的数据」（无 usage 回读，或本轮是纯 tool_calls delta）——两者相反。
+        m_meter->setRate(QString(), QString());
+        return;
+    }
+    const QString text = tr("输出速度 %1 tok/s · 平均 %2 tok/s")
+                             .arg(QString::number(meter.lastRate(), 'f', 1),
+                                  QString::number(meter.averageRate(), 'f', 1));
+    // tooltip 必须把窗口口径写全：行内数字只说「多少 tok/s」，不说分母是什么。分母不同，
+    // 同一个数字的含义相反——把整请求窗口（含首字延迟与重试退避）当分母，慢首字会被读成慢模型。
+    const QString tip = tr("按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。\n"
+                           "本轮 %1 token ÷ %2 ms = %3 tok/s。\n"
+                           "平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。\n"
+                           "首字延迟平均 %4 ms（含流内重试退避）。\n"
+                           "口径边界：仅主循环请求；队友回合与压缩 / 记忆 / workflow 侧链不计时。"
+                           "纯 tool_calls 回合无增量起点，无法定窗，不计入本数。")
+                            .arg(loc.toString(meter.last.tokens),
+                                 loc.toString(meter.last.generationMs),
+                                 QString::number(meter.lastRate(), 'f', 1),
+                                 QString::number(meter.averageFirstTokenMs(), 'f', 0));
+    m_meter->setRate(text, tip);
 }
 
 void SessionSidebar::setRunning(bool running) {

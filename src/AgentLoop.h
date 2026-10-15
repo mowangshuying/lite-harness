@@ -9,6 +9,7 @@
 #include <QHash>
 #include <QPair>
 #include <QStringList>
+#include <QElapsedTimer>
 
 #include <functional>
 
@@ -25,6 +26,7 @@
 #include "AgentTeamsManager.h"
 #include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
 #include "UsageTokens.h"     // 会话用量累计器值成员需完整类型（纯头，QtCore-only）
+#include "StreamRate.h"      // 输出速度账值成员需完整类型（纯头，QtCore-only；窗口判据单源）
 // s14 MCP（机制层 + 空注册表，Lead 独占）：按值成员需完整类型
 #include "McpManager.h"
 // s16 Workflow（Lane C 宿主接线）：引擎按值成员需完整类型；
@@ -95,6 +97,12 @@ public:
     // **不含**压缩摘要/记忆链/workflow runner——它们走 AsyncRequest，该类型无 usage 通道。
     // 故这是部分消耗，不是会话真实总开销（边界详见 UsageTokens.h 头注释，UI tooltip 同步声明）。
     const UsageTokens::Totals &sessionUsageTotals() const { return m_usageTotals; }
+
+    // 输出速度账（token/s）：窗口定义与判据单源在 StreamRate.h（纯头直测 tst_streamrate）。
+    // 口径 = 生成窗口（首个增量 → usage 末帧），不含首字延迟与工具执行时间；TTFT 单独记录。
+    // 边界比消耗账更窄：仅主循环请求——队友回合增量不经宿主信号面、压缩/记忆/workflow 走
+    // AsyncRequest（无 usage 通道），都无从定窗。空账（无有效窗口）UI 整行隐藏，不显示「0」。
+    const StreamRate::Meter &outputRate() const { return m_outputRate; }
 
     // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
@@ -378,6 +386,14 @@ private:
     // 采纳 ChatStream::usageReceived 回传的 usage.prompt_tokens 为锚（<=0 忽略；同时以发送点
     // 快照 m_lastSendHistoryCount/m_lastSendInjectionTokens 落锚、清历史改写标记）
     void adoptUsageAnchor(const QJsonObject &usage);
+    // ---- 输出速度定窗（判据单源 StreamRate.h；本处只做时刻观测）----
+    // 起表 = 流建立（doStartChatRequest）；标点 = 本轮首个增量（thinking/text delta）；
+    // 收窗 = usage 末帧到达（契约 C-2，恒先于 messageFinished）。三个时刻都在请求回合内，
+    // 故三个方法定义落 AgentLoopRequest.cpp（§10 决策树「一次请求回合」）。
+    // 流内重试不改起点：退避发生在首个增量之前，计入 TTFT、不计入生成窗口。
+    void startRateWindow();
+    void markFirstOutputDelta();
+    void closeRateWindow(const QJsonObject &usage);
     // 非会话口径的固定开销（system[0] + tools schema + 注入块），交 prepareAsync 拆分
     // conversationTokens = estimated − overhead（token 计量升级后压缩触发不再漏计 B4）
     qsizetype contextOverheadTokens() const;
@@ -503,6 +519,12 @@ private:
     // 本累计是「已经花了多少」的只增账）。采纳点两处：主循环 adoptUsageAnchor + 队友回合
     // （AgentLoopTeam 的 usageReceived 汇入本对象——队友 runtime 随清算消亡，账不能记在它身上）
     UsageTokens::Totals m_usageTotals;
+    // 输出速度账（与 m_usageTotals 同纪律：只增不清零，无效窗口不进分母）。
+    // 时钟与首增量标记是 per-请求态，每次 doStartChatRequest 重置；-1 = 本轮尚无增量
+    //（纯 tool_calls 回合的 delta 只有 tool_calls 字段，不触发 delta 信号 → 窗口无从定义，跳过）
+    StreamRate::Meter m_outputRate;
+    QElapsedTimer m_rateClock;
+    qsizetype m_rateFirstDeltaMs = -1;
     // 后台任务（lcc s11 BackgroundTasksManager 纯数据移植）：AgentLoop 每会话一个，即天然
     // 唯一实例——启动与注入共用本成员（lcc 踩过双实例静默丢结果的坑）；进程由
     // executeBashAsync 后台模式异步驱动，仅主线程访问，无锁

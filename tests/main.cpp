@@ -24,6 +24,7 @@ int tst_workflowruntime();    // s16：limits/脚本组恒跑 + 端到端组夹�
 int tst_compacttokens();      // 计量单源纯头（CompactTokens.h），零夹具，任何环境全跑
 int tst_settingscache();      // 设置读缓存纯头（SettingsCache.h），判据组恒跑 + 文件组夹具门控
 int tst_usagetokens();        // 用量计量纯头（UsageTokens.h），零夹具，任何环境全跑
+int tst_streamrate();         // 输出速度纯头（StreamRate.h），零夹具，任何环境全跑
 
 int main()
 {
@@ -41,6 +42,7 @@ int main()
     failed += tst_compacttokens();
     failed += tst_settingscache();
     failed += tst_usagetokens();
+    failed += tst_streamrate();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

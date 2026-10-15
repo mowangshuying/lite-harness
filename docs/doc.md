@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-    （`s16`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+    （`s16.1`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
    `.lite-harness/sessions/<id>/.temp/`；收口时把仍然成立的内容折进本文对应部分、过时者删除，
    不在 `docs/` 里另立 md 文件——孤立文件既无人引用、也无人负责同步（本目录刚刚就是因为六篇各自漂移
@@ -99,7 +99,7 @@ L5 引擎/传输     QOpenAi · BashRunner · CompactManager · MemoryManager ·
                         ↓
 L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · AppSettings.h · SettingsCache.h
                  I18n · ThemeAware · ToolTagKind.h · AgentLoopInternal.h · LineEnding.h · CompactTokens.h
-                 · UsageTokens.h
+                 · UsageTokens.h · StreamRate.h
 ```
 
 **两条铁律（本仓最重要的两条边方向）**
@@ -187,6 +187,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `LineEnding.h` | 文本文件行尾口径单源：`dominant`（主导行尾判定，平局偏 CRLF）/ `toLf`（匹配域归一，孤立 CR 不动）/ `apply`（写回域还原，幂等）/ `replaceOnce`（两级匹配单次替换）。`edit_file` 与 `write_file` 共用，杜绝「read_file 交还 LF 文本、edit_file 按原文字节匹配」导致的多行失配与混合行尾。`countOccurrences` 报命中次数（经 `replaceOnce` 的 `matchCount` 出参，与 `matched` 同为 nullptr 容错），供 `edit_file` 拒绝歧义编辑 |
 | `CompactTokens.h` | 会话体 token 计量纯头（header-only，零 CMake 改动即入 ctest）：`messageTokens`（单条项，只依赖入参自身）/ `conversationTokens`（逐条独立求和）。**承重不变量①②③写在头注释**：项间零耦合 ⇒ 替换一条后 `新总量 == 原总量-旧项+新项` 是数学恒等而非近似，`microCompact`/`fitToolResults` 的增量维护据此成立；改成整段一次序列化会同时破 ①② 并让压缩触发点静默漂移，`tst_compacttokens` 即为此设的红线。`CompactManager::estimateTokens` 退化为它的转发，宿主（`AgentLoop`/`TeammateRuntime`）与压缩管线共用同一实现 |
 | `UsageTokens.h` | 服务端 usage 用量计量纯头（header-only，零 CMake 改动即入 ctest）：`fromUsage`（usage 对象 → `Snapshot`）+ `Totals`（会话级只增累加 + `hitRatio`/`uncachedPrompt` 派生）。**与 `CompactTokens.h` 是两套东西，勿混**：后者算「窗口现在多大」（占用，会被后续回读覆盖），本头算「已经花掉多少」（消耗，只增不减）。**承重不变量写在头注释**：①有效性判据 `prompt_tokens>0` 与 `adoptUsageAnchor` 落锚门同一条——无效读数整条作废、不进分母，破了就会把「端点没回 usage」显示成「已用 0 token」，用户读作「没花钱」，两种状态对成本判断作用相反；②嵌套 `*_tokens_details` 缺失是常态（取不到即 0，不算解析失败，OpenAI 标准里本就可选）；③`hitRatio` 上界钳 1.0、`uncachedPrompt` 钳非负（实测个别兼容端点把 cached 报得大于 prompt，不钳即显示 120% 荒值，钳后原值仍在账上可查）。**覆盖面是部分口径、不是会话真实总开销**：只有带 `stream_options.include_usage` 的 ChatStream 路径回 usage（主循环 + 队友回合），压缩摘要/记忆链/workflow runner 走 `AsyncRequest`（该类型无 usage 通道）完全不在账上——UI tooltip 必须声明这条边界，否则数字误导成本判断。`tst_usagetokens` 49 断言钉①③ |
+| `StreamRate.h` | token 输出速度纯头（header-only，零 CMake 改动即入 ctest）：`Window`（三时刻观测：t0 流建立 / t1 首个增量 / t2 usage 末帧）+ `makeWindow`（判据单源）+ `tokensPerSecond` + `Meter`（会话级只增账）。**与 `UsageTokens.h` 是两套东西，勿混**：后者算「已经花掉多少」，本头算「吐字有多快」——分母是时间，窗口取错时数字照样算得出、照样显示，但含义相反。**承重不变量①~④写在头注释**：①分母是生成窗口（t1→t2），**不含 TTFT**——把「请求发出→usage」当分母会把慢首字读成慢模型，故 TTFT 单独记录、单独显示；②无增量起点即窗口作废（纯 tool_calls 回合的 delta 只有 tool_calls 字段，不触发 textDelta/thinkingDelta），宁可不显示也不把 TTFT 冒充生成速度；③聚合 = Σtokens ÷ ΣgenerationMs，**不是**各窗口速率的算术平均（后者让 1 token 窗口与 2000 token 窗口等权，一条长回答被九条短回答稀释）；④有效性判据与 `UsageTokens::fromUsage` 同源（`prompt<=0` 即整窗作废），无效窗口不进分母也不改写 `last`，空账 UI 整行隐藏。**覆盖面比消耗账更窄**：仅主循环请求——队友回合增量不经宿主信号面、压缩/记忆/workflow 走 `AsyncRequest`（无 usage 通道），均无从定窗；tooltip 同步声明。`tst_streamrate` 26 断言钉①②③④ |
 | `SettingsCache.h` | 设置读缓存纯头（header-only，零 CMake 改动即入 ctest）：`Identity`（文件身份三元组 exists/mtime/size）+ `sameIdentity` + `identityOf` + `Reader`（一个 ini 路径的读写门面，读带缓存、写带失效）。**承重不变量①~⑤写在头注释**：①失效判据是文件身份（改 TTL/永久缓存即破 README「手改 ini 即可」承诺）②三元组缺一不可 ③写侧「先 sync 后 invalidate」顺序不可颠倒 ④查表大小写不敏感（对齐 IniFormat 的 `IniCaseSensitivity`）⑤无锁依赖零线程约定。路径构造期注入是它能进 ctest 的全部原因（`AppSettings` 绑死 `applicationDirPath()`，测试里造不出也不该往 exe 目录写盘）。**口径纠正**：原登记说每次读「open + parse 整个 ini」不准确——Qt 自带 `ConfFileCache` 且在 size+mtime 未变时短路，本修复省掉的是每次调用的 QObject 分配 + 全局锁 + 缓存探测 + stat + 键折叠查表 + 析构 sync 簿记，收益真实但不大（勿按旧说法宣称成「消除了重复磁盘解析」） |
 | `AgentRecovery.h` | s15 恢复契约串与文本判据纯头（`RecoveryRules` 命名空间，禁翻区）：逐字 `continuationPrompt()` / `asyncApprovalDenied()`（两拍续打、异步定值拒、isToolFailure 前缀判定、测试逐字断言的单源——改文案须同步 `tst_agentrecovery`、`isToolFailure` 判据与 TeammateRuntime 镜像）；`isRateLimitText` / `isOverloadedText` 鸭子文本判据供 `QOpenAi` 可重试判定 |
 
@@ -346,6 +347,20 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
   显示「0 token」会被读成「没花钱」，而真相是「还没拿到数据」，两者对成本判断作用相反
 **部分口径**：仅主循环 + 队友回合（带 include_usage 的 ChatStream）；压缩摘要/记忆链/
   workflow runner 走 AsyncRequest 无 usage 通道，不在账上。tooltip 必须声明这条边界
+
+⑦c 输出速度（与 ⑦b「消耗」正交：消耗=已经花掉多少，速度=模型吐字有多快。两者共用同一
+   usage 载荷，但分母是时间——窗口取错时数字照样算得出、照样显示，含义却相反）
+三个时刻全由宿主观测（纯头不读时钟）：t0 = createStream 返回、t1 = 本轮首个增量、t2 = usage 末帧
+  · 生成窗口 = t1→t2（**不含 TTFT**）；TTFT = t0→t1 单独记录、单独显示，不混进速率
+  · 流内重试退避发生在 t1 之前 → 计入 TTFT、不计入生成窗口；起表每请求重开，重试不重开
+  · 纯 tool_calls 回合无增量起点（firstDeltaMs=-1）→ 窗口作废，不把 TTFT 冒充生成速度
+  · 聚合 = Σtokens ÷ ΣgenerationMs（不是各轮速率的算术平均，否则 1 token 窗口与 2000 token
+    窗口等权）
+消费一处：ChatSessionPage::refreshContextUsage → SessionSidebar::setOutputRate（与消耗行同一
+  刷新时机、同一数据源，不另起信号链；usage 末帧到达即收窗，恒先于 messageFinished）；
+  calls==0 即整行隐藏——显示「0 tok/s」会被读成「模型慢」，而真相是「还没拿到能定窗的数据」
+**口径边界比消耗账更窄**：仅主循环请求；队友回合增量不经宿主信号面、压缩/记忆/workflow 走
+  AsyncRequest（无 usage 通道），都无从定窗。tooltip 必须声明这条边界
 ```
 
 **回填 UI 总表**（全部集中在 `ChatSessionPage::wireAgent()`，别处不接 AgentLoop 信号）
@@ -438,11 +453,12 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 16）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s16）|
+| 版本号 | CMake `project VERSION`（数字段 16.1）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s16.1）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
 | 上下文消耗（侧栏消耗行；与上面的占用语义正交，勿混用） | `AgentLoop::sessionUsageTotals()` → `UsageTokens.h`（`fromUsage` 解析 + `Totals` 只增累加 + `hitRatio`/`uncachedPrompt` 派生）。**部分口径**：只含主循环与队友回合，不含压缩/记忆/workflow（`AsyncRequest` 无 usage 通道）——UI tooltip 同步声明该边界 |
+| 输出速度（侧栏速度行；与消耗行同层级、语义正交，勿混用） | `AgentLoop::outputRate()` → `StreamRate.h`（`Window`/`makeWindow` 判据 + `Meter` 只增账）。**分母 = 生成窗口（首个增量 → usage 末帧），不含首字延迟与工具执行时间**；TTFT 单独记录、单独显示；聚合是 Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均。**口径比消耗账更窄**：仅主循环请求（队友增量不经宿主信号面、压缩/记忆/workflow 无 usage 通道）——UI tooltip 同步声明该边界 |
 | 工具名清单（27 个 = 18 基础 + 7 团队 + 1 MCP 入口 connect_mcp + 1 编排入口 workflow（s16）；`submit_plan` 不入表） | `ToolNames.h`（schema / handler 表 / 权限门 / 子代理白名单 / ToolBlock 标题 / 回归清单核对项全部引用它） |
 | 导航/堆叠键 | `NavItem.h::NavKey` |
 | 团队数据目录名 / 编排台账目录名 | `AgentConst::kMailboxesDirName`（`.mailboxes`，`AgentConstants.h:284`）/ `kWorktreesDirName`（`.worktrees`，`:285`）/ `kWorkflowDirName`（`.workflows`，s16，`:286`）——各引擎禁另拼 |
@@ -478,13 +494,15 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `LiteHarness.cpp` 572、`ToolBlock.cpp` 562 未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
      是单函数长 UI 装配，线性可读。勿因「669 > 547」就把它补进候选或动手拆 prompt。
-5. **测试覆盖面**：**十二套件**已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /
+5. **测试覆盖面**：**十四套件**已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /
     `tst_worktree` / `tst_agentteams` / `tst_mcpmanager` / `tst_agentrecovery`（s15 契约串逐字 + 判据矩阵，零夹具）/
     `tst_backgroundtasks`（s15 id 序列 / 严格布尔 / hasPending 只查不清 / collect 模板逐字，零夹具）/
     `tst_workflowmanager`（s16 身份/哈希/journal/schema/抢占/快照纯函数门，155 = 恒跑组 118 + 夹具门控文件组 37）/
     `tst_workflowruntime`（s16 limits 恒跑组 + 端到端 10 分组含 review-changes 全环 / resume 全 cached / 脏缓存拒用 / budget / 屏障 / 嵌套门 / 抢占 / 取消，约 87）/
     `tst_compacttokens`（计量单源纯头 `CompactTokens.h`：可加性 / 项与位置无关 / **替换恒等式** / 替换序列逐步对表 / 确定性 / 折算口径锚点，19 静态点·实跑 48 条，零夹具）/
-    `tst_settingscache`（设置读缓存纯头 `SettingsCache.h`：身份三元组穷举 / 缺失文件态 / **200 次热读只装载一次** / 四类外部手改立即生效（等长·变长·新增·删除）/ 缓存与现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，实跑 75 条 = 恒跑组 18 + 夹具门控组 57），静态断言点 972 处、全量实跑 pass=1095 fail=0 skip=1。被测生产源需显式列进
+    `tst_settingscache`（设置读缓存纯头 `SettingsCache.h`：身份三元组穷举 / 缺失文件态 / **200 次热读只装载一次** / 四类外部手改立即生效（等长·变长·新增·删除）/ 缓存与现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）/
+    `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 / 只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 `*_tokens_details` 缺失即 0（不算解析失败）/ 逐键对表，49 条，零夹具）/
+    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last / 定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径差 5 倍，必须钉死）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 / 长会话累加不溢出，26 条，零夹具），静态断言点（`TestHarness::check` 调用点）1123 处、全量实跑 pass=1184 fail=0 skip=1（本轮本机实跑；上一轮登记的 972/1095 已过期——`tst_usagetokens` 当时未列进本清单）。被测生产源需显式列进
     `CMakeLists.txt` 的测试目标清单（当前八个 QtCore-only TU：TaskStore / MessageBus / WorktreeManager / AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime）。**但 L4 主循环（`AgentLoop` 家族 15 TU、
     `SubAgent`、`TeammateRuntime`）与网络层 `QOpenAi` 仍零覆盖**：阻塞点是 `QOpenAi` 的函数局部 static
     单例无注入点，须先引入 transport 接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 +
@@ -504,7 +522,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 7. **SubAgent `task` 仍走遗留非租约路径**（裁决：不做租约切换）：`runClaimTask`/`runCompleteTask` 不经租约六门，与团队工具并存是刻意边界。
 8. **lcc 线程模型 → 主线程状态机转译（总偏差）**：lcc 守护线程/文件锁 → QTimer 心跳/deferred 驱动/内存台账（D7/D9）；Gate③ 各 MINOR/NIT 的处置与本轮文档同步（NIT-4）见 `.slim/deepwork/port-s13-agent-teams.md` 台账与 `gate3-oracle-report.md`。
 9. **压缩计量：循环内 O(n2) 全量重估已消除（本轮改），残留降为每请求常数次 O(n)**：**已改**——`microCompact` 与 `fitToolResults` 原为「循环内每轮对整段历史重算 `estimateTokens`」（每条工具结果一次全量重算 = O(n2)，且跑在 GUI 线程，叠加零线程约定直接表现为流式输出期可感知卡顿），现改为循环前置一次总量、每次替换做 `total += 新项 - 旧项` 的增量维护。**等价性是可证的，不是「应该没问题」**：计量已抽成纯头 `CompactTokens.h`，其不变量①（逐条独立求和、项间零耦合）使增量值与此刻全量重算**逐值恒等**（数学恒等而非近似）；`tst_compacttokens` 把该恒等式钉成断言，含同款替换序列的逐步对表，改口径即转红。两处提前 `continue`（短结果豁免 / 落盘失败写错误串）与条件替换分支均按「未改写则 total 不动」处理；`processCount<=0` 与空 `indices` 的前置 return 保住原「零次估算」路径不劣化（勿改成无条件前置算一次）。阈值语义、比例、落盘时序、文案逐字未动。**残留（未改，量级已不同）**——`prepareAsync` 各段之间仍有 4 次全量重估（每段一次，O(n) 非 O(n2)），`AgentLoop::estimatedContextTokens` 的锚失效兜底路径与 `contextOverheadTokens` 每次发请求各算一遍全量；这些是每请求常数次 O(n)，不再是卡顿主因，要进一步压需先给 `estimatedContextTokens` 补可测切口（它困在带 moc 的 L4 TU，同 §9.5 阻塞点）。**验证手段**：`tst_compacttokens` + 清单篇「五、P1 异步链与压缩」组——「压缩后历史体量 ≤0.8×T′」即触发点未漂移的实测判据。
-10. **`AgentConst` 取值函数每次构造 QSettings（本轮改，走「缓存解析产物 + 文件身份惰性重载」）**：原状——`contextCharLimitValue()`/`maxToolIterationsValue()`/`maxRetriesValue()`/`iniTextValue()`（`modelOptions`/`defaultModel`/`fallbackModelIdValue` 共用）每次调用都现构造一个 `QSettings`，而消费点已下沉到 per-tool 级（`ChatSessionPage` 每个工具结果读一次 `contextTokenBudget()`），头文件注释「调用频率为回合级/交互级，读盘成本可忽略」的断言不成立。现状——读侧一律经 `AppSettings::value()` → `SettingsCache::Reader`（`src/SettingsCache.h`，header-only 纯头，仿 `CompactTokens.h` 先例：`CompactManager` 那条「有非 QtCore 依赖的 TU 进不了测试清单」的阻塞点在这里同样存在，`AppSettings` 绑死 `applicationDirPath()` 使门面本身不可测，故把可测的部分抽成路径可注入的 Reader）。写侧收敛到 `AppSettings::setValue()`，全部 8 处写点（`SettingsPage` 6 + `ChatSessionPage` 1 + `I18n` 1）与全部读点（含 `QOpenAi::initFromSettings`、`NewChatPage`）一并迁移，**不留混用**：混用会让「一处写、另一处读到旧值」成为常态 bug。`AppSettings::ini()` 随之**摘除**——留着它等于保留「每次现构造」的复发通道，需要 QSettings 全量能力时应给 Reader 加方法并配测试。**两条当初被否决的方案，否决理由要记下来**：①「缓存 `QSettings` 实例并按值返回」不可行——Qt 6.9 的 `QSettings` 继承 QObject 且 `Q_DISABLE_COPY`（`qsettings.h:183`），既不可拷贝也不可移动，现有 `ini()` 能按值返回纯靠 C++17 保证复制消除，返回一个已存在的缓存实例就需要真拷贝、直接编译不过；故缓存的只能是**解析产物**。②「简单 static 缓存」是行为回归——README「运行时配置」节明确支持「其余手改 ini 即可」，永不失效的缓存让手改值永不生效。**时效权衡（用户已接受）**：失效判据 = 文件身份三元组 `(exists, mtime_ms, size_bytes)`，与 Qt 自身 `syncConfFile()` 的只读短路判据（size + lastModified，`qsettings.cpp:1346`）同族，故本缓存**不引入 Qt 之外的新 staleness 类别**；盲区是「同一毫秒内的等长改写」——文件系统时间精度到毫秒，若手改恰好等长且同毫秒则判不出变更。该盲区由写侧显式 `invalidate()` 覆盖本进程自己的写（`setValue` = 写 + `sync()` + 失效，顺序不可颠倒：先失效会让中间那次重解析读到磁盘旧内容并把旧值再缓存一轮），剩给「外部编辑器恰好同毫秒等长改写」这一格，实际不可达。**口径纠正（读 Qt 源码所得，勿再沿用旧说法）**：原登记说每次读「open + parse 整个 ini」**不准确**——Qt 有进程级 `ConfFileCache`（`qcache` + `QConfFile::fromName`）且只读时 size/mtime 未变即短路，不重读磁盘。故本修复省掉的是每次调用的对象生命周期与簿记：`new QSettings`（QObject + d 指针）+ 全局锁 `settingsGlobalMutex` + 缓存探测 + `QFileInfo` stat + `QSettingsKey` 大小写折叠查表 + 析构里的 `sync()`/ref 回插。收益真实但不大，别按「消除了重复磁盘解析」宣称。唯一净增益格是「文件缺失或为空」：Qt 的短路要求 `size > 0`，缺失/空文件它每次构造都走读盘分支，本缓存把该态也缓存住（`tst_settingscache` 组 1b 钉死）。**另两条实测事实进了不变量**：IniFormat 的 `IniCaseSensitivity == Qt::CaseInsensitive`（`qsettings_p.h:54`），故 Reader 存取两侧一律 `toLower()` 归一，否则「手改时大小写打错」这种以前能用的写法会突然失效；`iniEscapedString`（`qsettings.cpp:592`）见 `,`/`;`/`=` 就加引号，故「裸逗号串被解析成 QStringList」只在**人手编辑**时发生，程序写侧产出的是带引号 QString——`iniTextValue` 的归一化分支据此在 `tst_settingscache` 组 4b 用裸文件复现并锁形态。**验证手段**：`tst_settingscache`（十二套件之一，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）——身份判据穷举、缺失态、200 次热读只装载一次（`loadCount()` 观测口，把「命中零构造」从口头承诺变成可断言事实）、四类外部手改（等长/变长/新增/删除）立即生效、缓存与现取逐键一致（含类型与大小写变体）、裸逗号串 QStringList 形态不被抹平、写侧落盘与失效成对。**残留**：Reader 无锁，依赖全仓零线程约定（不变量⑤）；若将来引入工作线程读配置，须先给 Reader 加锁，而不是把缓存挪到线程局部。`AgentConst` 各取值函数的「范围校验/回退默认」语义逐字未动，本改动只换「值从哪来」。
+10. **`AgentConst` 取值函数每次构造 QSettings（本轮改，走「缓存解析产物 + 文件身份惰性重载」）**：原状——`contextCharLimitValue()`/`maxToolIterationsValue()`/`maxRetriesValue()`/`iniTextValue()`（`modelOptions`/`defaultModel`/`fallbackModelIdValue` 共用）每次调用都现构造一个 `QSettings`，而消费点已下沉到 per-tool 级（`ChatSessionPage` 每个工具结果读一次 `contextTokenBudget()`），头文件注释「调用频率为回合级/交互级，读盘成本可忽略」的断言不成立。现状——读侧一律经 `AppSettings::value()` → `SettingsCache::Reader`（`src/SettingsCache.h`，header-only 纯头，仿 `CompactTokens.h` 先例：`CompactManager` 那条「有非 QtCore 依赖的 TU 进不了测试清单」的阻塞点在这里同样存在，`AppSettings` 绑死 `applicationDirPath()` 使门面本身不可测，故把可测的部分抽成路径可注入的 Reader）。写侧收敛到 `AppSettings::setValue()`，全部 8 处写点（`SettingsPage` 6 + `ChatSessionPage` 1 + `I18n` 1）与全部读点（含 `QOpenAi::initFromSettings`、`NewChatPage`）一并迁移，**不留混用**：混用会让「一处写、另一处读到旧值」成为常态 bug。`AppSettings::ini()` 随之**摘除**——留着它等于保留「每次现构造」的复发通道，需要 QSettings 全量能力时应给 Reader 加方法并配测试。**两条当初被否决的方案，否决理由要记下来**：①「缓存 `QSettings` 实例并按值返回」不可行——Qt 6.9 的 `QSettings` 继承 QObject 且 `Q_DISABLE_COPY`（`qsettings.h:183`），既不可拷贝也不可移动，现有 `ini()` 能按值返回纯靠 C++17 保证复制消除，返回一个已存在的缓存实例就需要真拷贝、直接编译不过；故缓存的只能是**解析产物**。②「简单 static 缓存」是行为回归——README「运行时配置」节明确支持「其余手改 ini 即可」，永不失效的缓存让手改值永不生效。**时效权衡（用户已接受）**：失效判据 = 文件身份三元组 `(exists, mtime_ms, size_bytes)`，与 Qt 自身 `syncConfFile()` 的只读短路判据（size + lastModified，`qsettings.cpp:1346`）同族，故本缓存**不引入 Qt 之外的新 staleness 类别**；盲区是「同一毫秒内的等长改写」——文件系统时间精度到毫秒，若手改恰好等长且同毫秒则判不出变更。该盲区由写侧显式 `invalidate()` 覆盖本进程自己的写（`setValue` = 写 + `sync()` + 失效，顺序不可颠倒：先失效会让中间那次重解析读到磁盘旧内容并把旧值再缓存一轮），剩给「外部编辑器恰好同毫秒等长改写」这一格，实际不可达。**口径纠正（读 Qt 源码所得，勿再沿用旧说法）**：原登记说每次读「open + parse 整个 ini」**不准确**——Qt 有进程级 `ConfFileCache`（`qcache` + `QConfFile::fromName`）且只读时 size/mtime 未变即短路，不重读磁盘。故本修复省掉的是每次调用的对象生命周期与簿记：`new QSettings`（QObject + d 指针）+ 全局锁 `settingsGlobalMutex` + 缓存探测 + `QFileInfo` stat + `QSettingsKey` 大小写折叠查表 + 析构里的 `sync()`/ref 回插。收益真实但不大，别按「消除了重复磁盘解析」宣称。唯一净增益格是「文件缺失或为空」：Qt 的短路要求 `size > 0`，缺失/空文件它每次构造都走读盘分支，本缓存把该态也缓存住（`tst_settingscache` 组 1b 钉死）。**另两条实测事实进了不变量**：IniFormat 的 `IniCaseSensitivity == Qt::CaseInsensitive`（`qsettings_p.h:54`），故 Reader 存取两侧一律 `toLower()` 归一，否则「手改时大小写打错」这种以前能用的写法会突然失效；`iniEscapedString`（`qsettings.cpp:592`）见 `,`/`;`/`=` 就加引号，故「裸逗号串被解析成 QStringList」只在**人手编辑**时发生，程序写侧产出的是带引号 QString——`iniTextValue` 的归一化分支据此在 `tst_settingscache` 组 4b 用裸文件复现并锁形态。**验证手段**：`tst_settingscache`（十四套件之一，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）——身份判据穷举、缺失态、200 次热读只装载一次（`loadCount()` 观测口，把「命中零构造」从口头承诺变成可断言事实）、四类外部手改（等长/变长/新增/删除）立即生效、缓存与现取逐键一致（含类型与大小写变体）、裸逗号串 QStringList 形态不被抹平、写侧落盘与失效成对。**残留**：Reader 无锁，依赖全仓零线程约定（不变量⑤）；若将来引入工作线程读配置，须先给 Reader 加锁，而不是把缓存挪到线程局部。`AgentConst` 各取值函数的「范围校验/回退默认」语义逐字未动，本改动只换「值从哪来」。
 
 ---
 
@@ -625,6 +643,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 标题栏底色 → StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置背景透明透出窗口本体色；light 前景黑、其余白，高度 32px
 - [ ] 覆盖机制读码警示 → 覆盖 FluentUI 取色只准 `appendOwnSheetOverride` 往**控件自身样式表**幂等追加（marker `/*lh-nav-align*/` 截旧防增长）；若出现窗口级复合选择器写法即回归（像素实证无效）；`ThemeAware::bind` extraRefresh 的「首刷同步 + `singleShot(0)` 重放」双保险仍在（抵消 FluentUI 批处理重写）
 - [ ] 会话侧栏 → 标题/模型/工作目录/上下文占用条/状态灯/待办清单六项随回合实时刷新（全部由 `ChatSessionPage` 调 setter 推入，`SessionSidebar` 自身不订阅 `AgentLoop`）；收起后右上角**浮动展开钮**出现且随窗口 resize 对位（页面直接子件、手动几何 + `raise()`），展开钮与侧栏互斥不同时可见；显隐偏好落 settings.ini 键 `sidebarVisible`，重启后按上次状态恢复首帧（读值放在布局收尾，令首帧即按最终态钳宽）；三主题下 `SessionSidebar.qss` 各自生效、无残色
+- [ ] 侧栏速度行（`#ctxRate`）→ 本轮数字取单窗口速率、平均取 Σtokens ÷ ΣgenerationMs（**不是**各轮速率的算术平均——同一批窗口两口径差 5 倍，肉眼看不出但含义不同）；tooltip 必须写明分母是生成窗口（首个增量 → usage 末帧，不含首字延迟与工具执行时间）：分母不写，同一个数字会被读成「模型慢」而真相是「等了 8 秒才见第一个字」；空账（无有效窗口）整行隐藏——显示「0 tok/s」会被读成「模型慢」，与「还没拿到能定窗的数据」含义相反；纯 tool_calls 回合（delta 只有 tool_calls 字段，不触发 delta 信号）无增量起点 → 窗口作废、不进账；三主题下 `#ctxConsumption, #ctxRate` 同色阶（次要信息，不与占用条抢焦点）
 
 ### 七、P2 i18n
 
@@ -634,7 +653,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（16）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s16`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s16` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（16.1）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s16.1`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s16.1` 不带多余 `v`
 
 ### 八、P2 记忆与子代理
 

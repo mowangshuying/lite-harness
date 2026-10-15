@@ -4,48 +4,48 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="71"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="72"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>会话未分配数据目录 ID，无法定位历史文件</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="84"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="85"/>
         <source>无法打开历史文件：%1</source>
         <translation>无法打开历史文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="92"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="93"/>
         <source>历史文件解析失败：%1</source>
         <translation>历史文件解析失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="214"/>
+        <location filename="../src/AgentLoop.cpp" line="248"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent 仍在运行中，请等待完成后再发送。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="142"/>
-        <location filename="../src/AgentLoopRequest.cpp" line="192"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="248"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="298"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>工具调用轮次超过上限（%1 轮），终止循环。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="219"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="334"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>反应式压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="269"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="393"/>
         <source>自动压缩（上下文超限）</source>
         <translation>自动压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="446"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="570"/>
         <source>主动压缩（compact 工具）</source>
         <translation>主动压缩（compact 工具）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="406"/>
+        <location filename="../src/AgentLoop.cpp" line="461"/>
         <source>已停止。</source>
         <translation>已停止。</translation>
     </message>
@@ -229,14 +229,14 @@
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="561"/>
-        <location filename="../src/ChatSessionPage.cpp" line="617"/>
-        <location filename="../src/ChatSessionPage.cpp" line="636"/>
+        <location filename="../src/ChatSessionPage.cpp" line="567"/>
+        <location filename="../src/ChatSessionPage.cpp" line="623"/>
+        <location filename="../src/ChatSessionPage.cpp" line="642"/>
         <source>处理中…</source>
         <translation>处理中…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="855"/>
+        <location filename="../src/ChatSessionPage.cpp" line="866"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -310,61 +310,61 @@
 <context>
     <name>LiteHarness</name>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="113"/>
-        <location filename="../src/LiteHarness.cpp" line="567"/>
+        <location filename="../src/LiteHarness.cpp" line="114"/>
+        <location filename="../src/LiteHarness.cpp" line="568"/>
         <source>新建对话</source>
         <translation>新建对话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="120"/>
-        <location filename="../src/LiteHarness.cpp" line="569"/>
+        <location filename="../src/LiteHarness.cpp" line="121"/>
+        <location filename="../src/LiteHarness.cpp" line="570"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="123"/>
-        <location filename="../src/LiteHarness.cpp" line="571"/>
+        <location filename="../src/LiteHarness.cpp" line="124"/>
+        <location filename="../src/LiteHarness.cpp" line="572"/>
         <source>设置</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="175"/>
+        <location filename="../src/LiteHarness.cpp" line="176"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="365"/>
+        <location filename="../src/LiteHarness.cpp" line="366"/>
         <source>重命名</source>
         <translation>重命名</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="366"/>
-        <location filename="../src/LiteHarness.cpp" line="427"/>
+        <location filename="../src/LiteHarness.cpp" line="367"/>
+        <location filename="../src/LiteHarness.cpp" line="428"/>
         <source>删除会话</source>
         <translation>删除会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="394"/>
+        <location filename="../src/LiteHarness.cpp" line="395"/>
         <source>重命名会话</source>
         <translation>重命名会话</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="394"/>
+        <location filename="../src/LiteHarness.cpp" line="395"/>
         <source>名称</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="428"/>
+        <location filename="../src/LiteHarness.cpp" line="429"/>
         <source>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</source>
         <translation>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="538"/>
+        <location filename="../src/LiteHarness.cpp" line="539"/>
         <source>退出确认</source>
         <translation>退出确认</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="539"/>
+        <location filename="../src/LiteHarness.cpp" line="540"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>任务仍在运行，退出将丢失未完成回合。确定退出吗？</translation>
     </message>
@@ -505,53 +505,63 @@
         <translation>疑似破坏性命令</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="30"/>
-        <location filename="../src/PermissionCard.cpp" line="39"/>
+        <location filename="../src/PermissionCard.cpp" line="25"/>
+        <source>MCP 工具策略要求确认</source>
+        <translation>MCP 工具策略要求确认</translation>
+    </message>
+    <message>
+        <location filename="../src/PermissionCard.cpp" line="27"/>
+        <source>工作流策略要求确认</source>
+        <translation>工作流策略要求确认</translation>
+    </message>
+    <message>
+        <location filename="../src/PermissionCard.cpp" line="35"/>
+        <location filename="../src/PermissionCard.cpp" line="44"/>
         <source>请求执行</source>
         <translation>请求执行</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="32"/>
+        <location filename="../src/PermissionCard.cpp" line="37"/>
         <source>请求读取</source>
         <translation>请求读取</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="34"/>
+        <location filename="../src/PermissionCard.cpp" line="39"/>
         <source>请求写入</source>
         <translation>请求写入</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="36"/>
+        <location filename="../src/PermissionCard.cpp" line="41"/>
         <source>请求编辑</source>
         <translation>请求编辑</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="38"/>
+        <location filename="../src/PermissionCard.cpp" line="43"/>
         <source>请求查找</source>
         <translation>请求查找</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="65"/>
+        <location filename="../src/PermissionCard.cpp" line="70"/>
         <source>需要权限确认</source>
         <translation>需要权限确认</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="92"/>
+        <location filename="../src/PermissionCard.cpp" line="97"/>
         <source>拒绝</source>
         <translation>拒绝</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="94"/>
+        <location filename="../src/PermissionCard.cpp" line="99"/>
         <source>允许</source>
         <translation>允许</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="188"/>
+        <location filename="../src/PermissionCard.cpp" line="193"/>
         <source>已允许</source>
         <translation>已允许</translation>
     </message>
     <message>
-        <location filename="../src/PermissionCard.cpp" line="188"/>
+        <location filename="../src/PermissionCard.cpp" line="193"/>
         <source>已拒绝</source>
         <translation>已拒绝</translation>
     </message>
@@ -559,12 +569,12 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/MemoryManager.cpp" line="873"/>
+        <location filename="../src/MemoryManager.cpp" line="874"/>
         <source>已存储 %1 条记忆</source>
         <translation>已存储 %1 条记忆</translation>
     </message>
     <message>
-        <location filename="../src/MemoryManager.cpp" line="1105"/>
+        <location filename="../src/MemoryManager.cpp" line="1106"/>
         <source>已整理记忆：%1 → %2 条</source>
         <translation>已整理记忆：%1 → %2 条</translation>
     </message>
@@ -577,7 +587,7 @@
 <context>
     <name>QOpenAi::AsyncRequest</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="665"/>
+        <location filename="../src/QOpenAi.cpp" line="733"/>
         <source>请求超时（%1 ms）。</source>
         <translation>请求超时（%1 ms）。</translation>
     </message>
@@ -585,37 +595,37 @@
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="209"/>
+        <location filename="../src/QOpenAi.cpp" line="222"/>
         <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
         <translation>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="311"/>
+        <location filename="../src/QOpenAi.cpp" line="324"/>
         <source>SSE 帧 JSON 解析失败: %1</source>
         <translation>SSE 帧 JSON 解析失败: %1</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="448"/>
+        <location filename="../src/QOpenAi.cpp" line="469"/>
         <source>错误：%1</source>
         <translation>错误：%1</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="463"/>
+        <location filename="../src/QOpenAi.cpp" line="495"/>
         <source>服务器无响应（连续 %1 ms 未收到数据）。</source>
         <translation>服务器无响应（连续 %1 ms 未收到数据）。</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="474"/>
+        <location filename="../src/QOpenAi.cpp" line="508"/>
         <source>流式响应超时（总时长超过 %1 ms）。</source>
         <translation>流式响应超时（总时长超过 %1 ms）。</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="518"/>
+        <location filename="../src/QOpenAi.cpp" line="579"/>
         <source>HTTP %1 错误: %2</source>
         <translation>HTTP %1 错误: %2</translation>
     </message>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="502"/>
+        <location filename="../src/QOpenAi.cpp" line="563"/>
         <source>HTTP %1 错误（重试 %2 次后仍失败）: %3</source>
         <translation>HTTP %1 错误（重试 %2 次后仍失败）: %3</translation>
     </message>
@@ -623,122 +633,158 @@
 <context>
     <name>SessionSidebar</name>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="307"/>
+        <location filename="../src/SessionSidebar.cpp" line="343"/>
         <source>会话面板</source>
         <translation>会话面板</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="314"/>
+        <location filename="../src/SessionSidebar.cpp" line="350"/>
         <source>收起侧边栏</source>
         <translation>收起侧边栏</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="349"/>
+        <location filename="../src/SessionSidebar.cpp" line="385"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="356"/>
+        <location filename="../src/SessionSidebar.cpp" line="392"/>
         <source>状态</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="363"/>
+        <location filename="../src/SessionSidebar.cpp" line="399"/>
         <source>队友清单</source>
         <translation>队友清单</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="369"/>
+        <location filename="../src/SessionSidebar.cpp" line="405"/>
         <source>任务清单</source>
         <translation>任务清单</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="371"/>
+        <location filename="../src/SessionSidebar.cpp" line="407"/>
         <source>暂无任务</source>
         <translation>暂无任务</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="384"/>
+        <location filename="../src/SessionSidebar.cpp" line="420"/>
         <source>lite-harness %1</source>
         <translation>lite-harness %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="398"/>
+        <location filename="../src/SessionSidebar.cpp" line="434"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="416"/>
+        <location filename="../src/SessionSidebar.cpp" line="452"/>
         <source>≈%1 / %2 token · %3%</source>
         <translation>≈%1 / %2 token · %3%</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="469"/>
+        <location filename="../src/SessionSidebar.cpp" line="467"/>
+        <source>已用 %1 / 产出 %2 · 缓存命中 %3%</source>
+        <translation>已用 %1 / 产出 %2 · 缓存命中 %3%</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="474"/>
+        <source>本会话累计 token 消耗（只增不减，与上方占用条口径无关）。
+输入 %1 token，其中缓存命中 %2（未命中 %3）。
+产出 %4 token，其中思考 %5。
+有效回读 %6 次。
+口径边界：仅统计主循环与队友回合；压缩摘要 / 记忆链 / workflow runner 走 AsyncRequest 无 usage 回传，未计入本数。</source>
+        <translation>本会话累计 token 消耗（只增不减，与上方占用条口径无关）。
+输入 %1 token，其中缓存命中 %2（未命中 %3）。
+产出 %4 token，其中思考 %5。
+有效回读 %6 次。
+口径边界：仅统计主循环与队友回合；压缩摘要 / 记忆链 / workflow runner 走 AsyncRequest 无 usage 回传，未计入本数。</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="497"/>
+        <source>输出速度 %1 tok/s · 平均 %2 tok/s</source>
+        <translation>输出速度 %1 tok/s · 平均 %2 tok/s</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="502"/>
+        <source>按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。
+本轮 %1 token ÷ %2 ms = %3 tok/s。
+平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。
+首字延迟平均 %4 ms（含流内重试退避）。
+口径边界：仅主循环请求；队友回合与压缩 / 记忆 / workflow 侧链不计时。纯 tool_calls 回合无增量起点，无法定窗，不计入本数。</source>
+        <translation>按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。
+本轮 %1 token ÷ %2 ms = %3 tok/s。
+平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。
+首字延迟平均 %4 ms（含流内重试退避）。
+口径边界：仅主循环请求；队友回合与压缩 / 记忆 / workflow 侧链不计时。纯 tool_calls 回合无增量起点，无法定窗，不计入本数。</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="561"/>
         <source>%1 进行中</source>
         <translation>%1 进行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="470"/>
+        <location filename="../src/SessionSidebar.cpp" line="562"/>
         <source>%1 待办</source>
         <translation>%1 待办</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="471"/>
+        <location filename="../src/SessionSidebar.cpp" line="563"/>
         <source>%1 完成</source>
         <translation>%1 完成</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="499"/>
+        <location filename="../src/SessionSidebar.cpp" line="591"/>
         <source>%1 · 执行中</source>
         <translation>%1 · 执行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="502"/>
+        <location filename="../src/SessionSidebar.cpp" line="594"/>
         <source>%1 · 等待审批</source>
         <translation>%1 · 等待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="505"/>
+        <location filename="../src/SessionSidebar.cpp" line="597"/>
         <source>%1 · 停止中</source>
         <translation>%1 · 停止中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="508"/>
+        <location filename="../src/SessionSidebar.cpp" line="600"/>
         <source>%1 · 空闲</source>
         <translation>%1 · 空闲</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="516"/>
+        <location filename="../src/SessionSidebar.cpp" line="608"/>
         <source>%1 执行中</source>
         <translation>%1 执行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="517"/>
+        <location filename="../src/SessionSidebar.cpp" line="609"/>
         <source>%1 待审批</source>
         <translation>%1 待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="518"/>
+        <location filename="../src/SessionSidebar.cpp" line="610"/>
         <source>%1 停止中</source>
         <translation>%1 停止中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="519"/>
+        <location filename="../src/SessionSidebar.cpp" line="611"/>
         <source>%1 空闲</source>
         <translation>%1 空闲</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="532"/>
+        <location filename="../src/SessionSidebar.cpp" line="624"/>
         <source>等待审批</source>
         <translation>等待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="534"/>
+        <location filename="../src/SessionSidebar.cpp" line="626"/>
         <source>运行中</source>
         <translation>运行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="536"/>
+        <location filename="../src/SessionSidebar.cpp" line="628"/>
         <source>空闲</source>
         <translation>空闲</translation>
     </message>

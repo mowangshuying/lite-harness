@@ -847,6 +847,9 @@ void ChatSessionPage::refreshContextUsage()
                                AgentConst::contextTokenBudget());
     // 消耗累计同批推入（同一刷新时机、同一数据源，不再另起信号链）
     m_sidebar->setTokenUsage(m_agentLoop->sessionUsageTotals());
+    // 输出速度同批推入（同一刷新时机、同一数据源）：刷新点已覆盖 usage 到达——usage 恒先于
+    // messageFinished，工具轮在 toolOutputReady 补刷、文本轮在 finished/error 终局刷新
+    m_sidebar->setOutputRate(m_agentLoop->outputRate());
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，

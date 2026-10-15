@@ -93,8 +93,8 @@
     color: rgb(153, 153, 153);
     font: 11px "Consolas";
 }
-/* 消耗行：占用数字再淡一档（次要信息，不与占用条抢焦点） */
-#ctxConsumption {
+/* 消耗行与速度行：占用数字再淡一档（次要信息，不与占用条抢焦点）；两行同层级同色阶 */
+#ctxConsumption, #ctxRate {
     color: rgb(128, 128, 128);
     font: 11px "Consolas";
 }

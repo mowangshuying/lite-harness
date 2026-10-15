@@ -7,6 +7,7 @@
 #include <QtGlobal> // qsizetype
 
 #include "UsageTokens.h" // setTokenUsage 形参（纯头，QtCore-only；视图仍不自己算，数据由页面推入）
+#include "StreamRate.h"  // setOutputRate 形参（同上：速度算术在纯头，本类只格式化文案）
 
 class QLabel;
 class QVBoxLayout;
@@ -49,6 +50,9 @@ public:
     /// 空累计（还没收到任何 usage 回读）隐藏整行——不留「0」骗人，也不留空行占位。
     /// 口径边界写进 tooltip：只含主循环 + 队友回合，不含压缩/记忆/workflow（AsyncRequest 无 usage 通道）
     void setTokenUsage(const UsageTokens::Totals &totals);
+    /// 输出速度（token/s）：本轮 + 会话平均。空账（还没拿到任何有效生成窗口）隐藏整行——
+    /// 与消耗行同纪律，不显示「0 tok/s」骗人。窗口口径写进 tooltip（生成窗口不含首字延迟）。
+    void setOutputRate(const StreamRate::Meter &meter);
     /// 运行状态灯（AgentLoop::runningChanged 转发）
     void setRunning(bool running);
     /// 审批等待灯（permissionRequired 置亮；应答/回合终结由接线侧回灭）
