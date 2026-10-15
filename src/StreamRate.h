@@ -70,15 +70,22 @@ inline Window makeWindow(const UsageTokens::Snapshot &snapshot, qsizetype firstD
 // 会话级速度账：只增不清零（与 UsageTokens::Totals 同纪律），无效窗口直接忽略、不污染分母。
 struct Meter {
     Window last;                  // 最后一个**有效**窗口（UI 显示「本轮」）
+    bool lastIsCurrent = false;   // last 是否属于当前请求（见 beginTurn）——UI 措辞靠它
     qsizetype tokens = 0;         // Σtokens（仅有效窗口）
     qsizetype generationMs = 0;   // ΣgenerationMs（仅有效窗口）
     qsizetype firstTokenMsSum = 0; // ΣfirstTokenMs（仅有效窗口）
     int calls = 0;                // 有效窗口数（分母口径，与 UsageTokens::Totals::calls 同语义）
 
+    // 每请求开始时由宿主调用：上一请求的窗口不再是「本轮」。本轮若无法定窗（纯 tool_calls 回合、
+    // 或 usage 回读无效），last 仍是上一个可定窗——UI 必须据此改口径措辞，不能把上一轮的速率
+    // 说成本轮的。只降级归属，不清账（账只增不减，与 add 的「无效窗口不进分母」同纪律）。
+    void beginTurn() { lastIsCurrent = false; }
+
     void add(const Window &w) {
         if (!w.valid)
             return;
         last = w;
+        lastIsCurrent = true;
         tokens += w.tokens;
         generationMs += w.generationMs;
         firstTokenMsSum += w.firstTokenMs;

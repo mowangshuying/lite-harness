@@ -121,6 +121,19 @@ int tst_streamrate()
     TestHarness::check(near(a.lastRate(), 100.0) && near(b.lastRate(), 0.11111111111111111),
                        "last is order-sensitive by design (UI shows the most recent turn)");
 
+    // ---- 「本轮」归属：last 属于哪个回合，UI 措辞靠它 ----
+    // 纯 tool_calls 回合无法定窗时，last 仍是上一轮的窗口；没有这条标志，UI 会把上一轮的
+    // 速率说成本轮的。beginTurn 只降级归属、不清账（账只增不减）。
+    Meter c;
+    c.add(window(100, 1000));
+    TestHarness::check(c.lastIsCurrent, "add() marks last as the current turn");
+    c.beginTurn();
+    TestHarness::check(!c.lastIsCurrent, "beginTurn() demotes last to a previous window");
+    TestHarness::check(near(c.lastRate(), 100.0) && c.calls == 1,
+                       "beginTurn demotes attribution only, it does not clear the aggregate");
+    c.add(window(0, 0));
+    TestHarness::check(!c.lastIsCurrent, "invalid window cannot re-claim the current-turn flag");
+
     // TTFT 均值口径：与速率分母无关，单独可查
     Meter t;
     t.add(window(100, 1000, 200));

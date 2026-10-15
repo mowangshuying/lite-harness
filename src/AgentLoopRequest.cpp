@@ -153,6 +153,11 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     // 同一帧也是生成窗口的终点（t2）：先落锚再收窗，两者共用同一份 usage 判据
     connect(s, &QOpenAi::ChatStream::usageReceived, this,
             [this](const QJsonObject &usage) {
+        // C1 纵深防御（对齐 messageFinished 卫兵）：回合已终局后迟到的残留 usage 帧必须弃收。
+        // 本 lambda 无卫兵时，残留帧会把上一请求的 tokens 配到下一请求的 t0（startRateWindow
+        // 每请求重开表），算出一个假窗口并计入聚合；落锚同理须弃收。
+        if (!m_running)
+            return;
         adoptUsageAnchor(usage);
         closeRateWindow(usage);
     });
@@ -606,6 +611,8 @@ void AgentLoop::startRateWindow()
 {
     m_rateFirstDeltaMs = -1;
     m_rateClock.start();
+    // 归属降级：本请求若最终无法定窗，UI 显示的 last 属于上一个可定窗，措辞不能再说「本轮」。
+    m_outputRate.beginTurn();
 }
 
 // t1：本轮首个增量。纯 tool_calls 回合的 delta 只有 tool_calls 字段、不触发 delta 信号，

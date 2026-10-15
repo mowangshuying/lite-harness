@@ -24,23 +24,23 @@
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="248"/>
-        <location filename="../src/AgentLoopRequest.cpp" line="298"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="253"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="303"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>Tool call rounds exceeded the limit (%1 rounds); loop terminated.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="334"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="339"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>Reactive compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="393"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="398"/>
         <source>自动压缩（上下文超限）</source>
         <translation>Automatic compaction (context overflow)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="570"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="575"/>
         <source>主动压缩（compact 工具）</source>
         <translation>Manual compaction (compact tool)</translation>
     </message>
@@ -706,85 +706,100 @@ Scope boundary: only the main loop and teammate turns are counted; compact summa
         <translation>Output speed %1 tok/s · average %2 tok/s</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="502"/>
+        <location filename="../src/SessionSidebar.cpp" line="504"/>
+        <source>本轮</source>
+        <translation>This turn</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="504"/>
+        <source>上一可定窗</source>
+        <translation>Previous measurable window</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="506"/>
+        <source>（本回合无法定窗，显示的是上一个可定窗）</source>
+        <translation>(this turn produced no measurable window; the figure shown is the previous one)</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="507"/>
         <source>按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。
-本轮 %1 token ÷ %2 ms = %3 tok/s。
+%1 %2 token ÷ %3 ms = %4 tok/s%5。
 平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。
-首字延迟平均 %4 ms（含流内重试退避）。
+首字延迟平均 %6 ms（含流内重试退避）。
 口径边界：仅主循环请求；队友回合与压缩 / 记忆 / workflow 侧链不计时。纯 tool_calls 回合无增量起点，无法定窗，不计入本数。</source>
         <translation>Measured over the generation window: first delta → final usage frame, excluding time-to-first-token and tool execution time.
-This turn: %1 tokens ÷ %2 ms = %3 tok/s.
+%1: %2 tokens ÷ %3 ms = %4 tok/s%5.
 Average = total output tokens ÷ total generation time (not the arithmetic mean of per-turn rates).
-Average time-to-first-token: %4 ms (includes in-stream retry backoff).
+Average time-to-first-token: %6 ms (includes in-stream retry backoff).
 Scope boundary: main-loop requests only; teammate turns and the compact / memory / workflow side chains are not timed. A pure tool_calls turn has no delta start point, so no window can be defined and it is not counted.</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="561"/>
+        <location filename="../src/SessionSidebar.cpp" line="568"/>
         <source>%1 进行中</source>
         <translation>%1 in progress</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="562"/>
+        <location filename="../src/SessionSidebar.cpp" line="569"/>
         <source>%1 待办</source>
         <translation>%1 pending</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="563"/>
+        <location filename="../src/SessionSidebar.cpp" line="570"/>
         <source>%1 完成</source>
         <translation>%1 done</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="591"/>
+        <location filename="../src/SessionSidebar.cpp" line="598"/>
         <source>%1 · 执行中</source>
         <translation>%1 · working</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="594"/>
+        <location filename="../src/SessionSidebar.cpp" line="601"/>
         <source>%1 · 等待审批</source>
         <translation>%1 · waiting approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="597"/>
+        <location filename="../src/SessionSidebar.cpp" line="604"/>
         <source>%1 · 停止中</source>
         <translation>%1 · stopping</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="600"/>
+        <location filename="../src/SessionSidebar.cpp" line="607"/>
         <source>%1 · 空闲</source>
         <translation>%1 · idle</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="608"/>
+        <location filename="../src/SessionSidebar.cpp" line="615"/>
         <source>%1 执行中</source>
         <translation>%1 working</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="609"/>
+        <location filename="../src/SessionSidebar.cpp" line="616"/>
         <source>%1 待审批</source>
         <translation>%1 pending approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="610"/>
+        <location filename="../src/SessionSidebar.cpp" line="617"/>
         <source>%1 停止中</source>
         <translation>%1 stopping</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="611"/>
+        <location filename="../src/SessionSidebar.cpp" line="618"/>
         <source>%1 空闲</source>
         <translation>%1 idle</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="624"/>
+        <location filename="../src/SessionSidebar.cpp" line="631"/>
         <source>等待审批</source>
         <translation>Awaiting Approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="626"/>
+        <location filename="../src/SessionSidebar.cpp" line="633"/>
         <source>运行中</source>
         <translation>Running</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="628"/>
+        <location filename="../src/SessionSidebar.cpp" line="635"/>
         <source>空闲</source>
         <translation>Idle</translation>
     </message>

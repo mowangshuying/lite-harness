@@ -502,7 +502,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
     `tst_compacttokens`（计量单源纯头 `CompactTokens.h`：可加性 / 项与位置无关 / **替换恒等式** / 替换序列逐步对表 / 确定性 / 折算口径锚点，19 静态点·实跑 48 条，零夹具）/
     `tst_settingscache`（设置读缓存纯头 `SettingsCache.h`：身份三元组穷举 / 缺失文件态 / **200 次热读只装载一次** / 四类外部手改立即生效（等长·变长·新增·删除）/ 缓存与现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）/
     `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 / 只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 `*_tokens_details` 缺失即 0（不算解析失败）/ 逐键对表，49 条，零夹具）/
-    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last / 定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径差 5 倍，必须钉死）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 / 长会话累加不溢出，26 条，零夹具），静态断言点（`TestHarness::check` 调用点）1123 处、全量实跑 pass=1184 fail=0 skip=1（本轮本机实跑；上一轮登记的 972/1095 已过期——`tst_usagetokens` 当时未列进本清单）。被测生产源需显式列进
+    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last / 定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径差 5 倍，必须钉死）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 / last 归属靠 `beginTurn` 降级（本轮无增量起点时不冒充本轮，UI 措辞随之改「上一可定窗」）/ 长会话累加不溢出，30 条，零夹具），静态断言点（`TestHarness::check` 调用点）1127 处、全量实跑 pass=1188 fail=0 skip=1（本轮本机实跑；上一轮登记的 972/1095 已过期——`tst_usagetokens` 当时未列进本清单；口径勘误：`42d1134` 提交信息里的 1123 是静态点数、`04eed69` 的 1144 是推算链，两者均非实跑，实跑数以当轮输出为准，登记见 AGENTS.md 测试节）。被测生产源需显式列进
     `CMakeLists.txt` 的测试目标清单（当前八个 QtCore-only TU：TaskStore / MessageBus / WorktreeManager / AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime）。**但 L4 主循环（`AgentLoop` 家族 15 TU、
     `SubAgent`、`TeammateRuntime`）与网络层 `QOpenAi` 仍零覆盖**：阻塞点是 `QOpenAi` 的函数局部 static
     单例无注入点，须先引入 transport 接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 +

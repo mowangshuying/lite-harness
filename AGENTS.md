@@ -40,7 +40,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **十二个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
+- **覆盖现状:** **十四个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
   路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
   名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环）/ `tst_mcpmanager`（MCP 命名净化、
   拼名上限、装配碰撞与快照原子性门）/ `tst_agentrecovery`（s15 契约串逐字 + 分类器判据矩阵 + 恢复常量门，
@@ -57,8 +57,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 details 缺失即 0，49 条，零夹具）/
    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last /
    定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径
-   差 5 倍）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感，26 条，零夹具），
-   全量实跑 1184 条断言（本轮本机实跑，含 1 条 junction 夹具 skip；上一轮登记的 1095 已过期——
+   差 5 倍）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 /
+   last 归属（`beginTurn` 只降级归属不清账，本轮无法定窗时不冒充本轮），30 条，零夹具），
+   全量实跑 1188 条断言（本轮本机实跑，含 1 条 junction 夹具 skip；上一轮登记的 1095 已过期——
    `tst_usagetokens` 当时未列进本清单）。被测生产
    源需显式列进 `CMakeLists.txt` 的测试目标清单（当前八个 TU：TaskStore / MessageBus / WorktreeManager /
    AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime），
@@ -79,6 +80,17 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   `AgentLoopDetail::toolSummary`/`parseToolCall`/`AgentLoop::isToolFailure`（困在带 moc 的 TU，
   需仿 `LineEnding.h` 抽纯头；s15 后失败文案族本身已有直测——`tst_agentrecovery` 契约串逐字、
   `tst_backgroundtasks` collect 模板与 "Error:" 前缀文案，函数本体仍 0 直测）/ SKILL.md frontmatter 解析。
+- **断言数口径（提交信息勘误，不改历史只登记）:** 提交信息里的断言数**只写实跑数**，静态断言点数
+  （`TestHarness::check` 调用点）须另标、不可混写。已发生的两条：`42d1134`（s16.1 测试补强）写的
+  「全量实跑 1123 条」实为静态点数（当时实跑 1144、后实测 1184）；`04eed69`（输出速度）写的「全量实跑
+  1144 条」是 972+49+123 的推算链、从未实跑过（实测 1184，本轮 1188）。今后凡引用断言数须来自当轮
+  实跑输出，推算链不得当实跑引用——CI 注释同口径（其 `LITE_TEST_MIN_PASS=1066` 仍按 1188 留约 10% 余量，
+  未随本轮改动）。
+- **StreamRate 的两层口径（本轮措辞缺陷修复）:** 聚合口径与 last 归属是两件事。`Meter::beginTurn()`
+  在 `AgentLoop::startRateWindow()` 每请求置位、**只降级归属不清账**（账只增不减）；本轮无增量起点
+  （纯 tool_calls 回合）时 last 仍是上一个可定窗，UI 措辞必须说「上一可定窗」而非「本轮」。UI 文案走
+  `tr()`，措辞分叉即新词条——跑 `scripts/update-i18n.ps1`（不是 CMake 的 `update_i18n` 陷阱目标）补 en
+  译文，zh 镜像保持译文=源文。
 
 ## 架构（src/）
 
