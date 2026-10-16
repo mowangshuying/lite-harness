@@ -42,8 +42,8 @@ public:
     //      迁移前三段拆分出的同一组私有方法。契约（同 P1 loadMemoriesAsync）：
     //      done 恒恰好调用一次；ctx 为生命周期锚（请求 parent 到 ctx，ctx 析构即链
     //      作废、done 永久静默）；返回在途 AsyncRequest 供宿主 cancel，本地短路路径
-    //      同步交付后返回 nullptr。摘要失败/超时交付空串，由这些方法内部补
-    //      "(empty summary)" 占位——降级语义与原同步链逐字一致，不抛不卡。 ----
+    //      同步交付后返回 nullptr。摘要失败/超时交付空串；两条全量压缩续延对空串一律
+    //      放弃本次替换（原样交付、不发卡，历史不被改写——丢历史事故修复，不抛不卡）。 ----
 
     /** prepare 的异步版（lcc prepare 五级压缩流水线，原地修改 conversation）：
      *  前四段本地管线同步跑；仅触发全量压缩时挂起。
@@ -107,8 +107,8 @@ private:
     /** 摘要请求体（model / system+user 两条消息 / max_tokens）——异步链构建段。 */
     QJsonObject buildSummaryRequest(const QVector<QJsonObject> &conversation) const;
     /** 摘要 LLM 段（P3 异步化）：走 QOpenAi::AsyncRequest；失败/超时交付空串
-     *  （与原同步链的 error 键降级日志同款），"(empty summary)" 占位由上层调用点补齐——
-     *  沿用原同步链"占位在 summarizeHistory 末尾"的归属，行为等价。 */
+     *  （与原同步链的 error 键降级日志同款）；上层两条全量压缩续延对空串一律放弃
+     *  本次压缩（原样交付、不替换历史），不再补 "(empty summary)" 占位。 */
     QOpenAi::AsyncRequest *summarizeHistoryAsync(const QVector<QJsonObject> &conversation,
                                                  QObject *ctx,
                                                  std::function<void(const QString &summary)> done) const;

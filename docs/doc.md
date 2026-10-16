@@ -907,8 +907,9 @@ void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
 
 - 公开三入口：`prepareAsync`（五级管线，仅触发全量压缩时挂起）、`compactHistoryAsync`（批尾主动压缩）、
   `reactiveCompactAsync`（溢出反应式）。**均返回 `AsyncRequest *`**，`done` 恒一次。
-- **拆分点唯一**：`summarizeHistory` → `summarizeHistoryAsync`（私有），失败交付空串、内部补
-  `(empty summary)` 占位——降级语义与迁移前逐字一致。前四段纯本地管线不动。
+- **拆分点唯一**：`summarizeHistory` → `summarizeHistoryAsync`（私有），失败交付空串；两条全量压缩
+  续延对空串一律**放弃本次替换、原样交付**（不补占位、不发卡）——丢历史事故修复后替换旧
+  `(empty summary)` 占位语义。前四段纯本地管线不动。
 - `prepareAsync` 按值收 `conversation`、`done` 按值交付最终 conversation（挂起跨 await 后调用方栈引用
   有悬挂风险）；`changed` 判定为"最终态与入参不等价"。
 - 入口门槛用宿主锚定的 `conversationTokens`，段内退出判定用管线自身对 conversation 的即时

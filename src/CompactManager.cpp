@@ -555,8 +555,9 @@ QJsonObject CompactManager::buildSummaryRequest(const QVector<QJsonObject> &conv
 
 // 摘要 LLM 段（P3 异步化，设计文档 §3.3）：请求体沿用 buildSummaryRequest（迁移前阻塞链
 // 同款组装），超时/取消/错误经 AsyncRequest 折叠为 error 字符串。失败/超时交付空串并保留
-// 原同步链同款 qWarning 日志；"(empty summary)" 占位由上层组装点补齐（沿用原同步链占位归属，
-// 等价）。原阻塞链的嵌套事件循环豁免窗口（裁决 f）随同步段删除而消亡。
+// 原同步链同款 qWarning 日志；上层两个全量压缩续延对空串一律放弃本次替换、原样交付
+// （丢历史事故修复：旧行为补 "(empty summary)" 占位整体替换，摘要超时会把全部历史换成
+// 一条占位消息）。原阻塞链的嵌套事件循环豁免窗口（裁决 f）随同步段删除而消亡。
 // ctx 为生命周期锚：请求 parent 到 ctx，ctx 析构即链作废、done 永久静默（宿主契约：
 // ctx 存活期间 done 必达一次）；本函数对 conversation 仅只读（序列化进 prompt），无悬挂引用。
 QOpenAi::AsyncRequest *
@@ -574,7 +575,7 @@ CompactManager::summarizeHistoryAsync(const QVector<QJsonObject> &conversation, 
                 summary = content.trimmed();
             }
             if (done)
-                done(summary); // 失败/空内容一律交付空串，占位由调用点补
+                done(summary); // 失败/空内容一律交付空串，调用点据此放弃本次压缩
         });
 }
 
@@ -635,11 +636,18 @@ CompactManager::compactHistoryAsync(const QVector<QJsonObject> &conversation,
         conversation, ctx,
         [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, done](
             const QString &rawSummary) {
-            // 摘要失败/空内容 → "(empty summary)" 占位（原同步链摘要末尾同款归属）
-            const QString summary =
-                rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
+            // 摘要失败/空内容 → 放弃本次压缩：不替换、不发卡、原样交付（丢历史事故修复——
+            // 旧行为以 "(empty summary)" 占位整体替换，摘要超时会把全部历史换成一条占位
+            // 消息）。交付原样后：prepare 链 changed 判定按前四段结果照常生效；批尾路径
+            // apply 恒等 → persist → 重发，历史不被改写。
+            if (rawSummary.isEmpty())
+            {
+                if (done)
+                    done(conversation);
+                return;
+            }
             const QVector<QJsonObject> replaced{ summaryMessage(QStringLiteral("Compacted"),
-                                                                activeRequest, summary, transcript) };
+                                                                activeRequest, rawSummary, transcript) };
             emitCard(cardSummary, beforeTokens, estimateTokens(replaced), transcript);
             if (done)
                 done(replaced);
@@ -676,10 +684,16 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
         oldHistory, ctx,
         [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, tailStart, done](
             const QString &rawSummary) {
-            const QString summary =
-                rawSummary.isEmpty() ? QStringLiteral("(empty summary)") : rawSummary;
+            // 摘要失败/空内容 → 放弃本次压缩：不替换、不发卡、原样交付（丢历史事故修复同
+            // compactHistoryAsync；调用点照旧走 apply（恒等）+ 重发，历史安全）
+            if (rawSummary.isEmpty())
+            {
+                if (done)
+                    done(conversation);
+                return;
+            }
             const QJsonObject message = summaryMessage(QStringLiteral("Reactive compact"),
-                                                       activeRequest, summary, transcript);
+                                                       activeRequest, rawSummary, transcript);
             QVector<QJsonObject> replaced;
             replaced.append(message);
             if (tailStart > 0)
