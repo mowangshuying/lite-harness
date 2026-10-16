@@ -1,6 +1,6 @@
 ChatSessionPage {
     background-color: rgb(249, 249, 249);
-    border: 1px solid rgb(229, 229, 229);
+    border: 1px solid rgb(210, 210, 210);
 }
 
 MessageBubbleWidget {

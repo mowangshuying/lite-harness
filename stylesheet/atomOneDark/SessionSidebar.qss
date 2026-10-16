@@ -5,8 +5,8 @@
     background: rgb(40, 44, 52);
     border: none;
     /* 左/顶边框线与左侧导航列边框同源取色 */
-    border-left: 1px solid rgb(56, 60, 68);
-    border-top: 1px solid rgb(56, 60, 68);
+    border-left: 1px solid rgb(72, 78, 88);
+    border-top: 1px solid rgb(72, 78, 88);
 }
 
 /* ---- 面板头部 ---- */
@@ -37,7 +37,7 @@
     font: 12px "Consolas";
 }
 #sbSeparator {
-    background: rgb(56, 60, 68);
+    background: rgb(72, 78, 88);
     border: none;
 }
 

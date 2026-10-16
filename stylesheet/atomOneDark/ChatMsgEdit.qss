@@ -1,6 +1,6 @@
 ChatMsgEdit {
     background-color: rgb(40, 44, 52);
-    border: 2px solid rgba(255, 255, 255, 12);
+    border: 2px solid rgba(255, 255, 255, 42);
     border-radius: 10px;
 }
 

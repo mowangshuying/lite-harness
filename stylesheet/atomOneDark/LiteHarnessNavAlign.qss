@@ -22,5 +22,5 @@ FluVNavigationView {
    绘制通道，border 与 background 同受控件自身表规则控制）；Qt 样式表 box model
    会把 contentsRect 下移 1px，#widget1 等子容器不会盖住这条线。 */
 FluVNavigationView {
-    border-top: 1px solid rgb(56, 60, 68);
+    border-top: 1px solid rgb(72, 78, 88);
 }

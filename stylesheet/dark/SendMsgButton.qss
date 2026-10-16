@@ -1,6 +1,6 @@
 SendMsgButton {
     background-color: transparent;
-    border: 1px solid rgb(56, 56, 56);
+    border: 1px solid rgb(70, 70, 70);
     border-radius: 15px;
 }
 
