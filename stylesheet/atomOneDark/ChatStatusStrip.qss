@@ -10,13 +10,6 @@
     border: none;
 }
 
-/* 顶部分隔线：与侧栏 #sbSeparator 同色阶，读作「输入区 / 状态区」的分界。
-   三段文字全空时由 ChatStatusStrip::applyEmptiness 连本条一起隐藏（不留空线） */
-#stripSeparator {
-    background: rgb(56, 60, 68);
-    border: none;
-}
-
 /* ---- 计量文字行（无状态灯、无 state 着色：灯在侧栏「状态」节）---- */
 #stripRow {
     background: transparent;
