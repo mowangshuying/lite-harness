@@ -77,7 +77,7 @@
 #sbSectionArrow { background: transparent; }
 #sbSectionBody { background: transparent; border: none; }
 
-/* ---- 上下文占用条 ---- */
+/* ---- 上下文占用条（本节只有条：精确数字在输入框下方的状态条单行）---- */
 #ctxTrack {
     background: rgba(255, 255, 255, 16);
     border-radius: 3px;
@@ -89,17 +89,8 @@
 #ctxFill[level="warn"] {
     background: rgb(229, 192, 123);
 }
-#ctxNumbers {
-    color: rgb(171, 178, 191);
-    font: 11px "Consolas";
-}
-/* 消耗行与速度行：占用数字再淡一档（次要信息，不与占用条抢焦点）；两行同层级同色阶 */
-#ctxConsumption, #ctxRate {
-    color: rgb(139, 148, 158);
-    font: 11px "Consolas";
-}
 
-/* ---- 状态灯行（waiting 与消息流审批卡同语言：淡染底，无描边） ---- */
+/* ---- 运行状态灯（waiting 与消息流审批卡同语言：淡染底，无描边） ---- */
 /* 单侧 border 会让行内容右移 3px（行 setContentsMargins 8,0,8,0 之下 QSS 盒模型
    把 border 画在控件矩形内侧），与 #sbRow[status="active"] 同理由一并去除 */
 #statusRow {

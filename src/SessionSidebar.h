@@ -6,15 +6,12 @@
 #include <QJsonArray>
 #include <QtGlobal> // qsizetype
 
-#include "UsageTokens.h" // setTokenUsage 形参（纯头，QtCore-only；视图仍不自己算，数据由页面推入）
-#include "StreamRate.h"  // setOutputRate 形参（同上：速度算术在纯头，本类只格式化文案）
-
 class QLabel;
 class QVBoxLayout;
 class QToolButton;
+class SidebarSection;
 class ContextMeter;
 class StatusRow;
-class SidebarSection;
 
 /* ============================================================================
  * SessionSidebar —— 会话侧边栏（类 opencode TUI 侧栏：纯信息面板，无导航职能）。
@@ -22,10 +19,20 @@ class SidebarSection;
  * 固定宽 LayoutConst::kSidebarWidth，自上而下分节：
  *   面板头部（标题 + 收起钮）
  *   会话标题 / 模型名（muted 小字）
- *   上下文占用（≈token 估算 ÷ 派生 token 预算：contextCharLimit/4）
- *   运行状态灯（空闲 / 运行中 / 等待审批，waiting 优先）
+ *   上下文占用（进度条；数字文字在状态条，本节只画条）
+ *   运行状态（三态灯：空闲 / 运行中 / 等待审批）
  *   任务清单（todoUpdated 全量快照；条目 >2 时可手风琴折叠，折叠标题带汇总）
+ *   队友清单（s13 名册快照；空名册整节隐藏）
  *   页脚（工作目录 + 版本号——运行时 QCoreApplication::applicationVersion()，禁硬编码）
+ *
+ * 「上下文占用」节只留**进度条**在本类；数字、消耗、速度三段文字在输入框下方的
+ * ChatStatusStrip 单行（见 ChatStatusStrip.h）。条与字分属两处是明确分工：条是比例读数、
+ * 字是精确读数，同一时刻两处必须给同一个数——所以比例算术只在 UsageTokens::usageRatio
+ * 实现一次，两个视图共用，不各自除一遍。
+ * 「运行状态」灯整盏留在本类（s17 曾下移到状态条，随后按用户要求整体搬回）：它是「现在
+ * 什么状态」的常驻读数，与上下文数字/消耗/速度那类**计量数据**不同——计量数据侧栏收起时
+ * 必须仍可见，状态灯则属于面板内的身份信息，单处显示即可，不在状态条重复一份（两处同时
+ * 亮灯会在同一时刻给出两个读数，与上面条/字的「同一读数」纪律相悖）。
  *
  * 设计约束：
  *   ① 纯视图——不订阅 AgentLoop，所有数据由 ChatSessionPage 接线后调公开 setter 推入；
@@ -44,24 +51,19 @@ public:
     void setSessionMeta(const QString& title, const QString& model);
     /// 页脚工作目录
     void setWorkDir(const QString& dir);
-    /// 上下文占用：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0% 展示）
-    void setContextUsage(qsizetype usedTokens, qsizetype limitTokens);
-    /// 上下文**消耗**（区别于上面的占用）：本会话已花掉的输入/输出/缓存命中，只增不减。
-    /// 空累计（还没收到任何 usage 回读）隐藏整行——不留「0」骗人，也不留空行占位。
-    /// 口径边界写进 tooltip：只含主循环 + 队友回合，不含压缩/记忆/workflow（AsyncRequest 无 usage 通道）
-    void setTokenUsage(const UsageTokens::Totals &totals);
-    /// 输出速度（token/s）：本轮 + 会话平均。空账（还没拿到任何有效生成窗口）隐藏整行——
-    /// 与消耗行同纪律，不显示「0 tok/s」骗人。窗口口径写进 tooltip（生成窗口不含首字延迟）。
-    void setOutputRate(const StreamRate::Meter &meter);
-    /// 运行状态灯（AgentLoop::runningChanged 转发）
-    void setRunning(bool running);
-    /// 审批等待灯（permissionRequired 置亮；应答/回合终结由接线侧回灭）
-    void setPermissionPending(bool pending);
     /// 任务清单全量快照（[{content, status: pending|in_progress|completed}]）
     void setTodos(const QJsonArray& todos);
     /// s13 队友名册全量快照（[name, statusName token]，AgentLoop::teammateRoster 推入；
     /// 空名册隐藏整节——单代理会话零扰动）。纯视图纪律不破：数据由 ChatSessionPage 推入。
     void setTeammates(const QList<QPair<QString, QString>>& roster);
+    /// 上下文占用**条**：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0 画）。
+    /// 本节只画条不写数——数字在 ChatStatusStrip 单行；比例走 UsageTokens::usageRatio 单一实现，
+    /// 两处不会给出不同读数。tooltip 写口径边界（估算会被后续回读覆盖、不含压缩自身开销）。
+    void setContextUsage(qsizetype usedTokens, qsizetype limitTokens);
+    /// 运行状态灯（AgentLoop::runningChanged 转发）
+    void setRunning(bool running);
+    /// 审批等待灯（permissionRequired 置亮；应答/回合终结由接线侧回灭）
+    void setPermissionPending(bool pending);
 signals:
     /// 头部收起钮被点击（显隐偏好与恢复钮由 ChatSessionPage 管）
     void hideRequested();
@@ -77,10 +79,10 @@ private:
     QToolButton*      m_hideBtn = nullptr;
     QLabel*           m_titleLabel = nullptr;   // 会话标题
     QLabel*           m_modelLabel = nullptr;   // 模型名（muted 小字）
-    SidebarSection*   m_contextSection = nullptr;
-    ContextMeter*     m_meter = nullptr;
-    SidebarSection*   m_statusSection = nullptr;
-    StatusRow*        m_statusRow = nullptr;
+    SidebarSection*   m_contextSection = nullptr;   // 「上下文」节：只有占用条
+    ContextMeter*     m_contextMeter = nullptr;     // 条本体（数字在状态条，本节不写数）
+    SidebarSection*   m_statusSection = nullptr;    // 「状态」节：三态灯整盏在此（不在状态条）
+    StatusRow*        m_statusRow = nullptr;        // 灯本体（圆点 + 文案）
     SidebarSection*   m_todoSection = nullptr;
     QVBoxLayout*      m_todoList = nullptr;     // 任务清单行容器
     QLabel*           m_todoEmpty = nullptr;    // 「暂无任务」占位
@@ -89,11 +91,11 @@ private:
     QLabel*           m_footerDir = nullptr;
     QLabel*           m_footerVersion = nullptr;
 
-    // 缓存态：主题重刷/状态归并时按最新值重放
+    // 缓存态：主题重刷时按最新值重放
     QString           m_sessionTitle;
     QString           m_sessionModel;
-    bool              m_running = false;
-    bool              m_permPending = false;
+    bool              m_running = false;        // 状态灯缓存态（waiting 优先于 running 归并）
+    bool              m_permPending = false;    // 审批挂起缓存态
 
     int               m_todoCount = 0;          // 当前任务条数（折叠策略判定）
 };

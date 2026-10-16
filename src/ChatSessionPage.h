@@ -12,6 +12,7 @@ class AgentLoop;
 class PermissionCard;
 class WorkDirPathBar;
 class SessionSidebar;
+class ChatStatusStrip;
 class QToolButton;
 class QHBoxLayout;
 class QTimer;
@@ -54,7 +55,8 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit）的创建摆位
+    // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit +
+    // 其下的 ChatStatusStrip 状态条）的创建摆位
     void buildLayout();
     // 构造拆分（纯搬移不改行为）：AgentLoop 全部输出信号到 UI 的接线（finished/error/delta/工具/权限/任务/定时）
     void wireAgent();
@@ -68,7 +70,7 @@ private:
     void setSidebarVisible(bool visible);
     // 重算并钳制消息列/输入组宽（min(800, 可用宽 − 侧栏可见时的占位)），resizeEvent 与侧栏切换共用
     void applyColumnWidth();
-    // 上下文占用快照 → 侧栏（AgentLoop::estimatedContextTokens 的 ≈token 锚定估算，
+    // 上下文占用快照 → 底部状态条（AgentLoop::estimatedContextTokens 的 ≈token 锚定估算，
     // 预算 = contextCharLimit/4 派生，见规格修4）
     void refreshContextUsage();
     // s13 观测面：队友活卡按名收口（置终态 + 从活卡表除名，幂等——重复 settle no-op）
@@ -115,6 +117,7 @@ private:
     QHash<QString, QPointer<ToolBlock>> m_liveTeammateCards;
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
+    ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（上下文占用数字/消耗/速度三段文字；状态灯在侧栏，见 SessionSidebar.h）
     QToolButton *m_restoreBtn = nullptr;   // 侧栏收起后的浮动展开钮（页面右上角，手动摆位随 resize 跟随）
     QString m_sessionTitle;                // 会话标题单源：首条用户消息派生，宿主重命名/恢复经 setSessionTitle 回传覆盖
 };

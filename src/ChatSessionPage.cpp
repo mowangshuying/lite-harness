@@ -16,6 +16,7 @@
 #include "ToolBlock.h"
 #include "PermissionCard.h"
 #include "SessionSidebar.h"
+#include "ChatStatusStrip.h"
 #include "TodoCard.h"
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
@@ -42,7 +43,8 @@ static QWidget *makeCenteringRow(QWidget *column, QWidget *parent, QHBoxLayout *
     return row;
 }
 
-// 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit）。
+// 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit + 其下的
+// ChatStatusStrip 状态条）。
 // 纯搬移自原构造函数，摆位/参数/注释逐句不变；m_inputSection 入列提前到本段末尾——
 // 构造期无布局 activate/show，widget 几何不受 addWidget 时机影响，行为等价
 void ChatSessionPage::buildLayout()
@@ -83,6 +85,13 @@ void ChatSessionPage::buildLayout()
 
     m_inputEdit = new ChatMsgEdit(m_inputSection);
     sectionLayout->addWidget(m_inputEdit);
+
+    // 输入框下方状态条：承载上下文占用**数字**/消耗/速度三段文字（纯视图，数据仍由本页
+    // 接线经 setter 推入；侧栏收起时照样显示——这是它留在输入组下方的理由）。
+    // 占用**条**与「运行状态」三态灯仍在侧栏：条与数字是同一读数的两种画法，灯是面板
+    // 身份信息，两处同时亮会给出两个读数（见 SessionSidebar.h / ChatStatusStrip.h）
+    m_statusStrip = new ChatStatusStrip(m_inputSection);
+    sectionLayout->addWidget(m_statusStrip);
 
     vMainLayout->addWidget(makeCenteringRow(m_inputSection, leftColumn, &m_inputRowLayout), 0);
 
@@ -832,7 +841,8 @@ void ChatSessionPage::applyColumnWidth()
     }
 }
 
-// 上下文占用快照 → 侧栏。刷新时机（全是低频点，刻意不接 textDelta/thinkingDelta 高频流）：
+// 上下文占用快照 → 底部状态条（数字/消耗/速度）+ 侧栏「上下文」节（条）。刷新时机（全是低频点，
+// 刻意不接 textDelta/thinkingDelta 高频流）：
 //   ① 用户消息入历史后（startAssistantStream）——发送即见抬升，不必等整回合；
 //   ② 每个工具结果到达（toolOutputReady，含 compact 卡片）——多轮 ReAct 途中逐轮跟手；
 //   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
@@ -841,15 +851,20 @@ void ChatSessionPage::applyColumnWidth()
 // 预算为 settings.ini 字符上限的纯派生值（/4），键语义不变。
 void ChatSessionPage::refreshContextUsage()
 {
-    if (!m_agentLoop || !m_sidebar)
+    if (!m_agentLoop || !m_statusStrip)
         return;
-    m_sidebar->setContextUsage(m_agentLoop->estimatedContextTokens(),
-                               AgentConst::contextTokenBudget());
+    const qsizetype used = m_agentLoop->estimatedContextTokens();
+    const qsizetype limit = AgentConst::contextTokenBudget();
+    // 数字给状态条单行，条给侧栏「上下文」节——两处共用 UsageTokens::usageRatio 的同一实现，
+    // 不会在同一时刻给出两个读数（见 SessionSidebar.h 的分工说明）
+    m_statusStrip->setContextUsage(used, limit);
+    if (m_sidebar)
+        m_sidebar->setContextUsage(used, limit);
     // 消耗累计同批推入（同一刷新时机、同一数据源，不再另起信号链）
-    m_sidebar->setTokenUsage(m_agentLoop->sessionUsageTotals());
+    m_statusStrip->setTokenUsage(m_agentLoop->sessionUsageTotals());
     // 输出速度同批推入（同一刷新时机、同一数据源）：刷新点已覆盖 usage 到达——usage 恒先于
     // messageFinished，工具轮在 toolOutputReady 补刷、文本轮在 finished/error 终局刷新
-    m_sidebar->setOutputRate(m_agentLoop->outputRate());
+    m_statusStrip->setOutputRate(m_agentLoop->outputRate());
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，

@@ -1,0 +1,35 @@
+/* atomOneDark `—— ChatStatusStrip 输入框下方状态条：**单行**计量文字（占用数字 + 消耗段 + 速度段）。
+   占用**条**与「运行状态」三态灯归会话侧栏——#ctxTrack / #ctxFill / #statusRow 等选择器
+   在 SessionSidebar.qss，本文件只留文字段，同一 objectName 两处定义会打架。
+   灯不随数字下移：灯是面板的身份信息（现在什么状态），数字/消耗/速度是「侧栏收起也必须
+   常驻」的计量读数；两处同时亮灯会在同一时刻给出两个读数。 */
+
+#chatStatusStrip {
+    /* 透出聊天页底色（与消息列/输入框同栏同底），不另设面板底 */
+    background: transparent;
+    border: none;
+}
+
+/* 顶部分隔线：与侧栏 #sbSeparator 同色阶，读作「输入区 / 状态区」的分界。
+   三段文字全空时由 ChatStatusStrip::applyEmptiness 连本条一起隐藏（不留空线） */
+#stripSeparator {
+    background: rgb(56, 60, 68);
+    border: none;
+}
+
+/* ---- 计量文字行（无状态灯、无 state 着色：灯在侧栏「状态」节）---- */
+#stripRow {
+    background: transparent;
+    border: none;
+}
+
+/* ---- 占用数字段（条在侧栏，本文件不再定义 #ctxTrack / #ctxFill）---- */
+#ctxNumbers {
+    color: rgb(171, 178, 191);
+    font: 11px "Consolas";
+}
+/* 消耗段与速度段：占用数字再淡一档（次要信息，不与占用数字抢焦点）；三段同层级同色阶 */
+#ctxConsumption, #ctxRate {
+    color: rgb(139, 148, 158);
+    font: 11px "Consolas";
+}

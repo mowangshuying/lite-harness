@@ -1,6 +1,7 @@
 #include "SessionSidebar.h"
 #include "ThemeAware.h"
 #include "LayoutConstants.h"
+#include "UsageTokens.h"   // 占用比例算术（usageRatio）——状态条数字与本节占用条共用同一实现
 
 #include <QApplication>
 #include <QFontMetrics>
@@ -8,9 +9,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
-#include <QLocale>
 #include <QMouseEvent>
+#include <QLocale>
 #include <QPropertyAnimation>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QStyle>
 #include <QToolButton>
@@ -156,98 +158,74 @@ private:
     QPropertyAnimation* m_anim = nullptr;
 };
 
-/// 上下文占用计量：双色自绘条（QSS 子对象 #ctxTrack/#ctxFill）+ 属主注入的说明文案。
-/// 用自绘而非 FluProgressBar——第三方控件把主题 QSS 挂自身，覆盖其取色需斗争样式表；
-/// 两根受控 QSS 小条在本仓「自身样式表」机制下天然可主题化。
+// ============================================================================
+// ContextMeter —— 「上下文」节的占用条（纯图形，无文字）。
+//
+// 数字不在这里：精确读数（≈used / limit token · %）在输入框下方的 ChatStatusStrip 单行，
+// 本节只画比例。两处必须给同一个数，所以比例算术只在 UsageTokens::usageRatio 实现一次，
+// 本类与状态条都调用它——各自除一遍会在同一时刻给出两个读数。
+// 取色走三主题 SessionSidebar.qss 的 #ctxTrack / #ctxFill（含 level="warn" 变体）。
+// ============================================================================
 class ContextMeter : public QWidget {
 public:
     explicit ContextMeter(QWidget* parent = nullptr) : QWidget(parent) {
-        auto* v = new QVBoxLayout(this);
-        v->setContentsMargins(8, 4, 8, 6);
-        v->setSpacing(6);
-
-        m_track = new QWidget(this);
-        m_track->setObjectName(QStringLiteral("ctxTrack"));
-        m_track->setFixedHeight(6);
-        m_fill = new QWidget(m_track);
+        setObjectName(QStringLiteral("ctxTrack"));
+        setAttribute(Qt::WA_StyledBackground, true);
+        setFixedHeight(kBarHeight);
+        m_fill = new QWidget(this);
         m_fill->setObjectName(QStringLiteral("ctxFill"));
-        m_fill->setProperty("level", QStringLiteral("normal"));
-
-        m_numbers = new QLabel(this);
-        m_numbers->setObjectName(QStringLiteral("ctxNumbers"));
-        m_numbers->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-        // 消耗行：与上面的占用条**语义正交**（占用=窗口现在多大、会被后续回读覆盖；
-        // 消耗=已经花掉多少、只增不减）。同色阶但更淡一档，避免与占用数字抢焦点。
-        m_consumption = new QLabel(this);
-        m_consumption->setObjectName(QStringLiteral("ctxConsumption"));
-        m_consumption->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        m_consumption->setVisible(false);
-
-        // 速度行：与消耗行同层级、同色阶（同为次要信息），但语义正交——消耗回答「已经花掉多少」，
-        // 速度回答「模型吐字有多快」。空账整行隐藏（与消耗行同纪律：不显示 0 tok/s 骗人）。
-        m_rate = new QLabel(this);
-        m_rate->setObjectName(QStringLiteral("ctxRate"));
-        m_rate->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        m_rate->setVisible(false);
-
-        v->addWidget(m_track);
-        v->addWidget(m_numbers);
-        v->addWidget(m_consumption);
-        v->addWidget(m_rate);
+        m_fill->setFixedHeight(kBarHeight);
     }
 
-    /// ratio 钳到 [0,1]；warn 阈值（≥0.8）由此切琥珀色并触发属性重 polish
-    void setUsage(double ratio, const QString& numbersText) {
-        m_ratio = qBound(0.0, ratio, 1.0);
-        m_numbers->setText(numbersText);
-        const QString level = m_ratio >= 0.8 ? QStringLiteral("warn") : QStringLiteral("normal");
-        if (m_fill->property("level").toString() != level) {
-            m_fill->style()->unpolish(m_fill);
-            m_fill->setProperty("level", level);
-            m_fill->style()->polish(m_fill);
-        }
+    void setRatio(double ratio) {
+        m_ratio = ratio;
+        applyLevel();
         relayoutFill();
     }
 
-    /// 消耗行文案；空串即整行隐藏（还没收到任何 usage 回读时不显示「0」骗人）
-    void setConsumption(const QString& text, const QString& toolTip) {
-        m_consumption->setText(text);
-        m_consumption->setToolTip(toolTip);
-        m_consumption->setVisible(!text.isEmpty());
-    }
-
-    /// 速度行文案；空串即整行隐藏（还没拿到任何可定窗的请求时不显示「0 tok/s」骗人）
-    void setRate(const QString& text, const QString& toolTip) {
-        m_rate->setText(text);
-        m_rate->setToolTip(toolTip);
-        m_rate->setVisible(!text.isEmpty());
-    }
-
 protected:
-    void resizeEvent(QResizeEvent*) override { relayoutFill(); }
+    void resizeEvent(QResizeEvent* event) override {
+        QWidget::resizeEvent(event);
+        relayoutFill();
+    }
 
 private:
-    void relayoutFill() {
-        const int w = qMax(m_ratio > 0.0 ? 3 : 0,
-                           int(m_track->width() * m_ratio));
-        m_fill->setGeometry(0, 0, qMin(w, m_track->width()), m_track->height());
+    static constexpr int kBarHeight = 6;
+    static constexpr double kWarnRatio = 0.8;
+
+    void applyLevel() {
+        const QString level = m_ratio >= kWarnRatio ? QStringLiteral("warn") : QStringLiteral("normal");
+        if (m_level == level)
+            return;
+        m_level = level;
+        m_fill->setProperty("level", level);
+        m_fill->style()->unpolish(m_fill);
+        m_fill->style()->polish(m_fill);
     }
 
-    QWidget* m_track = nullptr;
+    void relayoutFill() {
+        if (width() <= 0)
+            return;
+        m_fill->setGeometry(0, 0, int(m_ratio * double(width())), height());
+    }
+
+    double   m_ratio = 0.0;
+    QString  m_level;
     QWidget* m_fill = nullptr;
-    QLabel* m_numbers = nullptr;
-    QLabel* m_consumption = nullptr;
-    QLabel* m_rate = nullptr;
-    double m_ratio = 0.0;
 };
 
-/// 运行状态灯行：圆点 + 文案；state 属性（idle|running|waiting）驱动整行 QSS 着色，
-/// waiting 与 TodoCard active 同语言（淡染底，**无描边**）。
-/// 描边已撤：QSS 单侧 border 画在控件矩形内侧，会让该行圆点与文字比相邻行右移
-/// 3px（行 setContentsMargins 8,0,8,0），强调改由淡染底 + 加粗 + 琥珀色承载；
-/// #sbRow[status="active"]（任务清单 in_progress 与队友名册 working/waiting_approval
-/// 共用）同批撤除，两处保持一致。
+// ============================================================================
+// StatusRow —— 「状态」节的运行状态灯：圆点 + 文案，state 属性（idle|running|
+// waiting）驱动整行 QSS 着色。
+//
+// 只画灯不画数：占用数字/消耗/速度三段文字在输入框下方的 ChatStatusStrip 单行
+// （见 ChatStatusStrip.h）。本行刻意**不**复用那个多段行——把灯与数塞进同一行会
+// 让侧栏与状态条同时各有一份读数，而这两处的可见性不同（侧栏可收起）。
+//
+// 描边已撤：QSS 单侧 border 画在控件矩形内侧，会让该行圆点与文字比相邻行右移
+// 3px（行 setContentsMargins 8,0,8,0），强调改由淡染底 + 加粗 + 琥珀色承载；
+// waiting 与消息流审批卡、#sbRow[status="active"] 同语言。
+// ============================================================================
 class StatusRow : public QWidget {
 public:
     explicit StatusRow(QWidget* parent = nullptr) : QWidget(parent) {
@@ -268,6 +246,7 @@ public:
         h->addStretch();
     }
 
+    /// 三态切换：state 变了才重 polish（属性驱动 QSS），文案每次直写
     void setState(const QString& state, const QString& text) {
         if (property("state").toString() != state) {
             style()->unpolish(this);
@@ -381,17 +360,18 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     iv->setContentsMargins(0, 4, 0, 4);
     iv->setSpacing(10);
 
-    // ① 上下文占用（恒展开）
+    // ① 上下文占用条（只有条：精确数字在输入框下方的状态条单行）。不可折叠——一节一行
+    //    没有可折叠的内容；count 留空（本节再写一遍数会给出两处读数），口径写进条的 tooltip。
     m_contextSection = new SidebarSection(tr("上下文"), inner);
-    m_contextSection->setCollapsible(false);
-    m_meter = new ContextMeter;
-    m_contextSection->body()->addWidget(m_meter);
+    m_contextMeter = new ContextMeter(m_contextSection);
+    m_contextSection->body()->addWidget(m_contextMeter);
     iv->addWidget(m_contextSection);
 
-    // ② 运行状态（恒展开）
+    // ② 运行状态灯（恒展开；三态合一 空闲/运行中/等待审批）。灯在本节、不在状态条：
+    //    状态条只承载数字/消耗/速度那类「收起侧栏也必须常驻」的计量数据，而灯是面板的
+    //    身份信息——两处同时亮会在同一时刻给出两个读数（与上面条/字「同一读数」同纪律）。
     m_statusSection = new SidebarSection(tr("状态"), inner);
-    m_statusSection->setCollapsible(false);
-    m_statusRow = new StatusRow;
+    m_statusRow = new StatusRow(m_statusSection);
     m_statusSection->body()->addWidget(m_statusRow);
     iv->addWidget(m_statusSection);
 
@@ -422,6 +402,7 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     root->addWidget(m_footerDir);
     root->addWidget(m_footerVersion);
 
+    // 状态灯初值：构造期就落到「空闲」态并写好文案，否则面板首帧是一行没有文字的空灯行
     applyRunState();
 
     // 主题挂接惯例：构造函数末尾 bind；extraRefresh 重取按主题着色的 chevron 图标
@@ -444,89 +425,6 @@ void SessionSidebar::setWorkDir(const QString& dir) {
     const int avail = width() - 2 * kPanelHMargin;
     m_footerDir->setText(QFontMetrics(font()).elidedText(dir, Qt::ElideMiddle, qMax(avail, 80)));
     m_footerDir->setToolTip(dir);
-}
-
-void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens) {
-    const double ratio = limitTokens > 0 ? double(usedTokens) / double(limitTokens) : 0.0;
-    const QLocale loc(QLocale::c());
-    const QString text = tr("≈%1 / %2 token · %3%")
-                             .arg(loc.toString(usedTokens),
-                                  loc.toString(limitTokens),
-                                  QString::number(ratio * 100.0, 'f', 1));
-    m_meter->setUsage(ratio, text);
-}
-
-void SessionSidebar::setTokenUsage(const UsageTokens::Totals &totals) {
-    const QLocale loc(QLocale::c());
-    if (totals.isEmpty()) {
-        // 一次有效回读都没有：整行隐藏。显示「0 token」会被读成「没花钱」，
-        // 而真相是「还没拿到数据」——两者对成本判断的作用相反，宁可不显示。
-        m_meter->setConsumption(QString(), QString());
-        return;
-    }
-    const QString text = tr("已用 %1 / 产出 %2 · 缓存命中 %3%")
-                             .arg(loc.toString(totals.prompt),
-                                  loc.toString(totals.completion),
-                                  QString::number(totals.hitRatio() * 100.0, 'f', 1));
-    // tooltip 逐条摊开明细 + 口径边界。边界必须写：本累计只覆盖带 include_usage 的
-    // ChatStream 路径（主循环 + 队友回合），压缩摘要/记忆链/workflow runner 走
-    // AsyncRequest（该类型无 usage 通道），完全不在账上。不写这句，用户会把它当会话总开销。
-    const QString tip = tr("本会话累计 token 消耗（只增不减，与上方占用条口径无关）。\n"
-                           "输入 %1 token，其中缓存命中 %2（未命中 %3）。\n"
-                           "产出 %4 token，其中思考 %5。\n"
-                           "有效回读 %6 次。\n"
-                           "口径边界：仅统计主循环与队友回合；压缩摘要 / 记忆链 / "
-                           "workflow runner 走 AsyncRequest 无 usage 回传，未计入本数。")
-                            .arg(loc.toString(totals.prompt),
-                                 loc.toString(totals.cached),
-                                 loc.toString(totals.uncachedPrompt()),
-                                 loc.toString(totals.completion),
-                                 loc.toString(totals.reasoning),
-                                 loc.toString(totals.calls));
-    m_meter->setConsumption(text, tip);
-}
-
-void SessionSidebar::setOutputRate(const StreamRate::Meter &meter) {
-    const QLocale loc(QLocale::c());
-    if (meter.isEmpty()) {
-        // 一个有效窗口都没有：整行隐藏。显示「0 tok/s」会被读成「模型很慢」，而真相是
-        // 「还没拿到能定窗的数据」（无 usage 回读，或本轮是纯 tool_calls delta）——两者相反。
-        m_meter->setRate(QString(), QString());
-        return;
-    }
-    const QString text = tr("输出速度 %1 tok/s · 平均 %2 tok/s")
-                             .arg(QString::number(meter.lastRate(), 'f', 1),
-                                  QString::number(meter.averageRate(), 'f', 1));
-    // tooltip 必须把窗口口径写全：行内数字只说「多少 tok/s」，不说分母是什么。分母不同，
-    // 同一个数字的含义相反——把整请求窗口（含首字延迟与重试退避）当分母，慢首字会被读成慢模型。
-    // 归属也要写清：last 未必属于本轮。纯 tool_calls 回合没有增量起点、无法定窗，此时 last
-    // 仍是上一个可定窗——沿用「本轮」措辞会把上一轮的速率读成本轮的（与不显示 0 骗人同一条纪律）。
-    const QString scope = meter.lastIsCurrent ? tr("本轮") : tr("上一可定窗");
-    const QString caveat = meter.lastIsCurrent ? QString()
-                                                : tr("（本回合无法定窗，显示的是上一个可定窗）");
-    const QString tip = tr("按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。\n"
-                           "%1 %2 token ÷ %3 ms = %4 tok/s%5。\n"
-                           "平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。\n"
-                           "首字延迟平均 %6 ms（含流内重试退避）。\n"
-                           "口径边界：仅主循环请求；队友回合与压缩 / 记忆 / workflow 侧链不计时。"
-                           "纯 tool_calls 回合无增量起点，无法定窗，不计入本数。")
-                            .arg(scope,
-                                 loc.toString(meter.last.tokens),
-                                 loc.toString(meter.last.generationMs),
-                                 QString::number(meter.lastRate(), 'f', 1),
-                                 caveat)
-                            .arg(QString::number(meter.averageFirstTokenMs(), 'f', 0));
-    m_meter->setRate(text, tip);
-}
-
-void SessionSidebar::setRunning(bool running) {
-    m_running = running;
-    applyRunState();
-}
-
-void SessionSidebar::setPermissionPending(bool pending) {
-    m_permPending = pending;
-    applyRunState();
 }
 
 void SessionSidebar::setTodos(const QJsonArray& todos) {
@@ -625,8 +523,40 @@ void SessionSidebar::setTeammates(const QList<QPair<QString, QString>>& roster) 
     m_teammateSection->setCollapsible(collapsible);
 }
 
+void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens)
+{
+    if (!m_contextMeter)
+        return;
+    // 比例算术只在 UsageTokens::usageRatio 实现一次：状态条的数字与本节的条分属两个视图，
+    // 各自除一遍会在同一时刻给出两个读数（一个显示 100%，另一个画 120% 宽）。
+    m_contextMeter->setRatio(UsageTokens::usageRatio(usedTokens, limitTokens));
+
+    const QLocale loc(QLocale::c());
+    // tooltip 写口径边界：条本身只说比例，不说分母是 settings.ini 字符串上限的派生值（/4），
+    // 也不说估算与压缩触发同源、会被后续回读覆盖——这两句决定读数能不能用来判断会不会被
+    // 压缩改写。精确数字在输入框下方的状态条单行，这里只给指向，不重复成一份独立读数。
+    m_contextMeter->setToolTip(tr("上下文占用条：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）；精确数字见输入框下方状态条。")
+                                   .arg(loc.toString(usedTokens), loc.toString(limitTokens)));
+}
+
+// 状态灯的两个推入口（纯视图纪律不破：本页不订阅 AgentLoop，running/permission 由
+// ChatSessionPage 接线转发）。setter 只写缓存态再交 applyRunState 归并——两个信号各自
+// 到达时都不能独立决定显示什么（waiting 优先于 running 是跨信号的关系，不是单信号的事实）。
+
+void SessionSidebar::setRunning(bool running) {
+    m_running = running;
+    applyRunState();
+}
+
+void SessionSidebar::setPermissionPending(bool pending) {
+    m_permPending = pending;
+    applyRunState();
+}
+
 void SessionSidebar::applyRunState() {
-    // waiting 优先：审批挂起时无论 running 与否都亮警示态
+    if (!m_statusRow)
+        return;
+    // waiting 优先：审批挂起时无论 running 与否都亮警示态（「在等你」比「在跑」更该被看见）
     if (m_permPending) {
         m_statusRow->setState(QStringLiteral("waiting"), tr("等待审批"));
     } else if (m_running) {
