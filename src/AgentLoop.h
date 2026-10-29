@@ -126,6 +126,14 @@ public:
     // 发射点据此算 ok 随 toolOutputReady 带出；历史回放侧以 tool 消息 content 同判据复用
     static bool isToolFailure(const QString &output);
 
+    // todo_write 入参的清单快照归一（s17 缺陷修复：实时与历史回放共用单源，见 AgentLoopTodo.cpp）：
+    // 对 args["todos"] 执行与 runTodoWrite 逐字相同的字符串强制转换与逐项校验，校验通过以
+    // [{content, status}, ...] 回填 *snapshot（空清单是合法形态=「计划清空」事件）；失败返回
+    // false 且 error 非空时回填逐字 "Error:..." 串（与 runTodoWrite 返回值同源同文）。
+    // 回放侧只对 isToolFailure 判成功的调用调用本函数——当时校验必过，false 分支仅作防御
+    static bool normalizeTodoSnapshot(const QJsonObject &args, QJsonArray *snapshot,
+                                      QString *error = nullptr);
+
 signals:
     // 思考过程增量（forward 给 UI）
     void thinkingDelta(const QString &delta);

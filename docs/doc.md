@@ -215,7 +215,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopHooks.cpp` | 196 | 生命周期钩子注册表：注册顺序即执行顺序，四个 trigger（UserPromptSubmit/PreToolUse/PostToolUse/Stop）**首个非空返回短路**；**s15** ASK 门与 `mcp__` 策略门在异步回合（`m_asyncTurn`）改返 `RecoveryRules::asyncApprovalDenied()` 定值拒串（fail-closed 不弹卡，deny 表与 granted 短路顺序不动）；**s16** workflow 三态策略门位 `mcp__` 门后（deny→定值 "Permission denied by host policy" 硬拒 / confirm→ASK 卡且异步回合复用 asyncApprovalDenied / allow 放行；未登记名与空名 fail-closed 归 confirm） | `registerBuiltinHooks`（内置：`context_inject` / `permission` / `log_before` / `log_after`）、四个 `trigger*Hooks` |
 | `AgentLoopHistory.cpp` | 163 | `history.json` 落盘（含索引 `lastActiveMs` 续活）与磁盘恢复；条目登记归 `LiteHarness::createSession` | `persistHistory`、`loadSavedHistory` |
 | `AgentLoopSkills.cpp` | 196 | 技能扫描与 `load_skill`；技能目录**始终跨会话共享** `<workDir>/.lite-harness/skills` | `scanSkills`、`skillsCatalog`、`runLoadSkill` |
-| `AgentLoopTodo.cpp` | 119 | `todo_write`（无状态：只校验入参并渲染面板文本，成功即以本次快照发 `todoUpdated`） | `renderTodos`、`runTodoWrite` |
+| `AgentLoopTodo.cpp` | 169 | `todo_write`（无状态：只校验入参并渲染面板文本，成功即以本次快照发 `todoUpdated`）；校验+快照归一抽为 `normalizeTodoSnapshot` 静态单源，**历史回放共用**（s17 缺陷修复：回会话重建侧栏任务清单与快照卡，禁回放侧另写口径） | `renderTodos`、`normalizeTodoSnapshot`、`runTodoWrite` |
 | `AgentLoopSubAgent.cpp` | 80 | `task` 子代理的启动与统一收口（子代理信号直连转发为主循环信号） | `startSubAgentTask`、`cancelSubAgent` |
 | `AgentLoopCron.cpp` | 86 | 三个 cron handler 与空闲边界交付；台账与匹配在 `CronSchedulerManager`，本文件只做宿主侧接线；**s15** 另承载 `tryDeliverBackgroundWakeup`（第 4 事件源卫兵+空 prompt 唤醒） | `runScheduleCron`、`runCancelCron`、`runListCrons`、`tryDeliverCron`、`tryDeliverBackgroundWakeup` |
 | `AgentLoopTeam.cpp` | 676 | **s13 团队宿主接线单 TU**：`initTeamEngine` 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）；`leadToolCwd` 租约感知 cwd 单点（有租约取 `assignmentCwd` 含 worktree 解析、无租约回落宿主 workDir）；三注入边界（`run()` 入口与批尾 `injectTeamEvents`、自然终局 `leadTurnEndSettlement` 先于 finalize/persist）+ 非自然终局 `settleLeadLease`；**`tryDeliverTeamEvents`** Gate③ MAJOR-1 空闲唤醒收割（挂 `m_cronTick` 1s 节拍、先于 `tryDeliverCron`——lcc 邮箱优先口径；仅 `!m_running` 且 lead 邮箱有信时 harvest→`scheduledUserMessage` 自动开回合，与 cron 同路 GUI 零改动；**s15**：emit 前置位 `m_pendingAsyncTurn=true`（异步回合 fail-closed），队友工具适配器在 `triggerPreToolUseHooks` 窗口同栈临时强制 `m_asyncTurn`——s14 在册「Lead 保留 ASK 卡=增强非缺陷」裁决**已废止翻转**，无人值守回合不得挂永久审批卡）；队友回合环 `onTeammateTurnRequested`/`onTeammateFinished`（镜像 SubAgent 先例）；`settleTeamOnExit` 析构清算；`teammateToolsDefinition()` 队友面 10 件 schema（D5 与主表分开、禁翻区） | `initTeamEngine`、`leadToolCwd`、`injectTeamEvents`、`tryDeliverTeamEvents`、`leadTurnEndSettlement`、`settleLeadLease`、`onTeammateTurnRequested`、`settleTeamOnExit` |
@@ -825,6 +825,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - 头部 `[任务清单] …… [done/total] [▼]`，与 ToolBlock 同款实色底与圆角；计数 tooltip「已完成 %1/%2」。
 - 行状态用**文本字形**而非图标：`●` 进行中 / `✓` 完成 / `○` 待办，颜色由 QSS 行状态选择器控制。
 - **快照语义**：`todo_write` 无状态，每次成功即以本次全量清单发 `todoUpdated`，UI 侧新建一张卡而非原地改表——历史里因此留下「计划演进」的每个时点，而非只有最终态。
+- **回放重建同契约**（s17 缺陷修复）：回会话时 `replayHistory` 对成功的 `todo_write` 按同一口径重放——校验归一走 `AgentLoop::normalizeTodoSnapshot` 单源、快照卡照嵌、侧栏「任务清单」逐事件推入并停在末态；实时"延一拍嵌卡"是为让位自家工具块落位，回放中工具块同步落位在前，直接追加不再延帧。
 - 它是 `CollapsibleBlock` 家族里**唯一没有进行态**的子类：`liveText()` 落到基类默认空串，轮播定时器对它不启动。
 - 标题「任务清单」属常驻文案，`changeEvent(LanguageChange)` 里重取 `tr()`（i18n 第八轮）。
 
@@ -854,6 +855,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 - 回放三处调用点与实时链路**同参传法**：`startStreaming(tr("处理中…"))` 占位 → `appendHistoryThinkingText(reasoning)` → `appendToolExecution(...)`；回放是同步填满，占位无滞留窗口。
 - 工具摘要与成败判定**共用单源**：回放走 `AgentLoopDetail::toolSummary` + `AgentLoop::isToolFailure`，与实时链路一字不差——靠 `ChatSessionPage` 直接 include 内核内部头 `AgentLoopInternal.h`（`friend` 授权的有意例外，见结构篇 §9 异常 2）。
+- 任务清单**同样走查**（s17 缺陷修复，曾漏）：`todo_write` 成功调用在回放时经 `normalizeTodoSnapshot` 重建快照卡与侧栏终态——曾只重放气泡时间线，回会话后侧栏「任务清单」节空到模型新回合重发为止，即本条契约的反例。
 - 因此「重启后看到的」与「当时看到的」必然一致；任何只改实时侧的渲染改动都会在回放里露馅。
 
 ### 13. 折叠骨架的三条公共纪律（CollapsibleBlock）

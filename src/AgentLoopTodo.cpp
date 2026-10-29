@@ -37,11 +37,12 @@ QString AgentLoop::renderTodos(const QVector<TodoItem> &items)
     return lines.join(QLatin1Char('\n'));
 }
 
-QString AgentLoop::runTodoWrite(const QJsonObject &args)
+bool AgentLoop::normalizeTodoSnapshot(const QJsonObject &args, QJsonArray *snapshot,
+                                      QString *error)
 {
-    // lcc s06 update_todos 等价：无状态——只校验并渲染本次入参，不落任何持久清单
-    // （lcc s05 的 TodoManager.items 持久化与 'Current Tasks' 控制台面板在 s06 移除）；
-    // 任一校验失败返回 "Error:..."（lcc 抛 ValueError、run_todo_write 捕获转 "Error:{e}"）
+    // 自 runTodoWrite 逐字搬移的校验体（s17 缺陷修复：历史回放要重建「任务清单」侧栏终态与
+    // 快照卡，校验口径必须与实时执行时一字不差，禁在回放侧重写一套）：错误串族逐字保留，
+    // 成功时以本次输入清单快照 [{content, status}, ...] 回填 *snapshot
     QJsonValue todosValue = args.value(QStringLiteral("todos"));
 
     // 模型偶发把 todos 传成 JSON 字符串（对应 lcc json.loads/ast.literal_eval 兼容
@@ -53,25 +54,45 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
         const QJsonDocument parsed =
             QJsonDocument::fromJson(todosValue.toString().toUtf8(), &parseError);
         if (parseError.error != QJsonParseError::NoError)
-            return QStringLiteral("Error:todos must be a list or JSON array string");
+        {
+            if (error)
+                *error = QStringLiteral("Error:todos must be a list or JSON array string");
+            return false;
+        }
         if (!parsed.isArray())
-            return QStringLiteral("Error:todos must be a list");
+        {
+            if (error)
+                *error = QStringLiteral("Error:todos must be a list");
+            return false;
+        }
         todosValue = QJsonValue(parsed.array());
     }
 
     if (!todosValue.isArray())
-        return QStringLiteral("Error:todos must be a list");
+    {
+        if (error)
+            *error = QStringLiteral("Error:todos must be a list");
+        return false;
+    }
 
     const QJsonArray todos = todosValue.toArray();
     if (todos.size() > AgentConst::kTodoMaxItems)
-        return QStringLiteral("Error:Max %1 todos allowed").arg(AgentConst::kTodoMaxItems);
+    {
+        if (error)
+            *error = QStringLiteral("Error:Max %1 todos allowed").arg(AgentConst::kTodoMaxItems);
+        return false;
+    }
 
-    QVector<TodoItem> validated;
+    QJsonArray built;
     int inProgressCount = 0;
     for (int index = 0; index < todos.size(); ++index)
     {
         if (!todos.at(index).isObject())
-            return QStringLiteral("Error:todos[%1] must be an object").arg(index);
+        {
+            if (error)
+                *error = QStringLiteral("Error:todos[%1] must be an object").arg(index);
+            return false;
+        }
 
         const QJsonObject todo = todos.at(index).toObject();
         // lcc str(todo.get("content","")).strip() / str(todo.get("status","pending")).lower()：
@@ -83,36 +104,65 @@ QString AgentLoop::runTodoWrite(const QJsonObject &args)
             status = todo.value(QStringLiteral("status")).toVariant().toString().toLower();
 
         if (content.isEmpty())
-            return QStringLiteral("Error:todos[%1] requires content").arg(index);
+        {
+            if (error)
+                *error = QStringLiteral("Error:todos[%1] requires content").arg(index);
+            return false;
+        }
         if (status != QStringLiteral("pending") && status != QStringLiteral("in_progress")
             && status != QStringLiteral("completed"))
         {
-            return QStringLiteral("Error:todos[%1] has invalid status '%2'")
-                .arg(index)
-                .arg(status);
+            if (error)
+                *error = QStringLiteral("Error:todos[%1] has invalid status '%2'")
+                             .arg(index)
+                             .arg(status);
+            return false;
         }
         if (status == QStringLiteral("in_progress"))
             ++inProgressCount;
 
-        validated.append(TodoItem{ content, status });
+        QJsonObject itemObj;
+        itemObj[QStringLiteral("content")] = content;
+        itemObj[QStringLiteral("status")] = status;
+        built.append(itemObj);
     }
 
     if (inProgressCount > 1)
-        return QStringLiteral("Error:Only one todo can be in_progress at a time");
+    {
+        if (error)
+            *error = QStringLiteral("Error:Only one todo can be in_progress at a time");
+        return false;
+    }
+
+    *snapshot = built;
+    return true;
+}
+
+QString AgentLoop::runTodoWrite(const QJsonObject &args)
+{
+    // lcc s06 update_todos 等价：无状态——只校验并渲染本次入参，不落任何持久清单
+    // （lcc s05 的 TodoManager.items 持久化与 'Current Tasks' 控制台面板在 s06 移除）；
+    // 任一校验失败返回 "Error:..."（lcc 抛 ValueError、run_todo_write 捕获转 "Error:{e}"）。
+    // 校验与快照归一在 normalizeTodoSnapshot 单源（回放共用），本函数只做渲染与广播
+    QJsonArray snapshot;
+    QString error;
+    if (!normalizeTodoSnapshot(args, &snapshot, &error))
+        return error;
+
+    // 渲染面板文本用快照反构 items（与原 validated 逐字段同值：content 已 trim、status 已归一）
+    QVector<TodoItem> items;
+    for (const QJsonValue &value : snapshot)
+    {
+        const QJsonObject obj = value.toObject();
+        items.append(TodoItem{obj.value(QStringLiteral("content")).toString(),
+                              obj.value(QStringLiteral("status")).toString()});
+    }
 
     // lcc s06：渲染本次入参并直接返回（无持久化、无 s05 的 'Current Tasks' 控制台面板）
-    const QString output = renderTodos(validated);
+    const QString output = renderTodos(items);
 
     // 跨车道契约：每次校验通过（含清为空清单）后广播本次输入清单快照 [{content, status}, ...]，
     // 供 TodoCard 渲染（无状态下由模型逐轮重发全量清单维持面板内容）
-    QJsonArray snapshot;
-    for (const TodoItem &item : validated)
-    {
-        QJsonObject itemObj;
-        itemObj[QStringLiteral("content")] = item.content;
-        itemObj[QStringLiteral("status")] = item.status;
-        snapshot.append(itemObj);
-    }
     emit todoUpdated(snapshot);
 
     return output;

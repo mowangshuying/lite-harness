@@ -13,6 +13,7 @@
 #include "AgentLoop.h"
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h"
+#include "ToolNames.h"
 #include "ToolBlock.h"
 #include "PermissionCard.h"
 #include "SessionSidebar.h"
@@ -705,6 +706,28 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
             // 回放成败与实时链路共享单源判定（AgentLoop::isToolFailure）
             const bool ok = !AgentLoop::isToolFailure(content);
             m_currentBubble->appendToolExecution(toolName, summary, content, ok);
+            // 任务清单回放重建（s17 缺陷修复：回会话侧栏「任务清单」与快照卡要等新回合模型
+            // 重发 todo_write 才出现——实时链路只靠 todoUpdated 事件更新、历史从不重放，
+            // 与第四部分 §12「重启后看到的与当时看到的必然一致」的既定契约相悖）。
+            // 成功的 todo_write 按实时同一契约走查：校验归一复用 AgentLoop::normalizeTodoSnapshot
+            // 单源（禁在回放侧重写一套口径）；非空且与上一快照不同 → 嵌快照卡——实时"延一拍"
+            // 是让位自家工具块落位，此刻 appendToolExecution 已同步落位，直接追加无需延帧；
+            // 空清单=「计划清空」事件不嵌隐形卡；侧栏每次事件都推，回放完即停在其终态
+            if (toolName == ToolNames::TODO_WRITE && ok)
+            {
+                QJsonArray snapshot;
+                if (AgentLoop::normalizeTodoSnapshot(args, &snapshot))
+                {
+                    if (!snapshot.isEmpty() && snapshot != m_lastTodoSnapshot)
+                    {
+                        auto *card = new TodoCard(this);
+                        card->setTodos(snapshot);
+                        m_lastTodoSnapshot = snapshot;
+                        m_currentBubble->appendTimelineSection(card);
+                    }
+                    m_sidebar->setTodos(snapshot);
+                }
+            }
             scrollToBottom();
             continue;
         }
