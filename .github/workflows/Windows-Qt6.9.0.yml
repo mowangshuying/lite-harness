@@ -116,11 +116,11 @@ jobs:
         # 本机全量实跑 1397（含 1 条 junction 夹具 skip，同为下浮基准）。下界 1066→1250 按本轮
         # 实跑 1397 留约 10% 余量上调（1397×0.9≈1257，取整 1250）。若 CI 首跑 pass 数明显低于
         # 1397，按实测回落本行与下方阈值。
-       - name: Unit tests (ctest)
-         shell: pwsh
-         run: |
-           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-           $env:LITE_TEST_MIN_PASS = '1250'
+      - name: Unit tests (ctest)
+        shell: pwsh
+        run: |
+          $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
+          $env:LITE_TEST_MIN_PASS = '1250'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 
