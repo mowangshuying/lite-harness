@@ -19,7 +19,7 @@ class StatusRow;
  * 固定宽 LayoutConst::kSidebarWidth，自上而下分节：
  *   面板头部（标题 + 收起钮）
  *   会话标题 / 模型名（muted 小字）
- *   上下文占用（进度条；数字文字在状态条，本节只画条）
+ *   上下文占用（进度条 + 精确数字行；消耗/速度文字在状态条）
  *   运行状态（三态灯：空闲 / 运行中 / 等待审批）
  *   任务清单（todoUpdated 全量快照；条目 >2 时可手风琴折叠，折叠标题带汇总）
  *   队友清单（s13 名册快照；空名册整节隐藏）
@@ -28,14 +28,15 @@ class StatusRow;
  *   定时任务（s17 cron 台账快照；空台账整节隐藏）
  *   页脚（工作目录 + 版本号——运行时 QCoreApplication::applicationVersion()，禁硬编码）
  *
- * 「上下文占用」节只留**进度条**在本类；数字、消耗、速度三段文字在输入框下方的
- * ChatStatusStrip 单行（见 ChatStatusStrip.h）。条与字分属两处是明确分工：条是比例读数、
- * 字是精确读数，同一时刻两处必须给同一个数——所以比例算术只在 UsageTokens::usageRatio
- * 实现一次，两个视图共用，不各自除一遍。
+ * 「上下文占用」节承载**进度条 + 精确数字行**：条是比例读数、字是精确读数，同一事实的
+ * 两个读数并置同节（数字原住输入框下方的 ChatStatusStrip 单行，按用户要求移入本节）。
+ * 条与数字同一时刻必须给同一个数——比例算术只在 UsageTokens::usageRatio 实现一次，
+ * 两个视图共用，不各自除一遍。消耗、速度两段文字仍留在 ChatStatusStrip（见其头注释）。
+ * 数字随条进面板的代价是明示取舍而非疏漏：侧栏收起时条与数字一并不可见。
  * 「运行状态」灯整盏留在本类（s16.1 曾下移到状态条，随后按用户要求整体搬回）：它是「现在
- * 什么状态」的常驻读数，与上下文数字/消耗/速度那类**计量数据**不同——计量数据侧栏收起时
- * 必须仍可见，状态灯则属于面板内的身份信息，单处显示即可，不在状态条重复一份（两处同时
- * 亮灯会在同一时刻给出两个读数，与上面条/字的「同一读数」纪律相悖）。
+ * 什么状态」的常驻读数，与消耗/速度那类**计量数据**不同——计量数据侧栏收起时必须仍可见，
+ * 状态灯则属于面板内的身份信息，单处显示即可，不在状态条重复一份（两处同时亮灯会在同一
+ * 时刻给出两个读数，与上面条/字的「同一读数」纪律相悖）。
  *
  * 设计约束：
  *   ① 纯视图——不订阅 AgentLoop，所有数据由 ChatSessionPage 接线后调公开 setter 推入；
@@ -69,9 +70,10 @@ public:
     /// s17 P1 观测面：定时任务台账快照 [{id, cron, prompt, recurring, durable,
     /// pendingDelivery, lastFired}]（CronSchedulerManager::ledgerSnapshot）；空台账整节隐藏
     void setCronJobs(const QJsonArray& jobs);
-    /// 上下文占用**条**：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0 画）。
-    /// 本节只画条不写数——数字在 ChatStatusStrip 单行；比例走 UsageTokens::usageRatio 单一实现，
-    /// 两处不会给出不同读数。tooltip 写口径边界（估算会被后续回读覆盖、不含压缩自身开销）。
+    /// 上下文占用**条 + 数字**：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时
+    /// 条按 0 画、数字按 0% 显）。比例走 UsageTokens::usageRatio 单一实现，一次计算喂条与
+    /// 数字两个视图，不会给出两个读数。数字空账纪律：首个读数到达前整段隐藏。
+    /// tooltip 写口径边界（估算会被后续回读覆盖、不含压缩自身开销）。
     void setContextUsage(qsizetype usedTokens, qsizetype limitTokens);
     /// 运行状态灯（AgentLoop::runningChanged 转发）
     void setRunning(bool running);
@@ -92,8 +94,9 @@ private:
     QToolButton*      m_hideBtn = nullptr;
     QLabel*           m_titleLabel = nullptr;   // 会话标题
     QLabel*           m_modelLabel = nullptr;   // 模型名（muted 小字）
-    SidebarSection*   m_contextSection = nullptr;   // 「上下文」节：只有占用条
-    ContextMeter*     m_contextMeter = nullptr;     // 条本体（数字在状态条，本节不写数）
+    SidebarSection*   m_contextSection = nullptr;   // 「上下文」节：占用条 + 精确数字行
+    ContextMeter*     m_contextMeter = nullptr;     // 条本体（比例读数）
+    QLabel*           m_contextNumbers = nullptr;   // 数字行（精确读数；空账隐藏，首个读数即显）
     SidebarSection*   m_statusSection = nullptr;    // 「状态」节：三态灯整盏在此（不在状态条）
     StatusRow*        m_statusRow = nullptr;        // 灯本体（圆点 + 文案）
     SidebarSection*   m_todoSection = nullptr;

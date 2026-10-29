@@ -156,6 +156,16 @@ bool AgentLoop::loadSavedHistory(QString *error)
     flushOrphans(); // 数组结束：处理最后一段 assistant
 
     m_messages = rebuilt;
+    // 会话回合数播种（底部状态条「第 N 轮」）：重启恢复若不播种，恢复出来的会话会一律
+    // 显示「第 1 轮」——那是撒谎（明明已经聊了十轮）。以重建后的历史里 role=user 条数为准，
+    // 下一句用户发言经 run() ++ 即接上实时计数。
+    // 已知偏差（刻意接受，不为本读数改 history.json schema 加计数字段）：压缩改写历史后
+    // 存量 user 条数少于真实开过的回合数，此时读数偏小——口径边界已写进 getter 头注释与
+    // UI tooltip；孤儿占位只补 tool 消息、不产 user，故不影响本计数
+    m_userTurns = 0;
+    for (const QJsonObject &m : std::as_const(rebuilt))
+        if (m.value(QStringLiteral("role")).toString() == QLatin1String("user"))
+            ++m_userTurns;
     rebuildSystemPromptMessage(); // 按恢复后的 workDir/会话根/技能目录重建 [0]（修1 静态化）
     // 修4：恢复会话 = 历史整体改写，prompt_tokens 锚作废（回退本地全量估算，下次 usage 重锚）
     m_tokenAnchor = -1;

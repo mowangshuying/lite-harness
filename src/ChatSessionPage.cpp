@@ -88,6 +88,11 @@ void ChatSessionPage::buildLayout()
     m_noticeBar->setMinimumWidth(0);
     m_noticeBar->setIsClosable(true);
     m_noticeBar->setIsOpen(false);
+    // FluInfoBar 构造里 m_isOpen 初值即 false，上面那句会走「状态相同早退」分支，
+    // 永远触发不了淡出末尾的 hide()——而构造器自己也不 hide，子 widget 默认可见，
+    // 于是从未弹过通知的新会话页面会挂一条空内容的条在顶部。显式收口一次；
+    // 后续 showNotice 走 setIsOpen(true) 自带 show()，不受此 hide 影响。
+    m_noticeBar->hide();
     m_noticeRow = makeCenteringRow(m_noticeBar, leftColumn, &m_noticeRowLayout);
     vMainLayout->addWidget(m_noticeRow);
 
@@ -154,10 +159,11 @@ void ChatSessionPage::buildLayout()
     m_inputEdit = new ChatMsgEdit(m_inputSection);
     sectionLayout->addWidget(m_inputEdit);
 
-    // 输入框下方状态条：承载上下文占用**数字**/消耗/速度三段文字（纯视图，数据仍由本页
-    // 接线经 setter 推入；侧栏收起时照样显示——这是它留在输入组下方的理由）。
-    // 占用**条**与「运行状态」三态灯仍在侧栏：条与数字是同一读数的两种画法，灯是面板
-    // 身份信息，两处同时亮会给出两个读数（见 SessionSidebar.h / ChatStatusStrip.h）
+    // 输入框下方状态条：承载轮步/消耗/速度三段文字（纯视图，数据仍由本页接线经 setter
+    // 推入；侧栏收起时照样显示——这是它留在输入组下方的理由）。
+    // 占用**条**与占用**数字**、「运行状态」三态灯都在侧栏：条与数字是同一读数的两种画法，
+    // 一次 usageRatio 同时喂两处（数字随条迁入面板是用户裁决，代价是收起侧栏时一并不可见，
+    // 见 SessionSidebar.h / ChatStatusStrip.h）
     m_statusStrip = new ChatStatusStrip(m_inputSection);
     sectionLayout->addWidget(m_statusStrip);
 
@@ -1184,8 +1190,8 @@ void ChatSessionPage::applyColumnWidth()
     }
 }
 
-// 上下文占用快照 → 底部状态条（数字/消耗/速度）+ 侧栏「上下文」节（条）。刷新时机（全是低频点，
-// 刻意不接 textDelta/thinkingDelta 高频流）：
+// 上下文占用快照 → 侧栏「上下文」节（条+数字）+ 底部状态条（轮步/消耗/速度）。刷新时机
+// （全是低频点，刻意不接 textDelta/thinkingDelta 高频流）：
 //   ① 用户消息入历史后（startAssistantStream）——发送即见抬升，不必等整回合；
 //   ② 每个工具结果到达（toolOutputReady，含 compact 卡片）——多轮 ReAct 途中逐轮跟手；
 //   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
@@ -1198,9 +1204,8 @@ void ChatSessionPage::refreshContextUsage()
         return;
     const qsizetype used = m_agentLoop->estimatedContextTokens();
     const qsizetype limit = AgentConst::contextTokenBudget();
-    // 数字给状态条单行，条给侧栏「上下文」节——两处共用 UsageTokens::usageRatio 的同一实现，
-    // 不会在同一时刻给出两个读数（见 SessionSidebar.h 的分工说明）
-    m_statusStrip->setContextUsage(used, limit);
+    // 占用（条+数字）整体推侧栏「上下文」节——比例走 UsageTokens::usageRatio 单源，
+    // 条与数字同一时刻同一读数（见 SessionSidebar.h 的分工说明）
     if (m_sidebar)
         m_sidebar->setContextUsage(used, limit);
     // 消耗累计同批推入（同一刷新时机、同一数据源，不再另起信号链）
@@ -1208,6 +1213,15 @@ void ChatSessionPage::refreshContextUsage()
     // 输出速度同批推入（同一刷新时机、同一数据源）：刷新点已覆盖 usage 到达——usage 恒先于
     // messageFinished，工具轮在 toolOutputReady 补刷、文本轮在 finished/error 终局刷新
     m_statusStrip->setOutputRate(m_agentLoop->outputRate());
+    // 轮步读数同批推入（复用本函数的四个低频刷新点，不另起信号链、不接 textDelta 高频流）。
+    // 步数在 toolOutputReady 那一拍跟手（延一帧的 singleShot 与占用条同栈，此时
+    // m_toolIterations 已在 continueWithToolResults 前 ++ 完成）；回合数在
+    // startAssistantStream（用户消息已入历史、run() 已自增）即抬升，发送即见「第 N 轮」。
+    // 上限走 AgentConst::maxToolIterationsValue() 现读喂进 tooltip——本类是纯视图不读
+    // settings.ini，与上面 contextTokenBudget() 同批取值同型纪律
+    m_statusStrip->setTurnStep(m_agentLoop->userTurnCount(),
+                               m_agentLoop->toolIterationCount(),
+                               AgentConst::maxToolIterationsValue());
 }
 
 // 抄宿主 LiteHarness 的标题派生规则（首条用户消息 simplified，超 12 字截断加省略号，

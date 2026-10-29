@@ -288,6 +288,11 @@ void AgentLoop::run(QString userMessage)
     // 用户发言 = 恢复团队门铃消费（stop() 的抑制只覆盖「停止后到下一次发言」这段窗口）
     m_teamWakeSuppressed = false;
     m_toolIterations = 0;
+    // 会话回合数入账（底部状态条「第 N 轮」）：本行位于 goal 四类分流之后，故 /goal 状态/
+    // 清除/拒绝三种零模型回显**不**计数——它们没开回合（见 run() 头部 goal 注释）。
+    // cron / 团队事件 / 后台唤醒同走 run()，一并计入：口径是「引擎开了几个回合」，
+    // 不是「用户敲了几次回车」，UI tooltip 必须把这句写出来（见 ChatStatusStrip.cpp）
+    ++m_userTurns;
     // 轮次上限入口快照（第十二轮）：每回合读一次设置值，本回合内所有判定与报错文案
     // 统一用 m_maxToolIterations——与压缩上限 prepareAsync 入口单取同型纪律，
     // 防回合进行中设置页改值造成同一回合前半/后半用不同上限的撕裂

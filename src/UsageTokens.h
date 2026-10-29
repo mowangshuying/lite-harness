@@ -44,7 +44,7 @@ inline qint64 numberOrZero(const QJsonObject &object, const QString &key)
 }
 
 // 上下文占用率：used / limit。limit<=0 返回 0，上界钳到 1.0（与 hitRatio 同一条钳法）。
-// 单独成函数是为了让这条算术只有**一个实现**：状态条的数字与侧栏的占用条分属两个视图，
+// 单独成函数是为了让这条算术只有**一个实现**：侧栏「上下文」节的占用条与数字行分属两个视图，
 // 各自算就会在同一时刻给出两个读数（一个显示 100%、另一个画满 120% 宽）。
 inline double usageRatio(qsizetype used, qsizetype limit)
 {

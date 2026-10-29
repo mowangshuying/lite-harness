@@ -142,8 +142,8 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `CollapsibleBlock` | 折叠骨架基类：手动几何头部 + `contentHeight` 属性动画（300ms OutCubic）+ live 圆点轮播；构造禁调虚函数 | `ThemeAware` |
 | `ThinkingBlock` / `ToolBlock` / `TodoCard` | 思考折叠块 / 工具执行卡（终态 + 3 种 live 形态）/ 任务清单时点快照卡 | `CollapsibleBlock`；`ToolBlock` 另用 `ToolTagKind`、`ToolNames`、`AgentConstants` |
 | `PermissionCard` | 权限审批卡：待决主体 → 单行「已允许/已拒绝」留痕；发 `userResolved(bool)` | `ThemeAware`、`ToolTagKind` |
-| `SessionSidebar` | 会话右栏信息面板（标题/模型/工作目录/上下文占用条/状态灯/任务清单/团队名册/当前目标/后台任务/定时任务/页脚版本；后三节为 s17 P1 观测面，空态整节隐藏）；**纯视图，不订阅 `AgentLoop`**，全部由 `ChatSessionPage` 调 setter 推入 | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`（仅形参类型与 `usageRatio` 比例算术） |
-| `ChatStatusStrip` | 输入框正下方的常驻状态条（**一行三段文字**：占用数字/消耗段/速度段）——s16.1 从侧栏拆出，作为输入组末位成员同栏宽；占用**条**与「运行状态」三态灯归侧栏，本组件不复制一份灯；**纯视图，不订阅 `AgentLoop`** | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`/`StreamRate.h`（仅形参类型，算术仍在纯头） |
+| `SessionSidebar` | 会话右栏信息面板（标题/模型/工作目录/上下文占用条+精确数字行（`#ctxNumbers`）/状态灯/任务清单/团队名册/当前目标/后台任务/定时任务/页脚版本；后三节为 s17 P1 观测面，空态整节隐藏）；**纯视图，不订阅 `AgentLoop`**，全部由 `ChatSessionPage` 调 setter 推入 | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`（仅形参类型与 `usageRatio` 比例算术） |
+| `ChatStatusStrip` | 输入框正下方的常驻状态条（**一行三段文字**：轮步段/消耗段/速度段）——s16.1 从侧栏拆出，作为输入组末位成员同栏宽；占用**条**与占用**数字**（数字按用户裁决自本行首段迁回侧栏「上下文」节，收起侧栏时随条一并不可见=明示代价）与「运行状态」三态灯归侧栏，本组件不复制一份灯；**纯视图，不订阅 `AgentLoop`、也不读 settings.ini**（轮步段的步数上限由页面传入） | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`/`StreamRate.h`（仅形参类型，算术仍在纯头） |
 | `ChatMsgEdit` / `SendMsgButton` | 底部输入框（`sendMessage` / `stopRequested` / `modelChanged` + `setTurnBusy`）/ 圆形发送-停止两态钮 | `AgentConstants`、`LayoutConstants`、`ThemeAware` |
 | `WorkDirPathBar` / `FluentInputDialog` / `NavItem` | 只读路径条（中间省略 + tooltip 全路径）/ Fluent 风格单行模态框 / 导航项最小派生（补 `removeChildItem`）+ `NavKey` 常量 | 仅 Qt / FluentUI |
 
@@ -339,9 +339,9 @@ AgentLoop::estimatedContextTokens()：
     锚路径**不再另计 overhead**——prompt_tokens 已含 system/tools/注入的发送点真值
   · 锚失效（首回合未回读 / 压缩改写历史 / 恢复 / 换 workDir / 换目录）→ 本地全量
     CompactManager::estimateTokens(m_messages)（含 system[0]）+ tools schema + 注入块
-消费三处，同一个函数：ChatSessionPage::refreshContextUsage → ChatStatusStrip::setContextUsage（数字）
-  与 SessionSidebar::setContextUsage（条）——比例算术单源 UsageTokens::usageRatio，两处同一时刻
-  不会给出两个读数；
+消费三处，同一个函数：ChatSessionPage::refreshContextUsage → SessionSidebar::setContextUsage
+  （条与条下数字同节并置，数字自 ChatStatusStrip 迁入）——比例算术单源 UsageTokens::usageRatio，
+  一次计算喂两个视图，同一时刻不会给出两个读数；
 AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBudget()−overhead）
 字符→token 折算单源 AgentConst::estimateTokens，基准 kCharsPerTokenBudget=4（见 AGENTS「数据与路径」）
 
@@ -474,7 +474,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 版本号 | CMake `project VERSION`（数字段 17.1）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s17.1；lcc 阶段名仍是 s17，补丁位见 AGENTS「发布」节）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
-| 上下文占用（侧栏占用条 + 状态条数字，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
+| 上下文占用（侧栏占用条 + 条下精确数字行，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
 | 上下文消耗（状态条消耗行；与上面的占用语义正交，勿混用） | `AgentLoop::sessionUsageTotals()` → `UsageTokens.h`（`fromUsage` 解析 + `Totals` 只增累加 + `hitRatio`/`uncachedPrompt` 派生）。**部分口径**：只含主循环与队友回合，不含压缩/记忆/workflow（`AsyncRequest` 无 usage 通道）——UI tooltip 同步声明该边界 |
 | 输出速度（状态条速度行；与消耗行同层级、语义正交，勿混用） | `AgentLoop::outputRate()` → `StreamRate.h`（`Window`/`makeWindow` 判据 + `Meter` 只增账）。**分母 = 生成窗口（首个增量 → usage 末帧），不含首字延迟与工具执行时间**；TTFT 单独记录、单独显示；聚合是 Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均。**口径比消耗账更窄**：仅主循环请求（队友增量不经宿主信号面、压缩/记忆/workflow 无 usage 通道）——UI tooltip 同步声明该边界 |
 | 工具名清单（27 个 = 18 基础 + 7 团队 + 1 MCP 入口 connect_mcp + 1 编排入口 workflow（s16）；`submit_plan` 不入表） | `ToolNames.h`（schema / handler 表 / 权限门 / 子代理白名单 / ToolBlock 标题 / 回归清单核对项全部引用它） |
@@ -510,7 +510,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `SettingsPage.cpp` 802、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `CompactManager.cpp` 744（本轮计量抽纯头后转发 + 两段循环改增量，+19）、`AgentLoopTeam.cpp` 676（s13 接线 + s15 异步 fail-closed）、
      `SessionSidebar.cpp` 576（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节）、
-     `ChatStatusStrip.cpp` 260（s16.1 新晋，承接占用数字/消耗/速度三段文字；状态灯随后搬回侧栏）（`src/` 合计 29049 行，s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 226）。
+     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 29049 行，s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 226）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 669、
      `LiteHarness.cpp` 572、`ToolBlock.cpp` 562 未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
@@ -628,7 +628,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 单元测试 → `ctest --test-dir build -C Release --output-on-failure` 全绿（产物 `build/tests/lite-harness-tests.exe`，需 Qt bin 在 PATH 供 `Qt6Core.dll`）；测试 exe **不进** CPack 包（输出目录与 `bin/` 分开，staging 只取 `bin/`）
 - [ ] `write_file` 行尾保真 → 覆盖已存在的 CRLF 文件时沿用 CRLF
 （模型给的 content 天然是 LF，直写会翻转整文件行尾、产出全文件 diff 噪声）；新建文件按 content 原样落盘不臆造行尾；主导行尾只读开头 `kEndingProbeBytes`（64KB）窗口判定，已知边界：窗口内无换行的超长单行文件判为 LF
-- [ ] 上下文占用计量（token 锚定）→ 端点回 `usage.prompt_tokens` 时侧栏占用条与状态条数字取锚值 + 锚后增量（**锚路径不另计 overhead**，prompt_tokens 已含 system/tools/注入真值）；端点不回 usage（部分兼容端点）→ 回落本地全量估算，占用条仍单调合理；压缩改写历史后锚作废（`m_historyRewrittenSinceAnchor`）→ 下一回合重新锚定，不得沿用旧锚
+- [ ] 上下文占用计量（token 锚定）→ 端点回 `usage.prompt_tokens` 时侧栏占用条与条下数字行取锚值 + 锚后增量（**锚路径不另计 overhead**，prompt_tokens 已含 system/tools/注入真值）；端点不回 usage（部分兼容端点）→ 回落本地全量估算，占用条仍单调合理；压缩改写历史后锚作废（`m_historyRewrittenSinceAnchor`）→ 下一回合重新锚定，不得沿用旧锚
 - [ ] 任务图 6 工具行为冒烟（不止静态名单核对）→ `create_task` 落 `<会话根>/.task/task_<hex8>.json` 一任务一文件、`list_tasks`/`get_task` 每次直读磁盘（外部改文件即时可见）、`update_task` 加依赖用返回的 task id、`claim_task` 仅对依赖已完成的 pending 成功、`complete_task` 后状态翻转且不得重复完成他人任务；任一失败一律折叠为工具输出字符串，不抛异常
 - [ ] （**s16** 生产路径台账接线，**专防接线回归**）真实会话里直接调 `workflow`（如 `name=review-changes`）→ **不得**报 `Error: workflow store dir is not configured`；跑过后 `<会话根>/.workflows/` 出现且含 `<runId>.json` / `<runId>.journal.jsonl` / `<runId>.output.json` / `last_run.txt` 四件套。成因：`WorkflowManager::setStoreDir` 是 push 形、宿主 AgentLoop 是唯一注入点，而 workDir/会话 ID 自 s12 起改走构造注入（init-list 定值、构造体**不再**调用 `setWorkDir`）——s16 落地时把首推登记在 `setWorkDir` 内并注「构造体首调本函数即完成首推」，该前提已失效，两个推送点生产零调用方（`ChatSessionPage.cpp` 的 `m_sidebar->setWorkDir` 是 `SessionSidebar` 同名方法，非本函数），workflow 工具在生产路径整体不可用。**单测证明不了这条**：`tst_workflowmanager/tst_workflowruntime` 共 20 处直接 `mgr.setStoreDir(...)`，绕过注入面而全绿（AgentLoop 链 QOpenAi/FluentUI，按 CMakeLists 的 QtCore-only 清单纪律进不了测试目标），故接线只能在冒烟运行验
 - [ ] （**s16** 单飞卫兵）workflow 在途运行时第二个 `workflow` 调用 → 立即回填 `Error: another workflow run is already active` 判红标，不打断在途运行、不弹卡不挂起队列
@@ -669,10 +669,11 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 滚动条槽色随主题（`LiteHarnessScrollBarAlign.qss` 经 `qproperty-trunkBackgroundColor`）→ 深色主题下 FluScrollBar 槽不再是 FluentUI 默认色
 - [ ] 标题栏底色 → StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置背景透明透出窗口本体色；light 前景黑、其余白，高度 32px
 - [ ] 覆盖机制读码警示 → 覆盖 FluentUI 取色只准 `appendOwnSheetOverride` 往**控件自身样式表**幂等追加（marker `/*lh-nav-align*/` 截旧防增长）；若出现窗口级复合选择器写法即回归（像素实证无效）；`ThemeAware::bind` extraRefresh 的「首刷同步 + `singleShot(0)` 重放」双保险仍在（抵消 FluentUI 批处理重写）
-- [ ] 会话侧栏 → 标题/模型/工作目录/上下文占用条/状态灯/待办清单/团队名册/页脚版本随回合实时刷新（全部由 `ChatSessionPage` 调 setter 推入，`SessionSidebar` 自身不订阅 `AgentLoop`）；「上下文」节只剩**条**（精确数字在输入框下方的 `ChatStatusStrip`），「状态」三态灯整盏留在侧栏（s16.1 曾下移、随后按用户要求搬回）；收起后右上角**浮动展开钮**出现且随窗口 resize 对位（页面直接子件、手动几何 + `raise()`），展开钮与侧栏互斥不同时可见；显隐偏好落 settings.ini 键 `sidebarVisible`，重启后按上次状态恢复首帧（读值放在布局收尾，令首帧即按最终态钳宽）；三主题下 `SessionSidebar.qss` 与 `ChatStatusStrip.qss` 各自生效、无残色
+- [ ] 会话侧栏 → 标题/模型/工作目录/上下文占用条/状态灯/待办清单/团队名册/页脚版本随回合实时刷新（全部由 `ChatSessionPage` 调 setter 推入，`SessionSidebar` 自身不订阅 `AgentLoop`）；「上下文」节是**条 + 条下精确数字行**（数字原在输入框下方的 `ChatStatusStrip`，按用户裁决迁入面板；收起侧栏时条与数字一并不可见，这是明示取舍），「状态」三态灯整盏留在侧栏（s16.1 曾下移、随后按用户要求搬回）；收起后右上角**浮动展开钮**出现且随窗口 resize 对位（页面直接子件、手动几何 + `raise()`），展开钮与侧栏互斥不同时可见；显隐偏好落 settings.ini 键 `sidebarVisible`，重启后按上次状态恢复首帧（读值放在布局收尾，令首帧即按最终态钳宽）；三主题下 `SessionSidebar.qss` 与 `ChatStatusStrip.qss` 各自生效、无残色
 - [ ] s17 P1 侧栏观测面三节 → 「当前目标」在 goal active 时显形于状态灯下方（条件行 + 拦阻 x/cap 计数 + 轮次/消耗汇总；goal 终局或 `/goal clear` 后整节消失）；`run_in_background` 起账即现「后台任务」节（●运行中/✓已完成/✗失败，收割离账后清空隐藏）；`schedule_cron` 登记即现「定时任务」节（到期待交付行 amber 高亮，cancel 即离账隐藏）；三节对单轮问答会话全程不可见（空态整节隐藏）；hover 行→tooltip 给全文（goal 条件/命令原文/prompt 全文+flags）；三主题下 failed 红点取色各自生效
+- [ ] 状态条轮步行（`#ctxTurnStep`，s17.1 新增）→ 行形「第 N 轮 · 第 M 步」，N=**用户回合**数（`AgentLoop::userTurnCount()`，`run()` 入口自增、重启恢复按历史 `role=user` 条数播种）、M=该回合内**工具调用轮次**（`toolIterationCount()`=`m_toolIterations`，每回合归零）；**术语三处不同义必须核对**：本段「轮」=用户回合，而设置页「单轮最大调用次数」/引擎报错「工具调用轮次超过上限（%1 轮）」的「轮」=本段的「步」，侧栏 goal 节「轮次 %1」=goal 续跑计数——tooltip 首条【术语提醒】钉死三者，缺这句即回归；空账判据**与另两段不同**：全新会话（`turns<=0`）整段隐藏，而 `steps==0` 是合法读数照实显示「第 0 步」（本回合没调工具就答完），隐藏反而把「第 3 轮」读成「第 3 轮什么都没干」；到账时机不同批——本段随 `run()` 入口即显，消耗/速度等首次 usage，故首条读数常是轮步段（真实形态非故障）；步数上限由页面传入（视图不读 settings.ini），撞上限的报错文案与设置页数值须一致；三主题同色阶（次要信息，不与占用条抢焦点）
 - [ ] 状态条速度行（`#ctxRate`）→ 本轮数字取单窗口速率、平均取 Σtokens ÷ ΣgenerationMs（**不是**各轮速率的算术平均——同一批窗口两口径差 5 倍，肉眼看不出但含义不同）；tooltip 必须写明分母是生成窗口（首个增量 → usage 末帧，不含首字延迟与工具执行时间）：分母不写，同一个数字会被读成「模型慢」而真相是「等了 8 秒才见第一个字」；空账（无有效窗口）整行隐藏——显示「0 tok/s」会被读成「模型慢」，与「还没拿到能定窗的数据」含义相反；纯 tool_calls 回合（delta 只有 tool_calls 字段，不触发 delta 信号）无增量起点 → 窗口作废、不进账；三主题下 `#ctxConsumption, #ctxRate` 同色阶（次要信息，不与占用条抢焦点）
-- [ ] 输入框下方状态条（`ChatStatusStrip`）→ 与输入框**同栏宽**（作为 `m_inputSection` 末位成员由 `applyColumnWidth` 钳制，自身不设 `maximumWidth`，否则与消息列/输入框脱栏）；侧栏收起时三段计量文字仍可见（这正是它留在输入组下方的目的）；**状态灯不在本组件**——三态灯单源在侧栏「状态」节，两处同时亮会在同一时刻给出两个读数；空账纪律沿用消耗段/速度段——无数据整段隐藏不显示 0，**三段全空时整条隐藏**（`applyEmptiness`，输入框下不留空行）；三主题下 `ChatStatusStrip.qss` 各自生效、无残色，且 `#ctxTrack`/`#ctxFill`/`#status*` 只在 `SessionSidebar.qss` 定义、`#ctxNumbers`/`#ctxConsumption`/`#ctxRate`/`#stripRow` 只在 `ChatStatusStrip.qss` 定义（同一 objectName 两处定义会打架）
+- [ ] 输入框下方状态条（`ChatStatusStrip`）→ 与输入框**同栏宽**（作为 `m_inputSection` 末位成员由 `applyColumnWidth` 钳制，自身不设 `maximumWidth`，否则与消息列/输入框脱栏）；侧栏收起时轮步/消耗/速度三段文字仍可见（这正是它留在输入组下方的目的；占用条与占用数字按用户裁决同归侧栏，收起时一并不可见是明示代价）；**状态灯不在本组件**——三态灯单源在侧栏「状态」节，两处同时亮会在同一时刻给出两个读数；空账纪律**分段判据**——消耗/速度无回读数据即隐藏，轮步段看「开过回合没有」（`turns<=0` 隐藏）而 `steps==0` 照实显示，**三段全空时整条隐藏**（`applyEmptiness`，输入框下不留空行）；三主题下 `ChatStatusStrip.qss` 各自生效、无残色，且 `#ctxTrack`/`#ctxFill`/`#ctxNumbers`/`#status*` 只在 `SessionSidebar.qss` 定义、`#ctxTurnStep`/`#ctxConsumption`/`#ctxRate`/`#stripRow` 只在 `ChatStatusStrip.qss` 定义（同一 objectName 两处定义会打架）
 
 ### 七、P2 i18n
 
@@ -837,9 +838,12 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 ### 9. 会话侧栏（SessionSidebar）与输入框下方状态条（ChatStatusStrip）
 
-- 与气泡时间线**互补**：气泡流是"发生过什么"（会滚走），侧栏是"现在什么状态"（常驻）——标题 / 模型 / 工作目录 / 上下文占用条 / 状态灯 / 待办清单 / 团队名册 / 当前目标 / 后台任务 / 定时任务 / 页脚版本（后三节 s17 P1 观测面）。
+- 与气泡时间线**互补**：气泡流是"发生过什么"（会滚走），侧栏是"现在什么状态"（常驻）——标题 / 模型 / 工作目录 / 上下文占用条+数字行 / 状态灯 / 待办清单 / 团队名册 / 当前目标 / 后台任务 / 定时任务 / 页脚版本（后三节 s17 P1 观测面）。
 - **纯视图**：不订阅 `AgentLoop`，全部由 `ChatSessionPage` 调 setter 推入（`setSessionMeta`/`setWorkDir`/`setContextUsage`/`setRunning`/`setPermissionPending`/`setTodos`/`setTeammates`/`setGoalState`/`setBackgroundTasks`/`setCronJobs`）。P1 三节走「空态整节隐藏」名册先例（无关会话零扰动）；数据口为 `AgentLoop` 1s tick 签名边沿三广播（载荷即 `BackgroundTasksManager::ledgerSnapshot` / `CronSchedulerManager::ledgerSnapshot` / `goalStateSnapshot`），页面直连侧栏 setter 不回拉引擎；「当前目标」节刻意**不含运行时长**——elapsed 进快照会让 tick 签名秒秒变、静息期也每秒重绘。
-- 「上下文占用 / 消耗 / 速度」的**文字读数** s16.1 起由输入框正下方的 `ChatStatusStrip` 承载——侧栏可收起，而这些计量数据必须常驻，故随输入框走；数据仍取内核单源口径（`estimatedContextTokens()` / `sessionUsageTotals()` / `outputRate()`），UI 不另算一套，算术仍在 `UsageTokens.h` / `StreamRate.h` 纯头。占用**条**（`#ctxTrack`/`#ctxFill`）留在侧栏「上下文」节：条是比例画法、数字是精确画法，同一时刻两处必须给同一个数，所以比例算术只在 `UsageTokens::usageRatio` 实现一次、两个视图共用。
+- **轮步段（`#ctxTurnStep`，s17.1 新增）读的是「进行态定位」而非成本**：行形「第 N 轮 · 第 M 步」，N=本会话开过的**用户回合**数（`AgentLoop::userTurnCount()`，`run()` 入口自增、`loadSavedHistory` 按历史 `role=user` 条数播种），M=该回合内已发起的**工具调用轮次**（`AgentLoop::toolIterationCount()`，即引擎撞上限判定用的 `m_toolIterations`，每回合归零）。
+  本仓「轮」字有**三处不同义**，是本段最大的坑：状态条的「轮」=用户回合、设置页「单轮最大调用次数」与引擎报错「工具调用轮次超过上限（%1 轮）」的「轮」=工具调用轮次（=本段的「步」）、侧栏 goal 节「轮次 %1」=goal 续跑计数。故 tooltip 首条必须是【术语提醒】把三者钉死，否则用户会拿本段的「轮」去对设置页的上限数。
+  两条与另两段不同的判据：① **空账看「开过回合没有」**（`turns<=0` 整段隐藏），不像消耗/速度看「有没有回读数据」——`steps==0` 是合法读数（本回合一次工具没调就直接答完）照实显示，隐藏会让「第 3 轮」孤零零被读成「第 3 轮什么都没干」；② **到账时机不同批**，本段随 `run()` 入口即到账而消耗/速度等首次 usage，故整条最先出现的常是本段，这是「引擎刚开工、账还没回来」的真实形态而非故障。步数上限由页面传入（视图不读 settings.ini，与「不订阅 AgentLoop」是同一半纪律的两面）；已知偏差：历史被压缩改写后播种数偏小，刻意不为该读数动 `history.json` schema。
+- 「轮步 / 消耗 / 速度」的**文字读数**常驻在输入框正下方的 `ChatStatusStrip`（轮步段 s17.1 新增）——侧栏可收起，而这三段必须常驻，故随输入框走；「上下文占用」的条与数字则同归侧栏「上下文」节（数字原住状态条首段，按用户裁决迁入面板，收起侧栏时随条一并不可见=明示取舍而非疏漏）。数据仍取内核单源口径（`estimatedContextTokens()` / `sessionUsageTotals()` / `outputRate()`），UI 不另算一套，算术仍在 `UsageTokens.h` / `StreamRate.h` 纯头。占用**条**（`#ctxTrack`/`#ctxFill`）与数字行（`#ctxNumbers`）并置在同一节：条是比例画法、数字是精确画法，同一时刻两处必须给同一个数，所以比例算术只在 `UsageTokens::usageRatio` 实现一次、一次计算喂两个视图。
 - 状态灯三态合一：运行中 / 待决权限（审批卡挂起时点亮，提示"在等你"）/ 空闲，**整盏在侧栏「状态」节**（s16.1 曾随两节下移到状态条，随后按用户要求搬回）：灯是面板的身份信息而非计量读数，搬回后状态条不再复制一份，避免同一时刻两处亮灯给出两个读数；`setRunning`/`setPermissionPending` 只写缓存态，归并规则（waiting 优先于 running）在 `applyRunState` 单点实现。
 - 收起后由右上角**浮动展开钮**恢复：该钮是页面直接子件、手动几何 + `raise()`，`resizeEvent` 与 `setSidebarVisible` 都重摆位（保证出现瞬间即对位）；偏好落 settings.ini 键 `sidebarVisible`，读值放在布局收尾令首帧即按最终态钳宽。
 

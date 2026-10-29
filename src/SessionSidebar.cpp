@@ -1,7 +1,7 @@
 #include "SessionSidebar.h"
 #include "ThemeAware.h"
 #include "LayoutConstants.h"
-#include "UsageTokens.h"   // 占用比例算术（usageRatio）——状态条数字与本节占用条共用同一实现
+#include "UsageTokens.h"   // 占用比例算术（usageRatio）——本节数字与占用条共用同一实现（一次计算喂两处）
 
 #include <QApplication>
 #include <QFontMetrics>
@@ -176,9 +176,10 @@ private:
 // ============================================================================
 // ContextMeter —— 「上下文」节的占用条（纯图形，无文字）。
 //
-// 数字不在这里：精确读数（≈used / limit token · %）在输入框下方的 ChatStatusStrip 单行，
-// 本节只画比例。两处必须给同一个数，所以比例算术只在 UsageTokens::usageRatio 实现一次，
-// 本类与状态条都调用它——各自除一遍会在同一时刻给出两个读数。
+// 数字不在条上：精确读数（≈used / limit token · %）是条正下方的独立标签
+// （m_contextNumbers，自 ChatStatusStrip 迁入），条与数字同节并置。同一时刻两处
+// 必须给同一个数，所以比例算术只在 UsageTokens::usageRatio 实现一次，一次计算
+// 同时喂条宽与数字，不各自除一遍。
 // 取色走三主题 SessionSidebar.qss 的 #ctxTrack / #ctxFill（含 level="warn" 变体）。
 // ============================================================================
 class ContextMeter : public QWidget {
@@ -233,9 +234,9 @@ private:
 // StatusRow —— 「状态」节的运行状态灯：圆点 + 文案，state 属性（idle|running|
 // waiting）驱动整行 QSS 着色。
 //
-// 只画灯不画数：占用数字/消耗/速度三段文字在输入框下方的 ChatStatusStrip 单行
-// （见 ChatStatusStrip.h）。本行刻意**不**复用那个多段行——把灯与数塞进同一行会
-// 让侧栏与状态条同时各有一份读数，而这两处的可见性不同（侧栏可收起）。
+// 只画灯不画数：占用条与数字在上方「上下文」节，消耗/速度在输入框下方的 ChatStatusStrip
+// 单行（见 ChatStatusStrip.h）。灯行与两类读数各行其位——把灯与数塞进同一行会让面板
+// 身份信息（灯）与计量读数抢焦点。
 //
 // 描边已撤：QSS 单侧 border 画在控件矩形内侧，会让该行圆点与文字比相邻行右移
 // 3px（行 setContentsMargins 8,0,8,0），强调改由淡染底 + 加粗 + 琥珀色承载；
@@ -386,15 +387,20 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     iv->setContentsMargins(0, 4, 0, 4);
     iv->setSpacing(10);
 
-    // ① 上下文占用条（只有条：精确数字在输入框下方的状态条单行）。不可折叠——一节一行
-    //    没有可折叠的内容；count 留空（本节再写一遍数会给出两处读数），口径写进条的 tooltip。
+    // ① 上下文占用（条 + 精确数字行）。不可折叠——一节两行都是常驻读数，没有可折叠的
+    //    内容；count 留空（节头再写一遍数会给出两处读数），口径写进 tooltip。
     m_contextSection = new SidebarSection(tr("上下文"), inner);
     m_contextMeter = new ContextMeter(m_contextSection);
     m_contextSection->body()->addWidget(m_contextMeter);
+    m_contextNumbers = new QLabel(m_contextSection);
+    m_contextNumbers->setObjectName(QStringLiteral("ctxNumbers"));
+    // 空账纪律（随数字自状态条迁入）：首个读数到达前整段隐藏，不显示「0」骗人
+    m_contextNumbers->setVisible(false);
+    m_contextSection->body()->addWidget(m_contextNumbers);
     iv->addWidget(m_contextSection);
 
     // ② 运行状态灯（恒展开；三态合一 空闲/运行中/等待审批）。灯在本节、不在状态条：
-    //    状态条只承载数字/消耗/速度那类「收起侧栏也必须常驻」的计量数据，而灯是面板的
+    //    状态条只承载消耗/速度那类「收起侧栏也必须常驻」的计量数据，而灯是面板的
     //    身份信息——两处同时亮会在同一时刻给出两个读数（与上面条/字「同一读数」同纪律）。
     m_statusSection = new SidebarSection(tr("状态"), inner);
     m_statusRow = new StatusRow(m_statusSection);
@@ -716,16 +722,25 @@ void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens
 {
     if (!m_contextMeter)
         return;
-    // 比例算术只在 UsageTokens::usageRatio 实现一次：状态条的数字与本节的条分属两个视图，
+    // 比例算术只在 UsageTokens::usageRatio 实现一次：本节的条与数字分属两个视图，
     // 各自除一遍会在同一时刻给出两个读数（一个显示 100%，另一个画 120% 宽）。
-    m_contextMeter->setRatio(UsageTokens::usageRatio(usedTokens, limitTokens));
+    const double ratio = UsageTokens::usageRatio(usedTokens, limitTokens);
+    m_contextMeter->setRatio(ratio);
 
     const QLocale loc(QLocale::c());
-    // tooltip 写口径边界：条本身只说比例，不说分母是 settings.ini 字符串上限的派生值（/4），
+    // 数字行（精确读数，自 ChatStatusStrip 迁入本节节尾）：首个读数到达即显，空账期隐藏。
+    m_contextNumbers->setText(tr("≈%1 / %2 token · %3%")
+                                  .arg(loc.toString(usedTokens),
+                                       loc.toString(limitTokens),
+                                       QString::number(ratio * 100.0, 'f', 1)));
+    m_contextNumbers->setVisible(true);
+    // tooltip 写口径边界：读数只说「多大」，不说分母是 settings.ini 字符串上限的派生值（/4），
     // 也不说估算与压缩触发同源、会被后续回读覆盖——这两句决定读数能不能用来判断会不会被
-    // 压缩改写。精确数字在输入框下方的状态条单行，这里只给指向，不重复成一份独立读数。
-    m_contextMeter->setToolTip(tr("上下文占用条：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）；精确数字见输入框下方状态条。")
-                                   .arg(loc.toString(usedTokens), loc.toString(limitTokens)));
+    // 压缩改写。条与数字同节同口径共用一份 tooltip；数字已在条下，不再指向状态条。
+    const QString tip = tr("上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。")
+                            .arg(loc.toString(usedTokens), loc.toString(limitTokens));
+    m_contextNumbers->setToolTip(tip);
+    m_contextMeter->setToolTip(tip);
 }
 
 // 状态灯的两个推入口（纯视图纪律不破：本页不订阅 AgentLoop，running/permission 由

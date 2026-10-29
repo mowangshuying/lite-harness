@@ -158,7 +158,7 @@ private:
     QHash<QString, QPointer<ToolBlock>> m_liveTeammateCards;
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
-    ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（上下文占用数字/消耗/速度三段文字；状态灯在侧栏，见 SessionSidebar.h）
+    ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（轮步/消耗/速度三段文字；占用条+数字与状态灯在侧栏，见 SessionSidebar.h）
     // P1-9 通知条三件：条本体 + 自动淡出定时器 + 与消息列同栏宽的居中行布局。
     // 走「页面内常驻条」而非 FluentUI 的 FluInfoBarMgr 浮层：管理器把条做成父件上的
     // 绝对定位 toast，与本页「列宽手动钳制 + Ignored 行容器」的构图纪律冲突（会脱栏、

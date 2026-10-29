@@ -109,6 +109,17 @@ public:
     // AsyncRequest（无 usage 通道），都无从定窗。空账（无有效窗口）UI 整行隐藏，不显示「0」。
     const StreamRate::Meter &outputRate() const { return m_outputRate; }
 
+    // 会话回合数与本轮步数（底部状态条「第 N 轮 · 第 M 步」的数据口，纯只读、不产文案）：
+    // userTurnCount()=本会话开过多少个回合，run() 入口自增、磁盘恢复按历史 role=user 条数播种；
+    // toolIterationCount()=**当前回合内**已完成的工具调用轮次，与撞上限判定同源
+    // （m_toolIterations，run() 归零、AgentLoopRequest.cpp 两处 ++）。
+    // 口径边界（UI tooltip 必须同步声明，否则「第 3 轮」会被读成「3 次人工输入」）：
+    // ① 计数含自动开回合（cron / 团队事件 / 后台唤醒同走 run()），非纯人工回合数；
+    // ② 恢复播种数以 history.json 现存 role=user 条数为准——压缩改写历史后该数只反映
+    //    压缩窗口内的存量，与实时累计可能偏小（刻意不为本读数动 history.json schema）。
+    int userTurnCount() const { return m_userTurns; }
+    int toolIterationCount() const { return m_toolIterations; }
+
     // 权限门：收到 permissionRequired 后工具队列暂停，UI 取得用户裁决后调用本方法续跑
     // （allow=true 继续执行该工具调用；false 回填 "Permission denied"；无待决询问时忽略）
     void resolvePermission(bool allow);
@@ -538,6 +549,11 @@ private:
     bool m_memoryChainActive = false;
     bool m_memoryChainPending = false;
     int m_toolIterations = 0;        // 工具调用轮次计数
+    // 会话回合数（底部状态条「第 N 轮」的账）：run() 入口自增、loadSavedHistory 按历史
+    // role=user 条数播种。与 m_toolIterations 刻意分两名两名——本仓「轮」在设置页/报错文案
+    // 里指工具调用轮次（「工具调用轮次超过上限（%1 轮）」），侧栏 goal 节「轮次 %1」又是
+    // goal 续跑计数；三处不同义，故本账取名 userTurns 不用 rounds
+    int m_userTurns = 0;
     // 回合入口快照的轮次上限（第十二轮可设置项）：run() 每次读取一次，回合内判定与
     // 报错文案统一用本值——与压缩上限入口单取同型纪律，防回合进行中设置页改值导致
     // 前后判定分叉
