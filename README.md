@@ -86,7 +86,7 @@ ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s17-win64.zip`（约 54MB），解压后运行 `lite-harness-s17-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s17.1-win64.zip`（约 54MB），解压后运行 `lite-harness-s17.1-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
@@ -117,7 +117,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 ## 发布
 
-版本单源 = CMake `project VERSION`（数字段 `17`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17`）自动同名。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
+版本单源 = CMake `project VERSION`（数字段 `17.1`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17.1`）自动同名。补丁位 `.1` 沿用 `s13.1`/`s16.1` 先例：lcc 移植阶段仍是 `s17`，`s17.1` 是该阶段内的 UI 优化补丁版。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
 
 ## 致谢
 
