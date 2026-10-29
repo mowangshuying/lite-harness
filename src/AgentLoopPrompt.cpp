@@ -129,7 +129,22 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
                             "name 必须取自注入块中的已注册工作流清单，不得臆造名字；同一时刻只允许一个 "
                             "workflow 在途运行，未收到终局结果前不要追发第二个；"
                             "被宿主策略或用户拒绝后勿改用其他名字重试。");
-    return head + tempDir + tail + teams + mcp + workflow;
+    // s17: Goal 闸门段（lcc s17 prompt_goal 中文三句逐字转译，整段 251 码元逐字节对账相等；
+    // 仿 workflow 段先例形。
+    // 禁翻区：C 类串 QStringLiteral 不包 tr()；纯静态无占位符，system 全会话字节恒定，
+    // 前缀缓存纪律不破坏。goal 分流/评估器/续跑语义由宿主终局门承载（AgentLoopGoal.cpp），
+    // 本段只向模型声明机制存在与证据转述纪律。）
+    const QString goal = QStringLiteral(
+                            "\n\n"
+                            "Goal 闸门：用户可用 /goal <完成条件> 设定会话目标；当你不再调用工具时，"
+                            "宿主会用一个独立的、无工具的评估器读对话判断条件是否达成，"
+                            "未达成就把原因送回同一个循环再跑一轮。\n"
+                            "评估器只看对话里出现的证据：跑完验证命令后，请把命令与其结果"
+                            "（退出码、测试计数、报错行）清楚转述出来，不要只说'测试通过了'。\n"
+                            "完成条件要可检验（终态 + 检验方式 + 约束）；连续被拦下达到上限、"
+                            "或评估器自身报错时，宿主会停止自动续跑并把控制权交还用户，"
+                            "goal 保持 active，可用 /goal 查看状态。");
+    return head + tempDir + tail + teams + mcp + workflow + goal;
 }
 
 // 请求尾部注入块（规格修1 / D1；D2 裁决回填技能目录——模型需知道存在哪些 skill 才可能用

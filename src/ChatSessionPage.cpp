@@ -243,6 +243,24 @@ void ChatSessionPage::wireAgent()
         // 错误终局（含用户 stop 的「已停止。」回流）：取消在途合并窗口并立即贴底
         flushPendingScroll();
     });
+    // s17 goal 回显（port ② 裁决）：goalNotice 载引擎英文契约串（/goal 状态·清除回显与
+    // achieved/failed/limit/error 终局回显），仿 error 气泡先例落本地临时气泡——
+    // 不入 AgentLoop::m_messages、不入 history.json（persistHistory 只序列化 m_messages）；
+    // 串为 GoalRules 禁翻区原文，宿主侧无新增 tr() 词条
+    connect(m_agentLoop, &AgentLoop::goalNotice, this, [this](const QString &text) {
+        // s17 Gate2 MAJOR-A：以 isRunning() 区分两形。false=零模型回显形（run() 同栈早退、
+        // 尚未 setRunning；startAssistantStream 刚建的「处理中…」占位整拍没有任何事件到达）
+        // ——先 deleteLater 移除占位泡再回显，**禁 finishStreaming**（会把「处理中…」定稿
+        // 成永久静态泡、随下次发送悬空累积）。true=终局回显形（挂起评估在途、回合仍活着）
+        // ——不碰真回复气泡，提前定稿会让 finished 兜底路径把回复发双份
+        if (!m_agentLoop->isRunning() && m_currentBubble)
+        {
+            m_currentBubble->deleteLater();
+            m_currentBubble = nullptr;
+        }
+        addMessage(MessageBubbleWidget::Role::Assistant, text);
+        flushPendingScroll();
+    });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
         if (m_currentBubble)
         {

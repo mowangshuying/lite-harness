@@ -33,6 +33,9 @@
 // WorkflowRuntime 非 QObject（头注释明示），槽用 std::shared_ptr 而非 QPointer
 #include "WorkflowManager.h"
 #include "WorkflowRuntime.h"
+// s17 Goal（lcc goal_manager 移植；引擎非 QObject、QtCore-only，值成员需完整类型；
+// 宿主装配 TU 为 AgentLoopGoal.cpp，终局门分流见其头注释）
+#include "GoalManager.h"
 
 class QProcess;
 class SubAgent;
@@ -53,8 +56,10 @@ public:
                        QObject *parent = nullptr);
     ~AgentLoop() override;
 
-    // 启动代理循环（异步，不阻塞 UI 线程）
-    void run(const QString &userMessage);
+    // 启动代理循环（异步，不阻塞 UI 线程）。s17 起入参改传值：/goal <条件> 输入需在
+    // 进入既有回合链前把消息本体换成条件（见 run() 头部 goal 分流注释）；调用方按值
+    // 语义使用，签名改传值对调用点透明
+    void run(QString userMessage);
     // 代理循环是否运行中（UI 预查：运行中勿动旧气泡现场，避免触发 run() 重入卫兵后
     // error 链收掉新气泡导致旧循环后续 delta 无处可落）
     bool isRunning() const { return m_running; }
@@ -180,6 +185,12 @@ signals:
     // displayText 带 "[Scheduled] " 前缀供 UI 展示，activeRequestText 为无原文前缀拼接的活跃请求
     //（lcc deliver 双路：history 存前缀版、_run_turn 用原文 join）
     void scheduledUserMessage(const QString &displayText, const QString &activeRequestText);
+    // s17 goal 回显两形（port ② 裁决）：① /goal 状态·清除·两门拒绝的零模型回显；
+    // ② 评估器判定的终局回显（achieved/failed/limit/error，取引擎 status() 形）。
+    // UI 走本地气泡展示——不入 m_messages、不入 history.json（goal 非模型工具、
+    // 回显不进阶化历史；仿 error 气泡先例）。文本为引擎/GoalRules 英文契约串（禁翻区），
+    // 宿主不另造 UI 串
+    void goalNotice(const QString &text);
     // 循环结束，最终回复
     void finished(const QString &replyText);
     // 运行态变化（异步化 P2，设计文档 §3.4）：与 m_running 的每次实际翻转同点发射
@@ -321,6 +332,29 @@ private:
     // 半批 tool_use 由调用方（stop 的 m_pendingToolCalls 循环 / cancelSubAgent 同款
     // 收口）一并处理——防孤儿 tool_use 致下一请求 400
     void cancelActiveWorkflow();
+    // ---- s17 Goal 终局门（lcc goal_manager 宿主接线，实现单源 AgentLoopGoal.cpp）----
+    // 终局 goal 门（lcc _run_turn 收尾 goal→summary 序的 lite 转译，置于 Stop 钩子之前）：
+    // 无 goal 即时短路返 false（逐字节等价红线，最早返回）；Allow/Defer 落原终局路
+    // （日志在引擎内）；NeedEval 挂起本轮终局并发评估器 AsyncRequest，返 true——调用点
+    // 直接 return，终局由评估器回填后经 finishTurnWithoutTools 再入
+    bool gateGoalTerminal(const QJsonObject &finalMsg);
+    // 评估器单飞请求发起（三段 prompt 取 stopGate 快照；model 三级回退=显式评估器模型
+    // →回合粘滞 fallback→会话模型；max_tokens=kGoalEvaluatorMaxTokens，禁翻区 prompt
+    // 不经 tr()）。回调 once 契约，迟到回填由 m_goalEvalInFlight 卫兵拒绝
+    void startGoalEvaluation(const QJsonObject &finalMsg, const GoalManager::StopGateResult &gate);
+    // 引擎判定 → 终局再入分流（Block=续注入同一 messages[] 再跑一轮；Achieved/Failed/
+    // Limit/Error=goalNotice 回显后终局；Allow=防御静默终局）
+    void applyGoalDecision(const GoalRules::StopDecision &decision, quint64 generation);
+    // goal 评估统一收口（stop()/析构两路复用，仿 cancelActiveWorkflow）：清旗标与挂起
+    // 终局 → cancel 在途请求（cancel 后 done 永久静默）——全路径零 emit（析构窗口红线）；
+    // 门不产生 tool_use，被弃挂起终局无配对问题
+    void cancelActiveGoal();
+    // Stop 钩子 force 续跑链（自 messageFinished lambda 逐字搬移，行为不变；s17 goal
+    // Block 续注入共用本通道——lcc goal 与 summary 续跑同走 _run_turn 再入形态）
+    void continueTurnAfterStopHook(const QString &forceText);
+    // 无工具自然终局（自 messageFinished lambda 逐字搬移，行为不变；评估器回填后
+    // finishTurnWithoutTools 再入本函数，fullMsg 已在 append 后入账、此处只回显收尾）
+    void finishTurnWithoutTools(const QJsonObject &fullMsg);
     // 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：发送请求前对会话——不含
     // system——跑五级压缩，有变化则回写 m_messages，裁决 g 保留 m_messages[0] system）：
     // 本地段同步跑，仅触发全量压缩时挂起；
@@ -556,6 +590,19 @@ private:
     // workflow 工具生产路径整体不可用，详见 AgentLoop.cpp 构造体注释）；② setWorkDir/
     // setSessionDataId 内重推（换根后 journal 跟随）。Lead 独占——SubAgent 不经此工具。
     WorkflowManager m_workflow;
+    // s17 Goal 引擎（lcc goal_manager.py 移植，Lane P1 纯引擎、值成员接线，仿 m_workflow）：
+    // 纯内存台账零盘 IO（v1 裁决：events 持久账不接线，restore 路径留观）。blockCap 构造期
+    // 快照（settings.ini 键 stopHookBlockCap，中途改值对既有会话不生效=登记）；
+    // backgroundRunning 注入 = m_backgroundTasks.has_running()（lcc background_tasks_active
+    // 对应，port ④ defer 判据；lambda 惰性求值、声明序 m_backgroundTasks(:531 区) 先于本
+    // 成员，init-list 位置同序防 C5038）
+    GoalManager m_goal;
+    // goal 评估器单飞态（宿主侧 latch，偏差 8 代际守卫的宿主配合面：在途至多一次；
+    // 挂起终局存 fullMsg 副本——assistant 消息已入账 m_messages，回填经卫兵再入终局）。
+    // AsyncRequest done 为 once 契约，正常回填后句柄仅作 cancel 簿记
+    bool m_goalEvalInFlight = false;
+    QJsonObject m_goalPendingFinalMsg;
+    QPointer<QOpenAi::AsyncRequest> m_goalEvalRequest;
     // 队友运行时宿主所有权表（引擎 handles 为不拥有引用，偏A）：launcher 建、
     // onTeammateFinished/settleTeamOnExit 销
     QHash<QString, TeammateRuntime *> m_teammateRuntimes;

@@ -3,7 +3,8 @@
 // 设置存储单源头：全仓用户配置一律落 exe 同目录 settings.ini（用户裁决：弃用注册表，
 // 禁再引入默认构造 QSettings——org/app 注册表路径已成历史）。
 // 键清单：defaultWorkDir / sidebarVisible / language / contextCharLimit / maxToolIterations
-// / apiBaseUrl / apiToken / modelOptions / defaultModel / maxRetries / fallbackModelId。
+// / apiBaseUrl / apiToken / modelOptions / defaultModel / maxRetries / fallbackModelId
+// / goalEvaluatorModelId / stopHookBlockCap。
 // apiToken 明文存 ini 属用户裁决（设置页配置取代环境变量，本机 exe 同目录文件，属主可见可改）。
 // 手工篡改/非法值由各消费点自带校验回退默认（既有语义，本头不做聚合校验）。
 //

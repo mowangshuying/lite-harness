@@ -52,6 +52,10 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     , m_bus([this] { return sessionDataRoot(); })
     , m_worktrees(&m_taskStore, [this] { return sessionDataRoot(); }, [this] { return m_workDir; })
     , m_teams(&m_bus, &m_taskStore)
+    // s17 Goal 引擎（成员声明在 m_workflow 之后，本 init 项与声明序一致防 C5038；
+    // m_backgroundTasks 为声明序先行的默认构造成员，lambda 惰性读取天然安全）
+    , m_goal(AgentConst::stopHookBlockCapValue(),
+             [this] { return m_backgroundTasks.has_running(); })
 {
     // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::defaultModel()
     // （settings.ini 的 defaultModel 键，未配置则取生效清单首项；清单本身可由
@@ -214,6 +218,10 @@ AgentLoop::~AgentLoop()
     // 与 stop() 同调用、同静默纪律——"(stopped)" 配对直写历史不 emit（析构红线一族）
     cancelActiveWorkflow();
 
+    // s17：goal 评估器在途则收口（挂起终局弃置、AsyncRequest cancel 后 done 永不触发）。
+    // 与 stop() 同调用、同静默纪律——全路径零 emit（析构窗口红线一族）
+    cancelActiveGoal();
+
     // s13 P3 退出清算（lcc finally 的 lite 转译，登记偏差：不做 courteous shutdown 广播——
     // 析构后无事件循环可收应答；引擎 settleLedgers 保证账本收口）：必须在成员析构前于本
     // 体内完成——此刻 m_teams/m_bus/m_taskStore 仍存活，满足 TeammateRuntime FIND-L 契约
@@ -240,13 +248,37 @@ AgentLoop::~AgentLoop()
     m_messages.clear();
 }
 
-void AgentLoop::run(const QString &userMessage)
+void AgentLoop::run(QString userMessage)
 {
     // 已有一个循环周期在运行则拒绝新消息
     if (m_running)
     {
         emit error(tr("Agent 仍在运行中，请等待完成后再发送。"));
         return;
+    }
+
+    // s17 Goal（lcc _run_turn 的 parse_input 分流宿主转译）：/goal 指令在入口四类分流，
+    // 状态/清除/两门拒绝走 goalNotice 本地回显——零模型调用、不入 m_messages/历史、
+    // 不置 m_running（仿 error 气泡先例，port ② 裁决）；Set 形态引擎内部已 setGoal
+    // （tokensAtStart=totalTokens 快照——任务书要求 estimatedContextTokens 现读，引擎
+    // parseInput 无该注入口且引擎零改动红线，缺口已登记回报），宿主只把消息本体换成
+    // 条件继续既有回合链（lcc：condition 即 prompt，UserPromptSubmit/历史入账照常）。
+    // None（绝大多数输入）短路落原路径，逐字节等价红线不变
+    const GoalManager::GoalInput goalInput = m_goal.parseInput(userMessage);
+    switch (goalInput.kind)
+    {
+    case GoalManager::GoalInput::Kind::Status:
+    case GoalManager::GoalInput::Kind::Cleared:
+        emit goalNotice(goalInput.text);
+        return;
+    case GoalManager::GoalInput::Kind::Error:
+        emit goalNotice(goalInput.error);
+        return;
+    case GoalManager::GoalInput::Kind::Set:
+        userMessage = goalInput.text;
+        break;
+    case GoalManager::GoalInput::Kind::None:
+        break;
     }
 
     setRunning(true); // 【红线】同步置位，先于本函数一切异步发起（见下方 P1 契约注释）
@@ -269,6 +301,10 @@ void AgentLoop::run(const QString &userMessage)
     m_recoveryCurrentModel.clear();
     m_maxTokensEscalated = false;
     m_recoveryCount = 0;
+    // lcc s17 goal：begin_query 按「一个查询」复位连续 block 计数（lcc _run_turn 入口同位）：
+    // 覆盖用户/bg/cron/wake 全部唤醒开回合；须在 goal 分流之后（Set 路径本回合 block 计数
+    // 从零起步，与 lcc 每查询语义一致）
+    m_goal.beginQuery();
     // lcc s15 af26862：异步回合锁存——空闲交付（cron/team/bg 唤醒）在 emit 前放好的瞬态
     // 标志在此消费；用户输入回合恒为 false（交互式审批可用）
     m_asyncTurn = m_pendingAsyncTurn;
@@ -349,6 +385,10 @@ void AgentLoop::stop()
     // 直写历史，仿 cancelSubAgent 纪律；lcc 无停止路径=lite 新增路，登记偏差）。
     // 串行队列下与子代理/待决权限互斥，置于其后同段空转安全
     cancelActiveWorkflow();
+
+    // s17：goal 评估器在途则先收口（挂起终局弃置——门不产生 tool_use，无配对问题；
+    // stop 自身终局序列照常收口本回合）。全路径零 emit，仿 cancelActiveWorkflow 纪律
+    cancelActiveGoal();
 
     // 待决权限询问：视为 deny，直接回填历史保持 tool_use/tool_result 配对完整
     //（OpenAI 协议要求每个 tool_call 必有对应 tool 消息；不经 onToolFinished 以免续跑队列或发展示信号）

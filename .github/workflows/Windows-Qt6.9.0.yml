@@ -100,22 +100,27 @@ jobs:
         # 均为纯函数组恒跑、夹具组局部 skip，不整组跳过）——SKIP 既不计失败也不产生
        # 断言，进程返回 0，ctest 判通过：s13 起本步一直是这种假绿，实际只守了 LineEnding.h。
        # LITE_TEST_MIN_PASS 是断言下界门禁（tests/main.cpp），把「跑到了多少断言」变成硬条件；
-       # 量级 = 十四套件全实跑的 pass 计数下浮值，新增套件时同步上调。
-       # s16 口径：s15 全量实测 730，新增 tst_workflowmanager(155) + tst_workflowruntime(约 87)
-       # = 全量实测 972；再新增 tst_compacttokens(实跑 48) = 1020；本轮新增 tst_settingscache(实跑 75)
-       # = 全量实测 1095；取下界 990 ≈ 留约 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
-       # 用量计量口径：新增 tst_usagetokens(本机实跑 49 断言全绿，UsageTokens.h 纯头，零夹具恒跑)。
-       # 下界同幅上调 990→1039，维持原约 10% 余量口径（上调的是同一道余量的平移，不是重新估量级）。
-       # 输出速度口径：新增 tst_streamrate（本机实跑 26 断言全绿，StreamRate.h 纯头，零夹具恒跑）。
-       # 十四套件本机全量实跑 1188（静态断言点 1127 + 文件门禁组的动态计数；含 1 条 junction 夹具
-       # skip——CI 上夹具可用时更高，故 1188 是下浮基准、不是 CI 实测）；下界 1066 即在此基准上留
-       # 约 10% 余量。此前登记的 1144（= 上一轮 CI 实测 1095 + 本套件 49）是推算链，已被 1188 实测
-       # 取代、勿当实测引用；若 CI 首跑 pass 数明显低于 1188，按实测回落本行与下方阈值。
-      - name: Unit tests (ctest)
-        shell: pwsh
-        run: |
-          $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1066'
+        # 量级 = 套件全实跑的 pass 计数下浮值，新增套件时同步上调。
+        # s16 口径：s15 全量实测 730，新增 tst_workflowmanager(155) + tst_workflowruntime(约 87)
+        # = 全量实测 972；再新增 tst_compacttokens(实跑 48) = 1020；本轮新增 tst_settingscache(实跑 75)
+        # = 全量实测 1095；取下界 990 ≈ 留约 10% 余量（吸收个别断言随 Qt 小版本微调的影响）。
+        # 用量计量口径：新增 tst_usagetokens(本机实跑 49 断言全绿，UsageTokens.h 纯头，零夹具恒跑)。
+        # 下界同幅上调 990→1039，维持原约 10% 余量口径（上调的是同一道余量的平移，不是重新估量级）。
+        # 输出速度口径：新增 tst_streamrate（本机实跑 26 断言全绿，StreamRate.h 纯头，零夹具恒跑）。
+        # 十四套件本机全量实跑 1188（静态断言点 1127 + 文件门禁组的动态计数；含 1 条 junction 夹具
+        # skip——CI 上夹具可用时更高，故 1188 是下浮基准、不是 CI 实测）；下界 1066 即在此基准上留
+        # 约 10% 余量。此前登记的 1144（= 上一轮 CI 实测 1095 + 本套件 49）是推算链，已被 1188 实测
+        # 取代、勿当实测引用。
+        # s17 goal 口径：新增 tst_goalmanager（本机实跑 209 断言全绿 = 静态点 195 + CLEAR_ALIASES
+        # 循环展开；GoalRules.h 纯头 + GoalManager 引擎判据，零夹具恒跑）；十五套件 P2r 修复批后
+        # 本机全量实跑 1397（含 1 条 junction 夹具 skip，同为下浮基准）。下界 1066→1250 按本轮
+        # 实跑 1397 留约 10% 余量上调（1397×0.9≈1257，取整 1250）。若 CI 首跑 pass 数明显低于
+        # 1397，按实测回落本行与下方阈值。
+       - name: Unit tests (ctest)
+         shell: pwsh
+         run: |
+           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
+           $env:LITE_TEST_MIN_PASS = '1250'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

@@ -84,6 +84,18 @@ bool BackgroundTasksManager::hasPending() const
     return !m_ready.isEmpty();
 }
 
+bool BackgroundTasksManager::has_running() const
+{
+    // lcc s17 a20fdec goal_manager.py background_running 注入判据（port ④）：
+    // 扫台账 status=="running"（recordResult 改终态即出局，与 m_ready 收割队列无关）
+    for (auto it = m_tasks.cbegin(); it != m_tasks.cend(); ++it)
+    {
+        if (it->status == QLatin1String("running"))
+            return true;
+    }
+    return false;
+}
+
 QString BackgroundTasksManager::formatBashResult(const QString &output, int exitCode,
                                                  bool timedOut)
 {

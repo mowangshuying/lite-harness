@@ -160,6 +160,10 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             return;
         adoptUsageAnchor(usage);
         closeRateWindow(usage);
+        // lcc s17 goal：observe_usage 记账位——主 usage 帧恒喂入（无 goal / defer 期也累计，
+        // parseInput Set 路径的 tokensAtStart=totalTokens 基线即来自本累计；评估器往返走
+        // AsyncRequest 无 usage 通道、不进本账 = 登记偏差）
+        m_goal.observeUsage(usage);
     });
 
     connect(s, &QOpenAi::ChatStream::messageFinished, this,
@@ -229,6 +233,14 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         {
             m_messages.append(fullMsg);
 
+            // s17 Goal 终局门（goal 先于 summary 钩子序，承 lcc loop 收尾 goal→summary 判定）：
+            // 无 goal 短路返 false = 逐字节等价红线；Allow/Defer 引擎侧自日志后落原路径；
+            // NeedEval 挂起本次终局（评估器往返回填经 continueTurnAfterStopHook /
+            // finishTurnWithoutTools 再入）。max_turns 与流错误两条终局不经本门 =
+            // lcc skip_goal 语义对齐（评估器永不见撞上限/错误终局，不动账）
+            if (gateGoalTerminal(fullMsg))
+                return;
+
             // Stop 钩子（lcc s04 引入，s06 起为"续跑"语义）：返回非空则作为一条 user
             // 消息注入历史并发起新一轮请求（消耗 m_toolIterations，m_maxToolIterations
             // 回合快照兜底，不加额外计数上限）。内置 summary 钩子恒返回空串，故默认行为与 s04 一致
@@ -236,58 +248,13 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             const QString force = triggerStopHooks();
             if (!force.isEmpty())
             {
-                QJsonObject injected;
-                injected[QStringLiteral("role")] = QStringLiteral("user");
-                injected[QStringLiteral("content")] = force;
-                m_messages.append(injected);
-
-                if (++m_toolIterations > m_maxToolIterations)
-                {
-                    // s13：lcc finally 覆盖异常分支——撞上限终局同样退租（只释放，
-                    // 不注入事件：注入窗口已过，欠账留待下一自然回合收割）
-                    settleLeadLease();
-                    // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
-                    m_cron.finalizeInFlightDelivery(false);
-                    setRunning(false);
-                    persistHistory(); // 轮次上限失败终局也落盘（已累积历史不丢）
-                    emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(m_maxToolIterations));
-                    return;
-                }
-                const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
-                startChatRequest(messagesJson);
+                continueTurnAfterStopHook(force);
                 return;
             }
 
-            // 回合成功终局（异步化 P2 重排，设计文档 §2.2/§6-10）：旧序为
-            // memoryPhaseStarted → [extract 阻塞≤120s → consolidate 阻塞≤120s] →（stop
-            // 竞态则 return 吞掉 finished）→ finalize → m_running=false → persistHistory →
-            // finished；新序把记忆沉淀从终局关键路径摘除——finalize → setRunning(false) →
-            // persistHistory → finished → memoryPhaseStarted → 异步链尾巴。
-            // persistHistory 先于记忆链是 §6-10 有意决策：history.json 与 .memory/ 为独立
-            // 文件域，中途崩溃最坏丢本轮记忆沉淀、不丢历史（旧序同样存在该窗口的更差形态：
-            // 阻塞期间崩溃则历史与 finished 一起丢）。finished 不再被 2×120s 阻塞窗口延迟，
-            // 旧代码"阻塞后复验 m_running 不通过则 return"的吞 finished 竞态随之消亡。
-            // Stop 钩子在上方 force 分支触发并已 return，位置与语义与旧版逐字不变。
-            // s13 Agent Teams（P3 挂载三）：lcc agent_loop finally 的
-            // release_completed_assignment("agent") 与 inject_team_events、
-            // check_team_offline_edge 三合一，置于终局序列最前——注入的 [Team events]
-            // user 消息随下方 persistHistory 一并落盘（lcc loop.py :168-172 finally +
-            // :419 每轮圈尾核对）
-            leadTurnEndSettlement();
-            // lcc 31a99d1：回合成功终局——确认在途 cron 批（at-least-once 收口）
-            m_cron.finalizeInFlightDelivery(true);
-            setRunning(false);
-            persistHistory(); // 回合终局落盘（emit 前，确保 UI 侧后续动作可见）
-            emit finished(fullMsg.value(QStringLiteral("content")).toString());
-
-            // 记忆沉淀（lcc s09 loop.py :113-117：仅自然结束分支触发——force 续跑分支与撞
-            // m_maxToolIterations 上限分支均不提取，lcc 语义不修正；轮次上限/流错误/stop
-            // 三类终局同样不触发，与旧版一致）。mid(1) 排除 system 与 lcc 会话主体对齐。
-            // memoryPhaseStarted 与 finished 同栈紧随：UI 据 §3.5a 保留气泡占位、把正文
-            // 就地定稿并挂记忆进度 live 卡；随后异步链启动（fire-and-forget，结果卡经
-            // 既有 toolOutputReady("memory") 通道落位，链尾不阻塞本回调返回）
-            emit memoryPhaseStarted();
-            startMemoryChain();
+            // 终局收口（s17 逐字搬移至 finishTurnWithoutTools，行为不变：goal 评估器回填
+            // achieved/failed/limit/error 后经同一函数再入本终局）
+            finishTurnWithoutTools(fullMsg);
             return;
         }
 
@@ -365,6 +332,69 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         persistHistory(); // 流错误终局落盘
         emit error(msg);
     });
+}
+
+// s17 逐字搬移（行为不变）：原为 messageFinished 无工具分支的 Stop-force 续跑体内联段，
+// 提取为成员函数供 goal 评估器 Block 决策的续跑通道复用（AgentLoopGoal.cpp）。
+// 语义与 lcc loop 收尾 force 注入一致：注入 user 消息 → 撞上限即失败终局 → 否则同历史重发
+void AgentLoop::continueTurnAfterStopHook(const QString &forceText)
+{
+    QJsonObject injected;
+    injected[QStringLiteral("role")] = QStringLiteral("user");
+    injected[QStringLiteral("content")] = forceText;
+    m_messages.append(injected);
+
+    if (++m_toolIterations > m_maxToolIterations)
+    {
+        // s13：lcc finally 覆盖异常分支——撞上限终局同样退租（只释放，
+        // 不注入事件：注入窗口已过，欠账留待下一自然回合收割）
+        settleLeadLease();
+        // lcc 31a99d1：轮次上限失败终局——在途 cron 批回队
+        m_cron.finalizeInFlightDelivery(false);
+        setRunning(false);
+        persistHistory(); // 轮次上限失败终局也落盘（已累积历史不丢）
+        emit error(tr("工具调用轮次超过上限（%1 轮），终止循环。").arg(m_maxToolIterations));
+        return;
+    }
+    const QJsonArray messagesJson = AgentLoopDetail::snapshotMessages(m_messages);
+    startChatRequest(messagesJson);
+}
+
+// s17 逐字搬移（行为不变）：原为 messageFinished 无工具分支的成功终局段，提取为成员函数，
+// 使 goal 评估器回填 achieved/failed/limit/error 后能复用同一终局序列（注释随体搬移，
+// 「上方 force 分支」现指本文件 messageFinished 内调用点）
+void AgentLoop::finishTurnWithoutTools(const QJsonObject &fullMsg)
+{
+    // 回合成功终局（异步化 P2 重排，设计文档 §2.2/§6-10）：旧序为
+    // memoryPhaseStarted → [extract 阻塞≤120s → consolidate 阻塞≤120s] →（stop
+    // 竞态则 return 吞掉 finished）→ finalize → m_running=false → persistHistory →
+    // finished；新序把记忆沉淀从终局关键路径摘除——finalize → setRunning(false) →
+    // persistHistory → finished → memoryPhaseStarted → 异步链尾巴。
+    // persistHistory 先于记忆链是 §6-10 有意决策：history.json 与 .memory/ 为独立
+    // 文件域，中途崩溃最坏丢本轮记忆沉淀、不丢历史（旧序同样存在该窗口的更差形态：
+    // 阻塞期间崩溃则历史与 finished 一起丢）。finished 不再被 2×120s 阻塞窗口延迟，
+    // 旧代码"阻塞后复验 m_running 不通过则 return"的吞 finished 竞态随之消亡。
+    // Stop 钩子在上方 force 分支触发并已 return，位置与语义与旧版逐字不变。
+    // s13 Agent Teams（P3 挂载三）：lcc agent_loop finally 的
+    // release_completed_assignment("agent") 与 inject_team_events、
+    // check_team_offline_edge 三合一，置于终局序列最前——注入的 [Team events]
+    // user 消息随下方 persistHistory 一并落盘（lcc loop.py :168-172 finally +
+    // :419 每轮圈尾核对）
+    leadTurnEndSettlement();
+    // lcc 31a99d1：回合成功终局——确认在途 cron 批（at-least-once 收口）
+    m_cron.finalizeInFlightDelivery(true);
+    setRunning(false);
+    persistHistory(); // 回合终局落盘（emit 前，确保 UI 侧后续动作可见）
+    emit finished(fullMsg.value(QStringLiteral("content")).toString());
+
+    // 记忆沉淀（lcc s09 loop.py :113-117：仅自然结束分支触发——force 续跑分支与撞
+    // m_maxToolIterations 上限分支均不提取，lcc 语义不修正；轮次上限/流错误/stop
+    // 三类终局同样不触发，与旧版一致）。mid(1) 排除 system 与 lcc 会话主体对齐。
+    // memoryPhaseStarted 与 finished 同栈紧随：UI 据 §3.5a 保留气泡占位、把正文
+    // 就地定稿并挂记忆进度 live 卡；随后异步链启动（fire-and-forget，结果卡经
+    // 既有 toolOutputReady("memory") 通道落位，链尾不阻塞本回调返回）
+    emit memoryPhaseStarted();
+    startMemoryChain();
 }
 
 // 五级压缩异步挂接点（P3，设计文档 §2.3；lcc s08 prepare：对不含 system 的会话主体做五级

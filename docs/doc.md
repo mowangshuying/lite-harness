@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-    （`s16.1`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+    （`s17`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
    `.lite-harness/sessions/<id>/.temp/`；收口时把仍然成立的内容折进本文对应部分、过时者删除，
    不在 `docs/` 里另立 md 文件——孤立文件既无人引用、也无人负责同步（本目录刚刚就是因为六篇各自漂移
@@ -171,6 +171,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `McpManager` | s14 MCP 外部工具机制引擎（lcc s14 7b4ac1c mcp_manager.py；非 QObject 纯引擎、值成员接线）：`connect_mcp` 入口 + `normalizeName` 净化/`mcp__{server}__{tool}` 拼名（总长 ≤64）+ 每轮 `assemble` 快照原子替换（origins 溯源碰撞检测，发现期失败保上次快照）+ `hostPolicy`/`toolPolicy` allow/confirm 缺省 fail-closed；动态工具不入 ToolNames.h/静态 schema；**当前注册表为空**（方案1：不移植 MCPClient/MOCK_SERVERS；connect_mcp 任意名回流 Unknown server；头注释登记与 lcc 的 7 条偏差）；Lead 独占 | 仅 QtCore |
 | `WorkflowManager` | s16 工作流编排引擎内核（lcc s16 42a555d workflow.py；非 QObject 纯 QtCore 引擎、值成员接线仿 `McpManager`）：注册表（当前唯一条目 `review-changes`=忠实移植 lcc 演示工作流）/ 身份与语义键（createRunId / createTaskId / validateRunId / validateMeta / stableHash / agentKey）/ journal（`.workflows/<runId>.journal.jsonl` 逐行追加 + resume 逐行校验）/ SimpleJsonSchema 校验与 fillSchema / Budget 与 ExecutionLimits / AGENT_CAP=1000 / CONCURRENCY=8 / runId NewOnly 原子预留（撞名重试 ≤32）/ QSaveFile 原子快照 / last_run 账 / 进程内 run 抢占集合（lcc 跨进程 fcntl 文件锁不采=偏差）；`setStoreDir` 推形（宿主在会话数据根变更点推 `<会话根>/.workflows`，目录创建自愈在引擎 `ensureStoreDirs`，宿主不 mkdir）；头注释登记与 lcc 的偏差①-㉒；工具信封单源成员 `toolInfo()`；Lead 独占 | 仅 QtCore |
 | `WorkflowRuntime` | s16 一次性异步编排对象（**非 QObject**，宿主以 shared_ptr 持有槽）：六原语 agent / parallel / pipeline / phase / log / workflow 全事件驱动状态机（`QTimer::singleShot(0)` 续跑，零线程零嵌套事件循环）；HIT 脏缓存拒用 / MISS schema 唯一一次重试 / resume 四闸先于 journal 截断 / 信封三写终态收口；`kFocusedSystemPrompt()` / `buildRunnerPrompt()` / `kAgentMaxTokens=2000`；`requestCancel()` 置旗由在途续跑点折叠终态；偏差 9-19 在头注释 | QtCore + WorkflowManager |
+| `GoalManager` | s17 goal 引擎内核（lcc s17 a20fdec goal_manager.py；非 QObject 纯 QtCore 引擎、值成员接线仿 `McpManager`/`WorkflowManager`）：会话级 Stop 闸门，**账本纯内存不落盘**（区别于 `.workflows` 磁盘台账；`restore` 静态工厂备好但 v1 宿主不接线=偏差⑥/头注释偏差9）。三闸 API（异步拆分=偏差①b）：`stopGate(messages)` 判据出口（Allow / Defer（bg running 注入判据）/ NeedEval（携评估器 prompt + generation 快照））、`onEvaluatorText(raw, generation)` / `onEvaluatorError(text, generation)` 回填折叠七决策（achieved/failed/limit/error/block/defer/allow）；**代际守卫**（setGoal 含 replace / clear 成功即 `++m_generation`，迟到回填代际不符按默认 Allow 静默丢弃零记账）；`parseInput`（`/goal` 四类分流 none/status/cleared/set + `Kind::Error` 增项）、`setGoal/clear/status/beginQuery/observeUsage`；consecutiveBlocks 只 block 累加、Limit 后 active 保持；block_cap 构造期快照（改 settings.ini 新会话生效）；头注释登记与 lcc 偏差 1-10 | 仅 QtCore |
 
 #### L6 单源与设施
 
@@ -191,12 +192,13 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `StreamRate.h` | token 输出速度纯头（header-only，零 CMake 改动即入 ctest）：`Window`（三时刻观测：t0 流建立 / t1 首个增量 / t2 usage 末帧）+ `makeWindow`（判据单源）+ `tokensPerSecond` + `Meter`（会话级只增账）。**与 `UsageTokens.h` 是两套东西，勿混**：后者算「已经花掉多少」，本头算「吐字有多快」——分母是时间，窗口取错时数字照样算得出、照样显示，但含义相反。**承重不变量①~④写在头注释**：①分母是生成窗口（t1→t2），**不含 TTFT**——把「请求发出→usage」当分母会把慢首字读成慢模型，故 TTFT 单独记录、单独显示；②无增量起点即窗口作废（纯 tool_calls 回合的 delta 只有 tool_calls 字段，不触发 textDelta/thinkingDelta），宁可不显示也不把 TTFT 冒充生成速度；③聚合 = Σtokens ÷ ΣgenerationMs，**不是**各窗口速率的算术平均（后者让 1 token 窗口与 2000 token 窗口等权，一条长回答被九条短回答稀释）；④有效性判据与 `UsageTokens::fromUsage` 同源（`prompt<=0` 即整窗作废），无效窗口不进分母也不改写 `last`，空账 UI 整行隐藏。**覆盖面比消耗账更窄**：仅主循环请求——队友回合增量不经宿主信号面、压缩/记忆/workflow 走 `AsyncRequest`（无 usage 通道），均无从定窗；tooltip 同步声明。`tst_streamrate` 26 断言钉①②③④ |
 | `SettingsCache.h` | 设置读缓存纯头（header-only，零 CMake 改动即入 ctest）：`Identity`（文件身份三元组 exists/mtime/size）+ `sameIdentity` + `identityOf` + `Reader`（一个 ini 路径的读写门面，读带缓存、写带失效）。**承重不变量①~⑤写在头注释**：①失效判据是文件身份（改 TTL/永久缓存即破 README「手改 ini 即可」承诺）②三元组缺一不可 ③写侧「先 sync 后 invalidate」顺序不可颠倒 ④查表大小写不敏感（对齐 IniFormat 的 `IniCaseSensitivity`）⑤无锁依赖零线程约定。路径构造期注入是它能进 ctest 的全部原因（`AppSettings` 绑死 `applicationDirPath()`，测试里造不出也不该往 exe 目录写盘）。**口径纠正**：原登记说每次读「open + parse 整个 ini」不准确——Qt 自带 `ConfFileCache` 且在 size+mtime 未变时短路，本修复省掉的是每次调用的 QObject 分配 + 全局锁 + 缓存探测 + stat + 键折叠查表 + 析构 sync 簿记，收益真实但不大（勿按旧说法宣称成「消除了重复磁盘解析」） |
 | `AgentRecovery.h` | s15 恢复契约串与文本判据纯头（`RecoveryRules` 命名空间，禁翻区）：逐字 `continuationPrompt()` / `asyncApprovalDenied()`（两拍续打、异步定值拒、isToolFailure 前缀判定、测试逐字断言的单源——改文案须同步 `tst_agentrecovery`、`isToolFailure` 判据与 TeammateRuntime 镜像）；`isRateLimitText` / `isOverloadedText` 鸭子文本判据供 `QOpenAi` 可重试判定 |
+| `GoalRules.h` | s17 goal 契约串与判据纯头（`GoalRules` 命名空间，禁翻区，仿 `LineEnding.h`/`AgentRecovery.h` 先例；header-only **不占测试目标 TU 清单**，`tst_goalmanager` 直接 include 生产头）：七决策类型（Allow/Defer/Error/Achieved/Failed/Limit/Block + `actionName`）、CLEAR_ALIASES 六词逐字、设定/回显契约串族（emptyConditionError/tooLongConditionError/blockCapError/replacedReason/goalSetReason/clearedReason/noGoalSetText/goalClearedText/deferReason/limitReason/goalErrorReason）、`evaluatorSystemPrompt`/`evaluatorUserPrompt`（payload Compact JSON 单 `.arg`）/`blockContinueText`；**`parseEvaluatorJson` 六门**（invalidJson/notObject/needBoolOk/needReason/impossibleBool/bothOkImpossible，各有定值英文串、逐字断言；fence 剥除最前 + 顶层标量探针 `{"goal_probe":…}` 包裹拆开门2/门3）；**`transcriptText(messages, kGoalTranscriptCharLimit=24000)`** 新→旧逐条累加（itemSize=条长+2），唯一例外=最新一条独占超限就地插标记 `\n...[middle omitted]...\n`（头 3/4 + 尾 1/4）后 break，其余旧条目超限是**不进**而非截断，反转后 `\n\n` join；`plainContent` OpenAI 形适配（role=tool→`[tool_result %1]`、tool_calls→`[tool_use name args]`）。体量口径 UTF-16 码元（偏差登记在 `GoalManager.h` 头注释） |
 
 ---
 
 ### 3. AgentLoop 家族：单类多 TU 的职责地图
 
-`AgentLoop.h` 是**唯一类声明**；15 个 `.cpp` 各承载一组成员方法定义（不是多个类）。这样既保住了
+`AgentLoop.h` 是**唯一类声明**；16 个 `.cpp` 各承载一组成员方法定义（不是多个类）。这样既保住了
 「一个状态机一个所有者」的语义，又让单文件回到可读体量。**新增方法请按 §10 的决策树落位，不要
 往 `AgentLoop.cpp` 里堆。**
 
@@ -218,6 +220,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopCron.cpp` | 86 | 三个 cron handler 与空闲边界交付；台账与匹配在 `CronSchedulerManager`，本文件只做宿主侧接线；**s15** 另承载 `tryDeliverBackgroundWakeup`（第 4 事件源卫兵+空 prompt 唤醒） | `runScheduleCron`、`runCancelCron`、`runListCrons`、`tryDeliverCron`、`tryDeliverBackgroundWakeup` |
 | `AgentLoopTeam.cpp` | 676 | **s13 团队宿主接线单 TU**：`initTeamEngine` 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）；`leadToolCwd` 租约感知 cwd 单点（有租约取 `assignmentCwd` 含 worktree 解析、无租约回落宿主 workDir）；三注入边界（`run()` 入口与批尾 `injectTeamEvents`、自然终局 `leadTurnEndSettlement` 先于 finalize/persist）+ 非自然终局 `settleLeadLease`；**`tryDeliverTeamEvents`** Gate③ MAJOR-1 空闲唤醒收割（挂 `m_cronTick` 1s 节拍、先于 `tryDeliverCron`——lcc 邮箱优先口径；仅 `!m_running` 且 lead 邮箱有信时 harvest→`scheduledUserMessage` 自动开回合，与 cron 同路 GUI 零改动；**s15**：emit 前置位 `m_pendingAsyncTurn=true`（异步回合 fail-closed），队友工具适配器在 `triggerPreToolUseHooks` 窗口同栈临时强制 `m_asyncTurn`——s14 在册「Lead 保留 ASK 卡=增强非缺陷」裁决**已废止翻转**，无人值守回合不得挂永久审批卡）；队友回合环 `onTeammateTurnRequested`/`onTeammateFinished`（镜像 SubAgent 先例）；`settleTeamOnExit` 析构清算；`teammateToolsDefinition()` 队友面 10 件 schema（D5 与主表分开、禁翻区） | `initTeamEngine`、`leadToolCwd`、`injectTeamEvents`、`tryDeliverTeamEvents`、`leadTurnEndSettlement`、`settleLeadLease`、`onTeammateTurnRequested`、`settleTeamOnExit` |
 | `AgentLoopWorkflow.cpp` | 181 | **s16 workflow 宿主接线单 TU**：`startWorkflowRun` 单飞卫兵（占用即回填 "Error: another workflow run is already active"）+ runner 桥（`QOpenAi::AsyncRequest::sendText` focused system prompt + max_tokens 2000，复用 s15 传输恢复链；tokens 无 usage 回读走 `AgentConst::estimateTokens` 字符折算=偏差；content 原样回、由 Lane B `agent()` 自 parse）+ out 槽三件套指针匹配卫兵（延迟回填，lcc handler 内同步阻塞编排不采=核心偏差）；`cancelActiveWorkflow`（stop() 第六路收口 + 析构同点）：先清槽 → requestCancel → 在途 cancel → 半批 "(stopped)" 直写历史保 tool_use 配对——**全路径零 emit**（析构窗口红线，与 settleTeamOnExit 一族） | `startWorkflowRun`、`cancelActiveWorkflow` |
+| `AgentLoopGoal.cpp` | 199 | **s17 goal 宿主接线单 TU**：`gateGoalTerminal(finalMsg)` 终局门（首行 `!m_goal.active()` 短路=无 goal 会话逐字节等价红线；插 `m_messages.append` 之后、`triggerStopHooks` 之前——goal 先于 summary 序）——NeedEval 挂起终局走 `startGoalEvaluation`（三级模型回退 `goalEvaluatorModelIdValue()`→`m_recoveryCurrentModel`→`m_model`，`QOpenAi::AsyncRequest::sendText` max_tokens=512 无 tools；先置 `m_goalPendingFinalMsg`/`m_goalEvalInFlight` 再发送；回调 QPointer self + generation 双卫兵拒迟到回填；req==null 兑底走 `onEvaluatorError` 合流记账）；`applyGoalDecision`：Block→`continueTurnAfterStopHook(blockContinueText)` 回灌续跑（清 pending），Achieved/Failed/Limit/Error→`emit goalNotice(m_goal.status())` 后经 `triggerStopHooks`→force 续跑或 `finishTurnWithoutTools`（挂起终局入账收口）；`cancelActiveGoal`（stop() 第七路收口 + 析构同点）：清旗→弃挂起终局→在途 cancel→清 handle——**全路径零 emit**（析构窗口红线，goal 门不产生 tool_use 无半批配对；与 settleTeamOnExit/cancelActiveWorkflow 一族） | `gateGoalTerminal`、`startGoalEvaluation`、`applyGoalDecision`、`cancelActiveGoal` |
 
 **AgentLoop 对外信号面**（`AgentLoop.h:105-172`，共 17 个，UI 只认这些）：`thinkingDelta`、`textDelta`、
 `toolStarted`、`toolOutputReady(…, ok)`、`subagentProgress`、`permissionRequired`、`todoUpdated`、
@@ -272,7 +275,11 @@ ChatMsgEdit::sendMessage(text)
         ChatMsgEdit::modelChanged → AgentLoop::setModel）
 
 ② 回合入口 AgentLoop::run（AgentLoop.cpp:209）
+**s17**：入口先过 `m_goal.parseInput(text)` 四类分流——Status/Cleared/Error 形 emit goalNotice 即返
+  （**零模型早退**：不置 m_running、不入历史、不触 UserPromptSubmit，页面本地气泡回显）；Set 形以条件
+  本身为 userMessage 走正常回合（引擎内部已 setGoal，宿主不二次调用防伪 replaced+代际双增）；None 形原样。
 setRunning(true)（同步红线，先于任何异步）→ 快照 m_maxToolIterations → triggerUserPromptSubmitHooks
+→ m_goal.beginQuery()（consecutiveBlocks 按 per-用户回合归零，**s15** 复位段旁、异步锁存之前）
 → user 消息入 m_messages（**s15**：空 userText 跳过 append——bg 唤醒空 prompt 回合不注入 user 消息，收割由圈顶 injectBackgroundResults 承载）→ injectBackgroundResults() → m_memory.loadMemoriesAsync(...)
 → done 里快照注入块 m_contextInjection = buildContextInjection(readMemoryIndex(), recalled)
   （**不重建 system**——system 全会话字节恒定，规格修1）→ startChatRequest(messagesJson)
@@ -286,9 +293,10 @@ startChatRequest → applyCompactPipelineAsync（仅触发全量压缩时挂侧�
    · ChatStream::thinkingDelta → 直连转发 AgentLoop::thinkingDelta
    · ChatStream::textDelta     → 直连转发 AgentLoop::textDelta
    · ChatStream::usageReceived → AgentLoop::adoptUsageAnchor（token 锚，见下「⑦ 上下文计量」）
-   · ChatStream::messageFinished(fullMsg, finishReason) →（**s15** 前置两拍判长：finishReason==length 第一拍升档 8000→16000 重打、半截不入账；第二拍半截入账 + user continuationPrompt 续打 ≤2、预算耗尽走成功终局不发 error；另 fallback 换模粘滞读取 m_recoveryCurrentModel）→ 无 tool_calls：triggerStopHooks → cron 交付定稿
-       → setRunning(false) → persistHistory() → emit finished → emit memoryPhaseStarted
-       → startMemoryChain（异步沉淀，终态发 memoryChainFinished）
+· ChatStream::messageFinished(fullMsg, finishReason) →（**s15** 前置两拍判长：finishReason==length 第一拍升档 8000→16000 重打、半截不入账；第二拍半截入账 + user continuationPrompt 续打 ≤2、预算耗尽走成功终局不发 error；另 fallback 换模粘滞读取 m_recoveryCurrentModel）→ 无 tool_calls：**s17 gateGoalTerminal(fullMsg)**（active goal 时终局先过 goal 门：Defer/Allow 放行继续原链；NeedEval 挂起本终局→AsyncRequest 评估器往返→回填经 applyGoalDecision——Block 回灌 blockContinueText 走 continueTurnAfterStopHook 续跑、Achieved/Failed/Limit/Error emit goalNotice 后收口本终局、req==null 兑底经 onEvaluatorError 合流；无 goal 首行短路逐字节等价）→ triggerStopHooks → cron 交付定稿
+        → setRunning(false) → persistHistory() → emit finished → emit memoryPhaseStarted
+        → startMemoryChain（异步沉淀，终态发 memoryChainFinished）
+    · 旁路：**s17** max_turns 两出口与流错误终局不经 goal 门（非「模型想停」，防白花评估与污染 blocks 账；差量登记=AgentLoopGoal.cpp 头注释⑤——lcc 撞上限出口仍跑 Stop 链保 summary 播报与 goal 交还日志，lite 整链不跑，goal 层效果一致）
    · ChatStream::error(msg) → cancelSubAgent →（可压缩则反应式压缩重试——**s15** 旗标 per-用户回合一次性、复位仅 run() 入口）→ 终局 append assistant "[Error] "+msg 入历史（persistHistory 前，仿 MCP assemble 先例；emit error 保留=用户裁决偏差，lcc 静默 return）
 
 ④ 工具批（continueWithToolResults → runNextTool → executeTool）
@@ -384,6 +392,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | `todoUpdated` | `:434` | `TodoCard` 快照 + 侧栏任务清单 |
 | `memoryPhaseStarted` / `memoryChainFinished` | `:371` / `:387` | 记忆进度 live 卡的挂出与收尾 |
 | `scheduledUserMessage` | `:466` | 以「定时/团队唤醒用户消息」入历史并直接发起新一轮（cron 交付、s13 `tryDeliverTeamEvents` 空闲唤醒与 s15 `tryDeliverBackgroundWakeup` 后台唤醒三路共用此发射点，GUI 零改动；**s15** bg 唤醒为空 displayText/空 userText——槽内卫兵跳过空气泡防空标题锁死、后端跳过 user 入账，收割由 `run()` 圈顶 `injectBackgroundResults` 承载） |
+| `goalNotice`（s17） | `:250` | **不入历史**的本地回显气泡（`addMessage` + 贴底）；handler 按 `isRunning()` 两形判别——零模型早退形（emit 时 run() 尚未 setRunning）先 `deleteLater` 收掉「处理中…」占位泡再回显（禁 `finishStreaming`，会把占位定稿成永久静态泡）；终局回显形（挂起中）不碰真回复气泡（防 finished 兜底双份）。goalNotice 载 `GoalRules.h` 英文契约串，禁翻区不入 .ts |
 | `runningChanged` | `:485` | 输入框忙态 `setTurnBusy` + 侧栏状态灯；终局兜底复位审批灯（`setRunning(true)` 起即禁输入，早于 `run()` 卫兵） |
 
 ---
@@ -417,6 +426,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - 目录名一律取 `AgentConst::k*DirName`（`AgentConstants.h:278-286`，s13 扩 `.mailboxes`/`.worktrees`、s16 扩 `.workflows`），拼法涉既有数据兼容，**逐字符
   不可改**；`.lite-harness` 中间层只在 `sessionDataRoot()` 拼一次，各引擎只拼自己的叶子段。
 - 用户配置在**另一处**：`<exe 目录>/settings.ini`（路径单源 `AppSettings.h:29`，弃用注册表；读写门面 `value()`/`setValue()`，缓存与失效判据见 `SettingsCache.h`）。
+- **s17 goal 不新增任何数据目录**：`GoalManager` 账本（active goal / 事件台账 / consecutiveBlocks / totalTokens）全内存，随 `AgentLoop` 生命周期存亡——区别于 `.workflows` 的磁盘台账（lcc 落盘转录不采=偏差⑥；`restore` 静态工厂备好但 v1 宿主未接线，重启后 goal 不恢复是当前契约）。
 
 ---
 
@@ -456,7 +466,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 16.1）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s16.1）|
+| 版本号 | CMake `project VERSION`（数字段 17）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 阶段 tag 名 s17）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条 + 状态条数字，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
@@ -473,6 +483,8 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 恢复契约串 / 异步定值拒串（s15） | `AgentRecovery.h::RecoveryRules`（`continuationPrompt()` / `asyncApprovalDenied()` 逐字；改动须同步 `tst_agentrecovery` 逐字断言、`isToolFailure` 前缀判据与 `TeammateRuntime` 镜像——两处双写注释互指） |
 | workflow 工具信封（s16，名称/描述/schema） | `WorkflowManager::toolInfo()`（`src/WorkflowManager.h` 成员；`AgentLoopPrompt.cpp` 静态表内以原型对象取值，禁双写名称/描述/schema） |
 | workflow 策略门 reason 词条（s16） | `AgentLoopHooks.cpp` 英文 reason 与 `PermissionCard.cpp::translateReason` 表同步登记（「Workflow policy requires confirmation」，s14 遗留的 MCP 词条同批补入） |
+| goal 契约串与判据（s17） | `GoalRules.h` 单源（七决策/`parseEvaluatorJson` 六门逐字串/设定与回显契约串族/`evaluatorSystemPrompt`/`blockContinueText`/`transcriptText` 24000 预算）——改文案须同步 `tst_goalmanager` 逐字断言；`goalNotice` 载英文契约串保持原文，**禁翻区不入 .ts** |
+| goal 评估模型与 block 上限（s17） | settings.ini 键 `goalEvaluatorModelId`（三级回退首级，空=不启用独立评估模型，`AgentConst::goalEvaluatorModelIdValue()`）与 `stopHookBlockCap`（`stopHookBlockCapValue()` 缺失/非法/<1 回退 8；`GoalManager` 构造期快照，改后新会话生效）；两键设置页无编辑卡，手改 ini |
 
 ---
 
@@ -493,12 +505,12 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `SettingsPage.cpp` 802、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `CompactManager.cpp` 744（本轮计量抽纯头后转发 + 两段循环改增量，+19）、`AgentLoopTeam.cpp` 676（s13 接线 + s15 异步 fail-closed）、
      `SessionSidebar.cpp` 576（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节）、
-     `ChatStatusStrip.cpp` 260（s16.1 新晋，承接占用数字/消耗/速度三段文字；状态灯随后搬回侧栏）（`src/` 合计 27717 行，含新增 `CompactTokens.h` 51 行与 `SettingsCache.h` 171 行）。
+     `ChatStatusStrip.cpp` 260（s16.1 新晋，承接占用数字/消耗/速度三段文字；状态灯随后搬回侧栏）（`src/` 合计 29049 行，s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 210）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 669、
      `LiteHarness.cpp` 572、`ToolBlock.cpp` 562 未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
      是单函数长 UI 装配，线性可读。勿因「669 > 547」就把它补进候选或动手拆 prompt。
-5. **测试覆盖面**：**十四套件**已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /
+5. **测试覆盖面**：**十五套件**已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /
     `tst_worktree` / `tst_agentteams` / `tst_mcpmanager` / `tst_agentrecovery`（s15 契约串逐字 + 判据矩阵，零夹具）/
     `tst_backgroundtasks`（s15 id 序列 / 严格布尔 / hasPending 只查不清 / collect 模板逐字，零夹具）/
     `tst_workflowmanager`（s16 身份/哈希/journal/schema/抢占/快照纯函数门，155 = 恒跑组 118 + 夹具门控文件组 37）/
@@ -506,14 +518,17 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
     `tst_compacttokens`（计量单源纯头 `CompactTokens.h`：可加性 / 项与位置无关 / **替换恒等式** / 替换序列逐步对表 / 确定性 / 折算口径锚点，19 静态点·实跑 48 条，零夹具）/
     `tst_settingscache`（设置读缓存纯头 `SettingsCache.h`：身份三元组穷举 / 缺失文件态 / **200 次热读只装载一次** / 四类外部手改立即生效（等长·变长·新增·删除）/ 缓存与现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）/
     `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 / 只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 `*_tokens_details` 缺失即 0（不算解析失败）/ 逐键对表，49 条，零夹具）/
-    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last / 定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径差 5 倍，必须钉死）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 / last 归属靠 `beginTurn` 降级（本轮无增量起点时不冒充本轮，UI 措辞随之改「上一可定窗」）/ 长会话累加不溢出，30 条，零夹具），静态断言点（`TestHarness::check` 调用点）1127 处、全量实跑 pass=1188 fail=0 skip=1（本轮本机实跑；上一轮登记的 972/1095 已过期——`tst_usagetokens` 当时未列进本清单；口径勘误：`42d1134` 提交信息里的 1123 是静态点数、`04eed69` 的 1144 是推算链，两者均非实跑，实跑数以当轮输出为准，登记见 AGENTS.md 测试节）。被测生产源需显式列进
-    `CMakeLists.txt` 的测试目标清单（当前八个 QtCore-only TU：TaskStore / MessageBus / WorktreeManager / AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime）。**但 L4 主循环（`AgentLoop` 家族 15 TU、
+    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last / 定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径差 5 倍，必须钉死）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 / last 归属靠 `beginTurn` 降级（本轮无增量起点时不冒充本轮，UI 措辞随之改「上一可定窗」）/ 长会话累加不溢出，30 条，零夹具）/
+     `tst_goalmanager`（s17 goal 引擎：`parseEvaluatorJson` 六门逐字定值串 / 七决策记账矩阵 / 代际守卫（setGoal·replace·clear 成功即 ++，迟到代按默认 Allow 静默丢弃零记账）/ `transcriptText` 24000 预算与独占超限插标记 / CLEAR_ALIASES 六词 / stopGate 三门载荷，实跑 209 条 = 静态点 195 + 别名循环展开，零夹具），静态断言点（`TestHarness::check` 调用点）1322 处、全量实跑 pass=1397 fail=0 skip=1（s17 P2r 修复批后本机实跑；上一轮登记的 1188 已过期——`tst_goalmanager` 当时未纳；口径勘误：`42d1134` 提交信息里的 1123 是静态点数、`04eed69` 的 1144 是推算链，两者均非实跑，实跑数以当轮输出为准，登记见 AGENTS.md 测试节）。被测生产源需显式列进
+     `CMakeLists.txt` 的测试目标清单（当前九个 QtCore-only TU：TaskStore / MessageBus / WorktreeManager / AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager）。**但 L4 主循环（`AgentLoop` 家族 16 TU、
     `SubAgent`、`TeammateRuntime`）与网络层 `QOpenAi` 仍零覆盖**：阻塞点是 `QOpenAi` 的函数局部 static
     单例无注入点，须先引入 transport 接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 +
     移动代码逐字一致」，行为回归大面积**不可证**；s15 宿主接线（两拍续打、异步锁存与门、fallback 粘滞、
     bg 唤醒开回合）同属不可证区——直测仅覆盖 `AgentRecovery.h` 纯头与引擎判据；s16 宿主接线（单飞卫兵、
-    runner 桥、延迟回填、stop 收口）与真 LLM 编排环同属本区——直测仅以 mock runner 与同步测试形态覆盖
-    两引擎判据。
+     runner 桥、延迟回填、stop 收口）与真 LLM 编排环同属本区——直测仅以 mock runner 与同步测试形态覆盖
+     两引擎判据；s17 宿主接线（评估器异步往返、代际守卫与单飞锁存、Block 回灌续跑、cancelActiveGoal 收口、
+     `/goal` 零模型早退分流）与真 LLM 评估环同属本区——直测仅覆盖 `GoalRules.h` 纯头与 `GoalManager`
+     引擎判据（`tst_goalmanager`）。
    下一批最小切口（零改动或极小搬移即可入表）：`CronSchedulerManager::validateCron`/`cronMatches`
    （已是 static）/ `BashRunner::dangerWarning`（安全关键却 0 直测）/ `AgentPathGuard` 三个 inline /
    `SessionStore` 六个 static / `AgentConst::estimateTokens` / `AgentLoopDetail::toolSummary`
@@ -537,7 +552,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 分发或收口 → `AgentLoopTools.cpp`；文件沙箱工具 → `AgentLoopFileTools.cpp`；bash/后台任务 →
 `AgentLoopBash.cpp`；权限判定 → `AgentLoopPermission.cpp`；钩子 → `AgentLoopHooks.cpp`；
 历史读写 → `AgentLoopHistory.cpp`；技能 → `AgentLoopSkills.cpp`；todo → `AgentLoopTodo.cpp`；
-子代理 → `AgentLoopSubAgent.cpp`；cron → `AgentLoopCron.cpp`；**团队（队友生命周期/邮箱唤醒/审批翻转/工作树接线/退出清算）→ `AgentLoopTeam.cpp`**；生命周期/会话身份 → `AgentLoop.cpp`。
+子代理 → `AgentLoopSubAgent.cpp`；cron → `AgentLoopCron.cpp`；**团队（队友生命周期/邮箱唤醒/审批翻转/工作树接线/退出清算）→ `AgentLoopTeam.cpp`**；**goal（终局门/评估器异步环/代际与单飞/第七路收口/零模型早退分流）→ `AgentLoopGoal.cpp`**；生命周期/会话身份 → `AgentLoop.cpp`。
 ② 有 ≥2 个 TU 共用的纯函数？→ 声明进 `AgentLoopInternal.h`，定义落「语义最贴近」的那个 TU，**不加转发层**。
 ③ 只在单 TU 内用？→ 留在该 `.cpp` 的匿名 namespace，别上头文件。
 
@@ -591,6 +606,9 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] （**s15** 回归）异步 fail-closed 不影响普通用户敲键回合：命中 ASK 照常出卡、允许/拒绝路径与上一致
 - [ ] （**s16** workflow 基础环）普通回合调 `workflow`（name="review-changes"，args={changes:…}）→ allow 策略放行不弹卡；九次 agent 编排（audit→逐 finding 对抗 verify）后工具回填一段汇总 JSON 信封（含 runId/result）；请求工具池 27 个 function 定义含 workflow schema（信封单源 `WorkflowManager::toolInfo()`）；注入块第五段列注册清单（"Registered workflows…"），system 尾编排纪律段字节恒定（前缀缓存不破坏）
 - [ ] （**s16** workflow 三态门）普通回合调 `workflow` 传未登记名/空名 → fail-closed 归 confirm、弹卡「工作流策略要求确认」（中文词条与 `translateReason` 表一致）；批准 → 仅派发一次（ASK 挂起先于 workflow 特判，批准重入不双派发）、拒绝 → 回填 `Permission denied`；异步回合（cron/团队/bg 唤醒）调 workflow（confirm）→ **不弹卡**、逐字 `asyncApprovalDenied()` 定值拒串回填判红标；deny 定值串 "Permission denied by host policy" 在内置注册表下 E2E 不可达（deny 表空），由读码 + 单测门禁覆盖（`tst_workflowruntime.cpp` 注）
+- [ ] （**s17** goal 零模型早退四形）输入 `/goal`（status）、`/goal clear`（含 stop/off/reset/none/cancel 六别名）、空条件、超 4000 字符四形 → 即时回显状态/结果气泡，**无悬空「处理中…」占位泡残留**（handler 按 isRunning() 两形判别、零模型形 deleteLater 收泡，禁 finishStreaming）、不入历史、零模型请求
+- [ ] （**s17** goal 自动续跑环）`/goal <完成条件>` 设定后模型停手时经独立评估器（无 tools、max_tokens 512）判定：Block → "[Goal still active]" 回灌自动续跑；achieved/limit（连续 block 达 stopHookBlockCap）/error → goalNotice 状态回显 + 该轮真回复正常定稿**不双份**、goal 保持 active 不静默清除；bg 任务 running 期间终局 → defer 放行且评估器 0 次调用
+- [ ] （**s17** goal 停止收口）评估器往返中（回合 running）按停止 → 第七路 `cancelActiveGoal`：丢挂起终局、迟到回填被卫兵静默丢弃、**全路径零 emit** 无幽灵气泡；随后正常回合不受影响
 - [ ] bash 运行超 120 秒命令 → 回填 `Error: Timeout (120s)`（`kBashTimeoutMs` 单源），回合继续不卡死
 - [ ] 设置页「单轮最大调用次数」：合法值（如 50）落盘 → 下一回合生效（`run()` 入口快照 `maxToolIterationsValue()`，回合中途不变）；输 0 / 1001 / 非数字 → 弹「请输入 10 ~ 1000 之间的整数。」不落盘
 - [ ] `settings.ini` `maxToolIterations` 缺失或非法（含手工篡改越界）→ 回退默认 500
@@ -658,7 +676,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（16.1）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s16.1`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s16.1` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17`，与阶段 tag 同名），全仓无散落硬编码；侧栏页脚 `lite-harness s17` 不带多余 `v`
 
 ### 八、P2 记忆与子代理
 
@@ -940,7 +958,10 @@ void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
 ① cancelSubAgent()            级联取消，合成 "(cancelled)" 配对回填
 ①b cancelActiveWorkflow()（s16 第六路收口）  先清槽 → requestCancel（实文只置旗，终态下一拍折叠）→
     在途 runner 请求 cancel → 半批 "(stopped)" 直写历史保配对——全路径零 emit（析构同点复用，红线与
-    settleTeamOnExit 一族）；串行队列下与子代理/待决权限互斥，紧随 ① 空转安全
+    settleTeamOnExit 一族）；串行队列下与子代理/待决权限     互斥，紧随 ① 空转安全
+①c cancelActiveGoal()（s17 第七路收口）  先清单飞旗 → 弃挂起终局 → 在途评估器请求 cancel →
+    清 handle；**全路径零 emit**（析构同点复用，红线与 cancelActiveWorkflow/settleTeamOnExit 一族）——
+    goal 门不产生 tool_use，无半批配对问题；无 goal 时幂等空转
 ② 待决权限视为 deny            直写 "Permission denied"，不经 onToolFinished（不续跑、不发展示信号）
 ③ 半途工具批收口              flush m_toolResultsReady → 为 m_pendingToolCalls 每条合成 "(stopped)" → 清两队列
 ④ m_activeProcesses 逐个 kill  其 finished 因 m_running=false 不再继续
@@ -978,6 +999,13 @@ void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
 - **实现优于原草案的三处修正**（原 API 草案正文已删，此处留结论以免有人照草案回退签名）：
   ① 记忆三方法草案为 `void`，实际均返回 `AsyncRequest *`；② `consolidateMemoriesAsync` 实际无
   `conversation` 参数；③ `prepareAsync` 草案原地引用，实际按值传入、按值交付。
+- **s17 goal 终局门（本轮新增收口面）**：① 评估器为一次性 `AsyncRequest` 往返，NeedEval 时**挂起终局**
+  等回填（lcc 同步阻塞 evaluate 不采=核心偏差①）；单飞旗标 `m_goalEvalInFlight` + 引擎代际守卫双卫兵，
+  迟到/弃置回填按默认 Allow 静默丢弃零记账；② 账本纯内存不落盘，`restore` 备好但 v1 未接线（重启不复活
+  goal=当前契约）；③ achieved/failed/limit/error 终局收口走 goalNotice + triggerStopHooks 镜像（与 lcc
+  四形返 None→钩子链继续 summary 照跑一致），仅 Block 短路钩子链续跑；④ req==null 兑底经
+  `onEvaluatorError("Error: evaluator request failed to start")` 合流记账（宿主自拟串，"Error:" 前缀承
+  isToolFailure 判据惯例）；⑤ `stopHookBlockCap` 为 GoalManager 构造期快照，改 settings 需新会话生效。
 - 审查结论 0 Critical / 0 High / 1 Medium / 5 Low：M1 记忆结果卡相位闸（已落地，见交互篇 §11）；
   **L1 登记为已知限制**——双回合交叠的窄窗口里 pending 链不重发 `memoryPhaseStarted`、旧链 `finished`
   抢先定稿新气泡；修它需给信号加世代参数，收益不配成本。

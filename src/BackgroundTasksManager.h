@@ -54,6 +54,13 @@ public:
     // append m_ready 同发生命周期、collect 同时清空两处，故 m_ready 非空 ⟺ lcc 判据，取就绪台账。
     bool hasPending() const;
 
+    // 是否仍有「进行中」后台任务（台账中存在 status=="running"）——lcc s17 a20fdec
+    // goal_manager.py background_running 判据（port ④，goal 停止闸 defer 用）。
+    // 刻意与 hasPending 分工，两口径不可互替：hasPending = 已有终态待收割投递（唤醒链 bg 档）；
+    // has_running = 尚有任务在跑（bg 未清账时 goal 闸 defer、不消耗评估器调用）。
+    // 时序：recordResult 即改 status 终态 → 本判据立刻 false（不等 collect），同窗 hasPending 转 true。
+    bool has_running() const;
+
     // lcc format_bash_result 等价：超时（对应 lcc exit_code None）或退出码 0 → 原样返回；
     // 否则前缀 "Error: command exited with status %1:\n%2"。主循环前台路径共用
     static QString formatBashResult(const QString &output, int exitCode, bool timedOut);

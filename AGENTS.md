@@ -7,7 +7,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **工具链:** Qt 6.9.0 + MSVC 2022 + CMake 3.20+，C++17，仅 Windows
 - **Prefix:** `CMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64`
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
-- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 16.1`；展示/运行时/打包名统一带 `s` 前缀 = `s16.1`，与阶段 tag 同名）
+- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 17`；展示/运行时/打包名统一带 `s` 前缀 = `s17`，与阶段 tag 同名）
 - **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
 - **单元测试:** `tests/` + ctest，见下独立节「测试（tests/ + ctest）」；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
@@ -15,7 +15,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/doc.md` 第三部分「手工冒烟回归清单」（锚点 `#checklist`；P0/P1/P2 按改动面选组，提交前跑对应组）
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）；`3rdparty/sqlite`（vendored sqlite3，约 11MB）与 `cmake/FindSQLite3.cmake` 已同批 `git rm`——自摘除子构建起全仓零引用，属纯死码，勿再 vendored 回来。
-- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s16.1-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
+- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s17-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
 
@@ -40,7 +40,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **十四个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
+- **覆盖现状:** **十五个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
   路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
   名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环）/ `tst_mcpmanager`（MCP 命名净化、
   拼名上限、装配碰撞与快照原子性门）/ `tst_agentrecovery`（s15 契约串逐字 + 分类器判据矩阵 + 恢复常量门，
@@ -58,22 +58,25 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last /
    定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径
    差 5 倍）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 /
-   last 归属（`beginTurn` 只降级归属不清账，本轮无法定窗时不冒充本轮），30 条，零夹具），
-   全量实跑 1188 条断言（本轮本机实跑，含 1 条 junction 夹具 skip；上一轮登记的 1095 已过期——
-   `tst_usagetokens` 当时未列进本清单）。被测生产
-   源需显式列进 `CMakeLists.txt` 的测试目标清单（当前八个 TU：TaskStore / MessageBus / WorktreeManager /
-   AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime），
-   **仅允许 QtCore-only 的引擎入表**。header-only 纯头（`LineEnding.h` / `AgentRecovery.h` /
-   `CompactTokens.h` / `SettingsCache.h` / `UsageTokens.h` / `StreamRate.h`）**不占此清单**——测试直接 include 生产头即可，零 CMake 改动；带非 QtCore 依赖的
+    last 归属（`beginTurn` 只降级归属不清账，本轮无法定窗时不冒充本轮），30 条，零夹具）/
+    `tst_goalmanager`（s17 goal 引擎：`parseEvaluatorJson` 六门逐字定值串 / 七决策记账矩阵（Achieved·Failed·Limit·Error·Block 的 record 与状态流转）/ 代际守卫（setGoal·replace·clear 成功即 ++，迟到代静默按默认 Allow 丢弃零记账）/ `transcriptText` 24000 预算与独占超限插标记 / CLEAR_ALIASES 六词 / stopGate 三门（无 goal·bg running·NeedEval 载荷），实跑 209 条 = 静态点 195 + 别名循环展开，零夹具），
+    全量实跑 1397 条断言（s17 P2r 修复批后本轮本机实跑，含 1 条 junction 夹具 skip；上一轮登记的 1188 已过期——
+    `tst_goalmanager` 当时未纳）。被测生产
+    源需显式列进 `CMakeLists.txt` 的测试目标清单（当前九个 TU：TaskStore / MessageBus / WorktreeManager /
+    AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager），
+    **仅允许 QtCore-only 的引擎入表**。header-only 纯头（`LineEnding.h` / `AgentRecovery.h` /
+    `CompactTokens.h` / `SettingsCache.h` / `UsageTokens.h` / `StreamRate.h` / `GoalRules.h`）**不占此清单**——测试直接 include 生产头即可，零 CMake 改动；带非 QtCore 依赖的
    TU（如 `CompactManager.cpp` 依赖 `QOpenAi::AsyncRequest`）**不得**为凑覆盖率塞进测试目标，
    要直测它先把纯函数抽成头。
-   **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 15 TU、`SubAgent`、`TeammateRuntime`）
-  与网络层 `QOpenAi` **零覆盖**——阻塞点在 `QOpenAi` 的函数局部 static 单例无注入点，需先引入 transport
-  接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」。s15 宿主接线
-  （两拍续打、异步锁存与门、fallback 粘滞、bg 唤醒开回合）同属不可证区——直测仅覆盖纯头与引擎判据
-  （`tst_agentrecovery` / `tst_backgroundtasks`），恢复逻辑主体仍靠编译期等价 + 冒烟。s16 宿主接线
-  （单飞卫兵、runner 桥、延迟回填、stop 收口）与真 LLM 编排环同属本区——直测仅以 mock runner 与
-  同步测试形态覆盖两引擎判据。
+    **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 16 TU、`SubAgent`、`TeammateRuntime`）
+   与网络层 `QOpenAi` **零覆盖**——阻塞点在 `QOpenAi` 的函数局部 static 单例无注入点，需先引入 transport
+   接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」。s15 宿主接线
+   （两拍续打、异步锁存与门、fallback 粘滞、bg 唤醒开回合）同属不可证区——直测仅覆盖纯头与引擎判据
+   （`tst_agentrecovery` / `tst_backgroundtasks`），恢复逻辑主体仍靠编译期等价 + 冒烟。s16 宿主接线
+   （单飞卫兵、runner 桥、延迟回填、stop 收口）与真 LLM 编排环同属本区——直测仅以 mock runner 与
+   同步测试形态覆盖两引擎判据。s17 宿主接线（评估器异步往返、代际守卫与单飞锁存、Block 回灌续跑、
+   `cancelActiveGoal` 收口、`/goal` 零模型早退分流）与真 LLM 评估环同属本区——直测仅覆盖 `GoalRules.h`
+   纯头与 `GoalManager` 引擎判据（`tst_goalmanager`）。
   下一批最小切口（均已无 GUI 依赖，零改动或极小搬移即可入表）：`CronSchedulerManager` 的
   `validateCron`/`cronMatches`（已是 static）/ `BashRunner::dangerWarning`（安全关键却 0 直测）/
   `AgentPathGuard` 三个 inline / `SessionStore` 六个 static / `AgentConst::estimateTokens` /
@@ -84,8 +87,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   （`TestHarness::check` 调用点）须另标、不可混写。已发生的两条：`42d1134`（s16.1 测试补强）写的
   「全量实跑 1123 条」实为静态点数（当时实跑 1144、后实测 1184）；`04eed69`（输出速度）写的「全量实跑
   1144 条」是 972+49+123 的推算链、从未实跑过（实测 1184，本轮 1188）。今后凡引用断言数须来自当轮
-  实跑输出，推算链不得当实跑引用——CI 注释同口径（其 `LITE_TEST_MIN_PASS=1066` 仍按 1188 留约 10% 余量，
-  未随本轮改动）。
+   实跑输出，推算链不得当实跑引用——CI 注释同口径（其 `LITE_TEST_MIN_PASS=1250` 即按本轮实跑 1397
+   留约 10% 余量上调，替换旧值 1066——旧值系按已过期登记数 1188 所设）。
 - **StreamRate 的两层口径（本轮措辞缺陷修复）:** 聚合口径与 last 归属是两件事。`Meter::beginTurn()`
   在 `AgentLoop::startRateWindow()` 每请求置位、**只降级归属不清账**（账只增不减）；本轮无增量起点
   （纯 tool_calls 回合）时 last 仍是上一个可定窗，UI 措辞必须说「上一可定窗」而非「本轮」。UI 文案走
@@ -116,6 +119,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **WorkflowManager / WorkflowRuntime（lcc s16 42a555d 移植）** — workflow 编排引擎双件套：`WorkflowManager` 非 QObject 纯 QtCore 引擎、值成员接线（仿 McpManager）：注册表元数据（当前唯一条目 `review-changes`=忠实移植 lcc 演示工作流）/ 身份校验与语义键（createRunId / createTaskId / validateRunId / validateMeta / stableHash / agentKey）/ journal（`.workflows/<runId>.journal.jsonl` 逐行追加 + resume 逐行校验）/ SimpleJsonSchema 校验 + fillSchema / MockAgentRunner / parseRunnerJson / Budget 与 ExecutionLimits / AGENT_CAP=1000 / CONCURRENCY=8 / runId NewOnly 原子预留（撞名重试 ≤32）/ QSaveFile 原子快照 / last_run 账 / 进程内 run 抢占集合（同串 "workflow run {runId} is already active"；lcc 跨进程 fcntl 文件锁不采=偏差）；宿主 `setStoreDir` 推形推 `<会话根>/.workflows`（目录创建自愈在引擎 `ensureStoreDirs`，宿主不 mkdir）；偏差登记①-㉒在 `src/WorkflowManager.h` 头注释；工具信封单源成员 `toolInfo()`。`WorkflowRuntime` 一次性异步编排对象（**非 QObject**，槽用 shared_ptr）：六原语 agent / parallel / pipeline / phase / log / workflow 全事件驱动状态机（QTimer::singleShot(0) 续跑，零线程零嵌套事件循环）；HIT 脏缓存拒用 / MISS schema 唯一一次重试 / resume 四闸先于 journal 截断 / 信封三写终态收口；`kFocusedSystemPrompt()` / `buildRunnerPrompt()` / `kAgentMaxTokens=2000`；偏差 9-19 在头注释。
 - **AgentLoopTeam.cpp（s13 宿主接线 TU）** — 六注入装配（launcher/worktreeCreator/permissionCheck/hooksTrigger/toolAdapter×5）、`leadToolCwd` 租约感知 cwd 单点（围栏根随租约 cwd）、三注入边界 + `tryDeliverTeamEvents` 空闲唤醒收割（挂 cron tick 1s 节拍、先于 cron 交付、经 `scheduledUserMessage` 开回合——Gate③ MAJOR-1）、队友回合环与退出清算（`settleTeamOnExit`）。**析构期红线：`settleTeamOnExit` 内禁止 emit 任何信号**——`AgentLoop` 恒为 `ChatSessionPage` 的子对象，Qt 析构时序是「派生类成员先析构 → `~QObject` 才断连并 `deleteChildren`」，此刻到方的 lambda 仍挂在连接上而它触碰的页面成员（如 `m_liveTeammateCards`）已成悬空对象，直连槽执行即 UB。运行期队友卡终局另有三路（`completed`/`exited`/Lead `runningChanged(false)` 兜底扫），均不经本函数。
 - **AgentLoopWorkflow.cpp（s16 宿主接线 TU，181 行）** — `startWorkflowRun`：单飞卫兵（占用即回填 "Error: another workflow run is already active"）+ `WorkflowRuntime` 槽（**shared_ptr**，非 QObject 故 QPointer 不可用）与待决 toolCall 槽三件套；workflow 为 executeTool 第三异步特判——**lcc handler 内同步阻塞编排不采，零线程 GUI 红线下改异步延迟回填（仿 task 形=核心偏差）**；runner 桥 `QOpenAi::AsyncRequest::sendText`（focused system prompt + max_tokens 2000，复用 s15 传输恢复链；tokens 无 usage 回读，`AgentConst::estimateTokens` 字符折算=偏差；content 原样回、由 Lane B `agent()` 自 parse）；out 闭包双卫兵（QPointer self + 槽指针匹配，防迟到回填）。`cancelActiveWorkflow`（stop() 第六路收口 + 析构同点）：先清槽 → requestCancel（实文只置旗，终态折叠在下一拍）→ 在途 cancel → 半批以 "(stopped)" 直写历史保 tool_use 配对——**全路径零 emit**（析构窗口红线，与 settleTeamOnExit 一族）。权限门：Hooks workflow 三态门（deny → 定值 "Permission denied by host policy" 硬拒 / confirm → ASK 卡 "Workflow policy requires confirmation" 且异步回合复用 s15 `asyncApprovalDenied()` fail-closed / allow 放行；门位 mcp__ 门后，deny 表与 granted 短路顺序不动；ASK 批准重入仅派发一次）；PermissionCard 两译文同批补登（含 s14 遗留 MCP 词条）。
+- **GoalManager / GoalRules / AgentLoopGoal.cpp（lcc s17 移植：会话级 Stop 闸门 + 独立评估器）** — goal 是**会话级 Stop 闸门、非模型工具**：`ToolNames.h` 零改动（不入工具名单、不入静态 schema），唯一入口是 `/goal` 斜杠命令（`run()` 入口经 `GoalManager::parseInput` 分流：Status/Cleared/错误形零模型早退回显，Set 形走正常模型回合）。会话最多一个 active goal（`setGoal` 已存在即替换，`replacedReason`）。三段构成：`GoalRules.h` 纯头（决策类型/六门解析器/转录预算/契约串，见「单源常量/纯头」条）、`GoalManager` 非 QObject 纯 QtCore 引擎、值成员接线（仿 McpManager/WorkflowManager；**账本纯内存不落盘**——区别于 `.workflows` 磁盘台账，`restore` 静态工厂备好但 v1 未接线=port 偏差⑥/头注释偏差9，另 1-10 条偏差登记在 `src/GoalManager.h` 头注释）、`AgentLoopGoal.cpp` 宿主接线 TU。**自动续跑环**：终局经 `gateGoalTerminal` 插桩（`AgentLoopRequest.cpp` 的 `m_messages.append` 之后、`triggerStopHooks` 之前——goal 先于 summary 序；无 goal 首行短路保单测零行为漂移=字节等价红线）。`stopGate` 三出口：无 goal→Allow 静默放行；`BackgroundTasksManager::has_running()` 注入命中→Defer 放行（**defer 期 0 次评估器调用**，lcc §10 坑沿）；否则 NeedEval 挂起终局——独立评估器经 `QOpenAi::AsyncRequest` 一次性请求（模型三级回退：settings.ini 键 `goalEvaluatorModelId`→`m_recoveryCurrentModel`→`m_model`；`max_tokens=kGoalEvaluatorMaxTokens(512)`，无 tools/stream_options。偏差登记：lcc 次级=静态 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 组装根启动期固化，lite 次级=s15 回合内 fallback 动态粘滞、且首级每次评估现读 ini——时机与可变性不同=AgentLoopGoal.cpp 头注释偏差⑥），七决策经 `onEvaluatorText`：Block 回灌 `blockContinueText` 走 `continueTurnAfterStopHook` 续跑（引擎侧 consecutiveBlocks+1）；Achieved/Failed/Limit/Error 四终局 emit `goalNotice(m_goal.status())` 通知页面，收口尾经 `triggerStopHooks`→force 续跑或 `finishTurnWithoutTools`（P2r MINOR-B 修复：对齐 lcc「四形返 None→链继续→summary 照跑」）。**三出口（连续 block 达 block_cap→Limit / max_turns 耗尽 / 评估器报错→Error）都停下交还用户，goal 保持 active、不标完成、不静默清除**。max_turns 出口差量登记（AgentLoopGoal.cpp 头注释⑤）：lcc loop.py:218-220 撞上限仍 `trigger_hooks("Stop", skip_goal=True)` 保 summary 播报 + goal 交还日志；lite 该出口整条 Stop 钩子链不跑、无该日志——goal 层效果一致（不进评估器不动账）。**consecutiveBlocks per-用户回合 `beginQuery()` 归零**（自动续跑回合不归零——连拦 ≤cap 的累积口径）。**代际守卫**（`m_generation`：setGoal 含 replace/clear 成功即 ++，`stopGate` 快照随 `StopGateResult.generation` 交回填闭包携带回传；代际不符的迟到回填静默按默认 Allow 丢弃、零记账）+ 单飞锁存 `m_goalEvalInFlight`（重入 fail-safe Allow、不再调 `stopGate` 防双 Defer 记账）。`stop()` 第七路 `cancelActiveGoal`（析构同点调用）**全路径零 emit**（析构窗口红线，与 `settleTeamOnExit`/`cancelActiveWorkflow` 一族；置旗丢在途、不写历史）。`prompt_goal` 静态段追加在 system 尾 workflow 段之后（lcc 中文三句逐字转译，整段 251 码元逐字节对账相等，全会话字节恒定、禁翻区）；`goalNotice` 英文契约串保持原文不入 .ts（留观决策）。`tokensAtStart` 取 `totalTokens` 基线（`setGoal(arg, -1)` 语义，对齐 lcc goal_manager.py:286-302）——**与 lcc 一致，非偏差**（port 原登记偏差①已撤登）。
 
 ### 会话层
 
@@ -124,12 +128,13 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ### 单源常量 / 纯头
 
-- **AgentConstants.h** — 模型清单（settings.ini 键 `modelOptions` 逗号分隔、`defaultModel` 指定缺省项，未配置/非法回落内置 `kBuiltinModelOptions`；单点取值 `modelOptions()`/`defaultModel()`，**读值必须经本头内 `iniTextValue()`**——裸逗号串在 ini 是 QSettings 的列表语法，`value().toString()` 会得空串即「配置了却不显示」，列表形态要逐元素取原文再按逗号拆，严禁再裸用 `.toString()`）、kMaxTokens 与 s15 恢复常量（kEscalatedMaxTokens=16000 / kMaxConsecutive529=2 / kMaxRecoveryRetries=2）、`fallbackModelIdValue()`（经 `iniTextValue()` 读 settings.ini 键 `fallbackModelId`，空=禁用换模只退避；刻意不做清单内校验——fallback 语义是给清单外服务兜底）、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results`/`.mailboxes`/`.worktrees`/`.workflows`（s16 编排台账） + 预留队友名 `kReservedTeammateNames`={lead,agent} 与团队节拍/等待界常量 — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被 settings.ini 覆盖，非硬约束）。
+- **AgentConstants.h** — 模型清单（settings.ini 键 `modelOptions` 逗号分隔、`defaultModel` 指定缺省项，未配置/非法回落内置 `kBuiltinModelOptions`；单点取值 `modelOptions()`/`defaultModel()`，**读值必须经本头内 `iniTextValue()`**——裸逗号串在 ini 是 QSettings 的列表语法，`value().toString()` 会得空串即「配置了却不显示」，列表形态要逐元素取原文再按逗号拆，严禁再裸用 `.toString()`）、kMaxTokens 与 s15 恢复常量（kEscalatedMaxTokens=16000 / kMaxConsecutive529=2 / kMaxRecoveryRetries=2）、`fallbackModelIdValue()`（经 `iniTextValue()` 读 settings.ini 键 `fallbackModelId`，空=禁用换模只退避；刻意不做清单内校验——fallback 语义是给清单外服务兜底）、s17 goal 常量组（kGoalEvaluatorMaxTokens=512 / kGoalMaxConditionLength=4000 / kGoalTranscriptCharLimit=24000 / kGoalStopHookBlockCap=8）与单点取值 `goalEvaluatorModelIdValue()`/`stopHookBlockCapValue()`（均经 `iniTextValue()` 读键；后者仅下界 ≥1 校验、缺失/非法/<1 回退 8，`GoalManager` 构造期快照）、bash 超时/错误文案、输出截断、上下文上限默认/校验界（kContextCharLimitDefault/Min/Max）与单点取值 `contextCharLimitValue()`、glob 上限与剪枝目录、数据目录名（`.task`/`.temp`/`.transcripts`/`.task_outputs/tool-results`/`.mailboxes`/`.worktrees`/`.workflows`（s16 编排台账） + 预留队友名 `kReservedTeammateNames`={lead,agent} 与团队节拍/等待界常量 — 拼法涉数据兼容，不可改；上下文上限数值则只是默认值语义，可被 settings.ini 覆盖，非硬约束）。
 - **LayoutConstants.h** — 消息列宽/边距（NewChatPage/ChatSessionPage/ChatMsgEdit 同列对齐）。
 - **NavItem.h** — 导航键常量（NavKey）+ NavItem（带 removeChildItem）。**ToolNames.h** — 27 工具名（18 基础 + 7 团队 + 1 MCP 入口 connect_mcp + 1 编排入口 workflow（s16，Lead 独占）；`submit_plan` 队友专属名不入表，单源在引擎匿名 ns）；另含 `MCP_PREFIX` 前缀常量（供权限钩子识别 `mcp__` 命名域，非工具名；故表内常量计 28）。**ToolTagKind.h** — 工具→样式标签（write/run/search/read/plan/delegate/other），经动态属性喂给 QSS 选择器。
 - **LineEnding.h** — 文本文件行尾归一单源（header-only 纯函数）：`dominant` 主导行尾判定（CRLF 数 ≥ 裸 LF 数且非零判 CRLF，平局偏 CRLF）/ `toLf` 匹配域归一 / `apply` 写回域还原（幂等，不产生 `\r\r\n`）/ `replaceOnce` 两级匹配单次替换。**纪律：匹配域归一到 LF、写回域按文件主导行尾还原**——`read_file` 以 `QTextStream` 逐行读再用 `'\n'` join，交还模型的永远是 LF 文本，而落盘文件在本仓（`core.autocrlf=true`）多为 CRLF；`edit_file` 若拿原始字节直接匹配，多行 `old_string` 必然失配（报 text not found），LF `new_string` 原样插入又会混入裸 LF。孤立 CR 不折叠（不误伤正文 CR 字面量）。`countOccurrences` 统计命中次数（不重叠计数，与两级匹配同口径：在哪个域命中就在哪个域计数），经 `replaceOnce` 的 `matchCount` 出参回传（与 `matched` 同为 nullptr 容错）。**`edit_file` 三道防线**（`runEditFileIn`）：① 空 `old_string` 拒绝——`indexOf("")` 恒返回 0，原语义会把 `new_string` 静默前插到文件开头（模型漏填参数即毁文件头）；② 体量上限 `kEditFileMaxBytes`（5MB）拒绝——整文件读入 + 多次整串拷贝（编码往返预检、行尾归一与还原）在零线程下会冻结主线程，`read_file` 已因此限量读，`edit_file` 不能反而无界；超限不尝试部分读写（部分写会毁文件）；③ **多处命中拒绝**（**有意偏离** lcc `str.replace(old,new,1)` 的静默替换第一处）——改哪一处取决于文件里恰好先出现哪个，模型无从判断，静默改错位置比失败更危险，回可判定错误要求补上下文使其唯一。
 - **AgentRecovery.h** — s15 恢复契约串与文本判据纯头（`RecoveryRules` 命名空间，禁翻区）：逐字契约串 `continuationPrompt()`（"Continue from the previous response. Do not repeat completed work."）与 `asyncApprovalDenied()`（"Permission denied: interactive approval is unavailable during an asynchronous turn"）——跨模块承重措辞（两拍续打、异步定值拒、isToolFailure 前缀判定、测试逐字断言），改文案须同步 `tst_agentrecovery`、`isToolFailure` 的 `startsWith("Permission denied")` 判据与 TeammateRuntime 镜像（两处双写、注释互指）；`isRateLimitText()` / `isOverloadedText()` 鸭子文本判据（小写 contains：429/ratelimit/rate limit/rate_limit；overloaded/529）供 `QOpenAi` 可重试判定。
 - **StreamRate.h** — token 输出速度（token/s）计算单源（header-only 纯头，仿 `UsageTokens.h` 先例）：`Window`（三时刻：t0 流建立 / t1 本轮首个增量 / t2 usage 末帧）+ `makeWindow`（判据）+ `tokensPerSecond` + `Meter`（会话级只增账）。**三条不可混的口径**：①分母是生成窗口 t1→t2、**不含 TTFT**——把「请求发出→usage」整窗口当分母会把慢首字读成慢模型，两种状态对体感作用相反，故 TTFT 单独记录、单独显示；②无增量起点即窗口作废——纯 tool_calls 回合的 delta 只有 tool_calls 字段、不触发 `textDelta`/`thinkingDelta`，宁可不显示也不把 TTFT 冒充生成速度；③聚合 = Σtokens ÷ ΣgenerationMs，**不是**各窗口速率的算术平均（否则 1 token 窗口与 2000 token 窗口等权，一条长回答被九条短回答稀释）。有效性判据与 `UsageTokens::fromUsage` 同源（`prompt<=0` 即整窗作废），无效窗口不进分母也不改写 `last`，空账 UI 整行隐藏。宿主只观测三个时刻（`AgentLoopRequest.cpp` 的 `startRateWindow`/`markFirstOutputDelta`/`closeRateWindow`：每请求重开表、流内重试不重开，退避计入 TTFT），折算与判据全在本头——这是它能进 ctest 的全部原因（`AgentLoop` 链 QOpenAi/FluentUI，按 QtCore-only 纪律进不了测试目标）。覆盖面比消耗账更窄：仅主循环请求（队友增量不经宿主信号面、压缩/记忆/workflow 走 `AsyncRequest` 无 usage 通道），UI tooltip 同步声明。
+- **GoalRules.h** — s17 goal 引擎契约串与判据纯头（`GoalRules` 命名空间，禁翻区，仿 `LineEnding.h`/`AgentRecovery.h` 先例；header-only **不占测试目标 TU 清单**，`tst_goalmanager` 直接 include 生产头）：七决策类型（Allow/Defer/Error/Achieved/Failed/Limit/Block + `actionName`）；`isClearAlias` 六词逐字 clear/stop/off/reset/none/cancel；设定/回显契约串族（emptyConditionError / tooLongConditionError〔`kGoalMaxConditionLength=4000`〕/ blockCapError / replacedReason / goalSetReason / clearedReason / noGoalSetText / goalClearedText）与 `deferReason`/`limitReason(cap)`/`goalErrorReason`（`"GoalError: "`+原文，评估器解析失败与传输失败同形折叠）；`evaluatorSystemPrompt()` / `evaluatorUserPrompt()`（payload Compact JSON 单 `.arg`）/ `blockContinueText()`（Block 回灌文案）。**`parseEvaluatorJson` 六门**（invalidJson / notObject / needBoolOk / needReason / impossibleBool / bothOkImpossible，各有定值英文串、`tst_goalmanager` 逐字断言）：剥 code fence 在最前；**顶层标量探针**（`{"goal_probe":…}` 包裹再解，用来拆开门2/门3——Qt `fromJson` 对顶层标量直接拒、两门无从区分）。**`transcriptText(messages, kGoalTranscriptCharLimit=24000)`**：新→旧逐条累加（itemSize = 条长+2 分隔计），唯一例外是**最新一条独占超限**就地插标记 `\n...[middle omitted]...\n`（头 3/4 + 尾 1/4）后 break；其余旧条目超限是**不进**而非截断（转录连续性优先），最后反转以 `\n\n` join。`plainContent` OpenAI 形适配（role=tool→`[tool_result %1]`、tool_calls→`[tool_use name args]`）。体量口径 UTF-16 码元（QString::length()，偏差登记在 `GoalManager.h` 头注释）。
 
 ### UI 层
 
@@ -147,9 +152,10 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - 所有会话数据落在 **`<workDir>/.lite-harness/`**（`SessionStore::rootDirFor`）——是会话工作目录下的相对根，**不是**用户主目录。
 - 带 sessionDataId 时隔离到 `sessions/<id>/`（history.json、.task、.memory、.transcripts、scheduled_tasks.json、.mailboxes、.worktrees、.workflows 等）；`skills/` 始终跨会话共享。**s16 `.workflows/` 产物**：`<runId>.json` 原子快照 / `<runId>.journal.jsonl` HIT 账本 / `<runId>.output.json` 信封 / `last_run.txt`；lcc 跨进程 `.lock` 文件锁不采、由进程内 runId 抢占集合替代（=偏差登记）。
-- 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；**读一律 `AppSettings::value()`、写一律 `AppSettings::setValue()`**——缓存与失效判据在 `SettingsCache.h` 的 `Reader`，按文件身份 `(exists,mtime,size)` 惰性重载，手改 ini 下一次取值即生效；原逃生口 `AppSettings::ini()` 已摘除，禁在消费点现构造 `QSettings`，理由见 `docs/doc.md` §9.10 第 10 条；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`/`fallbackModelId`（s15 新增；设置页无编辑卡=留观，手改 ini）；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
+- 设置存储 = `AppSettings.h` 单源的 **exe 同目录 `settings.ini`**（QSettings IniFormat；**读一律 `AppSettings::value()`、写一律 `AppSettings::setValue()`**——缓存与失效判据在 `SettingsCache.h` 的 `Reader`，按文件身份 `(exists,mtime,size)` 惰性重载，手改 ini 下一次取值即生效；原逃生口 `AppSettings::ini()` 已摘除，禁在消费点现构造 `QSettings`，理由见 `docs/doc.md` §9.10 第 10 条；键 `defaultWorkDir`/`contextCharLimit`/`maxToolIterations`/`language`/`sidebarVisible`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`/`fallbackModelId`（s15 新增；设置页无编辑卡=留观，手改 ini）/`goalEvaluatorModelId`（s17 新增：评估器模型三级回退 `goalEvaluatorModelId`→`m_recoveryCurrentModel`→`m_model` 的首级，空=不启用独立评估模型；同样设置页无编辑卡，手改 ini）/`stopHookBlockCap`（s17 新增：连续 block 上限，缺失/非法/<1 回退模块默认 8，`AgentConst::stopHookBlockCapValue()` 单点取值，`GoalManager` 构造期快照、改后新会话生效）；用户裁决弃用注册表）。`modelOptions` 手改写成裸逗号串时 QSettings 会解析成 QStringList（两种形态——手改裸串与设置页写单值——都要能读回，故读值走 `AgentConstants.h` 的 `iniTextValue()`，见上条）。
 - 上下文压缩上限可设置（settings.ini 键 `contextCharLimit`，默认 200000 字符，校验界 10000~5000000；缺失/非法回退默认，单点取值 `AgentConst::contextCharLimitValue()`）。**它是字符口径的唯一入口**：全局 token 预算 `T = contextCharLimit / kCharsPerTokenBudget(4)` 经 `AgentConst::contextTokenBudget()` 现取现用，压缩阈值 batch/large/目标按 `4×T'`/`0.6×T'`/`0.8×T'` 缩放（`T' = T − overhead`，见「CompactManager」条），summary 输入裁剪仍按 `1.6S` 字符域。设置页写值后压缩管线下一回合即生效，无需重启。
 - 单轮最大工具调用次数可设置（settings.ini 键 `maxToolIterations`，默认 500，校验界 10~1000；缺失/非法/越界回退默认，`AgentConst::maxToolIterationsValue()` 单点取值，设置页与主循环共用）；主循环回合入口快照，中途改设置不影响当前回合。SubAgent 轮次预算与之同源（`start()` 入口快照进 `m_maxTurns`，原固定 `kMaxSubagentTurns = 50` 已删）。
+- **s17 goal 账本纯内存不落盘、无新增目录:** `GoalManager` 的 active goal / 事件台账 / consecutiveBlocks / totalTokens 全随 `AgentLoop` 生命周期存亡（区别于 `.workflows` 的磁盘台账——lcc 的落盘转录不采）；`restore` 静态工厂已备好但 v1 宿主**不接线**（port 偏差⑥=头注释偏差9，重启后 goal 不恢复是当前契约）。会话数据目录清单（上上条）不因 goal 增加任何新名。
 - **零线程原则:** 全仓库主线程事件驱动，轮询/异步一律 QTimer + QProcess 信号，不起线程。
 
 ## 主题 / QSS
@@ -166,14 +172,14 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **切换=重启生效:** FluentUI 控件无运行中重译能力（无 languageChanged 信号）。仅跨切换常驻的组件经 `changeEvent(QEvent::LanguageChange)` 重译（LiteHarness 导航三项 / SettingsPage / NewChatPage / WorkDirPathBar / TodoCard 标题）；弹出即重建的菜单/对话框/卡片天然取当次语言。已渲染历史气泡滞留旧语言（接受）。
 - **新增/修改 UI 字符串:** 照常写中文 `tr()`；**勿跑 `lite-harness_lupdate` 目标**（实证会把 FluentUI 子工程源码扫入、灌入上千外部串），改手动 `lupdate -recursive src -no-obsolete -source-language zh_CN -target-language zh_CN -ts i18n/lite-harness_zh_CN.ts` 与 `-ts i18n/lite-harness_en_US.ts` 各刷一次，补英文译文再构建；漏译条目运行时回退中文源。成对手刷已固化为 `scripts/update-i18n.ps1`（仓库根执行即可，两条 `-ts` 命令的权威单源）。
 - **禁翻区:** 发往 LLM 的 C 类串（system prompt、压缩摘要指令、`AgentLoop` 落盘进历史的合成文本如 `(恢复：工具结果不可用)`——已改 `QStringLiteral` 硬隔离，禁再包 `tr()`）不进翻译、不入 .ts。品牌名/版本号豁免口径：代码中 `tr("lite-harness")`/`tr("AtomOneDark")` 等品牌专名与版本标签**保留 tr 包裹**（版本号经 LITE_VERSION 宏注入串天然不在 ts），在 .ts 内以译文=源文恒等登记，保证 Linguist 审计面完整。
-- **版本号单源:** CMake `project VERSION`（数字段，如 16.1）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s16.1`，与阶段 tag 同名）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。
+- **版本号单源:** CMake `project VERSION`（数字段，如 17）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s17`，与阶段 tag 同名）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。
 
 ## 关键约定
 
 - 导航键统一取自 `NavItem.h::NavKey`；页面注册 `m_sLayout->addWidget(key, page)`，导航项用同一键。
 - 魔法数字进 `AgentConstants.h`（agent 参数）或 `LayoutConstants.h`（布局尺寸），不散落字面量。
 - 工具侧失败折叠为输出字符串交还 LLM，不抛异常、不弹窗。s13 团队 7 工具与队友侧同口径（引擎内核失败一律折叠为文本，含 worktree `Error:`/`Partial` 折叠形）。
-- lcc 移植规格权威：源码注释以 `lcc sXX + hash` 标注对应阶段（s03–s16），参照仓库 `3rdparty/lcc`（不入构建）。
+- lcc 移植规格权威：源码注释以 `lcc sXX + hash` 标注对应阶段（s03–s17），参照仓库 `3rdparty/lcc`（不入构建）。
 - FluentUI 头文件 `<FluUtils.h>`、`<FluThemeUtils.h>` 等位于 `3rdparty/FluentUI/{controls,utils}`。
 - **日志单源 = FluentUI Utils 的 `FluLogUtils`**（主程序是 GUI 子系统、无 stderr 宿主，不接管则调试输出全蒸发）：`App.cpp` 在 `QApplication` 构造后 `QDir().mkpath("../log")` + `FluLogUtils::__init()`，`exec()` 返回后 `FluLogUtils::__deinit()`（QFile 关闭才 flush，缺它丢末段；自重启走 `qApp->exit(931)` 非 `std::exit`，故该行必达）。**`mkpath` 是必需兜底不是锦上添花**——`__init` 内部路径写死 `../log/<时间戳>.log`（相对 CWD），而 `QFile::open` 不建目录：目录缺失 → open 失败 → 它连 message handler 都不装、静默全丢。**`myMessageOutput` 只写 `msg` 原文（`tWrite << msg << "\n"`）、不加任何前缀**——实证：裸 `qDebug` 行落盘是 `[i18n] loaded translator: :/i18n/…`（无时间无定位），FluentUI 自己的 `LOG_WARN` 行是 `[2026-10-11 08:13:29.701][debug][I18n.cpp][…][38] …`。故 **`LOG_*` 宏前缀不是冗余，而是文件里唯一的时间/定位来源**。调用点已全量迁宏（63 处、18 文件），统一经中转头 `src/LiteLog.h`（各文件在自身首个 `#include` 之后引它）：主程序侧落到 `FluLogUtils.h` 原生宏，测试侧由 CMake 给 `lite-harness-tests` 定义 `LITE_NO_FLU_LOG`，退化宏为 `qDebug().nospace().noquote()`（与上游同流修饰符、只差前缀；`TaskStore.cpp`/`AgentTeamsManager.cpp` 同进两目标，测试只链 `Qt6::Core`，如此测试 exe 不被拖进 Qt6::Gui 的 DLL 依赖，ctest 仍读其 stdout）。**写法 `LOG_XXX << …`（裸写，无括号、无 `.noquote()`）**——`noquote` 已收进上游 FluentUI 的宏定义（上游 `master` 提交 `e337f514`，基于 1.0.9 已 fast-forward 合入、临时分支已删；本仓子模块随之由 `1.0.8-54` 更新到该提交）。历史成因留此备查：当年宏尾是 `<< "] "`，在调用点补 `.noquote()` 必须写成 `(LOG_DEBUG).noquote()`（裸写的 `.` 绑到字符串字面量 → C2228），且 `Qt::noquote` manipulator 在 Qt 6.9 不存在（`qdebug.h` 只有成员函数 `noquote()` → C2039）。宏内仍保留 `nospace()`，**多参数项间空格要靠字面量显式携带**（已全仓补齐 14 处，如 `"QOpenAi [retry] " << n << " / " << max`）。级别映射 `qDebug→LOG_DEBUG`/`qInfo→LOG_INFO`/`qWarning→LOG_WARN`；**2 处 `qCritical` 保留原样**（`LOG_ERR` 底层是 `qDebug()`，迁过去级别降级、`QT_LOGGING_RULES` 按级别过滤失效）。已知取舍：每启动一个新文件、无轮转清理。
 
@@ -184,7 +190,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **升版本：行为只改一行，文档必须 grep 同步。** 行为单源是 CMake
   `project(lite-harness VERSION <数字段>)`——`LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME`
-  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s16.1`），
+  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s17`），
   代码里**不得**再硬编码版本号（口径详见「国际化」节末「版本号单源」条）。
   `project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
   **但「只改一行」只对行为成立**：README / AGENTS / `docs/doc.md`（结构篇与清单篇）与若干

@@ -53,7 +53,7 @@ cmake -B build -S . -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64
 cmake --build build --config Release
 ```
 
-输出：`build/bin/lite-harness.exe`（版本 s16.1）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
+输出：`build/bin/lite-harness.exe`（版本 s17）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
 
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目的 install 规则在 configure 期即注册进全树安装清单，单目标构建缺 `Gallery.exe`/`cmark.exe` 会让后续 cpack 硬错误中止。
 
@@ -67,7 +67,7 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十四个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属），全量实跑 1188 条断言（静态断言点 1127）。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十五个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据），全量实跑 1397 条断言（静态断言点 1322）。
 
 **本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非整组 SKIP 的套件（`LineEnding` / `McpManager` / s15 两套件 / s16 两引擎套件的恒跑组——其文件组与端到端组自带夹具门控）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
@@ -83,13 +83,13 @@ ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s16.1-win64.zip`（约 54MB），解压后运行 `lite-harness-s16.1-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s17-win64.zip`（约 54MB），解压后运行 `lite-harness-s17-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
-| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 15 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime / WorkflowManager / WorkflowRuntime…）+ FluentUI 页面与控件 |
+| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 16 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime / WorkflowManager / WorkflowRuntime / GoalManager（s17 引擎群）…）+ FluentUI 页面与控件 |
 | `tests/` | ctest 纯函数单测（`TestHarness.h` 极简断言骨架 + `tst_<模块>.cpp`），产物 `build/tests/`，不进发布包 |
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
 | `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |
@@ -114,7 +114,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 ## 发布
 
-版本单源 = CMake `project VERSION`（数字段 `16.1`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s16.1`）自动同名。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
+版本单源 = CMake `project VERSION`（数字段 `17`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17`）自动同名。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
 
 ## 致谢
 

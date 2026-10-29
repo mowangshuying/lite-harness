@@ -102,6 +102,35 @@ constexpr int kEscalatedMaxTokens = 16000; // max_tokens 溢出第一拍：升�
 constexpr int kMaxConsecutive529 = 2;      // 连续过载计数界：达到即换 fallback 模型（lcc MAX_CONSECUTIVE_529）
 constexpr int kMaxRecoveryRetries = 2;     // 恢复级重试预算（lcc MAX_RECOVERY_RETRIES，后续 lane 消费）
 
+// ---- s17 goal loop 常量（对照 lcc s17 a20fdec goal_manager.py 常量块 L38-43）----
+// 消费点在 GoalRules.h / GoalManager 引擎层；前三个是契约值（评估器单次输出上限、条件长度门、
+// 转录渲染预算），第四个同时是 settings.ini 键 stopHookBlockCap 的缺省回退值。
+constexpr int kGoalEvaluatorMaxTokens = 512;    // lcc DEFAULT_EVALUATOR_MAX_TOKENS：评估器不传 tools 的单发上限
+constexpr int kGoalMaxConditionLength = 4000;   // lcc MAX_GOAL_LENGTH：goal 条件长度门（超限折叠逐字错误串）
+constexpr int kGoalTranscriptCharLimit = 24000; // lcc TRANSCRIPT_CHAR_LIMIT：评估器转录预算（从新往回累加）
+
+// 评估器专用模型（lcc env GOAL_EVALUATOR_MODEL_ID，port ⑦ 三级回退的 lite 形）：
+// 空串 = 用主循环当前模型。读值必须经 iniTextValue（同 fallbackModelId 的裸逗号串纪律）。
+// 刻意不做「清单内才采信」校验：与 fallbackModelId 同理，评估器允许挂在模型清单外的服务上。
+inline const QString kGoalEvaluatorModelKey = QStringLiteral("goalEvaluatorModelId");
+inline QString goalEvaluatorModelIdValue()
+{
+    return iniTextValue(kGoalEvaluatorModelKey).trimmed();
+}
+
+// 连续 block 上限（lcc env STOP_HOOK_BLOCK_CAP + GoalController block_cap 唯一守卫 L249-250）：
+// 校验只有下界 >=1（lcc 无上限，不另造）；缺失/非整数/<1 一律回退 kGoalStopHookBlockCap。
+constexpr int kGoalStopHookBlockCap = 8; // lcc DEFAULT_STOP_HOOK_BLOCK_CAP：连续 block 超限即 limit（不清 goal）
+inline const QString kStopHookBlockCapKey = QStringLiteral("stopHookBlockCap");
+inline int stopHookBlockCapValue()
+{
+    bool ok = false;
+    const qlonglong stored = AppSettings::value(kStopHookBlockCapKey).toLongLong(&ok);
+    if (!ok || stored < 1)
+        return kGoalStopHookBlockCap;
+    return static_cast<int>(stored);
+}
+
 // 推理强度档位（OpenAI 兼容端点 reasoning_effort）：端点按档位分配思考预算，
 // 对齐 opencode 的 xhigh 观感（长思考、少工具轮）。端点不认此字段时行为回退
 // 为服务端默认，无副作用。
