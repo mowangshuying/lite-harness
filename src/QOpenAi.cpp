@@ -625,6 +625,12 @@ void ChatStream::scheduleRetry()
         LOG_DEBUG << "QOpenAi [retry] " << retryNumber << " / " << c.maxRetries
                   << "after " << delayMs << " ms";
 
+    // P1-9 观测面：本函数是 idle 静默超时与 429/5xx 两条可重试路径的唯一收口点，
+    // 在此发射即一次覆盖两者。发射时点早于退避等待——上层要的就是「即将静默 delayMs」
+    // 这个预告，等 retryDelayMs 之后才报已经晚了。totalAttempts 取配置上限（非剩余预算），
+    // 界面读数才是「第 2/3 次」这种稳定分母。
+    emit retryScheduled(retryNumber, c.maxRetries, delayMs);
+
     cleanupReply();
 
     // 重试从头开始，清空累积状态

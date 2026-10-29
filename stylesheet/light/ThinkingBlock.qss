@@ -16,6 +16,12 @@ ThinkingBlock {
     background-color: rgb(236, 236, 236);
 }
 
+/* 键盘可达（P1-6）：与 ToolBlock #toolHeader:focus 同一套口径（1px 描边换色 + 一档加深） */
+#thinkingHeader:focus {
+    border: 1px solid rgb(0, 90, 158);
+    background-color: rgb(230, 230, 230);
+}
+
 #thinkingTitle {
     color: rgb(96, 96, 96);
     font-size: 13px;
@@ -25,5 +31,5 @@ ThinkingBlock {
     background-color: rgba(0, 0, 0, 3);
     border-left: 2px solid rgba(0, 0, 0, 24);
     padding: 4px 8px;
-    color: rgb(120, 120, 120);
+    color: rgb(92, 92, 92);
 }

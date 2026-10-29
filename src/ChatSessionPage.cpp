@@ -2,10 +2,15 @@
 #include <FluVScrollView.h>
 #include <FluThemeUtils.h>
 #include <FluUtils.h>
+#include <FluInfoBar.h>
+#include <QLabel>
 #include <QResizeEvent>
+#include <QShowEvent>
+#include <QWheelEvent>
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
+#include <QScrollBar>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include "AppSettings.h"
@@ -27,6 +32,7 @@
 #include <QJsonDocument>
 #include <QHash>
 #include <QPair>
+#include <QStringList>
 
 // 居中行容器：列 widget 以 stretch 1 铺满行，两侧留白由钳制函数手动写入布局边距，
 // 列宽靠 maximumWidth 封顶（宽窗定宽居中、窄窗吃满）。水平 Ignored 策略令本行
@@ -44,6 +50,13 @@ static QWidget *makeCenteringRow(QWidget *column, QWidget *parent, QHBoxLayout *
     return row;
 }
 
+// P1-9 通知条自动淡出时长：错误 8s / 换模 6s。取这两个数是因为条内文本是「一句可读完
+// 的短说明」（错误详情另在气泡里全文留痕），8s 足够读完又不至于长期挡阅读列；
+// 换模是状态告知而非需要裁决的事，比错误更短一档。重试条不在此列——它常驻到首个增量
+// 到达（见 clearRetryNotice），因为「还在退避等待」这件事本身就是要持续可见的状态
+constexpr int kNoticeErrorMs = 8000;
+constexpr int kNoticeInfoMs = 6000;
+
 // 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit + 其下的
 // ChatStatusStrip 状态条）。
 // 纯搬移自原构造函数，摆位/参数/注释逐句不变；m_inputSection 入列提前到本段末尾——
@@ -59,13 +72,67 @@ void ChatSessionPage::buildLayout()
 
     auto leftColumn = new QWidget(this);
     auto vMainLayout = new QVBoxLayout(leftColumn);
-    vMainLayout->setContentsMargins(LayoutConst::kSideMargin, 35, LayoutConst::kSideMargin, 35);
-    vMainLayout->setSpacing(15);
+    // 页面留白与栏内间隙单源（P2-D3）：垂直 35 与 SettingsPage 同源，15 与输入框工具集行同源
+    vMainLayout->setContentsMargins(LayoutConst::kSideMargin, LayoutConst::kPageVMargin,
+                                    LayoutConst::kSideMargin, LayoutConst::kPageVMargin);
+    vMainLayout->setSpacing(LayoutConst::kColGap);
+
+    // P1-9 通知条：消息列正上方的非阻塞 FluInfoBar（重试态/换模/错误三类即时提示）。
+    // 刻意不用 FluentUI 的 FluInfoBarMgr 浮层——那是绝对定位的 toast，与本页「列宽手动
+    // 钳制 + Ignored 行容器」的构图纪律冲突（脱栏、随窗口缩放压到侧栏上）；进布局的常驻
+    // 条天然同栏，且关闭时 setIsOpen(false) 自带淡出并 hide()，隐藏件不占布局空间。
+    m_noticeBar = new FluInfoBar(FluInfoBarSeverity::Informational, leftColumn);
+    m_noticeBar->setObjectName(QStringLiteral("sessionNotice"));
+    // FluInfoBar 构造写死 minimumWidth 320：最小窗（900）下消息列可用宽仅 ~282，
+    // 320 地板会把条撑出栏外。本条宽度全权交给 applyColumnWidth 钳制，地板拆掉。
+    m_noticeBar->setMinimumWidth(0);
+    m_noticeBar->setIsClosable(true);
+    m_noticeBar->setIsOpen(false);
+    m_noticeRow = makeCenteringRow(m_noticeBar, leftColumn, &m_noticeRowLayout);
+    vMainLayout->addWidget(m_noticeRow);
+
+    // 通知条自动淡出定时器（singleShot，时长由 showNotice 逐次设定）：0/负数＝常驻，
+    // 由下一次通知或 clearRetryNotice 收口——重试态属前者（成功即被首个增量关掉），
+    // 错误/换模属后者（一次性告知，读完就该自己走，不留残条挡阅读列）
+    m_noticeDismissTimer = new QTimer(this);
+    m_noticeDismissTimer->setSingleShot(true);
+    connect(m_noticeDismissTimer, &QTimer::timeout, this, &ChatSessionPage::hideNotice);
 
     m_scrollView = new FluVScrollView(leftColumn);
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
-    m_scrollView->getMainLayout()->setContentsMargins(15, 15, 15, 15);
-    m_scrollView->getMainLayout()->setSpacing(15);
+    // 栏内间隙单源（P2-D3）：此前 15 在本页两处与 ChatMsgEdit 工具集行各抄一遍
+    m_scrollView->getMainLayout()->setContentsMargins(LayoutConst::kColGap, LayoutConst::kColGap,
+                                                      LayoutConst::kColGap, LayoutConst::kColGap);
+    m_scrollView->getMainLayout()->setSpacing(LayoutConst::kColGap);
+
+    // P1-9 空态引导卡：消息列首个件，空会话时给出三条用法锚点（能问什么 / 怎么停止 /
+    // 侧栏有什么），任何内容入列即永久收起。刻意做成布局内件而非浮层：浮层要随滚动区
+    // 视口手动摆位（同 m_jumpBottomBtn 那套），而引导文本需要随阅读列宽换行，进布局
+    // 即白拿 applyColumnWidth 的栏宽钳制与三主题 QSS 取色
+    m_emptyHint = new QWidget(m_scrollView);
+    m_emptyHint->setObjectName(QStringLiteral("emptyHint"));
+    // 自定义 QWidget 子类默认不渲染 QSS 盒模型（背景/边框），必须显式开启（同 ChatStatusStrip）
+    m_emptyHint->setAttribute(Qt::WA_StyledBackground, true);
+    auto hintLayout = new QVBoxLayout(m_emptyHint);
+    hintLayout->setContentsMargins(18, 16, 18, 16);
+    hintLayout->setSpacing(6);
+    auto hintTitle = new QLabel(tr("这个会话还没有消息"), m_emptyHint);
+    hintTitle->setObjectName(QStringLiteral("emptyHintTitle"));
+    hintLayout->addWidget(hintTitle);
+    // 三条锚点各占一行：合成一段会被读成一句广告，分行才读作「可以做的三件事」
+    const QStringList hintLines = {
+        tr("直接提问即可——我能读改本目录文件、执行命令、跑测试并逐项汇报结果。"),
+        tr("回合运行中，发送钮会切成停止形态，点一下即可中止当前回合。"),
+        tr("右侧信息面板常驻上下文占用、任务清单与团队状态，可收起，收起后输入框下方仍保留计量读数。"),
+    };
+    for (const QString &line : hintLines)
+    {
+        auto *item = new QLabel(QStringLiteral("· ") + line, m_emptyHint);
+        item->setObjectName(QStringLiteral("emptyHintLine"));
+        item->setWordWrap(true);
+        hintLayout->addWidget(item);
+    }
+    m_scrollView->getMainLayout()->addWidget(m_emptyHint);
     // 消息列与底部输入组同栏宽（applyColumnWidth 钳 max(800, 可用宽)），经居中行
     // 容器手动留白成同一阅读列（不再 AlignHCenter+setFixedWidth，修窗口收缩棘轮）
     vMainLayout->addWidget(makeCenteringRow(m_scrollView, leftColumn, &m_scrollRowLayout), 1);
@@ -119,6 +186,18 @@ void ChatSessionPage::buildLayout()
             FluAwesomeType::ChevronLeft, FluThemeUtils::getUtils()->getTheme(), 14, 14));
     });
 
+    // 「回到底部」浮动钮（评审 B1）：用户上翻离开底部后常驻滚动区右下角，
+    // 点击=强制贴底并恢复跟随；挂 m_scrollView 本体（非视口），浮于内容之上
+    m_jumpBottomBtn = new QToolButton(m_scrollView);
+    m_jumpBottomBtn->setObjectName(QStringLiteral("jumpBottomBtn"));
+    m_jumpBottomBtn->setFixedSize(LayoutConst::kJumpBottomBtnSize, LayoutConst::kJumpBottomBtnSize);
+    m_jumpBottomBtn->setIconSize(QSize(14, 14));
+    m_jumpBottomBtn->setCursor(Qt::PointingHandCursor);
+    m_jumpBottomBtn->setToolTip(tr("回到底部"));
+    m_jumpBottomBtn->setVisible(false);
+    connect(m_jumpBottomBtn, &QToolButton::clicked, this,
+            [this]() { scrollToBottom(); });
+
     // 显隐偏好恢复（settings.ini 键 sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
     setSidebarVisible(AppSettings::value(QStringLiteral("sidebarVisible"), true).toBool());
 }
@@ -137,7 +216,16 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     m_scrollCoalesceTimer = new QTimer(this);
     m_scrollCoalesceTimer->setInterval(30);
     m_scrollCoalesceTimer->setSingleShot(true);
-    connect(m_scrollCoalesceTimer, &QTimer::timeout, this, &ChatSessionPage::scrollToBottom);
+    // 超时走跟随入口（评审 B1）：用户上翻离开底部时不拽回，只浮出回底钮
+    connect(m_scrollCoalesceTimer, &QTimer::timeout, this, &ChatSessionPage::followScrollToBottom);
+
+    // 用户滚动意图探测：拖滑块走 sliderMoved（程序化 setValue 不发此信号，天然区分），
+    // 滚轮经视口事件过滤器捕获——两路都只重算跟随态
+    if (auto *bar = m_scrollView->verticalScrollBar())
+    {
+        connect(bar, &QScrollBar::sliderMoved, this, [this](int) { evaluateFollowState(); });
+        m_scrollView->viewport()->installEventFilter(this);
+    }
 
     // Agent Loop：真实模型回复 + 工具调用循环（流式打字机渲染）
     // 会话数据 ID + 工作目录经构造注入：前者令任务图/记忆/压缩转写/定时台账等落盘按会话隔离，
@@ -190,6 +278,10 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     // （其 role 样式来自 ChatSessionPage.qss 的 #msgBrowser[role] 后代选择器，
     // 必须先有新主题级联再重 polish，相对时序与旧实现一致）
     ThemeAware::bind("ChatSessionPage.qss", this, [this]() {
+        // 回底钮箭头随主题重着色（钮本体样式走页面级 #jumpBottomBtn 后代选择器）
+        if (m_jumpBottomBtn)
+            m_jumpBottomBtn->setIcon(FluIconUtils::getFluentIconPixmap(
+                FluAwesomeType::ChevronDown, FluThemeUtils::getUtils()->getTheme(), 14, 14));
         auto mainLayout = m_scrollView->getMainLayout();
         for (int i = 0; i < mainLayout->count(); ++i)
         {
@@ -238,6 +330,14 @@ void ChatSessionPage::wireAgent()
         }
         // 模板整体入 tr：英文译文恒等保留 "*Error:* %1"（Error 为气泡渲染约定的 markdown 前缀）
         addMessage(MessageBubbleWidget::Role::Assistant, tr("*Error:* %1").arg(err));
+        // P1-9 通知条：气泡是**留痕**（进时间线、会被滚走），通知条是**即时提示**——
+        // 二者互补而非替代：只留通知条会让历史里看不到失败，只留气泡则用户上翻回看时
+        // 完全不知道刚发生了什么。用户主动停止的终局不走本档（见 stop()）。
+        if (m_stopRequested)
+            hideNotice(); // 停止前若挂着重试条，一并收掉：停都停了，别再报「正在重试」
+        else
+            showNotice(NoticeLevel::Error, tr("本轮失败"), err, kNoticeErrorMs);
+        m_stopRequested = false;
         // 侧栏收口：错误终局同样灭审批灯 + 重算占用（与 finished 对称）
         m_sidebar->setPermissionPending(false);
         refreshContextUsage();
@@ -263,6 +363,7 @@ void ChatSessionPage::wireAgent()
         flushPendingScroll();
     });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
+        clearRetryNotice(); // 重试已自愈：首个增量即证据，条再挂着会读成「还在等」
         if (m_currentBubble)
         {
             m_currentBubble->appendThinkingText(delta);
@@ -271,6 +372,7 @@ void ChatSessionPage::wireAgent()
         }
     });
     connect(m_agentLoop, &AgentLoop::textDelta, this, [this](const QString &delta) {
+        clearRetryNotice(); // 同上：正文增量也是重试成功的直接证据
         if (m_currentBubble)
         {
             m_currentBubble->appendText(delta);
@@ -443,6 +545,13 @@ void ChatSessionPage::wireAgent()
                             // permissionRequired，新灯的置亮不被本行覆盖
                             m_sidebar->setPermissionPending(false);
                             m_agentLoop->resolvePermission(allow);
+                            // 键盘可达（P1-7）：裁决后本卡两钮禁用、焦点悬空无落点。
+                            // 回合多半仍在继续（输入框禁用，focusInput 会主动跳过），
+                            // 故焦点交给停止钮——此刻唯一可交互控件，Enter 即中止。
+                            // 若 resolvePermission 同步把回合直接推到终局，runningChanged(false)
+                            // 那条链随后会 focusInput 把焦点收回输入框，两者不冲突（后者覆盖）。
+                            if (m_agentLoop->isRunning() && m_inputEdit)
+                                m_inputEdit->focusSendButton();
                         });
                 card->setPermissionRequest(toolName, summary, reason);
                 m_permissionCard = card;
@@ -520,6 +629,8 @@ void ChatSessionPage::wireAgent()
     // 即禁、终局即放。P4 起为唯一输入禁用来源（原 ChatMsgEdit 内跨会话全局等待态网关
     // 随同步链清退一并删除）
     connect(m_agentLoop, &AgentLoop::runningChanged, this, [this](bool running) {
+        // 导航徽章联动（评审 B3）：运行态广播宿主，后台会话在导航列挂 ●/✓
+        emit navRunningChanged(running);
         if (m_inputEdit)
             m_inputEdit->setTurnBusy(running);
         // 侧栏状态灯：running 置亮/熄灭；终局（先于 finished 到达）兜底回灭审批灯
@@ -527,6 +638,10 @@ void ChatSessionPage::wireAgent()
         if (!running)
         {
             m_sidebar->setPermissionPending(false);
+            // 键盘可达（评审 B2）：权限卡裁决后钮禁用、焦点悬空无落点——回合终局输入解禁时，
+            // 若本页正是前台活动页则把焦点交还输入框，Enter 续发不断链
+            if (isVisible() && window() && window()->isActiveWindow() && m_inputEdit)
+                m_inputEdit->focusInput();
             // s13 兜底：Lead 回合结束时清算「已不在名册却还挂着的活卡」（终态广播
             // 漏发的幽灵位）。仍在名册的队友保卡——队友回合不随 Lead 回合终结，
             // 误冻结会让续跑活动凭空多出一张新卡（跨回合存续偏差已登记）
@@ -547,6 +662,27 @@ void ChatSessionPage::wireAgent()
                     settleTeammateCard(name, QStringLiteral("settled"));
             }
         }
+    });
+
+    // P1-9 观测面：传输层退避重试对 UI 此前完全不可见——请求发出后界面静默 1s/2s/4s…
+    // （上限 64s，maxRetries 默认 2 时累计约 3s，配置拉满 5 次可达 31s），用户看到的
+    // 与「卡死了」毫无区别。引擎单源发射（scheduleRetry 一处覆盖 idle 超时与 429/5xx
+    // 两条路径），本页只翻译成人话，不自算任何退避时序。
+    connect(m_agentLoop, &AgentLoop::streamRetryScheduled, this,
+            [this](int attempt, int totalAttempts, int delayMs) {
+        showNotice(NoticeLevel::Warning, tr("正在重试"),
+                   tr("第 %1/%2 次重试，%3 秒后重新发送（服务限流或无响应）。")
+                       .arg(attempt)
+                       .arg(totalAttempts)
+                       .arg(delayMs / 1000),
+                   0); // 常驻：成功由首个增量收口，失败由错误通知覆盖，不留残条也不早退
+    });
+    // 529 过载换模（s15）：引擎只打 LOG_WARN，用户看不到「这轮答案来自另一个模型」——
+    // 与输入框下拉仍显示原模型名构成两个读数，故在此显形。下拉不改（生效模型仍由后端
+    // model() 单源决定，换模是回合内粘滞、不写配置）
+    connect(m_agentLoop, &AgentLoop::streamFallbackModel, this, [this](const QString &model) {
+        showNotice(NoticeLevel::Info, tr("已切换到备用模型"),
+                   tr("服务端过载，本轮改用 %1 继续。").arg(model), kNoticeInfoMs);
     });
 }
 
@@ -578,11 +714,64 @@ void ChatSessionPage::dismissPendingPermission()
         staleCard->resolveDenySilently();
 }
 
+// P1-9 通知条三件套（show/hide/clearRetry）：一条常驻件承载三类即时提示，
+// 状态位只有一位「当前是不是重试条」——它决定收口时机（重试条由首个增量自发关闭，
+// 其余由淡出定时器或下一条通知关闭），其余差异都在展示文案里，无需更多状态。
+void ChatSessionPage::showNotice(NoticeLevel level, const QString &title,
+                                 const QString &message, int autoDismissMs)
+{
+    if (!m_noticeBar)
+        return;
+    // 枚举→FluentUI 档位单点映射：页面 API 面不暴露 FluInfoBarSeverity（见 .h 声明处），
+    // 取色/图标全在 FluentUI 自带 FluInfoBar.qss 的 severity 选择器里，本仓零新增 QSS
+    m_noticeBar->setSeverity(level == NoticeLevel::Info    ? FluInfoBarSeverity::Informational
+                             : level == NoticeLevel::Warning ? FluInfoBarSeverity::Warning
+                                                             : FluInfoBarSeverity::Error);
+    m_noticeBar->setTitle(title);
+    m_noticeBar->setMessage(message);
+    m_noticeIsRetry = (level == NoticeLevel::Warning);
+    m_noticeBar->setIsOpen(true);
+    if (autoDismissMs > 0)
+        m_noticeDismissTimer->start(autoDismissMs);
+    else
+        m_noticeDismissTimer->stop();
+    // 条从「无内容」到「有内容」会改整列高度：延帧重钳一次栏宽并贴底，
+    // 否则首帧可能出现条宽未跟上限、或新条把当前视野顶走而滚动位置没跟上
+    QTimer::singleShot(0, this, [this]() {
+        applyColumnWidth();
+        followScrollToBottom();
+    });
+}
+
+void ChatSessionPage::hideNotice()
+{
+    if (!m_noticeBar)
+        return;
+    m_noticeDismissTimer->stop();
+    m_noticeBar->setIsOpen(false); // 自带 250ms 淡出，动画末尾 hide() → 布局剔除占位
+    m_noticeIsRetry = false;
+}
+
+void ChatSessionPage::clearRetryNotice()
+{
+    // 只收重试条：错误/换模通知正挂着时被增量事件顺手关掉，等于把「本轮失败」藏了
+    if (m_noticeIsRetry)
+        hideNotice();
+}
+
+void ChatSessionPage::dismissEmptyHint()
+{
+    // 一次性收起：气泡产生后永不再显（见 .h 声明处口径说明），故不做「扫全列判空」
+    if (m_emptyHint && !m_emptyHint->isHidden())
+        m_emptyHint->hide();
+}
+
 void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &content)
 {
     // 会话标题单点捕获：startConversation/定时送达/历史重放的用户消息全部经过本函数
     if (role == MessageBubbleWidget::Role::User)
         maybeCaptureSessionTitle(content);
+    dismissEmptyHint(); // P1-9 空态引导：任何内容入列即收起引导卡
     auto bubble = new MessageBubbleWidget(role, this);
     bubble->setContent(content);
     m_scrollView->getMainLayout()->addWidget(bubble);
@@ -602,6 +791,7 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
     // B2：提交到首 token（含记忆召回异步期）以占位文案消除流内空白，
     // 首个思考/正文/工具事件到达即由气泡内部 dropPlaceholder 清除
     m_currentBubble->startStreaming(tr("处理中…"));
+    dismissEmptyHint(); // P1-9：本路径不经 addMessage 建泡（占位泡直挂滚动列），引导卡在此也要收
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
     m_agentLoop->run(userText);
@@ -636,6 +826,7 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
     // user 走 setContent；assistant 段（含其后的 tool 结果）合入同一条流式气泡，
     // 依「思考 → 正文 → 工具块」到达顺序镜像实时渲染。简化偏差：assistant 正文一次性成段
     // 输出后再接工具块（实时为交替）；思考块仅重放内容（时长不入库，无时长终态标题）。
+    m_replaying = true; // 逐泡贴底抑制，尾部单次结算（评审 C1）
     QHash<QString, QPair<QString, QString>> pendingToolCalls; // tool_call_id -> {工具名, 参数 JSON 串}
     for (const QJsonObject &msg : messages)
     {
@@ -742,6 +933,8 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
         }
     }
     closeReplayBubble(); // 收尾末段 assistant（含被中断的 tool_calls）
+    m_replaying = false;
+    scrollToBottom();    // 回放全程唯一一次贴底结算
 }
 
 void ChatSessionPage::setModel(const QString &model)
@@ -773,12 +966,101 @@ void ChatSessionPage::startConversation(const QString &text)
 
 void ChatSessionPage::scrollToBottom()
 {
+    // 强制贴底（用户发送/新气泡/回放收尾/回底钮点击）：清除离开旗，恢复跟随
+    m_userScrolledAway = false;
+    updateJumpBottomBtn();
+    doScrollToBottom();
+}
+
+void ChatSessionPage::doScrollToBottom()
+{
+    // 回放期整体抑制逐泡贴底（评审 C1：每条气泡一次全列 activate 是 O(n²)），
+    // 由 replayHistory 尾部单次结算
+    if (m_replaying)
+        return;
     // 先把挂起的布局变更结算，再读取 maximum——否则新增卡片（记忆进度卡/工具块等）
     // 后立刻调用时，滚动条 range 仍是旧值，滚不到真正底部。
     if (auto* vlayout = m_scrollView->getMainLayout())
         vlayout->activate();
     auto scrollBar = m_scrollView->verticalScrollBar();
     scrollBar->setValue(scrollBar->maximum());
+}
+
+void ChatSessionPage::followScrollToBottom()
+{
+    // 跟随式贴底（评审 B1）：用户上翻离开底部期间，流式增量与在途插卡不再拽回视野，
+    // 只保持回底钮在场；用户点钮或自行滚回近底后恢复跟随
+    if (m_userScrolledAway)
+    {
+        updateJumpBottomBtn();
+        return;
+    }
+    doScrollToBottom();
+}
+
+void ChatSessionPage::evaluateFollowState()
+{
+    // 用户滚动动作后的跟随态重算：近底（距 maximum ≤ 阈值）=回到跟随；否则=离开
+    auto *bar = m_scrollView->verticalScrollBar();
+    if (!bar)
+        return;
+    m_userScrolledAway = bar->value() < bar->maximum() - LayoutConst::kNearBottomPx;
+    updateJumpBottomBtn();
+}
+
+void ChatSessionPage::updateJumpBottomBtn()
+{
+    if (!m_jumpBottomBtn)
+        return;
+    m_jumpBottomBtn->setVisible(m_userScrolledAway);
+    if (m_userScrolledAway)
+    {
+        // 右下角摆位（滚动区本体坐标）；侧栏切换/窗口缩放后经 resize 链重算
+        m_jumpBottomBtn->move(m_scrollView->width() - m_jumpBottomBtn->width() - LayoutConst::kJumpBottomBtnMargin,
+                              m_scrollView->height() - m_jumpBottomBtn->height() - LayoutConst::kJumpBottomBtnMargin);
+        m_jumpBottomBtn->raise();
+    }
+}
+
+void ChatSessionPage::scheduleRestoreFromDisk()
+{
+    m_restorePending = true;
+}
+
+void ChatSessionPage::focusInput()
+{
+    if (m_inputEdit)
+        m_inputEdit->focusInput();
+}
+
+void ChatSessionPage::showEvent(QShowEvent *event)
+{
+    BasePage::showEvent(event);
+    // 惰性恢复（评审 C1）：启动路径只建占位页，首次切入本会话才载盘重放历史——
+    // 数百气泡的 widget 树不再随主窗口构造同栈全量重建
+    if (m_restorePending)
+    {
+        m_restorePending = false;
+        restoreFromDisk();
+    }
+}
+
+bool ChatSessionPage::eventFilter(QObject *watched, QEvent *event)
+{
+    // 滚轮=用户主动滚动意图：上翻立即置离开旗；下翻待滚动落定后按位置重算
+    // （过滤器先于 QScrollArea 处理事件，value 尚未更新，延一拍再 evaluate）
+    if (watched == m_scrollView->viewport() && event->type() == QEvent::Wheel)
+    {
+        auto *wheel = static_cast<QWheelEvent *>(event);
+        if (wheel->angleDelta().y() > 0)
+        {
+            m_userScrolledAway = true;
+            updateJumpBottomBtn();
+        }
+        else
+            QTimer::singleShot(0, this, [this]() { evaluateFollowState(); });
+    }
+    return BasePage::eventFilter(watched, event);
 }
 
 // 滚动合并入口（效率 P5）：流式高频与在途内容事件（每个 SSE delta 的思考/正文增量、工具起止、
@@ -797,7 +1079,9 @@ void ChatSessionPage::flushPendingScroll()
 {
     if (m_scrollCoalesceTimer)
         m_scrollCoalesceTimer->stop();
-    scrollToBottom();
+    // 终态结算走跟随入口（评审 B1）：用户上翻回看时，回合结束不粗暴拽回底部，
+    // 由回底钮承接「跳看最新」；用户发送/点钮等主动路径仍走强制 scrollToBottom
+    followScrollToBottom();
 }
 
 void ChatSessionPage::resizeEvent(QResizeEvent *event)
@@ -831,6 +1115,9 @@ bool ChatSessionPage::isRunning() const
 
 void ChatSessionPage::stop()
 {
+    // P1-9：用户主动停止的终局同样走 AgentLoop::error("已停止。")，不区分会被点成红色
+    // 「本轮失败」通知条——把「我按了停止」报成失败。置位后由 error 接线消费（单点复位）
+    m_stopRequested = true;
     // 用户主动停止即刻强制结算滚动（效率 P5）：不等终态信号回流，视图立即停在当前底部；
     // 其后 error("已停止。")/finished 终态链还会各自再结算一次，幂等无害
     flushPendingScroll();
@@ -875,6 +1162,12 @@ void ChatSessionPage::applyColumnWidth()
         m_scrollRowLayout->setContentsMargins(pad, 0, padRight, 0);
     if (m_inputRowLayout)
         m_inputRowLayout->setContentsMargins(pad, 0, padRight, 0);
+    // P1-9 通知条同栏：行容器留白与消息列一致，条本身钳到列宽上限（其 sizePolicy
+    // 是 Expanding，不钳会铺满左列、与阅读列脱栏）
+    if (m_noticeRowLayout)
+        m_noticeRowLayout->setContentsMargins(pad, 0, padRight, 0);
+    if (m_noticeBar)
+        m_noticeBar->setMaximumWidth(columnWidth);
     if (m_scrollView)
         m_scrollView->setMaximumWidth(columnWidth);
     if (m_inputSection)

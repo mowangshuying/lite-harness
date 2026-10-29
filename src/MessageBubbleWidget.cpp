@@ -99,6 +99,12 @@ QTextBrowser *MessageBubbleWidget::makeTextView()
     view->setObjectName("msgBrowser");
     view->setFrameShape(QFrame::NoFrame);
     view->setOpenExternalLinks(true);
+    // 键盘可达（P1-6）：QTextBrowser 默认 flags 含 LinksAccessibleByKeyboard，
+    // 会把 focusPolicy 顶成 StrongFocus——于是每个气泡的每个文段都是一个 Tab 停靠点，
+    // 长会话里 Tab 链随消息数线性膨胀，键盘用户永远走不到下一个控件。
+    // 这里显式去掉键盘位（只留鼠标选中 + 鼠标点开外链），Qt 随之把 focusPolicy 降为
+    // ClickFocus：不进 Tab 链，但点击后仍可框选复制、Cmd/Ctrl+A 语义不受影响。
+    view->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     view->setContextMenuPolicy(Qt::CustomContextMenu);

@@ -3,12 +3,16 @@
 #include "ToolTagKind.h"
 #include <QFontMetrics>
 #include <QHBoxLayout>
+#include <QKeySequence>
 #include <QLabel>
+#include <QPair>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QShortcut>
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <utility> // std::as_const（遍历快捷键表）
 
 QString PermissionCard::translateReason(const QString &reason)
 {
@@ -98,6 +102,10 @@ PermissionCard::PermissionCard(QWidget *parent) : FluWidget(parent)
     m_denyButton->setObjectName(QStringLiteral("pcDenyButton"));
     m_allowButton = new QPushButton(tr("允许"), m_body);
     m_allowButton->setObjectName(QStringLiteral("pcAllowButton"));
+    // 快捷键提示（P1-7）：键位必须可见，否则「Esc/N 拒绝、Y 允许」只有读过代码的人知道。
+    // 挂在 tooltip 而非按钮文案上——文案宽度参与省略号计算，加括号会挤掉参数摘要。
+    m_denyButton->setToolTip(tr("快捷键：N 或 Esc"));
+    m_allowButton->setToolTip(tr("快捷键：Y"));
     for (auto *button : {m_denyButton, m_allowButton})
     {
         button->setFixedHeight(28);
@@ -136,6 +144,21 @@ PermissionCard::PermissionCard(QWidget *parent) : FluWidget(parent)
     connect(m_denyButton, &QPushButton::clicked, this, [this]() { handleDecision(false); });
     connect(m_allowButton, &QPushButton::clicked, this, [this]() { handleDecision(true); });
 
+    // 键盘裁决（P1-7）：Esc / N 拒绝、Y 允许，与「拒绝钮持默认焦点、回车即拒」的
+    // 既有安全默认同向——键盘路径同样以拒绝为缺省，不允许出现「盲按回车=放行」。
+    // context 必须是 WidgetWithChildrenContext：全局快捷键会把输入框里的字母 y、
+    // 别处关弹窗的 Esc 统统误吞成一次权限裁决，那是比「没有快捷键」严重得多的回归。
+    // 焦点由 setPermissionRequest 的 singleShot 落到拒绝钮，故正常审批流必然命中本卡。
+    const QVector<QPair<int, bool>> keys = { { Qt::Key_Escape, false }, { Qt::Key_N, false }, { Qt::Key_Y, true } };
+    for (const auto &entry : keys)
+    {
+        auto *shortcut = new QShortcut(QKeySequence(entry.first), this);
+        shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+        const bool allow = entry.second;
+        connect(shortcut, &QShortcut::activated, this, [this, allow]() { handleDecision(allow); });
+        m_decisionShortcuts.append(shortcut);
+    }
+
     // QSS 主题加载与联动（与 ToolBlock / ThinkingBlock 同一套约定）：收敛到 ThemeAware::bind
     ThemeAware::bind("PermissionCard.qss", this);
 }
@@ -153,11 +176,24 @@ void PermissionCard::setPermissionRequest(const QString &toolName, const QString
     m_reasonLabel->setText(translateReason(reason));
     refreshTexts();
 
-    // 拒绝按钮持有默认焦点（安全优先）；延迟到事件循环，确保卡片已入布局可见后生效
+    // 新请求到达：快捷键重新武装（本方法可能被同一实例复用；上一轮的锁定要在此解除）
+    setDecisionShortcutsEnabled(true);
+
+    // 拒绝按钮持有默认焦点（安全优先）；延迟到事件循环，确保卡片已入布局可见后生效。
+    // 这一步同时是键盘裁决的入口——Esc/N/Y 走 WidgetWithChildrenContext，
+    // 焦点必须落在本卡内才会命中，默认焦点即快捷键的作用域锚点。
     QTimer::singleShot(0, m_denyButton, [this]() {
         if (!m_resolved)
             m_denyButton->setFocus();
     });
+}
+
+void PermissionCard::setDecisionShortcutsEnabled(bool enabled)
+{
+    // 留痕态的卡片仍挂在时间线里（用户可滚回去看），若快捷键继续活着，
+    // 事后焦点一旦落回本卡（Tab 经过）就会按 Y 追发一次已定局的裁决。
+    for (QShortcut *shortcut : std::as_const(m_decisionShortcuts))
+        shortcut->setEnabled(enabled);
 }
 
 void PermissionCard::handleDecision(bool allow)
@@ -165,6 +201,7 @@ void PermissionCard::handleDecision(bool allow)
     if (m_resolved)
         return; // 防双击/竞态：首次点击即锁定裁决
     m_resolved = true;
+    setDecisionShortcutsEnabled(false); // 键盘路径与点击路径同样一次性锁定
     m_denyButton->setEnabled(false);
     m_allowButton->setEnabled(false);
     applyTrace(allow);
@@ -176,6 +213,7 @@ void PermissionCard::resolveDenySilently()
     if (m_resolved)
         return;
     m_resolved = true;
+    setDecisionShortcutsEnabled(false); // 外部收口同样锁死键盘路径，避免 stop 后残留可裁决卡
     applyTrace(false); // 外部收口（用户 stop 等）：与后端自动拒绝一致，不发信号
 }
 

@@ -12,7 +12,7 @@ NewChatPage QLabel#welcomeLabel {
 
 /* 工作目录行：12px 次要信息，题头比路径更浅一档，整体弱于输入框 */
 NewChatPage QLabel#workDirCaption {
-    color: rgb(153, 153, 153);
+    color: rgb(104, 104, 104);
 }
 
 NewChatPage QLabel#workDirPath {

@@ -1,12 +1,14 @@
 #include "ChatMsgEdit.h"
 #include <QVBoxLayout>
 #include <QTextEdit>
+#include <QTextCursor> // setText 的光标归位（moveCursor(QTextCursor::End)）
 #include <QApplication>
 #include <QClipboard>
 #include <QKeySequence>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QStyle>
+#include <QInputMethodEvent>
 #include <functional>
 #include "SendMsgButton.h"
 #include <FluScrollDelegate.h>
@@ -34,6 +36,18 @@ static int modelComboWidth(const QStringList &options)
         longest = qMax(longest, option.size());
     return qMin(220, qMax(130, 24 + longest * 8));
 }
+
+// IME 组合态判定（P0-1）见 eventFilter：中文输入法在候选词未上屏时，Enter 的语义是
+// 「提交当前候选」而非「发送消息」，此刻必须放行按键，否则半截拼音会被当消息整条发出。
+//
+// 信号口径取「本控件收到的 QEvent::InputMethod 里 preeditString 是否非空」，理由：
+// ① Qt 6.9 的 Qt::InputMethodQuery 枚举没有组合阶段查询位（无 IMQueryStage/HasPreedit），
+//    想「主动问一句现在在不在组合中」在 API 层就没有入口；
+// ② QInputMethod::isAnimating() 在 Windows TSF 组合期不保证为真，不可依赖；
+// ③ IME 的预编辑串上下行本身就是组合起止的唯一权威事件流——非空即组合中，
+//    提交/取消时必然带空 preedit 下来，旗标随之复位，无需定时器兜底。
+// 代价是旗标只能由事件驱动更新（被动记录），因此 FocusOut 必须显式复位：
+// 否则「组合中途点走别处」会把旗标卡在 true，回来按 Enter 永远发不出去。
 
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
@@ -85,7 +99,8 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     auto toolSetsLayout = new QHBoxLayout();
     vMainLayout->addLayout(toolSetsLayout);
     toolSetsLayout->setContentsMargins(0, 0, 0, 0);
-    toolSetsLayout->setSpacing(15);
+    // 与消息列同栏间隙单源（P2-D3）：15 此前在 ChatSessionPage 两处与本行各抄一遍
+    toolSetsLayout->setSpacing(LayoutConst::kColGap);
     toolSetsLayout->setAlignment(Qt::AlignRight);
 
     // 模型下拉框：FluComboBox 自带三主题 QSS 与 hover/pressed 态，弹层为 FluIndicatorRoundMenu
@@ -192,6 +207,38 @@ void ChatMsgEdit::setTurnBusy(bool busy)
     applyBusyState();
 }
 
+void ChatMsgEdit::focusInput()
+{
+    // 运行中输入框处于禁用态（setTurnBusy），禁用控件拿焦点无意义且会打断
+    // 「停止」钮的键盘操作，此处直接跳过
+    if (m_turnBusy || !m_textEdit)
+        return;
+    m_textEdit->setFocus(Qt::OtherFocusReason);
+}
+
+void ChatMsgEdit::focusSendButton()
+{
+    // 与 focusInput 互补（见 .h 分工说明）：本方法专供「回合内」的焦点归位——
+    // 权限卡裁决后两钮禁用、焦点悬空，而回合仍在跑、输入框禁用，
+    // 此时钮是唯一可交互控件（停止形态），Enter 即中止。
+    // 空闲态也允许调用（钮恒可点），不做 m_turnBusy 早退。
+    if (m_sendMsgButton)
+        m_sendMsgButton->setFocus(Qt::OtherFocusReason);
+}
+
+void ChatMsgEdit::setText(const QString &text)
+{
+    // P1-9 空态引导回填入口：示例提示 chip 点击后整段替换输入内容。
+    // 用 setPlainText 而非 insert：chip 语义是「给我一个起点草稿」，不是往用户已打的
+    // 半截稿子里插一段——追加会把两次点击的文案粘成一句不通的话。
+    if (m_textEdit)
+    {
+        m_textEdit->setPlainText(text);
+        // 光标落到文末：chip 文案常以「：」或占位结尾，用户接着打字不必先按 End
+        m_textEdit->moveCursor(QTextCursor::End);
+    }
+}
+
 void ChatMsgEdit::applyBusyState()
 {
     m_textEdit->setEnabled(!m_turnBusy);
@@ -213,24 +260,48 @@ bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
     }
     if (watched == m_textEdit)
     {
+        if (event->type() == QEvent::InputMethod)
+        {
+            // IME 组合态旗标（P0-1）：预编辑串非空 = 候选未上屏 = 组合中。
+            // 只记录不拦截——事件必须继续交给 QTextEdit，否则候选词根本没法上屏。
+            m_imeComposing = !static_cast<QInputMethodEvent *>(event)->preeditString().isEmpty();
+            return false;
+        }
         if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut)
         {
             // 焦点态经 focused 属性驱动 QSS 边框反馈（FluentUI 标准模式：setProperty + polish）
             setProperty("focused", event->type() == QEvent::FocusIn);
             style()->unpolish(this);
             style()->polish(this);
+            // 失焦显式复位旗标：组合中途被点走时，IME 未必补发空 preedit 事件，
+            // 卡住的 true 会让「回来按 Enter」永远发不出去（比误发更难排查）
+            if (event->type() == QEvent::FocusOut)
+                m_imeComposing = false;
         }
         else if (event->type() == QEvent::KeyPress)
         {
             auto keyEvent = static_cast<QKeyEvent *>(event);
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
             {
-                if (keyEvent->modifiers() & Qt::ShiftModifier)
+                // 输入法组合中：Enter 归输入法（提交候选），本控件一律不截获——
+                // 截获会把未上屏的拼音当成品消息发出，中文用户每次敲回车都踩。
+                // 旗标由上方 QEvent::InputMethod 维护（口径见该处注释）。
+                if (m_imeComposing)
+                    return false;
+
+                const Qt::KeyboardModifiers pure = keyEvent->modifiers() & ~Qt::KeypadModifier;
+                if (pure == Qt::ShiftModifier)
                 {
                     // Shift+Enter: 插入换行，让默认处理继续
                     return false;
                 }
-                // Enter: 触发发送
+                if (pure != Qt::NoModifier && pure != Qt::ControlModifier)
+                {
+                    // Alt/Meta 等组合的 Enter 语义未定义：不截获，交默认处理，
+                    // 避免「任何修饰键组合都当发送」误触（原实现口径）
+                    return false;
+                }
+                // Enter / Ctrl+Enter: 触发发送
                 QString text = m_textEdit->toPlainText().trimmed();
                 if (!text.isEmpty())
                 {

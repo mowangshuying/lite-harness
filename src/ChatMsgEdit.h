@@ -23,6 +23,20 @@ public:
     // 全局等待态网关随同步链清退一并删除）
     void setTurnBusy(bool busy);
 
+    // 键盘可达（评审 B2）：把焦点交还输入框——宿主 Ctrl+L / 回合终局（权限卡裁决后焦点悬空）
+    // 调用；运行中（输入框被禁用）不改焦点，避免把焦点塞到不可交互控件上
+    void focusInput();
+
+    // 键盘可达（P1-7）：把焦点交给发送/停止钮。与 focusInput 的分工是「回合内 vs 回合外」——
+    // 运行中输入框禁用、focusInput 会主动跳过，此时唯一可交互控件是本钮（停止形态），
+    // 权限卡裁决完毕就该落到这里，键盘用户 Enter 即可中止，不必回头找鼠标。
+    void focusSendButton();
+
+    // P1-9 空态引导：宿主/发起页的示例提示回填输入框（整段替换，非追加——
+    // 用户手打的半截草稿不该被一次点击吞掉，故只在输入框为空时由调用方决定填入）。
+    // 落点选纯文本口径，与用户手输同形，不引入富文本残留
+    void setText(const QString &text);
+
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -45,4 +59,8 @@ private:
     SendMsgButton *m_sendMsgButton = nullptr;
     FluComboBox *m_modelComboBox = nullptr;
     bool m_turnBusy = false; // 本会话回合态（runningChanged 驱动）
+    // IME 组合态旗标（P0-1）：true = 有未上屏的预编辑串，此时 Enter 必须放行给输入法。
+    // 由 eventFilter 里的 QEvent::InputMethod 按 preeditString 是否非空写入，
+    // FocusOut 复位；Enter 分支只读不写（见 .cpp 口径说明）
+    bool m_imeComposing = false;
 };

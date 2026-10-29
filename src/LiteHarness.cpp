@@ -11,10 +11,15 @@
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
+#include <FluIconUtils.h>      // 导航子项运行态徽标的字形取用（applyNavBadge）
+#include <FluThemeUtils.h>     // 徽标需按当前主题取图标；主题切换后重放（refreshNavBadges）
 #include <FluRoundMenu.h>
 #include <FluAction.h>
 #include <FluMessageBox.h>
-#include "NavItem.h"
+#include "NavItem.h"          // NavItem / NavKey（本文件导航装配段依赖，勿删）
+#include "LayoutConstants.h"  // LayoutConst::kWindowMinWidth/Height（P0-2 最小窗尺寸）
+#include "AppSettings.h"      // P1-11 窗口几何持久化读写单点
+#include "UiScale.h"          // P1-11 几何串 base64 编解码 + 键名单源
 #include <QUuid>
 #include "QOpenAi.h"
 #include "SessionStore.h"
@@ -63,12 +68,21 @@ LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
     setupConnections();
     // 导航骨架就绪后、事件循环前恢复历史会话（不切换当前页，仍停留在 NewChatPage）
     restoreSessions();
+    // 窗口尺寸/位置恢复（P1-11）：须在 show 之前——App.cpp 的 liteharness.show() 在
+    // 本构造函数返回之后，故这里就是最后一个合法时机点。
+    restoreWindowGeometry();
 }
 
 void LiteHarness::initUi()
 {
     setWindowTitle("lite-harness");
     setWindowIcon(QIcon(":/res/LiteHarness.ico"));
+
+    // 最小窗口尺寸落地（P0-2）：LayoutConst::kWindowMinWidth/Height 自评审 A1 起就定义在
+    // 常量头里，但从未被任何地方引用——固定宽开销（导航 256 + 侧栏 280 + 间隙 12 + 页面
+    // 边距 70 = 618px）叠加后，窗口一窄消息列就被钳到 0，表现为「白屏」假象。
+    // 这里补上唯一缺失的一环；常量本身仍是单源，改窄/改宽只动 LayoutConstants.h。
+    setMinimumSize(LayoutConst::kWindowMinWidth, LayoutConst::kWindowMinHeight);
 
     m_titleBar->chromePalette()->setTitleBarActiveBackgroundColor(Qt::transparent);
     m_titleBar->chromePalette()->setTitleBarInactiveBackgroundColor(Qt::transparent);
@@ -108,7 +122,11 @@ void LiteHarness::initUi()
 
 void LiteHarness::initNavView()
 {
-    m_navView->hideSearchItem();
+    // 搜索项保持可见（原此处 hideSearchItem 直接关掉入口）。注意 FluentUI 的导航搜索
+    // 不是过滤器而是 jump box：FluVNavigationView 拿输入文本对每个子项 label 做**全等**
+    // 比对，命中才 onItemClickedDirect + emit searchKeyChanged。因此可见只是必要条件，
+    // 另需两件事才真正可用，分别落在下方 refreshSearchKeys（喂候选）与
+    // setupConnections（接 searchKeyChanged 切页）——三者缺一即是个死输入框。
 
     // i18n 第八轮：导航三项改为中文源 + tr()，存成员指针供 LanguageChange 重译
     m_newChatItem = m_navView->insertIconTextItem(FluAwesomeType::Pencil, tr("新建对话"), NavKey::NewChatPage);
@@ -129,7 +147,8 @@ void LiteHarness::initNavView()
     m_sLayout->addWidget(NavKey::SettingsPage, settingsPage);
 
     // setViewWidth 仅对已存在的 item 生效，须在全部 item 插入后调用，否则新增项停留在构造默认宽度 180
-    m_navView->setViewWidth(256);
+    // 与 LayoutConst::kWindowMinWidth 的推导式同源（P2-D1）：改这里必须同时看得见那条算式
+    m_navView->setViewWidth(LayoutConst::kNavWidth);
 
     /// clicked
     // emit m_navView->keyChanged(NavKey::NewChatPage);
@@ -140,6 +159,12 @@ void LiteHarness::setupConnections()
 {
     /// navView;
     connect(m_navView, &FluVNavigationView::keyChanged, this, [=](QString key) {
+        m_sLayout->setCurrentWidget(key);
+    });
+    // 搜索命中切页：FluVNavigationView 内部虽已对被命中子项调 onItemClickedDirect，
+    // 但该路径依赖子项自持的点击链（分组项/未展开态下未必落到切页），故按它广播出的
+    // key 显式切页兜底。与 keyChanged 同语义、幂等，重复设置同一页无副作用。
+    connect(m_navView, &FluVNavigationView::searchKeyChanged, this, [=](QString key) {
         m_sLayout->setCurrentWidget(key);
     });
 
@@ -208,6 +233,9 @@ void LiteHarness::createSession(const QString &text)
     // （行区域被 m_wrapWidget1/图标/标签/箭头占满，Qt 只投递最深接收者，装主体收不到）
     hookContextMenu(childItem);
     m_registry.mapChildItem(key, childItem);
+    // 运行态徽标订阅 + 搜索候选刷新（新增子项即新候选词）
+    hookNavBadge(key, sessionPage);
+    refreshSearchKeys();
 
     // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
     // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
@@ -259,7 +287,12 @@ void LiteHarness::restoreSessions()
                                       : QDir::currentPath();
 
         auto page = new ChatSessionPage(dataId, finalWork);
-        page->restoreFromDisk(); // 无 history.json 则为空会话页
+        // 惰性恢复（评审 C1 的正解）：启动路径只挂空页，首次切入才载盘重放历史。
+        // 原此直调 restoreFromDisk() 让懒加载设计整体失效——主窗口构造同栈为每个会话
+        // 重建数百气泡的 widget 树，会话一多就是启动卡顿；配套的
+        // scheduleRestoreFromDisk()/showEvent 消费链因无调用点成了死代码。
+        // 改为置旗：AgentLoop 在页构造内已建好，载盘与重放推迟到 showEvent。
+        page->scheduleRestoreFromDisk();
         // 恢复会话同样登记页面与 key→dataId，使其可被右键删除/重命名
         m_registry.insert(key, page, dataId);
         m_sLayout->addWidget(key, page);
@@ -274,6 +307,8 @@ void LiteHarness::restoreSessions()
         // 恢复的子项同样登记本体 + 递归装右键过滤器（同 createSession）
         hookContextMenu(childItem);
         m_registry.mapChildItem(key, childItem);
+        // 恢复的会话同样要接运行态徽标：否则重启后首轮对话的导航态恒为静默
+        hookNavBadge(key, page);
         // 同 createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
         sessionsItem->setItemWidth(sessionsItem->width());
         // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
@@ -285,6 +320,9 @@ void LiteHarness::restoreSessions()
                 sessionsItem->adjustItemHeight(sessionsItem);
         }
     }
+    // 候选词表在循环外一次性重建：updateSearchKeys 内部遍历全部子项，
+    // 放循环里即 O(N²)，恢复期（启动路径）尤其要避免
+    refreshSearchKeys();
 }
 
 void LiteHarness::hookContextMenu(QWidget *childItem)
@@ -398,6 +436,9 @@ void LiteHarness::renameSession(const QString &key)
         return;
 
     childItem->getLabel()->setText(text);
+    // 改名即改匹配面：搜索按 label 全文全等比对，候选词表须同步重建，
+    // 否则旧名仍可被搜到（命中失败）而新名搜不到
+    refreshSearchKeys();
     // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确
     if (m_navView->isLong())
     {
@@ -453,6 +494,8 @@ void LiteHarness::deleteSession(const QString &key)
     // 注销登记：页面/数据ID/子项本体→key/受控控件表→key 一并摘除（与原四表清理同位置同时序）。
     // （过滤器表若不清理，已 delete 控件的悬空地址可能被新控件复用导致误命中）
     m_registry.unregister(key);
+    // 子项已摘除，候选词表须同步（否则删掉的会话仍可被搜到并触发切页到空键）
+    refreshSearchKeys();
 
     // 移出 index.json 条目（根路径经 SessionStore::rootDirFor 单源派生）
     SessionStore::removeEntry(
@@ -471,6 +514,44 @@ void LiteHarness::deleteSession(const QString &key)
     }
 }
 
+void LiteHarness::hookNavBadge(const QString &key, ChatSessionPage *page)
+{
+    if (page == nullptr)
+        return;
+    // sender 为页面：页面对象销毁即自动断开，无需手工 unregister 连接。
+    // 捕获 key 而非 childItem：子项可能被删除重建，每次按 key 现查注册表。
+    connect(page, &ChatSessionPage::navRunningChanged, this,
+            [this, key](bool running) { applyNavBadge(key, running); });
+}
+
+void LiteHarness::applyNavBadge(const QString &key, bool running)
+{
+    auto *childItem = qobject_cast<FluVNavigationIconTextItem *>(m_registry.childItem(key));
+    if (childItem == nullptr || childItem->getIconButton() == nullptr)
+        return;
+    // 空闲态回落到子项自持字形（getAwesomeType）而非硬编码 Message：
+    // 建项字形若日后调整，徽标回落不会把它悄悄改掉。
+    const FluAwesomeType type = running ? FluAwesomeType::Streaming : childItem->getAwesomeType();
+    childItem->getIconButton()->setIcon(
+        FluIconUtils::getFluentIcon(type, FluThemeUtils::getUtils()->getTheme()));
+}
+
+void LiteHarness::refreshNavBadges()
+{
+    // 运行态一律现查页面（isRunning 为单源），本类不自持 bool 表，杜绝两处状态漂移
+    for (const QString &key : m_registry.keys())
+    {
+        if (auto *page = m_registry.page(key))
+            applyNavBadge(key, page->isRunning());
+    }
+}
+
+void LiteHarness::refreshSearchKeys()
+{
+    if (m_navView)
+        m_navView->updateSearchKeys();
+}
+
 void LiteHarness::onThemeChanged()
 {
     // 原 if/else 两分支仅前景色一处差异（light=black / dark=white），背景恒透明；
@@ -484,6 +565,11 @@ void LiteHarness::onThemeChanged()
     m_titleBar->closeButton()->setActiveForegroundColor(foreground);
     m_titleBar->maximizeButton()->setActiveForegroundColor(foreground);
     m_titleBar->show();
+
+    // 徽标重放（延一拍）：FluVNavigationIconTextItem::onThemeChanged 是 FluentUI 侧
+    // 按 m_awesomeType 的无条件重设，会把运行态字形冲回 Message。本槽与子项槽订阅同一
+    // themeChanged 信号，先后次序不可依赖，故与 applyNavAlignOverrides 同法延后重放。
+    QTimer::singleShot(0, this, [this] { refreshNavBadges(); });
 }
 
 // 把导航列/滚动条底色覆盖块追加到 FluentUI 控件「自身样式表」尾部。
@@ -549,6 +635,32 @@ void LiteHarness::closeEvent(QCloseEvent *event)
     }
 
     FluFrameLessWidget::closeEvent(event);
+    // 几何持久化（P1-11）：只在事件真的被接受时落盘——上面「任务仍在运行」的确认
+    // 分支会 event->ignore() 并提前 return，那条路一次都不写，于是取消退出不会把
+    // 半途状态盖掉上一次的存档。
+    // 刻意不另加「空存档不写」的判据：saveGeometry() 恒非空（它总带版本号与矩形），
+    // 真要防的是「把默认尺寸当偏好存下去」，而那由 restoreWindowGeometry 的缺省分支
+    // 负责（无存档即保持默认），两侧不对称才是正确的分工。
+    if (event->isAccepted())
+        AppSettings::setValue(UiScale::kWindowGeometryKey,
+                              UiScale::encodeGeometry(saveGeometry()));
+}
+
+// 窗口尺寸/位置恢复（P1-11）：settings.ini 键 windowGeometry（saveGeometry 的 base64）。
+// 无存档 / 串被手改坏 → decodeGeometry 交出空字节串 → 直接 return，保持
+// FluFrameLessWidget 的默认尺寸与位置：**绝不猜一个尺寸**（猜出来的尺寸会盖掉默认值，
+// 而默认值是 Qt 按屏幕与工作区算出来的，比任何猜测都可信）。
+// 换显示器/改分辨率的情况不在本仓兜：QWidget::restoreGeometry 自带合法性校验
+// （qwidget.cpp 实证：存档屏幕序号越界即回落 0、存档宽度与当前屏宽比超 1.5 直接
+// return false 不恢复），复刻那套判据只会长出第二个口径。
+void LiteHarness::restoreWindowGeometry()
+{
+    const QByteArray geometry =
+        UiScale::decodeGeometry(AppSettings::value(UiScale::kWindowGeometryKey).toString());
+    if (geometry.isEmpty())
+        return;
+    if (!restoreGeometry(geometry))
+        qInfo() << "LiteHarness: saved window geometry rejected by Qt (screen changed?), keeping default";
 }
 
 // i18n 第八轮：语言切换走「重启生效」链路（主窗口构造前 translator 已装好，本钩子

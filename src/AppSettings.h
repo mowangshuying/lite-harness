@@ -21,6 +21,7 @@
 // Reader 加显式 remove()。设置页的「空串=清除」用的是空串而非 invalid，读回是有效空串，
 // 与「键不存在」可区分（tst_settingscache 组 4 钉住这两态）。
 #include <QCoreApplication>
+#include <QFileInfo> // bootstrapValue：从 argv[0] 反推 exe 目录
 #include <QString>
 #include <QVariant>
 
@@ -50,6 +51,23 @@ inline const SettingsCache::Reader &reader()
                "QCoreApplication instance exists");
     static const SettingsCache::Reader instance(filePath());
     return instance;
+}
+
+// 引导期取值（P1-11 唯一合法用途）：高 DPI 取整策略**必须在 QGuiApplication 构造前
+// 落定**——Qt 实证构造后调用只 qWarning 且对已算好的缩放毫无作用
+// （qguiapplication.cpp:4009），而 reader() 依赖 applicationDirPath()，后者要求实例
+// 已存在（本头 Q_ASSERT 正是拦这条）。两条约束互斥，故开一条不依赖实例的引导通道：
+// exe 目录改从 argv[0] 反推（Qt 的 applicationDirPath 亦是 exe 所在目录，同源不同路）。
+// 只读、不写、不走静态缓存（构造期即弃）——**除「构造前必须落定」的键以外，
+// 其余一律走 value()**，否则等于把本头的单源纪律拆成两条并行路径。
+inline QVariant bootstrapValue(const char *argv0, const QString &key, const QVariant &fallback)
+{
+    if (argv0 == nullptr)
+        return fallback;
+    const QString path = QFileInfo(QString::fromLocal8Bit(argv0)).absolutePath()
+                         + QStringLiteral("/settings.ini");
+    const SettingsCache::Reader bootstrap(path);
+    return bootstrap.value(key, fallback);
 }
 
 // 热读单点：命中缓存零 QSettings 构造（仍有一次 stat，见 SettingsCache.h 不变量①的代价说明），

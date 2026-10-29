@@ -33,7 +33,7 @@
     font: bold 15px "Segoe UI";
 }
 #sbSessModel {
-    color: rgb(136, 136, 136);
+    color: rgb(163, 163, 163);
     font: 12px "Consolas";
 }
 #sbSeparator {
@@ -64,14 +64,18 @@
 
 /* ---- 节头 ---- */
 #sbSectionHead { background: transparent; border: none; }
-#sbSectionHead[clickable="true"] { cursor: pointinghand; }
-#sbSectionHead[clickable="true"]:hover { background: rgba(255, 255, 255, 8); border-radius: 5px; }
+/* 可折叠节头预置 1px 透明边框：焦点态只换描边色而不改变边框宽度，
+   避免头部内容在 hover/focus 之间位移 1px（本节走 QVBoxLayout 自然布局，无手动几何） */
+#sbSectionHead[clickable="true"] { cursor: pointinghand; border: 1px solid transparent; border-radius: 5px; }
+#sbSectionHead[clickable="true"]:hover { background: rgba(255, 255, 255, 8); }
+/* 键盘可达（P1-6）：节头已进 Tab 链，必须给可见焦点环（描边取本主题强调色） */
+#sbSectionHead[clickable="true"]:focus { border: 1px solid rgb(118, 185, 237); background: rgba(118, 185, 237, 24); }
 #sbSectionTitle {
     color: rgb(153, 153, 153);
     font: bold 12px "Segoe UI";
 }
 #sbSectionCount {
-    color: rgb(136, 136, 136);
+    color: rgb(163, 163, 163);
     font: 12px "Consolas";
 }
 #sbSectionArrow { background: transparent; }
@@ -102,7 +106,7 @@
 #statusRow[state="waiting"] {
     background: rgba(255, 196, 10, 16);
 }
-#statusDot { font: 11px "Segoe UI"; color: rgb(136, 136, 136); background: transparent; }
+#statusDot { font: 11px "Segoe UI"; color: rgb(163, 163, 163); background: transparent; }
 #statusText {
     color: rgb(153, 153, 153);
     font: 12px "Segoe UI";
@@ -119,7 +123,7 @@
     border: none;
     border-radius: 5px;
 }
-#sbMark { font: 12px "Segoe UI"; color: rgb(136, 136, 136); background: transparent; }
+#sbMark { font: 12px "Segoe UI"; color: rgb(163, 163, 163); background: transparent; }
 #sbText {
     color: rgb(153, 153, 153);
     font: 12px "Segoe UI";
@@ -131,12 +135,12 @@
 #sbRow[status="active"] #sbMark { color: rgb(255, 196, 10); }
 #sbRow[status="active"] #sbText { color: rgb(220, 220, 220); font-weight: bold; }
 #sbRow[status="done"] #sbMark { color: rgb(108, 203, 91); }
-#sbRow[status="done"] #sbText { color: rgb(136, 136, 136); }
+#sbRow[status="done"] #sbText { color: rgb(163, 163, 163); }
 /* s17 P1 后台任务失败行（bg failed 态）：红点灰字，与 done 同降级权重——终局留痕不抢进行中行 */
 #sbRow[status="failed"] #sbMark { color: rgb(255, 117, 117); }
-#sbRow[status="failed"] #sbText { color: rgb(136, 136, 136); }
+#sbRow[status="failed"] #sbText { color: rgb(163, 163, 163); }
 #sbEmptyHint {
-    color: rgb(110, 110, 110);
+    color: rgb(151, 151, 151);
     font: italic 12px "Segoe UI";
     background: transparent;
     padding-left: 8px;
@@ -144,12 +148,12 @@
 
 /* ---- 页脚 ---- */
 #sbFooterDir {
-    color: rgb(140, 140, 140);
+    color: rgb(169, 169, 169);
     font: 11px "Consolas";
     background: transparent;
 }
 #sbFooterVersion {
-    color: rgb(110, 110, 110);
+    color: rgb(151, 151, 151);
     font: 11px "Consolas";
     background: transparent;
 }

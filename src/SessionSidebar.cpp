@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QKeyEvent> // 侧栏节头键盘可达（P1-6）：Space/Enter 等价点击
 #include <QLocale>
 #include <QPropertyAnimation>
 #include <QResizeEvent>
@@ -81,6 +82,10 @@ public:
     void setCollapsible(bool on) {
         m_collapsible = on;
         m_header->setProperty("clickable", on);
+        // 键盘可达（P1-6）：只有真能折叠的节才该进 Tab 链——恒展开的节没有可执行动作，
+        // 给焦点等于凭空多一个停靠点。本方法会被反复调用（节数增减时重算折叠资格），
+        // 所以这里必须按 on 双向设置，不能只在构造期设一次。
+        m_header->setFocusPolicy(on ? Qt::StrongFocus : Qt::NoFocus);
         refreshArrow();
         if (!on && !m_expanded) setExpanded(true, false); // 失去折叠资格 → 恒展开
     }
@@ -133,6 +138,16 @@ protected:
             if (m_collapsible && me->button() == Qt::LeftButton)
                 setExpanded(!m_expanded, true);
             return true;
+        }
+        // 键盘等价点击（P1-6）：与 CollapsibleBlock 同一套口径（Space 为主、Enter 贴合习惯）。
+        // 只接 KeyPress 不接 KeyRelease，避免长按 Space 连发把节体反复开合。
+        if (watched == m_header && event->type() == QEvent::KeyPress) {
+            auto* ke = static_cast<QKeyEvent*>(event);
+            if (m_collapsible
+                && (ke->key() == Qt::Key_Space || ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)) {
+                setExpanded(!m_expanded, true);
+                return true;
+            }
         }
         return QWidget::eventFilter(watched, event);
     }
@@ -269,7 +284,9 @@ namespace {
 constexpr int kPanelHMargin = 14;    // 面板左右内边距
 constexpr int kRowHeight = 24;       // TODO 行高（比消息流 TodoCard 稍密）
 constexpr int kMarkWidth = 16;       // 行首状态点宽
-constexpr int kRowHPadding = 20;     // 行左右留白 + 点距（8+8+6 的取整用途常量，估算可用文本宽）
+// 行左右留白(8+8) + 点距(6) = 20 的取整常量曾在此定义却零引用（UI 优化 P2-D5 删除）：
+// 可用文本宽的同一口径已由 bodyTextAvail 现算（- 2 * 8 - kMarkWidth - 6），留两份
+// 只会让改边距时其中一份静默失效。
 constexpr int kBodyHPadding = 4;     // 节体左右缘修正
 
 /// 生成一行「状态点 + 文本」：propName/propValue 决定 QSS 属性着色（如 status=…），

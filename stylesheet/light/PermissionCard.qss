@@ -43,7 +43,7 @@ PermissionCard {
     background-color: rgba(30, 96, 176, 18);
 }
 #pcTag[toolTagKind="search"] {
-    color: rgb(0, 128, 152);
+    color: rgb(0, 120, 143);
     background-color: rgba(0, 128, 152, 18);
 }
 #pcTag[toolTagKind="write"] {
@@ -51,15 +51,15 @@ PermissionCard {
     background-color: rgba(142, 76, 172, 18);
 }
 #pcTag[toolTagKind="run"] {
-    color: rgb(190, 100, 30);
+    color: rgb(167, 88, 26);
     background-color: rgba(190, 100, 30, 18);
 }
 #pcTag[toolTagKind="plan"] {
-    color: rgb(150, 110, 20);
+    color: rgb(141, 103, 19);
     background-color: rgba(150, 110, 20, 18);
 }
 #pcTag[toolTagKind="delegate"] {
-    color: rgb(40, 128, 70);
+    color: rgb(39, 125, 69);
     background-color: rgba(40, 128, 70, 18);
 }
 
@@ -116,6 +116,11 @@ PermissionCard {
 #pcAllowButton:pressed {
     background-color: rgba(194, 127, 0, 30);
 }
+/* 键盘可达（P1-7）：允许钮此前无 :focus 规则——Tab 走到它时没有任何视觉反馈。
+   描边取本钮自身文字色，与 #pcDenyButton:focus 同一套做法（1px 不换宽，只换色）。 */
+#pcAllowButton:focus {
+    border: 1px solid rgb(157, 93, 0);
+}
 
 /* 裁决留痕：弱化单行。允许显绿；拒绝为安全动作，保持中性灰不施红 */
 #pcTrace {
@@ -124,12 +129,12 @@ PermissionCard {
 #pcTraceIcon {
     font-size: 13px;
     font-weight: bold;
-    color: rgb(120, 120, 120);
+    color: rgb(92, 92, 92);
 }
 #pcTraceIcon[outcome="allowed"] {
     color: rgb(16, 124, 16);
 }
 #pcTraceLabel {
-    color: rgb(120, 120, 120);
+    color: rgb(92, 92, 92);
     font-size: 13px;
 }

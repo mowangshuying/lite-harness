@@ -115,6 +115,11 @@ PermissionCard {
 #pcAllowButton:pressed {
     background-color: rgba(229, 192, 123, 28);
 }
+/* 键盘可达（P1-7）：允许钮此前无 :focus 规则——Tab 走到它时没有任何视觉反馈。
+   描边取本钮自身文字色，与 #pcDenyButton:focus 同一套做法（1px 不换宽，只换色）。 */
+#pcAllowButton:focus {
+    border: 1px solid rgb(229, 192, 123);
+}
 
 /* 裁决留痕：弱化单行。允许显 atomOneDark 绿 #98C379；拒绝保持中性灰不施红 */
 #pcTrace {
@@ -123,12 +128,12 @@ PermissionCard {
 #pcTraceIcon {
     font-size: 13px;
     font-weight: bold;
-    color: rgb(139, 148, 158);
+    color: rgb(147, 157, 167);
 }
 #pcTraceIcon[outcome="allowed"] {
     color: rgb(152, 195, 121);
 }
 #pcTraceLabel {
-    color: rgb(139, 148, 158);
+    color: rgb(147, 157, 167);
     font-size: 13px;
 }

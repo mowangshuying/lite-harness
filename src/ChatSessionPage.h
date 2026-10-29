@@ -13,9 +13,16 @@ class PermissionCard;
 class WorkDirPathBar;
 class SessionSidebar;
 class ChatStatusStrip;
+class FluInfoBar;
 class QToolButton;
 class QHBoxLayout;
 class QTimer;
+
+// P1-9 非阻塞通知条的三档语义（本页自有枚举，刻意不暴露 FluentUI 的 FluInfoBarSeverity
+// 到头文件——页面 API 面只说「这是什么级别」，取色/图标由 .cpp 单点映射到 FluentUI 控件）。
+// Info＝状态变更告知（换模型等）；Warning＝进行中且会自愈（退避重试）；
+// Error＝终局失败（需用户看见但不打断，气泡仍留痕）。
+enum class NoticeLevel { Info, Warning, Error };
 
 class ChatSessionPage : public BasePage
 {
@@ -35,9 +42,14 @@ public:
     // 宿主回传会话标题（右键重命名 / 启动恢复读 index 条目）：更新本页标题单源并推给右侧信息面板，
     // 使导航子项、index.json、会话页面板三处同源一致；空串由面板回退占位「新会话」。
     void setSessionTitle(const QString &title);
-    // 立即滚到底（不节流）：一次性路径专用——用户发送/新气泡、历史回放、终态 flush，
-    // 以及外部宿主调用。流式高频路径请改走 requestScrollToBottom()（合并窗口）
+    // 立即滚到底（不节流）：一次性路径专用——用户发送/新气泡、历史回放收尾、回底钮点击，
+    // 以及外部宿主调用。同时清除「用户上翻离开」旗并恢复跟随。
+    // 流式高频路径请改走 requestScrollToBottom()（合并窗口 + 跟随抑制）
     void scrollToBottom();
+    // 键盘可达：宿主 Ctrl+L / 回合终局把焦点交还本页输入框
+    void focusInput();    // 惰性恢复（评审 C1）：启动路径只建占位页，此处置挂起旗，
+    // 首次 showEvent 消费后才 restoreFromDisk——数百气泡不再随主窗口同栈重建
+    void scheduleRestoreFromDisk();
     // 从磁盘恢复后重放历史到会话流：按 wire 消息重建气泡，assistant 段用流式气泡
     // （正文 + 工具折叠块）镜像实时链路；messages 应为已剔除 system 的会话主体
     void replayHistory(const QVector<QJsonObject> &messages);
@@ -51,13 +63,33 @@ public:
     bool isRunning() const;
     void stop();
 
+signals:
+    // 导航徽章联动（评审 B3）：回合运行态广播给宿主，用于会话子项标题前缀 ●/✓
+    void navRunningChanged(bool running);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    // 滚轮上翻=用户主动离开底部（抑制流式跟随）；滚回近底=恢复跟随
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit +
     // 其下的 ChatStatusStrip 状态条）的创建摆位
     void buildLayout();
+    // P1-9 通知条：消息列顶部的非阻塞 FluInfoBar（默认隐藏，隐藏件不占布局空间）。
+    // autoDismissMs<=0＝常驻直到下一次 showNotice/hideNotice（重试态用，成功即由首个
+    // 增量事件收口）；>0＝到时自动淡出（错误/换模等一次性告知用）。
+    void showNotice(NoticeLevel level, const QString &title, const QString &message,
+                    int autoDismissMs = 0);
+    void hideNotice();
+    // 重试通知的专用收口：仅当当前条是重试态点亮时才关（错误条正挂着时来增量事件，
+    // 不能把错误通知顺手关掉）
+    void clearRetryNotice();
+    // P1-9 空态引导：消息列里除引导件本身外没有任何内容时显示，任何内容入列即永久收起
+    // （气泡一旦产生就不会再全部消失——goalNotice 路径删的是占位泡，同批必有用户气泡），
+    // 故用「首次入列即 hide」的 O(1) 口径，不在每次 addMessage 上扫全列（那是 O(n2)）
+    void dismissEmptyHint();
     // 构造拆分（纯搬移不改行为）：AgentLoop 全部输出信号到 UI 的接线（finished/error/delta/工具/权限/任务/定时）
     void wireAgent();
     // 收口残留待决权限：后端 resolvePermission(false) 放行队列 + 旧卡落"已拒绝"留痕。
@@ -82,15 +114,24 @@ private:
     // 窗口内多次请求只执行一次真实滚动，避免每条 delta 都对整个消息列做完整布局 pass
     // （scrollToBottom 内 vlayout->activate()）+ 滚动条写值。语义＝滚动始终最终贴底，流式中最多晚 30ms
     void requestScrollToBottom();
-    // 终态强制结算：取消在途合并窗口并立即滚到底（finished/error/记忆链收口/用户 stop 处调用），
+    // 终态强制结算：取消在途合并窗口并按跟随态结算（finished/error/记忆链收口/用户 stop 处调用），
     // 防止最后一个合并窗口迟到或残留导致停在半截
     void flushPendingScroll();
+    // 流式跟随入口（评审 B1）：用户上翻离开底部时不拽回视野、只保持回底钮；
+    // 合并窗口到期与终态 flush 均走此口（区别于强制贴底的公开 scrollToBottom）
+    void followScrollToBottom();
+    // 真实贴底动作（布局结算 + 滚动条写值），公开与跟随两条入口共用
+    void doScrollToBottom();
+    // 依当前滚动位置重算跟随态（近底=恢复跟随；离底=抑制自动滚动）
+    void evaluateFollowState();
+    // 回底钮显隐与摆位（滚动区视口底部居中，随 resize/侧栏切换重算）
+    void updateJumpBottomBtn();
 
 private:
     FluVScrollView *m_scrollView = nullptr;
     // 滚动合并定时器（效率 P5，singleShot 30ms；构造期创建，风格对齐 MessageBubbleWidget
     // 的 50ms 流式测量节流）：requestScrollToBottom 在窗口内首次请求时启动，到期执行一次
-    // scrollToBottom；flushPendingScroll 在终态 stop 后立即执行。超时直连 scrollToBottom，
+    // scrollToBottom；flushPendingScroll 在终态 stop 后立即执行。超时直连 followScrollToBottom，
     // 所有权随本页（QTimer parent=this），零所有权语义同其余子件
     QTimer *m_scrollCoalesceTimer = nullptr;
     // 消息列/输入组各自的居中行容器布局：列宽靠 maximumWidth 钳制，两侧留白由
@@ -118,6 +159,27 @@ private:
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
     ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（上下文占用数字/消耗/速度三段文字；状态灯在侧栏，见 SessionSidebar.h）
+    // P1-9 通知条三件：条本体 + 自动淡出定时器 + 与消息列同栏宽的居中行布局。
+    // 走「页面内常驻条」而非 FluentUI 的 FluInfoBarMgr 浮层：管理器把条做成父件上的
+    // 绝对定位 toast，与本页「列宽手动钳制 + Ignored 行容器」的构图纪律冲突（会脱栏、
+    // 且随窗口缩放压在侧栏上）；常驻条进布局即天然同栏，隐藏时不占位。
+    FluInfoBar *m_noticeBar = nullptr;
+    QWidget *m_noticeRow = nullptr;   // 通知条的居中行容器（与消息列同栏宽；条关闭时整行收起不留空档）
+    QTimer *m_noticeDismissTimer = nullptr;
+    QHBoxLayout *m_noticeRowLayout = nullptr;
+    // 当前通知条是否由「退避重试」点亮：重试态是**自愈型**状态，首个增量到达即作废，
+    // 而错误/换模通知要留到用户裁决或下一条通知覆盖——两者共用一条，靠此位区分收口时机
+    bool m_noticeIsRetry = false;
+    // 用户主动停止旗标：AgentLoop::stop() 的终局也走 error("已停止。")，若照原样点亮
+    // 红色通知条，会把「我按了停止」报成「本轮失败」。置位/消费单点见 stop() 与 error 接线
+    bool m_stopRequested = false;
+    // P1-9 空态引导卡（消息列首个件）：空会话时给出输入/停止/侧栏三条用法锚点，
+    // 任何内容入列即整块隐藏
+    QWidget *m_emptyHint = nullptr;
     QToolButton *m_restoreBtn = nullptr;   // 侧栏收起后的浮动展开钮（页面右上角，手动摆位随 resize 跟随）
+    QToolButton *m_jumpBottomBtn = nullptr; // 「回到底部」浮动钮（挂滚动区，上翻抑制跟随时出现）
+    bool m_userScrolledAway = false;        // 用户主动上翻离开底部（流式跟随抑制位，回近底清除）
+    bool m_restorePending = false;          // 惰性恢复挂起旗：scheduleRestoreFromDisk 置位、首次 showEvent 消费
+    bool m_replaying = false;               // 回放进行中：逐泡贴底 no-op，replayHistory 尾部单次结算
     QString m_sessionTitle;                // 会话标题单源：首条用户消息派生，宿主重命名/恢复经 setSessionTitle 回传覆盖
 };

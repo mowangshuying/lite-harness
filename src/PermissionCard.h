@@ -1,9 +1,11 @@
 #pragma once
 
 #include <FluWidget.h>
+#include <QVector>
 
 class QLabel;
 class QPushButton;
+class QShortcut;
 
 // 权限确认卡片（s03：危险操作审批）：
 //   AgentLoop::permissionRequired 到达时挂进当前流式气泡的时间线（与工具块同一套
@@ -48,6 +50,12 @@ private:
 
     void handleDecision(bool allow);       // 按钮点击统一入口（含防重入）
     void applyTrace(bool allow);           // body -> 单行留痕
+    // 键盘裁决快捷键（P1-7）：Esc/N 拒绝、Y 允许。context 取 WidgetWithChildrenContext
+    // ——只在焦点落在本卡（含两个钮）时生效，绝不劫持全局按键（否则用户在输入框
+    // 打字母 y、在别处按 Esc 关弹窗都会被误吞成一次权限裁决）。
+    // 裁决后必须整体禁用：留痕态的卡片还挂在时间线里，快捷键若继续活着，
+    // 事后按 Y 会对一张已定局的卡再发一次 userResolved。
+    void setDecisionShortcutsEnabled(bool enabled);
     void refreshTexts();                   // 按当前宽度重算摘要/留痕省略
     static QString singleLineText(const QString &text); // 换行/制表压平 + 折叠空白
 
@@ -70,4 +78,5 @@ private:
     QString m_toolName;
     QString m_summary;                     // 摘要原文（省略显示 + tooltip 全文）
     bool m_resolved = false;
+    QVector<QShortcut *> m_decisionShortcuts; // Esc/N=拒绝、Y=允许（本体即本卡，随卡析构）
 };

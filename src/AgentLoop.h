@@ -219,6 +219,15 @@ signals:
     void runningChanged(bool running);
     // 错误
     void error(const QString &errorMessage);
+    // P1-9 观测面：传输层退避重试已排期（QOpenAi::ChatStream::retryScheduled 直转，
+    // 单源在传输层——idle 静默超时与 429/5xx 两条可重试路径都收口于 scheduleRetry）。
+    // 此前重试对 UI 完全不可见：用户发出请求后界面静默 1s/2s/4s…，读起来像「卡死了」。
+    // attempt 自 1 起、totalAttempts＝配置上限（settings.ini maxRetries）、delayMs＝本次退避。
+    void streamRetryScheduled(int attempt, int totalAttempts, int delayMs);
+    // P1-9 观测面：换模型重发（s15 529 过载 fallback 切换）。传输层此前只打 LOG_WARN，
+    // 用户看不到「这轮回答为什么来自另一个模型」。发射点在 messageFinished/error 的
+    // 粘滞锁存处，与 m_recoveryCurrentModel 同条件（真发生切换才发）。
+    void streamFallbackModel(const QString &model);
 
 private:
     // task 子代理需要复用本类的钩子注册表、权限门静态检查、工具定义与 handler 表构建器，

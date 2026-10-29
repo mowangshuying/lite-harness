@@ -37,6 +37,9 @@
 | `fallbackModelId` | 连续 529 过载后换用的兜底模型（空=禁用换模，仅退避；设置页无编辑卡，手改 ini） | 空 |
 | `language` | 界面语言（`zh-CN` / `en-US`，切换需重启） | `zh-CN` |
 | `sidebarVisible` | 会话侧栏显隐偏好 | 显示 |
+| `uiFontScale` | 界面字号倍率（整数百分比，校验界 80~200；**改后需重启**，与 `language` 同语义；设置页无编辑卡，手改 ini）。生效三面：应用字体、本仓 QSS 的 `font-size`、以及代码里 `setPixelSize` 的组件（三面同读**启动快照**，故不会半生效）；刻意不改 FluentUI 自有 QSS，导航项等保留原字号 | 100 |
+| `dpiRounding` | 高 DPI 缩放取整策略（`Round`/`Ceil`/`Floor`/`RoundPreferFloor`/`PassThrough`，大小写与首尾空白不敏感；缺失或非法回退 `PassThrough`）。**必须在 `QApplication` 构造前落定**，故读值走 `AppSettings::bootstrapValue(argv[0], …)`——这是「读一律 `value()`」的唯一例外 | `PassThrough` |
+| `windowGeometry` | 主窗口几何（`saveGeometry()` 的 base64 串，编解码单源 `UiScale::encodeGeometry`/`decodeGeometry`）。写点在 `LiteHarness::closeEvent` 且仅退出被接受时覆盖，读点在构造函数末尾 `show()` 之前；串被手改坏则回退默认尺寸，绝不猜一个尺寸 | 无（首启用默认尺寸） |
 
 **环境变量**：`MODEL_ID` — 模型名（缺省用上表 `defaultModel`）。
 
@@ -67,7 +70,7 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十五个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据），全量实跑 1397 条断言（静态断言点 1322）。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十六个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据 / `UiScale` 字号倍率与 DPI 策略名与几何编解码判据），全量实跑 1490 条断言（静态断言点 1415）。
 
 **本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非整组 SKIP 的套件（`LineEnding` / `McpManager` / s15 两套件 / s16 两引擎套件的恒跑组——其文件组与端到端组自带夹具门控）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 

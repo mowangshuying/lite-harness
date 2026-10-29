@@ -42,6 +42,9 @@ public:
     QString dataId(const QString &key) const;
     // 全部仍存活的会话页（自动跳过悬挂），供 closeEvent 运行中守卫遍历
     QList<ChatSessionPage *> alivePages() const;
+    // 全部已登记 key（顺序未定义）。供导航徽标重放遍历：key→页面→子项三查皆经本类，
+    // 外部不再自持一份会话列表副本（运行态本身仍以页面为单源）
+    QStringList keys() const;
 
     // ── 导航子项映射（key ↔ 子项本体）──────────────────────
     void mapChildItem(const QString &key, QWidget *childItem);

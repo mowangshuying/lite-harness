@@ -149,6 +149,12 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
         markFirstOutputDelta();
         emit textDelta(delta);
     });
+    // P1-9 观测面：退避重试直转（不做任何再加工——attempt/total/delayMs 单源在传输层，
+    // 上层重算即第二个口径）。只转发主循环流；SubAgent/队友回合各自建流，不在此列。
+    connect(s, &QOpenAi::ChatStream::retryScheduled, this,
+            [this](int attempt, int totalAttempts, int delayMs) {
+        emit streamRetryScheduled(attempt, totalAttempts, delayMs);
+    });
     // 修3/修4：usage 末帧回读 → token 锚（契约 C-2：成功路径、messageFinished 之前发）
     // 同一帧也是生成窗口的终点（t2）：先落锚再收窗，两者共用同一份 usage 判据
     connect(s, &QOpenAi::ChatStream::usageReceived, this,
@@ -185,6 +191,9 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             m_recoveryCurrentModel = QOpenAi::fallbackModelId();
             LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("回合粘滞 fallback 模型: ")
                      << m_recoveryCurrentModel;
+            // P1-9 观测面：换模与粘滞锁存同点发射（同一条件、同一处，不另起判据）——
+            // 否则用户看到的答案来自另一个模型，界面却仍显示原模型名
+            emit streamFallbackModel(m_recoveryCurrentModel);
         }
         // lcc s15 af26862：删除成功路径的预算复位——反应式压缩旗标为 per-用户回合一次性
         // （对照 hasAttemptedReactiveCompact：同一回合试过一次即不复活预算），单源复位在 run()
@@ -285,6 +294,7 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
             m_recoveryCurrentModel = QOpenAi::fallbackModelId();
             LOG_WARN << QStringLiteral("[recovery] ") << QStringLiteral("回合粘滞 fallback 模型: ")
                      << m_recoveryCurrentModel;
+            emit streamFallbackModel(m_recoveryCurrentModel); // P1-9 观测面，与上处同条件
         }
         // lcc s06 R1 收口三路之一：错误链同样级联取消子代理并合成 "(cancelled)" 回填
         // （串行队列下宿主流错误与子代理运行实际互斥，此处为防御性接线）

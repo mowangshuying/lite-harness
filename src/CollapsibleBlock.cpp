@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QKeyEvent> // 折叠头键盘可达（P1-6）：Space/Enter 等价点击
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
@@ -32,10 +33,14 @@ QHBoxLayout *CollapsibleBlock::initHeader(const QString &objectName,
     m_header->setObjectName(objectName);
     m_header->setFixedHeight(kHeaderHeight);
     m_header->setCursor(Qt::PointingHandCursor);
+    // 键盘可达（P1-6）：折叠头此前只吃鼠标左键，键盘用户完全无法展开工具块/思考块/清单卡。
+    // StrongFocus 让头部进 Tab 链，配合 eventFilter 的 Space/Enter 分支等价于点击；
+    // 焦点可见性由各主题 QSS 的 #<objectName>:focus 规则承担（三套均已补）。
+    m_header->setFocusPolicy(Qt::StrongFocus);
 
     auto *headerLayout = new QHBoxLayout(m_header);
     headerLayout->setContentsMargins(left, top, right, bottom);
-    headerLayout->setSpacing(8);
+    headerLayout->setSpacing(kHeaderSpacing);
     return headerLayout;
 }
 
@@ -43,7 +48,7 @@ QLabel *CollapsibleBlock::createGlyphLabel(const QString &objectName)
 {
     auto *label = new QLabel(m_header);
     label->setObjectName(objectName);
-    label->setFixedSize(16, 16);
+    label->setFixedSize(kGlyphSize, kGlyphSize);
     label->setAlignment(Qt::AlignCenter);
     return label;
 }
@@ -243,6 +248,17 @@ bool CollapsibleBlock::eventFilter(QObject *watched, QEvent *event)
     {
         auto *me = static_cast<QMouseEvent *>(event);
         if (me->button() == Qt::LeftButton && m_header->rect().contains(me->position().toPoint()))
+        {
+            toggleExpanded();
+            return true;
+        }
+    }
+    // 键盘等价点击（P1-6）：Space 是「按钮」的标准激活键，Enter 一并支持以贴合
+    // 折叠面板的常见习惯。只接 Press 不接 Release——避免长按 Space 连发多次切换。
+    if (watched == m_header && event->type() == QEvent::KeyPress)
+    {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Space || ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)
         {
             toggleExpanded();
             return true;

@@ -53,6 +53,11 @@ QList<ChatSessionPage *> SessionRegistry::alivePages() const
     return pages;
 }
 
+QStringList SessionRegistry::keys() const
+{
+    return m_entries.keys();
+}
+
 void SessionRegistry::mapChildItem(const QString &key, QWidget *childItem)
 {
     m_entries[key].childItem = childItem;

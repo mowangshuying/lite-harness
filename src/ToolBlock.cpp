@@ -2,13 +2,16 @@
 #include "ToolTagKind.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）；"memory" 为 UI 伪键保持字面量
 #include "AgentConstants.h" // kSubagentProgressMaxLines 进度行上限
+#include "ToolOutputDialog.h" // 头部「查看完整输出」入口的目标对话框
 
 #include <QFontMetrics>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QScrollBar>
 #include <QStyle>
 #include <QTimer>
+#include <QToolButton>
 
 #include <FluUtils.h>
 
@@ -45,11 +48,26 @@ ToolBlock::ToolBlock(QWidget *parent) : CollapsibleBlock(parent)
 
     m_arrowLabel = createGlyphLabel("toolArrow");
 
+    // 「查看完整输出」入口：内容区限高 160px（约 8 行），长输出读不全，此钮给大窗。
+    // 默认隐藏——live 期结果尚未产生，无内容可看；setToolExecution 收终态后点亮。
+    // 挂在 m_header 内但不会被头部折叠过滤误触：QToolButton 自行接受鼠标事件，
+    // 事件不向父件传播，CollapsibleBlock::eventFilter（装在 m_header 上）收不到。
+    m_viewAllButton = new QToolButton(m_header);
+    m_viewAllButton->setObjectName(QStringLiteral("toolViewAll"));
+    m_viewAllButton->setFixedSize(20, 20);
+    m_viewAllButton->setIconSize(QSize(14, 14));
+    m_viewAllButton->setCursor(Qt::PointingHandCursor);
+    m_viewAllButton->setFocusPolicy(Qt::StrongFocus); // 键盘可达（与折叠头 P1-6 同纪律）
+    m_viewAllButton->setToolTip(tr("查看完整输出"));
+    m_viewAllButton->hide();
+    connect(m_viewAllButton, &QToolButton::clicked, this, &ToolBlock::openFullOutput);
+
     headerLayout->addWidget(m_iconLabel);
     headerLayout->addWidget(m_tagLabel);
     headerLayout->addWidget(m_titleLabel);
     headerLayout->addWidget(m_outcomeLabel);
     headerLayout->addWidget(m_summaryLabel, 1);
+    headerLayout->addWidget(m_viewAllButton);
     headerLayout->addWidget(m_arrowLabel);
 
     // ---- 输出内容区：纯文本，尺寸固定为 min(自然高度, 上限)，动画期间仅平移 ----
@@ -215,6 +233,10 @@ void ToolBlock::setToolExecution(const QString &toolName, const QString &summary
         body = lines.join(QLatin1Char('\n'));
     }
     m_content->setPlainText(body);
+
+    // 查看钮点亮判据：有真实输出才给入口（output 为空时内容区只有兜底文案，
+    // 大窗里看到的与头部一样，给了按钮反而是空跑一趟）
+    setViewAllVisible(!output.isEmpty());
 }
 
 void ToolBlock::startLive(const QString &liveTitle)
@@ -506,6 +528,8 @@ QStringList ToolBlock::displayedSubagentLines() const
 void ToolBlock::renderSubagentLog()
 {
     m_content->setPlainText(displayedSubagentLines().join(QLatin1Char('\n')));
+    // 进度日志同样给大窗入口：60 行滑窗 + 160px 限高，正是最需要「展开读全」的形态
+    setViewAllVisible(!m_subagentLines.isEmpty());
 }
 
 QString ToolBlock::singleLineSummary() const
@@ -534,10 +558,16 @@ void ToolBlock::refreshSummaryLabel()
     const int leadWidth = usesPromptGlyph()
                               ? m_iconLabel->width()
                               : m_tagLabel->sizeHint().width();
-    static constexpr int kHeaderChrome = 12 + 10 + 16 + 8 * 3;
-    // 成败字形位点亮时（终态卡）再占 16 宽 + 1 段间距；live 期隐藏不计
-    const int outcomeExt = m_outcomeLabel->isVisible() ? 16 + 8 : 0;
-    const int avail = qMax(40, width() - kHeaderChrome - outcomeExt - leadWidth
+    // 固定装饰一律取自单源（P2-D7）：16/8 此前是从 initHeader/createGlyphLabel
+    // 手抄过来的字面量，改那边不会让这边报错，只会让省略号算错（表现为「命令行了尾」）。
+    // 左右边距 12/10 是本类构造时传给 initHeader 的自有值，仍留在本处（不是抄来的）。
+    static constexpr int kHeaderChrome = 12 + 10 + kGlyphSize + kHeaderSpacing * 3;
+    // 成败字形位点亮时（终态卡）再占一个字形位宽 + 1 段间距；live 期隐藏不计
+    const int outcomeExt = m_outcomeLabel->isVisible() ? kGlyphSize + kHeaderSpacing : 0;
+    // 查看钮点亮时同样占位（20 宽 + 1 段间距）：漏这一步即头部溢出——省略号是按 avail
+    // 算的，多出的 28px 会把 summary 顶出块宽，表现为「加了个钮之后命令行了尾」
+    const int viewAllExt = m_viewAllButton && m_viewAllButton->isVisible() ? 20 + kHeaderSpacing : 0;
+    const int avail = qMax(40, width() - kHeaderChrome - outcomeExt - viewAllExt - leadWidth
                                   - m_titleLabel->sizeHint().width());
 
     QFontMetrics fm(m_summaryLabel->font());
@@ -559,4 +589,31 @@ void ToolBlock::refreshIcons()
     const FluTheme theme = FluThemeUtils::getUtils()->getTheme();
     m_arrowLabel->setPixmap(FluIconUtils::getFluentIconPixmap(
         m_expanded ? FluAwesomeType::ChevronUp : FluAwesomeType::ChevronDown, theme, 14, 14));
+    // 查看钮字形随主题重取（本类图标一律走 refreshIcons，与箭头同一处收口，
+    // 避免主题切换后残留上一套配色）
+    if (m_viewAllButton)
+    {
+        m_viewAllButton->setIcon(QIcon(FluIconUtils::getFluentIconPixmap(
+            FluAwesomeType::ViewAll, theme, 14, 14)));
+    }
+}
+
+void ToolBlock::setViewAllVisible(bool visible)
+{
+    if (!m_viewAllButton || m_viewAllButton->isVisible() == visible)
+        return;
+    m_viewAllButton->setVisible(visible);
+    // 可见性一变即重算省略：按钮占 20+8 宽，refreshSummaryLabel 的 avail 依赖它
+    refreshSummaryLabel();
+}
+
+void ToolBlock::openFullOutput()
+{
+    // 数据源取内容区全文：ToolBlock 已完整持有 ≤kOutputCharLimit 的输出串，
+    // 被挡住的只是 160px 视口之下的部分——无需新数据管道，也不宣称能给出更上游的原文
+    const QString body = m_content ? m_content->toPlainText() : QString();
+    const QString title = m_toolName.isEmpty()
+                              ? tr("工具输出")
+                              : QStringLiteral("%1  %2").arg(m_toolName, singleLineSummary());
+    ToolOutputDialog::showText(window(), title, body);
 }

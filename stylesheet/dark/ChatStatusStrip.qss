@@ -23,6 +23,6 @@
 }
 /* 消耗段与速度段：占用数字再淡一档（次要信息，不与占用数字抢焦点）；三段同层级同色阶 */
 #ctxConsumption, #ctxRate {
-    color: rgb(128, 128, 128);
+    color: rgb(157, 157, 157);
     font: 11px "Consolas";
 }

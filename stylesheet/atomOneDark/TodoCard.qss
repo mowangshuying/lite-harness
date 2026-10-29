@@ -14,6 +14,13 @@ TodoCard {
     background-color: rgb(47, 51, 58);
 }
 
+/* 键盘可达（P1-6）：本头部基础态无 border（与 ToolBlock/ThinkingBlock 不同），
+   焦点态引入 border 会让内容内缩 1px 并在聚焦/失焦间抖动，故只用实色提亮表达焦点，
+   明度差比另两者多一档以补偿可辨识度。 */
+#todoHeader:focus {
+    background-color: rgb(58, 63, 71);
+}
+
 /* 标题：与 PermissionCard #pcTitle 同级（面板标题语义） */
 #todoTitle {
     color: rgb(210, 214, 222);
@@ -57,7 +64,7 @@ TodoCard {
 
 /* 待办：空心圆 + 常规灰字 */
 #todoRow[status="pending"] #todoMark {
-    color: rgb(139, 148, 158);
+    color: rgb(147, 157, 167);
 }
 #todoRow[status="pending"] #todoText {
     color: rgb(171, 178, 191);
@@ -81,5 +88,5 @@ TodoCard {
     color: rgb(152, 195, 121);
 }
 #todoRow[status="done"] #todoText {
-    color: rgb(139, 148, 158);
+    color: rgb(147, 157, 167);
 }

@@ -65,6 +65,10 @@ signals:
     // 修3 契约 C-2：仅在成功路径、且 usage 非空时发射，恒先于 messageFinished（直连，
     // 顺序有保证）。不并入 assistantMsg——塞进去会随历史落盘污染持久化与计量。
     void usageReceived(const QJsonObject &usage);
+    // P1-9 观测面：退避重试已排期（唯一发射点在 scheduleRetry，覆盖 idle 静默超时与
+    // 429/5xx 两条可重试路径）。attempt 从 1 起、totalAttempts 为本流预算上限、
+    // delayMs 为本次等待时长。上层据此把「界面静默等待」显式化；不接则行为零变化。
+    void retryScheduled(int attempt, int totalAttempts, int delayMs);
 
 private:
     void startRequest(const QJsonObject &input, Mode mode = Mode::Chat);

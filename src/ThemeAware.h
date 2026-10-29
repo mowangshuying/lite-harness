@@ -4,7 +4,11 @@
 
 #include <functional>
 
+#include <FluIconUtils.h> // FluAwesomeType/FluTheme 枚举与位图工厂（dprIcon 转发调用）
+
 class QWidget;
+class QIcon;
+class QPixmap;
 
 /// 全仓「QSS 主题化」同构样板的收口点（此前约 12 处各自重复：首载 QSS +
 /// connect themeChanged + 回调里重载，个别还漏刷导致行为不一致）。

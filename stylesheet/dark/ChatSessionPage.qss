@@ -19,7 +19,7 @@ MessageBubbleWidget {
 }
 
 #msgBrowser[role="Assistant"] blockquote {
-    color: rgb(128, 128, 128);
+    color: rgb(157, 157, 157);
     font-style: italic;
     border-left: 3px solid rgba(128, 128, 128, 80);
     margin-left: 4px;
@@ -29,9 +29,52 @@ MessageBubbleWidget {
 /* 只读工作目录页眉：12px 次要灰字（字号在代码设定以对齐 elide 量纲），
    题头比路径更浅一档，与 NewChatPage 路径条同一套灰阶 token */
 ChatSessionPage QLabel#workDirCaption {
-    color: rgb(140, 140, 140);
+    color: rgb(169, 169, 169);
 }
 
 ChatSessionPage QLabel#workDirPath {
     color: rgb(175, 175, 175);
+}
+
+/* P1-9 空态引导卡：空会话时消息列唯一内容，读作「面板」而非「气泡」——
+   比气泡更淡的底 + 一圈弱边，标题比正文重一档，正文三行走次要灰阶
+   （与 workDir* 同一族灰阶，避免引导抢走对真实回复的注意力） */
+ChatSessionPage QWidget#emptyHint {
+    background-color: rgb(48, 48, 48);
+    border: 1px solid rgb(74, 74, 74);
+    border-radius: 10px;
+}
+
+ChatSessionPage QLabel#emptyHintTitle {
+    color: rgb(206, 206, 206);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+ChatSessionPage QLabel#emptyHintLine {
+    color: rgb(160, 160, 160);
+    font-size: 12px;
+}
+
+/* 「回到底部」浮动钮（评审 B1）：此前全仓零规则，钮体吃 Qt 原生绘制——而它浮在
+   消息流之上，与 #sidebarRestoreBtn（嵌在工具条里、transparent 底成立）**不同**：
+   这里必须实底，否则气泡文字会从钮体底下透出来。底色取本页底色同源、描边取页面
+   描边同源，圆角 15px 按 30×30 定出正圆（与 SendMsgButton 同规格同值，不另造一档）。
+   hover/pressed 逐档加深沿用 SendMsgButton 的 alpha 阶梯，保证两个圆形动作钮手感一致。 */
+ChatSessionPage QToolButton#jumpBottomBtn {
+    background-color: rgb(40, 40, 40);
+    border: 1px solid rgb(70, 70, 70);
+    border-radius: 15px;
+}
+
+/* hover/pressed 用**合成实色**而非 rgba 半透明：本钮浮在消息气泡之上，半透明底会让
+   气泡文字从钮体透出（与 #sidebarRestoreBtn 嵌在工具条里的情形不同）。
+   合成口径与 ThinkingBlock.qss 同源：rgba(255,255,255,a) 叠页底色 40 → 40+a。
+   hover = 40+15 = 55，pressed = 40+25 = 65（alpha 阶梯取 SendMsgButton 同档）。 */
+ChatSessionPage QToolButton#jumpBottomBtn:hover {
+    background-color: rgb(55, 55, 55);
+}
+
+ChatSessionPage QToolButton#jumpBottomBtn:pressed {
+    background-color: rgb(65, 65, 65);
 }

@@ -1,5 +1,6 @@
 #include "SettingsPage.h"
 #include "AgentConstants.h"
+#include "LayoutConstants.h" // P2-D2：页面留白与其余页同源（kSideMargin/kPageVMargin）
 #include "FluentInputDialog.h"
 #include "I18n.h"
 #include "QOpenAi.h" // 写入 ini 后即时覆盖全局配置（setUrl / setToken）
@@ -593,7 +594,11 @@ void ModelListSettingCard::promptEdit()
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
-    vMainLayout->setContentsMargins(35, 35, 35, 35);
+    // 页面留白单源（P2-D2）：此处四个裸 35 与 ChatSessionPage 同源——水平即 kSideMargin、
+    // 垂直即 kPageVMargin。此前 SettingsPage 不引 LayoutConstants.h，同一个 35 在两头各写
+    // 一遍，改页面留白会漏掉本页（表现为设置页与其他页留白不一致）。
+    vMainLayout->setContentsMargins(LayoutConst::kSideMargin, LayoutConst::kPageVMargin,
+                                    LayoutConst::kSideMargin, LayoutConst::kPageVMargin);
     vMainLayout->setAlignment(Qt::AlignTop);
     setLayout(vMainLayout);
 

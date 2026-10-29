@@ -16,6 +16,14 @@ ToolBlock {
     background-color: rgb(236, 236, 236);
 }
 
+/* 键盘可达（P1-6）：折叠头已进 Tab 链，必须给可见焦点环。
+   边框宽度维持基础态的 1px 不变——头部走手动几何（resizeEvent 里 resize 到块宽），
+   加粗描边会挤动内容；只换描边色 + 一档底色加深来表达焦点。 */
+#toolHeader:focus {
+    border: 1px solid rgb(0, 90, 158);
+    background-color: rgb(230, 230, 230);
+}
+
 #toolIcon {
     color: rgb(96, 96, 96);
     font-family: Consolas, "Courier New", monospace;
@@ -44,7 +52,7 @@ ToolBlock {
     background-color: rgba(30, 96, 176, 18);
 }
 #toolTag[toolTagKind="search"] {
-    color: rgb(0, 128, 152);
+    color: rgb(0, 120, 143);
     background-color: rgba(0, 128, 152, 18);
 }
 #toolTag[toolTagKind="write"] {
@@ -52,15 +60,15 @@ ToolBlock {
     background-color: rgba(142, 76, 172, 18);
 }
 #toolTag[toolTagKind="run"] {
-    color: rgb(190, 100, 30);
+    color: rgb(167, 88, 26);
     background-color: rgba(190, 100, 30, 18);
 }
 #toolTag[toolTagKind="plan"] {
-    color: rgb(150, 110, 20);
+    color: rgb(141, 103, 19);
     background-color: rgba(150, 110, 20, 18);
 }
 #toolTag[toolTagKind="delegate"] {
-    color: rgb(40, 128, 70);
+    color: rgb(39, 125, 69);
     background-color: rgba(40, 128, 70, 18);
 }
 
@@ -80,7 +88,7 @@ ToolBlock {
     background-color: rgba(0, 0, 0, 3);
     border-left: 2px solid rgba(0, 0, 0, 24);
     padding: 4px 8px;
-    color: rgb(120, 120, 120);
+    color: rgb(92, 92, 92);
     font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
 }
@@ -100,5 +108,31 @@ QLabel#toolOutcome[outcome="fail"] {
     color: rgb(196, 43, 28);
 }
 QLabel#toolOutcome[outcome="stopped"] {
-    color: rgb(160, 160, 160);
+    color: rgb(110, 110, 110);
+}
+
+/* 「查看完整输出」入口钮：图标由 FluIconUtils 按主题取色，此处只管交互态底与焦点环。
+   基础态完全透明——它坐在不透明头部之上，常态不该抢视觉重心，hover/focus 才现身。 */
+QToolButton#toolViewAll {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+/* hover 实色 = 与 #toolHeader:hover 同档的一档加深（头部本身已有底色，钮再叠一层） */
+QToolButton#toolViewAll:hover {
+    background-color: rgb(236, 236, 236);
+}
+
+/* 按下态（P2-C2）：本钮是 QToolButton（非 QWidget 头部），:pressed 真实生效——
+   此前只有 hover/focus，点击瞬间无反馈。取比 focus 再深一档，与 hover 拉开一级。 */
+QToolButton#toolViewAll:pressed {
+    background-color: rgb(224, 224, 224);
+}
+
+/* 键盘可达：本钮已进 Tab 链（StrongFocus），必须给可见焦点环，
+   与 #toolHeader:focus 同一套描边色，保持同族控件的焦点语言一致 */
+QToolButton#toolViewAll:focus {
+    border: 1px solid rgb(0, 90, 158);
+    background-color: rgb(230, 230, 230);
 }

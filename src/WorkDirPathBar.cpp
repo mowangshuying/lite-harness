@@ -6,6 +6,22 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QToolButton>
+#include "UiScale.h" // 字号走代码设定，故须自行接 uiFontScale（见 secondaryPixelSize）
+
+namespace {
+
+// 次要文字基准字号（题注 / 路径 / 浏览钮三处共用，原各抄一份裸 12）。
+// 本组件字号刻意在代码里设定而非写进 QSS——elide 的 QFontMetrics 量纲必须与实际字体
+// 同源，写进 QSS 就得等 polish 完成才能量。代价是它绕开了 ThemeAware 的 QSS 字号缩放，
+// 于是这里自己接上：读**启动快照**（非现取 ini），与正文面（QApplication 字体）、
+// 卡片面（QSS 重放）钉在同一个值上，避免「放大后路径条不跟着变」的半生效。
+constexpr int kSecondaryBasePx = 12;
+inline int secondaryPixelSize()
+{
+    return UiScale::scaledSize(kSecondaryBasePx, UiScale::runtimeFontScalePercent());
+}
+
+} // namespace
 
 WorkDirPathBar::WorkDirPathBar(QWidget *parent) : QWidget(parent)
 {
@@ -23,9 +39,12 @@ WorkDirPathBar::WorkDirPathBar(QWidget *parent) : QWidget(parent)
     m_pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse); // 仅可选中复制，无修改交互
     m_pathLabel->installEventFilter(this);        // Resize 时按新宽度重新省略
 
-    // 字号在代码里设定（与 elide 的 QFontMetrics 量纲一致），配色交给三主题 QSS 跟随变色
+    // 字号在代码里设定（与 elide 的 QFontMetrics 量纲一致），配色交给三主题 QSS 跟随变色。
+    // 走代码设定就意味着绕开了 ThemeAware 的 QSS 字号缩放，故这里必须自己接 uiFontScale：
+    // 读启动快照（非现取 ini）保证与正文面/卡片面同一个值，否则放大后路径条不跟着变。
+    // elide 量纲不受影响——refreshElidedText 读的是 m_pathLabel->font() 自身，字体与度量同源。
     QFont secondaryFont = m_caption->font();
-    secondaryFont.setPixelSize(12);
+    secondaryFont.setPixelSize(secondaryPixelSize());
     m_caption->setFont(secondaryFont);
     m_pathLabel->setFont(secondaryFont);
 
@@ -48,7 +67,9 @@ void WorkDirPathBar::enableBrowse()
     browse->setAutoRaise(true);
     browse->setToolButtonStyle(Qt::ToolButtonTextOnly);
     QFont secondaryFont = browse->font();
-    secondaryFont.setPixelSize(12);
+    // 与题注/路径同一 helper：三处字号单源，且同步吃 uiFontScale
+    // （本钮是文字钮，字号不一致会在同一行里读出两套尺度）
+    secondaryFont.setPixelSize(secondaryPixelSize());
     browse->setFont(secondaryFont);
     connect(browse, &QToolButton::clicked, this, &WorkDirPathBar::browseRequested);
 

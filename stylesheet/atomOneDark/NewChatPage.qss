@@ -12,7 +12,7 @@ NewChatPage QLabel#welcomeLabel {
 
 /* 工作目录行：12px 次要信息，题头比路径更浅一档，整体弱于输入框（灰阶取 Atom 前景/注释之间） */
 NewChatPage QLabel#workDirCaption {
-    color: rgb(115, 122, 135);
+    color: rgb(148, 157, 174);
 }
 
 NewChatPage QLabel#workDirPath {
@@ -29,11 +29,11 @@ NewChatPage QToolButton#workDirBrowse {
 }
 
 NewChatPage QToolButton#workDirBrowse:hover {
-    color: rgb(82, 139, 255);
+    color: rgb(92, 156, 255);
     background-color: rgba(255, 255, 255, 15);
 }
 
 NewChatPage QToolButton#workDirBrowse:pressed {
-    color: rgb(82, 139, 255);
+    color: rgb(92, 156, 255);
     background-color: rgba(255, 255, 255, 25);
 }

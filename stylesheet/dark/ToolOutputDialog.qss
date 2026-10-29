@@ -1,0 +1,49 @@
+/* dark */
+/* 工具输出查看器：骨架色值与 FluentInputDialog.qss 同源（卡片 rgb(43,43,43) / 按钮行 rgb(32,32,32)），
+   内容区等宽配色与 ToolBlock.qss 的 #toolOutput 同源，避免同一份输出在两处显出两种色。 */
+
+ToolOutputDialog {
+    background-color: transparent;
+}
+
+ToolOutputDialog QWidget#windowMask {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+ToolOutputDialog QFrame#centerWidget {
+    background-color: rgb(43, 43, 43);
+    border-radius: 8px;
+}
+
+ToolOutputDialog QLabel#titleLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: rgb(255, 255, 255);
+    background-color: transparent;
+}
+
+/* meta 行：字符数与上游截断提示，取 #toolOutput 同档的弱化前景 */
+ToolOutputDialog QLabel#metaLabel {
+    font-size: 12px;
+    color: rgb(163, 163, 163);
+    background-color: transparent;
+}
+
+/* 内容区：比卡片底（43,43,43）再暗一档的 32,32,32 拉开层次，与按钮行同值——
+   二者本就都是「次要于卡片的承托面」 */
+ToolOutputDialog QTextBrowser#outputBody {
+    background-color: rgb(32, 32, 32);
+    border: 1px solid rgba(255, 255, 255, 12);
+    border-radius: 6px;
+    margin: 0 24px;
+    padding: 4px 8px;
+    color: rgb(200, 200, 200);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+ToolOutputDialog QWidget#btnWidget {
+    background-color: rgb(32, 32, 32);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}

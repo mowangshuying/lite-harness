@@ -35,8 +35,8 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 {
     auto vMainLayout = new QVBoxLayout(this);
     setLayout(vMainLayout);
-    vMainLayout->setContentsMargins(LayoutConst::kSideMargin, 24,
-                                    LayoutConst::kSideMargin, 24);
+    vMainLayout->setContentsMargins(LayoutConst::kSideMargin, LayoutConst::kHeroVMargin,
+                                    LayoutConst::kSideMargin, LayoutConst::kHeroVMargin);
     vMainLayout->setSpacing(0);
 
     // —— 英雄区：图标 + 问候语，页面唯一的大字，与输入栏成组整体垂直居中 ——

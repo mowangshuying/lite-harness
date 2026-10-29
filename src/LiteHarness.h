@@ -36,6 +36,20 @@ private:
     void renameSession(const QString &key);
     void deleteSession(const QString &key);
 
+    // 会话页 → 导航子项的运行态联动（评审 B3 遗留接线）：navRunningChanged 自实现起
+    // 只 emit 无连接，回合运行与否在导航上完全不可见。此处补订阅并落到图标位。
+    void hookNavBadge(const QString &key, ChatSessionPage *page);
+    // 运行态徽标：只改子项图标字形，绝不写 label 文本——label 是搜索的匹配面
+    // （FluVNavigationView::getItemByText 按全文精确比对）兼重命名的旧标题来源，
+    // 一旦掺入徽标字符即同时破坏两者。
+    void applyNavBadge(const QString &key, bool running);
+    // 主题切换后重放全部徽标：FluVNavigationIconTextItem::onThemeChanged 会按
+    // m_awesomeType 无条件重设图标，把运行态字形冲回 Message，故须在其之后覆写。
+    void refreshNavBadges();
+    // 导航子项集合/标题变化后刷新搜索候选清单：updateSearchKeys 在 FluentUI 内
+    // 无任何调用点（候选恒空即搜索框恒不命中），恢复搜索项必须自建这条喂入通路。
+    void refreshSearchKeys();
+
     // 递归给会话子项及其全部后代控件装右键过滤器并登记（行区域被子控件占满，
     // Qt 仅投递给最深接收者，装在主体上收不到事件）
     void hookContextMenu(QWidget *childItem);
@@ -49,6 +63,10 @@ protected:
 
     // 退出守卫：仍有会话回合在运行时先确认（详见 cpp 定义处注释）
     void closeEvent(QCloseEvent *event) override;
+
+    // 窗口尺寸/位置恢复（P1-11）：构造末尾、show() 之前调用；无存档或存档非法即保持默认。
+    // 落盘在 closeEvent 的 isAccepted() 分支，两侧不对称分工见 cpp 注释。
+    void restoreWindowGeometry();
 
     // i18n 第八轮：QTranslator 重装触发 Qt 向全 widget 树广播 LanguageChange，
     // 常驻导航三项文本在此重取 tr()（重启后启动即装好 translator，本钩子主要兜

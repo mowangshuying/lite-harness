@@ -131,6 +131,13 @@ protected:
     static constexpr int kHeaderHeight = 32;   // 头部固定高（几何公式与 setContentHeight 共用）
     static constexpr int kVerticalChrome = 8;  // 内容区 QSS 上下 padding 各 4px（三主题一致）
 
+    // 头部几何单源（UI 优化 P2-D7）：这两个值此前只活在 initHeader/createGlyphLabel 的
+    // 字面量里，而 ToolBlock::refreshSummaryLabel 的省略宽度又要按「块宽 − 固定装饰」反推，
+    // 于是同一数值在两个 TU 各抄一遍——改 QSS 或改这里不会报错，只会让省略号算错、
+    // 表现为「命令行了尾」。改为受保护常量后，子类算宽度时引用本处，不再有第二套口径。
+    static constexpr int kGlyphSize = 16;      // 图标/箭头字形位边长（createGlyphLabel）
+    static constexpr int kHeaderSpacing = 8;   // 头部各件之间的布局间距（initHeader）
+
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
