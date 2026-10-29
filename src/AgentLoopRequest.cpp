@@ -565,7 +565,10 @@ void AgentLoop::runNextTool()
         // 计数 +1，执行过则归零。与 lcc 一致：权限门拦截/用户拒绝的 todo_write 不算执行
         // （handler 未跑）；走到 handler 的即使返回校验错误也算执行过。
         // lcc s06 把提醒文本并入最后一条 tool_result 的 content 尾部（OpenAI 协议 tool 消息
-        // content 为扁平字符串，直接字符串拼接；提醒内文逐字一致，不再发独立 user 消息）
+        // content 为扁平字符串，直接字符串拼接，不再发独立 user 消息。
+        // s17 偏差登记：提醒内文原为 lcc loop.py:362 逐字 "Update your todos."——用户反馈模型
+        // 收到后常常不动（弱措辞无指令性），改为带动作指令的同 envelope 长句；判据/挂载点/
+        // 阈值 3 批均不动（tst 无锁此串，grep 零命中）
         if (m_usedTodoThisRound)
             m_roundsSinceTodo = 0;
         else
@@ -573,7 +576,10 @@ void AgentLoop::runNextTool()
         if (m_roundsSinceTodo >= 3)
         {
             const QString reminder =
-                QStringLiteral("\n\n<reminder>Update your todos.</reminder>");
+                QStringLiteral("\n\n<reminder>Update your todos now: resend the full list "
+                               "with current statuses — items finished since your last call "
+                               "set to completed, the one you are starting set to "
+                               "in_progress.</reminder>");
             for (int i = m_messages.size() - 1; i >= 0; --i)
             {
                 if (m_messages.at(i).value(QStringLiteral("role")).toString()

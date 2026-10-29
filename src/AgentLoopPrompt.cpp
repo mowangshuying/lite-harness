@@ -41,6 +41,10 @@ namespace {
 // schema 描述发现，模型几乎不自发调用；限定"multi-step"防小任务反增 1 轮）；②bullet2 目标歧义
 // 且影响方案时先问一条聚焦问题而非猜测跑偏；③末条收敛句——判据满足且验证即停手简洁汇报，禁未
 // 被要求的打磨与对已通过检查的重复验证（拖拉两形态；maxToolIterations=500 是熔断非收敛）。
+// s17 二轮对症（用户反馈"模型不及时调用 todo_write、面板滞后真实进度"）：bullet1 由
+// "update statuses as steps complete" 的软措辞升级为**活表纪律**——任一状态变化立即重发全量、
+// 开工前置 in_progress、做完即改 completed、禁攒到终局一次性刷；同批同步强化 todo_write
+// schema 描述与批尾 reminder 文案（三串原均 lcc 逐字/自有，本处属有意偏差，登记于各自落点）。
 // 本段末条再追加语言纪律 bullet（用户裁决：思考过程用中文输出）：约束 reasoning 用中文，
 // 同时点名代码/标识符/路径/工具参数保持原文——防模型连带翻译标识符或路径导致工具调用失配。
 // 仅主循环生效：SubAgent 请求不带 enable_thinking（黑盒无思考输出），无需此条。
@@ -66,8 +70,10 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
                              "Work toward the user's stated goal; keep scope to what was "
                              "asked. Plan each round before acting.\n"
                              "- Before the first edit, pin the goal and its done-criteria in "
-                             "one sentence; for multi-step work, track it with todo_write and "
-                             "update statuses as steps complete.\n"
+                             "one sentence; for multi-step work, keep a todo_write list live: "
+                             "whenever any item's status changes, immediately resend the full "
+                             "list — set in_progress before starting an item, completed right "
+                             "after finishing it, never bulk-updated at the end.\n"
                              "- If the goal is ambiguous in a way that changes the approach, "
                              "ask one focused question instead of guessing.\n"
                              "- Issue all independent tool calls together in one round; "
@@ -290,7 +296,10 @@ QJsonArray AgentLoop::createToolsDefinition()
 
     // todo_write（lcc s05）：todos 为嵌套 array<object{content,status}> schema，
     // makeTool lambda 只支持平铺 string/integer 参数，按 lcc 原文手工构造；
-    // 外层包装与 makeTool 产物一致（type:function + function.parameters）
+    // 外层包装与 makeTool 产物一致（type:function + function.parameters）。
+    // s17 偏差登记：description 原为 lcc tools_manager.py:91 逐字一句，扩为含**时序纪律**的
+    // 指令串（全量重发 / in_progress 先于开工 / completed 后即改 / 禁攒批终局刷）——用户反馈
+    // 模型不及时调用 todo_write，面板滞后于真实进度；无测试锁此串（grep 零命中）
     {
         QJsonObject contentSchema;
         contentSchema[QStringLiteral("type")] = QStringLiteral("string");
@@ -327,7 +336,10 @@ QJsonArray AgentLoop::createToolsDefinition()
         QJsonObject function;
         function[QStringLiteral("name")] = ToolNames::TODO_WRITE;
         function[QStringLiteral("description")] =
-            QStringLiteral("Create and manage a task list for your current coding session.");
+            QStringLiteral("Create and manage the task list for your current coding session. "
+                           "Resend the full list on every call; mark an item in_progress right "
+                           "before starting it and completed right after finishing it — update "
+                           "whenever a status changes, not in bulk at the end.");
         function[QStringLiteral("parameters")] = inputSchema;
 
         QJsonObject tool;
