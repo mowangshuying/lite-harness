@@ -549,6 +549,26 @@ QString CronSchedulerManager::listCrons() const
     return lines.join(QLatin1Char('\n'));
 }
 
+QJsonArray CronSchedulerManager::ledgerSnapshot() const
+{
+    QStringList ids = m_jobs.keys();
+    ids.sort();
+    QJsonArray rows;
+    for (const QString &id : ids) {
+        const CronJob &job = m_jobs.value(id);
+        QJsonObject row;
+        row[QStringLiteral("id")] = job.id;
+        row[QStringLiteral("cron")] = job.cron;
+        row[QStringLiteral("prompt")] = job.prompt;
+        row[QStringLiteral("recurring")] = job.recurring;
+        row[QStringLiteral("durable")] = job.durable;
+        row[QStringLiteral("pendingDelivery")] = job.pendingDelivery;
+        row[QStringLiteral("lastFired")] = job.lastFired;
+        rows.append(row);
+    }
+    return rows;
+}
+
 QString CronSchedulerManager::durableFilePath() const
 {
     // sink 为宿主会话数据根（含 .lite-harness 中间层/会话段），本处仅拼文件名

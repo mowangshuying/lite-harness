@@ -132,6 +132,9 @@
 #sbRow[status="active"] #sbText { color: rgb(220, 220, 220); font-weight: bold; }
 #sbRow[status="done"] #sbMark { color: rgb(108, 203, 91); }
 #sbRow[status="done"] #sbText { color: rgb(136, 136, 136); }
+/* s17 P1 后台任务失败行（bg failed 态）：红点灰字，与 done 同降级权重——终局留痕不抢进行中行 */
+#sbRow[status="failed"] #sbMark { color: rgb(255, 117, 117); }
+#sbRow[status="failed"] #sbText { color: rgb(136, 136, 136); }
 #sbEmptyHint {
     color: rgb(110, 110, 110);
     font: italic 12px "Segoe UI";

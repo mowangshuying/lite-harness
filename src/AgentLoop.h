@@ -182,6 +182,17 @@ signals:
     // （含清为空清单）后发射，携带本次输入清单的快照 [{content, status}, ...]（不再持久化，
     // 由模型按计划逐轮重发全量清单）；校验失败与权限询问中不发射
     void todoUpdated(const QJsonArray &todos);
+    // s17 P1 观测面三广播（仿 teamRosterChanged 先例：1s tick 签名边沿检测搭车，
+    // 无变不发、零新 QTimer）。页面订阅后直传侧栏 setter（setter-push 惯例，
+    // 侧栏保持纯视图不读引擎）。载荷即引擎快照，页面无需回拉引擎
+    // 后台 bash 任务台账快照 [{id, command, status}]（BackgroundTasksManager::ledgerSnapshot）
+    void backgroundTasksChanged(const QJsonArray &tasks);
+    // 定时任务台账快照 [{id, cron, prompt, recurring, durable, pendingDelivery, lastFired}]
+    //（CronSchedulerManager::ledgerSnapshot）
+    void cronJobsChanged(const QJsonArray &jobs);
+    // goal 常驻态快照（GoalManager 读侧组装，见 AgentLoopGoal.cpp::goalStateSnapshot）；
+    // 空对象 = 无 active goal（侧栏整节隐藏）。字段只随引擎活动变化，静息期签名恒定
+    void goalStateChanged(const QJsonObject &state);
     // 记忆沉淀阶段开始（仅自然结束分支，异步化 P2）：finished 同栈随后发射，提取/合并链
     // 已改为 QOpenAi::AsyncRequest 异步执行（startMemoryChain，不再阻塞事件循环），
     // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡、保留气泡引用供结果卡就地切换
@@ -308,6 +319,14 @@ private:
     // name|status 签名与上次比对、仅不同时 emit teamRosterChanged——零新 QTimer，
     // 空名单只在曾有名册时广播一次（初值空串与空名册同签不刷屏）
     void updateTeamRosterBroadcast();
+    // s17 P1 观测面三台账变更检测（仿名册先例）：随 cron tick 1s 节拍调用，拼各快照的
+    // Compact JSON 签名与上次比对、仅变化才 emit 对应信号——零新 QTimer、无变不刷屏
+    void updateSidebarLedgerBroadcasts();
+    // s17 goal 常驻态快照组装（读侧，AgentLoopGoal.cpp 定义）：condition/iterations/
+    // consecutiveBlocks/blockCap/tokensUsed/lastReason；无 active goal 返回空对象。
+    // 字段只随引擎活动变化，tokensUsed 用 totalTokens-tokensAtStart 差值（不取 elapsed，
+    // 否则秒级签名恒变刷屏）
+    QJsonObject goalStateSnapshot() const;
     // 定时任务空闲交付（lcc s12/31a99d1 run_delivery 转译）：仅 m_running=false 时经
     // m_cron.runDelivery 收割——回调内 emit scheduledUserMessage 同栈直连（宿主同步 run()
     // 置位）后回读 m_running 作为接管结果：未接管（无 UI 接线/防御拒绝）→ runDelivery
@@ -640,6 +659,10 @@ private:
     int m_recoveryCount = 0;
     // 上次广播的队友名册签名（name|status 以 ';' 连接）：updateTeamRosterBroadcast 边沿检测单源
     QString m_teamRosterSignature;
+    // s17 P1 观测面三签名（Compact JSON）：updateSidebarLedgerBroadcasts 边沿检测单源
+    QString m_bgLedgerSignature;
+    QString m_cronLedgerSignature;
+    QString m_goalStateSignature;
     // lcc _team_was_active：队友全部下线的边沿检测（每回合终局比对一次）
     bool m_teamWasActive = false;
     // 四事件钩子链（仅主线程访问；注册顺序即执行顺序，见 registerBuiltinHooks）

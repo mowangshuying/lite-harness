@@ -12,6 +12,7 @@
 
 #include "BackgroundTasksManager.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -193,6 +194,36 @@ void testCollectTruncationAndOrder()
                        "首条是记账序更前的 bg_0004（m_ready FIFO，非登记序）");
 }
 
+// ledgerSnapshot()（s17 P1 观测面）：台账逐条 [{id, command, status}] 按 id 升序；
+// 终态（待收割）仍在账可见——collect 收割即离账，快照忠实反映「在跑 + 待收割」窗口
+void testLedgerSnapshot()
+{
+    BackgroundTasksManager mgr;
+    TestHarness::check(mgr.ledgerSnapshot().isEmpty(), "新台账快照为空数组");
+
+    const QString a = mgr.start(QStringLiteral("npm test"), QString());    // bg_0001
+    const QString b = mgr.start(QStringLiteral("cargo build"), QString()); // bg_0002
+    mgr.recordResult(a, QStringLiteral("boom"), 2, false);                 // a→failed 待收割仍在账
+
+    const QJsonArray snap = mgr.ledgerSnapshot();
+    TestHarness::check(snap.size() == 2, "两条在账（终态未收割仍可见）");
+    const QJsonObject rowA = snap.at(0).toObject();
+    const QJsonObject rowB = snap.at(1).toObject();
+    TestHarness::check(rowA.value(QStringLiteral("id")).toString() == a
+                           && rowB.value(QStringLiteral("id")).toString() == b,
+                       "id 升序（bg_%04d 零填充使字典序=时序）");
+    TestHarness::check(rowA.value(QStringLiteral("status")).toString() == QStringLiteral("failed")
+                           && rowB.value(QStringLiteral("status")).toString() == QStringLiteral("running"),
+                       "status 引擎账原文（failed|running）");
+    TestHarness::check(rowA.value(QStringLiteral("command")).toString() == QStringLiteral("npm test"),
+                       "command 全文原样回交");
+
+    mgr.collect();
+    const QJsonArray after = mgr.ledgerSnapshot();
+    TestHarness::check(after.size() == 1 && after.at(0).toObject().value(QStringLiteral("id")).toString() == b,
+                       "收割即离账——只剩在跑的 bg_0002");
+}
+
 } // namespace
 
 int tst_backgroundtasks()
@@ -206,5 +237,6 @@ int tst_backgroundtasks()
     testHasPendingLifecycle();       // 5
     testCollectTemplate();           // 9
     testCollectTruncationAndOrder(); // 5
+    testLedgerSnapshot();            // 6
     return TestHarness::failCount() - before;
 }

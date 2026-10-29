@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -64,6 +65,11 @@ public:
     // lcc format_bash_result 等价：超时（对应 lcc exit_code None）或退出码 0 → 原样返回；
     // 否则前缀 "Error: command exited with status %1:\n%2"。主循环前台路径共用
     static QString formatBashResult(const QString &output, int exitCode, bool timedOut);
+
+    // s17 P1 观测面快照（侧栏「后台任务」节数据口）：台账逐条 [{id, command, status}]，
+    // 按 id 升序（bg_%04d 自增零填充，字典序=时序，面板行序稳定）。纯读、与收割无关——
+    // collect() 收割即从台账抹除（完成态只活到收割前一刻），本快照忠实反映「在跑 + 待收割」
+    QJsonArray ledgerSnapshot() const;
 
 private:
     QHash<QString, Task> m_tasks;

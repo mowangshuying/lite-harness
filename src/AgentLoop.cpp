@@ -114,6 +114,9 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
         tryDeliverBackgroundWakeup();
         // s13 观测面 b：名册变更边沿广播（1s 节拍搭车，零新 QTimer；签名相同则不发）
         updateTeamRosterBroadcast();
+        // s17 P1 观测面：bg 台账 / cron 台账 / goal 常驻态变更边沿广播（同款 1s 节拍搭车
+        // 签名边沿，零新 QTimer；载荷即引擎快照，页面直传侧栏 setter）
+        updateSidebarLedgerBroadcasts();
     });
     m_cronTick->start();
     m_cron.start();
@@ -571,3 +574,33 @@ qsizetype AgentLoop::contextOverheadTokens() const
     return tokens;
 }
 
+
+// s17 P1 观测面三台账变更边沿广播（updateTeamRosterBroadcast 先例的三本账扩展版）：
+// 1s tick 搭车、Compact JSON 签名比对、无变不 emit——零新 QTimer、无变化不刷屏。
+// 载荷直接带快照出信号（仿 todoUpdated「事件即数据」形态），页面只转推侧栏、不回拉引擎。
+void AgentLoop::updateSidebarLedgerBroadcasts()
+{
+    const QJsonArray bg = m_backgroundTasks.ledgerSnapshot();
+    const QString bgSig = QString::fromUtf8(
+        QJsonDocument(bg).toJson(QJsonDocument::Compact));
+    if (bgSig != m_bgLedgerSignature) {
+        m_bgLedgerSignature = bgSig;
+        emit backgroundTasksChanged(bg);
+    }
+
+    const QJsonArray crons = m_cron.ledgerSnapshot();
+    const QString cronSig = QString::fromUtf8(
+        QJsonDocument(crons).toJson(QJsonDocument::Compact));
+    if (cronSig != m_cronLedgerSignature) {
+        m_cronLedgerSignature = cronSig;
+        emit cronJobsChanged(crons);
+    }
+
+    const QJsonObject goal = goalStateSnapshot();
+    const QString goalSig = QString::fromUtf8(
+        QJsonDocument(goal).toJson(QJsonDocument::Compact));
+    if (goalSig != m_goalStateSignature) {
+        m_goalStateSignature = goalSig;
+        emit goalStateChanged(goal);
+    }
+}

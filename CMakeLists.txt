@@ -136,6 +136,7 @@ if (LITE_TESTS)
 		src/WorkflowManager.cpp
 		src/WorkflowRuntime.cpp
 		src/GoalManager.cpp
+		src/CronSchedulerManager.cpp
 	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"

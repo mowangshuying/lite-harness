@@ -19,33 +19,33 @@
         <translation>历史文件解析失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="248"/>
+        <location filename="../src/AgentLoop.cpp" line="259"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent 仍在运行中，请等待完成后再发送。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="253"/>
-        <location filename="../src/AgentLoopRequest.cpp" line="303"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="270"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="356"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>工具调用轮次超过上限（%1 轮），终止循环。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="339"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="306"/>
         <source>反应式压缩（上下文超限）</source>
         <translation>反应式压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="398"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="428"/>
         <source>自动压缩（上下文超限）</source>
         <translation>自动压缩（上下文超限）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="575"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="611"/>
         <source>主动压缩（compact 工具）</source>
         <translation>主动压缩（compact 工具）</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="461"/>
+        <location filename="../src/AgentLoop.cpp" line="504"/>
         <source>已停止。</source>
         <translation>已停止。</translation>
     </message>
@@ -193,22 +193,22 @@
 <context>
     <name>ChatSessionPage</name>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="113"/>
+        <location filename="../src/ChatSessionPage.cpp" line="114"/>
         <source>展开侧边栏</source>
         <translation>展开侧边栏</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="174"/>
+        <location filename="../src/ChatSessionPage.cpp" line="175"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent 仍在运行中，请等待完成后再发送</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="239"/>
+        <location filename="../src/ChatSessionPage.cpp" line="240"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="285"/>
+        <location filename="../src/ChatSessionPage.cpp" line="304"/>
         <source>%1 %2:
 ```
 %3
@@ -229,14 +229,14 @@
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="576"/>
-        <location filename="../src/ChatSessionPage.cpp" line="632"/>
-        <location filename="../src/ChatSessionPage.cpp" line="651"/>
+        <location filename="../src/ChatSessionPage.cpp" line="604"/>
+        <location filename="../src/ChatSessionPage.cpp" line="660"/>
+        <location filename="../src/ChatSessionPage.cpp" line="679"/>
         <source>处理中…</source>
         <translation>处理中…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="881"/>
+        <location filename="../src/ChatSessionPage.cpp" line="931"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -244,22 +244,22 @@
 <context>
     <name>ChatStatusStrip</name>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="176"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="169"/>
         <source>≈%1 / %2 token · %3%</source>
         <translation>≈%1 / %2 token · %3%</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="182"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="175"/>
         <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
         <translation>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="198"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="191"/>
         <source>已用 %1 / 产出 %2 · 缓存命中 %3%</source>
         <translation>已用 %1 / 产出 %2 · 缓存命中 %3%</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="205"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="198"/>
         <source>本会话累计 token 消耗（只增不减，与占用条口径无关）。
 输入 %1 token，其中缓存命中 %2（未命中 %3）。
 产出 %4 token，其中思考 %5。
@@ -272,27 +272,27 @@
 口径边界：仅统计主循环与队友回合；压缩摘要 / 记忆链 / workflow runner 走 AsyncRequest 无 usage 回传，未计入本数。</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="230"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="223"/>
         <source>输出速度 %1 tok/s · 平均 %2 tok/s</source>
         <translation>输出速度 %1 tok/s · 平均 %2 tok/s</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="237"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="230"/>
         <source>本轮</source>
         <translation>本轮</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="237"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="230"/>
         <source>上一可定窗</source>
         <translation>上一可定窗</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="239"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="232"/>
         <source>（本回合无法定窗，显示的是上一个可定窗）</source>
         <translation>（本回合无法定窗，显示的是上一个可定窗）</translation>
     </message>
     <message>
-        <location filename="../src/ChatStatusStrip.cpp" line="240"/>
+        <location filename="../src/ChatStatusStrip.cpp" line="233"/>
         <source>按生成窗口计算：首个增量 → usage 末帧，不含首字延迟与工具执行时间。
 %1 %2 token ÷ %3 ms = %4 tok/s%5。
 平均 = 总产出 token ÷ 总生成时间（不是各轮速率的算术平均）。
@@ -697,122 +697,213 @@
 <context>
     <name>SessionSidebar</name>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="322"/>
+        <location filename="../src/SessionSidebar.cpp" line="331"/>
         <source>会话面板</source>
         <translation>会话面板</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="329"/>
+        <location filename="../src/SessionSidebar.cpp" line="338"/>
         <source>收起侧边栏</source>
         <translation>收起侧边栏</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="365"/>
+        <location filename="../src/SessionSidebar.cpp" line="374"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="373"/>
+        <location filename="../src/SessionSidebar.cpp" line="382"/>
         <source>状态</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="379"/>
+        <location filename="../src/SessionSidebar.cpp" line="389"/>
+        <source>当前目标</source>
+        <translation>当前目标</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="395"/>
         <source>队友清单</source>
         <translation>队友清单</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="385"/>
+        <location filename="../src/SessionSidebar.cpp" line="401"/>
         <source>任务清单</source>
         <translation>任务清单</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="387"/>
+        <location filename="../src/SessionSidebar.cpp" line="403"/>
         <source>暂无任务</source>
         <translation>暂无任务</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="400"/>
+        <location filename="../src/SessionSidebar.cpp" line="409"/>
+        <source>后台任务</source>
+        <translation>后台任务</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="415"/>
+        <source>定时任务</source>
+        <translation>定时任务</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="428"/>
         <source>lite-harness %1</source>
         <translation>lite-harness %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="415"/>
+        <location filename="../src/SessionSidebar.cpp" line="443"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="466"/>
+        <location filename="../src/SessionSidebar.cpp" line="494"/>
         <source>%1 进行中</source>
         <translation>%1 进行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="467"/>
+        <location filename="../src/SessionSidebar.cpp" line="495"/>
         <source>%1 待办</source>
         <translation>%1 待办</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="468"/>
+        <location filename="../src/SessionSidebar.cpp" line="496"/>
         <source>%1 完成</source>
         <translation>%1 完成</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="496"/>
+        <location filename="../src/SessionSidebar.cpp" line="524"/>
         <source>%1 · 执行中</source>
         <translation>%1 · 执行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="499"/>
+        <location filename="../src/SessionSidebar.cpp" line="527"/>
         <source>%1 · 等待审批</source>
         <translation>%1 · 等待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="502"/>
+        <location filename="../src/SessionSidebar.cpp" line="530"/>
         <source>%1 · 停止中</source>
         <translation>%1 · 停止中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="505"/>
+        <location filename="../src/SessionSidebar.cpp" line="533"/>
         <source>%1 · 空闲</source>
         <translation>%1 · 空闲</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="513"/>
+        <location filename="../src/SessionSidebar.cpp" line="541"/>
         <source>%1 执行中</source>
         <translation>%1 执行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="514"/>
+        <location filename="../src/SessionSidebar.cpp" line="542"/>
         <source>%1 待审批</source>
         <translation>%1 待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="515"/>
+        <location filename="../src/SessionSidebar.cpp" line="543"/>
         <source>%1 停止中</source>
         <translation>%1 停止中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="516"/>
+        <location filename="../src/SessionSidebar.cpp" line="544"/>
         <source>%1 空闲</source>
         <translation>%1 空闲</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="538"/>
+        <location filename="../src/SessionSidebar.cpp" line="577"/>
+        <source>最近判定：</source>
+        <translation>最近判定：</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="586"/>
+        <source>轮次 %1</source>
+        <translation>轮次 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="587"/>
+        <source>拦阻 %1/%2</source>
+        <translation>拦阻 %1/%2</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="589"/>
+        <source>消耗≈%1 tok</source>
+        <translation>消耗≈%1 tok</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="618"/>
+        <source>失败</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="621"/>
+        <source>已完成</source>
+        <translation>已完成</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="635"/>
+        <source>%1 运行中</source>
+        <translation>%1 运行中</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="637"/>
+        <source>%1 待收割</source>
+        <translation>%1 待收割</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="677"/>
+        <source>周期</source>
+        <translation>周期</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="677"/>
+        <source>一次性</source>
+        <translation>一次性</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="678"/>
+        <source>持久</source>
+        <translation>持久</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="678"/>
+        <source>仅本会话</source>
+        <translation>仅本会话</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="680"/>
+        <source>上次触发 %1</source>
+        <translation>上次触发 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="688"/>
+        <source>%1 待交付</source>
+        <translation>%1 待交付</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="689"/>
+        <source>%1 待触发</source>
+        <translation>%1 待触发</translation>
+    </message>
+    <message>
+        <location filename="../src/SessionSidebar.cpp" line="710"/>
         <source>上下文占用条：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）；精确数字见输入框下方状态条。</source>
         <translation>上下文占用条：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）；精确数字见输入框下方状态条。</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="561"/>
+        <location filename="../src/SessionSidebar.cpp" line="733"/>
         <source>等待审批</source>
         <translation>等待审批</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="563"/>
+        <location filename="../src/SessionSidebar.cpp" line="615"/>
+        <location filename="../src/SessionSidebar.cpp" line="735"/>
         <source>运行中</source>
         <translation>运行中</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="565"/>
+        <location filename="../src/SessionSidebar.cpp" line="737"/>
         <source>空闲</source>
         <translation>空闲</translation>
     </message>

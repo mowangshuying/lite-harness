@@ -26,6 +26,7 @@ int tst_settingscache();      // 设置读缓存纯头（SettingsCache.h），�
 int tst_usagetokens();        // 用量计量纯头（UsageTokens.h），零夹具，任何环境全跑
 int tst_streamrate();         // 输出速度纯头（StreamRate.h），零夹具，任何环境全跑
 int tst_goalmanager();        // s17：goal 引擎六门/七决策/转录预算，零夹具，任何环境全跑
+int tst_cronmanager();        // s17 P1：cron 判据 + 台账快照，零夹具（durable=false 不触盘），任何环境全跑
 
 int main()
 {
@@ -45,6 +46,7 @@ int main()
     failed += tst_usagetokens();
     failed += tst_streamrate();
     failed += tst_goalmanager();
+    failed += tst_cronmanager();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

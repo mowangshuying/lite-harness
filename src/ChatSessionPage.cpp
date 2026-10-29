@@ -488,6 +488,15 @@ void ChatSessionPage::wireAgent()
         m_sidebar->setTodos(todos);
     });
 
+    // s17 P1 观测面三广播 → 侧栏直连（载荷即引擎快照，仿 todoUpdated 事件即数据形态；
+    // 侧栏保持纯视图不读引擎。context 收口在 m_sidebar，析构自动断连）
+    connect(m_agentLoop, &AgentLoop::backgroundTasksChanged, m_sidebar,
+            &SessionSidebar::setBackgroundTasks);
+    connect(m_agentLoop, &AgentLoop::cronJobsChanged, m_sidebar,
+            &SessionSidebar::setCronJobs);
+    connect(m_agentLoop, &AgentLoop::goalStateChanged, m_sidebar,
+            &SessionSidebar::setGoalState);
+
     // 定时任务送达（lcc s12）：后端空闲 tick 交付——展示走带前缀文本，活跃请求走无原文本
     //（lcc deliver 双形态）；复用用户发消息的既有两步链路。首行 isRunning 防御分支
     // 同栈直连下理论不可达（tryDeliverCron 已查 m_running），保留作后端契约变动的保险

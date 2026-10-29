@@ -304,6 +304,15 @@ int bodyTextAvail(int bodyWidth, int sidebarWidth) {
                     - 2 * 8 - kMarkWidth - 6;
     return qMax(raw, 60);
 }
+
+/// s17 P1 观测面清行通用段（setTeammates 逐条复制的循环收敛；无占位行容器专用——
+/// 任务清单节的 m_todoEmpty 保留语义不走此口）
+void clearRows(QVBoxLayout* list) {
+    while (QLayoutItem* item = list->takeAt(0)) {
+        if (QWidget* w = item->widget()) { w->hide(); w->deleteLater(); }
+        delete item;
+    }
+}
 } // namespace
 
 SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
@@ -375,6 +384,13 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_statusSection->body()->addWidget(m_statusRow);
     iv->addWidget(m_statusSection);
 
+    // ②a s17 P1 观测面：当前目标（goal 是「会话被引擎接管」的常驻事实，紧贴状态灯；
+    //     无 active goal 整节隐藏=单轮问答会话零扰动）
+    m_goalSection = new SidebarSection(tr("当前目标"), inner);
+    m_goalSection->hide();
+    m_goalList = m_goalSection->body();
+    iv->addWidget(m_goalSection);
+
     // ②b s13 队友名册（空名册整节隐藏；≤2 恒展开，>2 可折叠，同任务清单策略）
     m_teammateSection = new SidebarSection(tr("队友清单"), inner);
     m_teammateSection->hide();
@@ -388,6 +404,18 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_todoEmpty->setObjectName(QStringLiteral("sbEmptyHint"));
     m_todoList->addWidget(m_todoEmpty);
     iv->addWidget(m_todoSection);
+
+    // ④ s17 P1 观测面：后台 bash 任务台账（在跑 + 待收割；收割即离账，空台账整节隐藏）
+    m_bgSection = new SidebarSection(tr("后台任务"), inner);
+    m_bgSection->hide();
+    m_bgList = m_bgSection->body();
+    iv->addWidget(m_bgSection);
+
+    // ⑤ s17 P1 观测面：定时任务台账（schedule_cron 排下去后 UI 不再是零痕迹；空台账整节隐藏）
+    m_cronSection = new SidebarSection(tr("定时任务"), inner);
+    m_cronSection->hide();
+    m_cronList = m_cronSection->body();
+    iv->addWidget(m_cronSection);
 
     iv->addStretch();
     scroll->setWidget(inner);
@@ -523,6 +551,150 @@ void SessionSidebar::setTeammates(const QList<QPair<QString, QString>>& roster) 
     m_teammateSection->setCollapsible(collapsible);
 }
 
+void SessionSidebar::setGoalState(const QJsonObject& state) {
+    // 空对象 = 无 active goal（AgentLoop::goalStateChanged 契约）：整节隐藏
+    clearRows(m_goalList);
+    const QString condition = state.value(QStringLiteral("condition")).toString();
+    if (condition.isEmpty()) {
+        m_goalSection->setSummary(QString());
+        m_goalSection->setCount(QString());
+        m_goalSection->hide();
+        return;
+    }
+    m_goalSection->show();
+
+    const int iterations = state.value(QStringLiteral("iterations")).toInt();
+    const int blocks = state.value(QStringLiteral("consecutiveBlocks")).toInt();
+    const int cap = state.value(QStringLiteral("blockCap")).toInt();
+    const qint64 tokensUsed = qint64(state.value(QStringLiteral("tokensUsed")).toDouble());
+    const QString lastReason = state.value(QStringLiteral("lastReason")).toString();
+
+    const int avail = bodyTextAvail(m_goalSection->width(), width());
+    // 条件全文进 tooltip（goal 条件可达 4000 字符，行内必然省略——判据读不到就白显）；
+    // lastReason 是评估器终局/拦阻理由英文契约串，同 tooltip 分行呈现不另造 UI 译文
+    QString tip = condition;
+    if (!lastReason.isEmpty())
+        tip += QStringLiteral("\n") + tr("最近判定：") + lastReason;
+    auto* row = makeRow("status", QStringLiteral("active"), QStringLiteral("\u25C9"),
+                        condition, avail, Qt::ElideRight);
+    if (QLabel* text = row->findChild<QLabel*>(QStringLiteral("sbText")))
+        text->setToolTip(tip);
+    m_goalList->addWidget(row);
+
+    m_goalSection->setCount(QStringLiteral("%1/%2").arg(blocks).arg(cap));
+    QStringList parts;
+    parts << tr("轮次 %1").arg(iterations);
+    parts << tr("拦阻 %1/%2").arg(blocks).arg(cap);
+    if (tokensUsed > 0)
+        parts << tr("消耗≈%1 tok").arg(tokensUsed);
+    m_goalSection->setSummary(parts.join(QStringLiteral(" · ")));
+    // 单行常驻：不授折叠资格（条件再长也是一行）
+    m_goalSection->setCollapsible(false);
+}
+
+void SessionSidebar::setBackgroundTasks(const QJsonArray& tasks) {
+    clearRows(m_bgList);
+    if (tasks.isEmpty()) {
+        m_bgSection->setSummary(QString());
+        m_bgSection->setCount(QString());
+        m_bgSection->hide();
+        return;
+    }
+    m_bgSection->show();
+
+    const int avail = bodyTextAvail(m_bgSection->width(), width());
+    int running = 0;
+    for (const QJsonValue& v : tasks) {
+        const QJsonObject o = v.toObject();
+        const QString id = o.value(QStringLiteral("id")).toString();
+        const QString command = o.value(QStringLiteral("command")).toString();
+        const QString status = o.value(QStringLiteral("status")).toString();
+        QString state, mark, word;
+        if (status == QLatin1String("running")) {
+            state = QStringLiteral("active"); mark = QStringLiteral("\u25CF");
+            word = tr("运行中"); ++running;
+        } else if (status == QLatin1String("failed")) {
+            state = QStringLiteral("failed"); mark = QStringLiteral("\u2717");
+            word = tr("失败");
+        } else {
+            state = QStringLiteral("done"); mark = QStringLiteral("\u2713");
+            word = tr("已完成");
+        }
+        // 命令行展示取首行前 60 字符（多行命令进 fixed 高行会破版）；tooltip 挂全文
+        const QString cmdHead = command.section(QLatin1Char('\n'), 0, 0).left(60);
+        auto* row = makeRow("status", state, mark,
+                            QStringLiteral("%1 · %2 · %3").arg(id, word, cmdHead),
+                            avail, Qt::ElideRight);
+        if (QLabel* text = row->findChild<QLabel*>(QStringLiteral("sbText")))
+            text->setToolTip(QStringLiteral("%1 · %2\n%3").arg(id, word, command));
+        m_bgList->addWidget(row);
+    }
+
+    m_bgSection->setCount(QStringLiteral("%1/%2").arg(running).arg(tasks.size()));
+    QStringList parts;
+    if (running > 0) parts << tr("%1 运行中").arg(running);
+    const int finished = tasks.size() - running;
+    if (finished > 0) parts << tr("%1 待收割").arg(finished);
+    m_bgSection->setSummary(parts.join(QStringLiteral(" · ")));
+
+    const bool collapsible = tasks.size() > 2;
+    if (!collapsible && !m_bgSection->isExpanded())
+        m_bgSection->setExpanded(true, false);
+    m_bgSection->setCollapsible(collapsible);
+}
+
+void SessionSidebar::setCronJobs(const QJsonArray& jobs) {
+    clearRows(m_cronList);
+    if (jobs.isEmpty()) {
+        m_cronSection->setSummary(QString());
+        m_cronSection->setCount(QString());
+        m_cronSection->hide();
+        return;
+    }
+    m_cronSection->show();
+
+    const int avail = bodyTextAvail(m_cronSection->width(), width());
+    int pending = 0;
+    for (const QJsonValue& v : jobs) {
+        const QJsonObject o = v.toObject();
+        const QString id = o.value(QStringLiteral("id")).toString();
+        const QString cron = o.value(QStringLiteral("cron")).toString();
+        const QString prompt = o.value(QStringLiteral("prompt")).toString();
+        const bool recurring = o.value(QStringLiteral("recurring")).toBool();
+        const bool durable = o.value(QStringLiteral("durable")).toBool();
+        const bool due = o.value(QStringLiteral("pendingDelivery")).toBool();
+        const QString lastFired = o.value(QStringLiteral("lastFired")).toString();
+        if (due) ++pending;
+        // 到期待交付 = active（同 waiting 语言），静息待触发 = pending；行文本「表达式 → 提示词首行」
+        const QString state = due ? QStringLiteral("active") : QStringLiteral("pending");
+        const QString mark = due ? QStringLiteral("\u25B6") : QStringLiteral("\u25CB");
+        const QString head = prompt.section(QLatin1Char('\n'), 0, 0).left(40);
+        auto* row = makeRow("status", state, mark,
+                            QStringLiteral("%1 → %2").arg(cron, head),
+                            avail, Qt::ElideRight);
+        QString tip = QStringLiteral("%1 · %2\n%3").arg(id, cron, prompt);
+        tip += QStringLiteral("\n%1 · %2")
+                   .arg(recurring ? tr("周期") : tr("一次性"),
+                        durable ? tr("持久") : tr("仅本会话"));
+        if (!lastFired.isEmpty())
+            tip += QStringLiteral("\n") + tr("上次触发 %1").arg(lastFired);
+        if (QLabel* text = row->findChild<QLabel*>(QStringLiteral("sbText")))
+            text->setToolTip(tip);
+        m_cronList->addWidget(row);
+    }
+
+    m_cronSection->setCount(QString::number(jobs.size()));
+    QStringList parts;
+    if (pending > 0) parts << tr("%1 待交付").arg(pending);
+    if (jobs.size() - pending > 0) parts << tr("%1 待触发").arg(jobs.size() - pending);
+    m_cronSection->setSummary(parts.join(QStringLiteral(" · ")));
+
+    const bool collapsible = jobs.size() > 2;
+    if (!collapsible && !m_cronSection->isExpanded())
+        m_cronSection->setExpanded(true, false);
+    m_cronSection->setCollapsible(collapsible);
+}
+
 void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens)
 {
     if (!m_contextMeter)
@@ -573,4 +745,7 @@ void SessionSidebar::refreshIcons() {
     m_statusSection->refreshArrow();
     m_teammateSection->refreshArrow();
     m_todoSection->refreshArrow();
+    m_goalSection->refreshArrow();
+    m_bgSection->refreshArrow();
+    m_cronSection->refreshArrow();
 }

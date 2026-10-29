@@ -23,6 +23,9 @@ class StatusRow;
  *   运行状态（三态灯：空闲 / 运行中 / 等待审批）
  *   任务清单（todoUpdated 全量快照；条目 >2 时可手风琴折叠，折叠标题带汇总）
  *   队友清单（s13 名册快照；空名册整节隐藏）
+ *   当前目标（s17 goal 常驻态：条件行 + 拦阻 x/cap 计数；无 goal 整节隐藏）
+ *   后台任务（s17 bg 台账快照；收割即离账、空台账整节隐藏）
+ *   定时任务（s17 cron 台账快照；空台账整节隐藏）
  *   页脚（工作目录 + 版本号——运行时 QCoreApplication::applicationVersion()，禁硬编码）
  *
  * 「上下文占用」节只留**进度条**在本类；数字、消耗、速度三段文字在输入框下方的
@@ -56,6 +59,16 @@ public:
     /// s13 队友名册全量快照（[name, statusName token]，AgentLoop::teammateRoster 推入；
     /// 空名册隐藏整节——单代理会话零扰动）。纯视图纪律不破：数据由 ChatSessionPage 推入。
     void setTeammates(const QList<QPair<QString, QString>>& roster);
+    /// s17 P1 观测面：goal 常驻态快照（AgentLoop::goalStateChanged 载荷：condition/iterations/
+    /// consecutiveBlocks/blockCap/tokensUsed/lastReason）；空对象 = 无 active goal → 整节隐藏
+    void setGoalState(const QJsonObject& state);
+    /// s17 P1 观测面：后台 bash 任务台账快照 [{id, command, status: running|completed|failed}]
+    ///（BackgroundTasksManager::ledgerSnapshot 经 AgentLoop 广播）；空台账整节隐藏——
+    /// 收割即从台账抹除，本节的完成态只活到收割前一刻，属「在跑 + 待收割」忠实视图
+    void setBackgroundTasks(const QJsonArray& tasks);
+    /// s17 P1 观测面：定时任务台账快照 [{id, cron, prompt, recurring, durable,
+    /// pendingDelivery, lastFired}]（CronSchedulerManager::ledgerSnapshot）；空台账整节隐藏
+    void setCronJobs(const QJsonArray& jobs);
     /// 上下文占用**条**：≈token 估算 ÷ token 预算（与压缩触发口径同源；limit<=0 时按 0 画）。
     /// 本节只画条不写数——数字在 ChatStatusStrip 单行；比例走 UsageTokens::usageRatio 单一实现，
     /// 两处不会给出不同读数。tooltip 写口径边界（估算会被后续回读覆盖、不含压缩自身开销）。
@@ -88,6 +101,12 @@ private:
     QLabel*           m_todoEmpty = nullptr;    // 「暂无任务」占位
     SidebarSection*   m_teammateSection = nullptr;  // s13 队友名册节（空名册整节隐藏）
     QVBoxLayout*      m_teammateList = nullptr;     // 队友行容器
+    SidebarSection*   m_goalSection = nullptr;      // s17 当前目标节（无 goal 整节隐藏）
+    QVBoxLayout*      m_goalList = nullptr;
+    SidebarSection*   m_bgSection = nullptr;        // s17 后台任务节（空台账整节隐藏）
+    QVBoxLayout*      m_bgList = nullptr;
+    SidebarSection*   m_cronSection = nullptr;      // s17 定时任务节（空台账整节隐藏）
+    QVBoxLayout*      m_cronList = nullptr;
     QLabel*           m_footerDir = nullptr;
     QLabel*           m_footerVersion = nullptr;
 

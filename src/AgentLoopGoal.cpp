@@ -208,3 +208,23 @@ void AgentLoop::cancelActiveGoal()
         m_goalEvalRequest->cancel();
     m_goalEvalRequest = nullptr;
 }
+
+// s17 P1 观测面 goal 常驻态快照组装（只读不动账；供 AgentLoop.cpp 的
+// updateSidebarLedgerBroadcasts 消费）。空对象 = 无 active goal（侧栏整节隐藏）。
+// 字段一律「随引擎活动而变」：iterations/consecutiveBlocks/tokensUsed/lastReason 静息期
+// 恒定，tick 签名不刷屏；刻意不含 elapsed——放入会让签名每秒必变、静息期也每秒重绘，
+// 运行时长如需观感由 UI 在活动更新时经 setAtMs 换算（v1 不显）
+QJsonObject AgentLoop::goalStateSnapshot() const
+{
+    const GoalManager::GoalState *state = m_goal.active();
+    if (!state)
+        return QJsonObject();
+    QJsonObject snapshot;
+    snapshot[QStringLiteral("condition")] = state->condition;
+    snapshot[QStringLiteral("iterations")] = state->iterations;
+    snapshot[QStringLiteral("consecutiveBlocks")] = m_goal.consecutiveBlocks();
+    snapshot[QStringLiteral("blockCap")] = m_goal.blockCap();
+    snapshot[QStringLiteral("tokensUsed")] = m_goal.totalTokens() - state->tokensAtStart;
+    snapshot[QStringLiteral("lastReason")] = state->lastReason;
+    return snapshot;
+}

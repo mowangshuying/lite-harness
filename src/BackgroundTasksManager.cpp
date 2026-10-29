@@ -96,6 +96,22 @@ bool BackgroundTasksManager::has_running() const
     return false;
 }
 
+QJsonArray BackgroundTasksManager::ledgerSnapshot() const
+{
+    QStringList ids = m_tasks.keys();
+    ids.sort();
+    QJsonArray rows;
+    for (const QString &id : ids) {
+        const Task &task = m_tasks.value(id);
+        QJsonObject row;
+        row[QStringLiteral("id")] = id;
+        row[QStringLiteral("command")] = task.command;
+        row[QStringLiteral("status")] = task.status;
+        rows.append(row);
+    }
+    return rows;
+}
+
 QString BackgroundTasksManager::formatBashResult(const QString &output, int exitCode,
                                                  bool timedOut)
 {

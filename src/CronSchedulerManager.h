@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QHash>
+#include <QJsonArray>
 #include <QList>
 #include <QString>
 
@@ -113,6 +114,11 @@ public:
     // 空 → "No cron jobs."；否则每行 "%1: %2 -> %3 [%4, %5]"
     // （id, cron, prompt 前 60 字符, recurring/one-shot, durable/session），\n 连接
     QString listCrons() const;
+
+    // s17 P1 观测面快照（侧栏「定时任务」节数据口）：台账逐条
+    // [{id, cron, prompt, recurring, durable, pendingDelivery, lastFired}]，id 升序。
+    // 纯读台账（队列⊆台账恒成立，与 listCrons 同域）；prompt 全文交还，截断是视图层职责
+    QJsonArray ledgerSnapshot() const;
 
 private:
     // 落盘文件路径：m_workDirSink() + "/scheduled_tasks.json"
