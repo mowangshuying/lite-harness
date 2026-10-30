@@ -46,9 +46,10 @@ private:
     // 主题切换后重放全部徽标：FluVNavigationIconTextItem::onThemeChanged 会按
     // m_awesomeType 无条件重设图标，把运行态字形冲回 Message，故须在其之后覆写。
     void refreshNavBadges();
-    // 导航子项集合/标题变化后刷新搜索候选清单：updateSearchKeys 在 FluentUI 内
-    // 无任何调用点（候选恒空即搜索框恒不命中），恢复搜索项必须自建这条喂入通路。
-    void refreshSearchKeys();
+    // 搜索候选喂入通路已删（s17.1 按用户裁决关闭导航搜索项）。原注释留档备查：
+    // FluVNavigationView::updateSearchKeys 在 FluentUI 内部无任何调用点，候选恒空即搜索
+    // 框恒不命中，故当年恢复搜索项时必须自建本方法喂入（a78722d 的 P0-5）。撤搜索项时
+    // 若只藏本体而留这条喂入，就是每次增删改会话白跑一遍全等候选重建。
 
     // 递归给会话子项及其全部后代控件装右键过滤器并登记（行区域被子控件占满，
     // Qt 仅投递给最深接收者，装在主体上收不到事件）

@@ -122,11 +122,17 @@ void LiteHarness::initUi()
 
 void LiteHarness::initNavView()
 {
-    // 搜索项保持可见（原此处 hideSearchItem 直接关掉入口）。注意 FluentUI 的导航搜索
-    // 不是过滤器而是 jump box：FluVNavigationView 拿输入文本对每个子项 label 做**全等**
-    // 比对，命中才 onItemClickedDirect + emit searchKeyChanged。因此可见只是必要条件，
-    // 另需两件事才真正可用，分别落在下方 refreshSearchKeys（喂候选）与
-    // setupConnections（接 searchKeyChanged 切页）——三者缺一即是个死输入框。
+    // 搜索项按用户裁决关闭（s17.1）。本处历史上反复过，机制记清以免再踩：
+    // FluentUI 的导航搜索不是过滤器而是 jump box——FluVNavigationView 拿输入文本对每个
+    // 子项 label 做**全等**比对，命中才 onItemClickedDirect + emit searchKeyChanged。
+    // 故「可用」需三件套齐备：本体可见 + refreshSearchKeys 喂候选 + setupConnections 接
+    // searchKeyChanged 切页，三者缺一即是个点不到的死输入框（a78722d 的 P0-5 曾据此把
+    // 三件一起接回）。本次按相反方向同样三件一起撤——只藏本体而留候选重建与切页接线，
+    // 等于每次增删改会话都白跑一遍全等候选表。
+    // 隐藏走 hideSearchItem() 而非删控件：expandView/collapseView 对 Search 类型只
+    // setFixedWidth + hideSearchButton（框内按钮，非本体），全程不 show() 本体，故折叠
+    // 导航不会把它打回可见；唯一能复活它的 setOnlyCollapseView(false) 本仓从未调用。
+    m_navView->hideSearchItem();
 
     // i18n 第八轮：导航三项改为中文源 + tr()，存成员指针供 LanguageChange 重译
     m_newChatItem = m_navView->insertIconTextItem(FluAwesomeType::Pencil, tr("新建对话"), NavKey::NewChatPage);
@@ -161,12 +167,9 @@ void LiteHarness::setupConnections()
     connect(m_navView, &FluVNavigationView::keyChanged, this, [=](QString key) {
         m_sLayout->setCurrentWidget(key);
     });
-    // 搜索命中切页：FluVNavigationView 内部虽已对被命中子项调 onItemClickedDirect，
-    // 但该路径依赖子项自持的点击链（分组项/未展开态下未必落到切页），故按它广播出的
-    // key 显式切页兜底。与 keyChanged 同语义、幂等，重复设置同一页无副作用。
-    connect(m_navView, &FluVNavigationView::searchKeyChanged, this, [=](QString key) {
-        m_sLayout->setCurrentWidget(key);
-    });
+    // 搜索命中切页接线已随搜索项一并撤除（s17.1，见 initNavView 的三件套注释）：
+    // FluVNavigationView::searchKeyChanged 只由搜索框的 currentTextChanged 全等命中发出，
+    // 本体 hide 后该信号恒不发射，留着接线即是一段永不执行的死 lambda。
 
     /// new chat;
     connect(m_newChatPage, &NewChatPage::newChatRequested, this, &LiteHarness::createSession);
@@ -233,9 +236,9 @@ void LiteHarness::createSession(const QString &text)
     // （行区域被 m_wrapWidget1/图标/标签/箭头占满，Qt 只投递最深接收者，装主体收不到）
     hookContextMenu(childItem);
     m_registry.mapChildItem(key, childItem);
-    // 运行态徽标订阅 + 搜索候选刷新（新增子项即新候选词）
+    // 运行态徽标订阅（搜索候选刷新已随搜索项撤除——原此还调 refreshSearchKeys 喂 jump
+    // box 候选表，本体 hide 后那是白跑一遍全等候选重建，见 initNavView 三件套注释）
     hookNavBadge(key, sessionPage);
-    refreshSearchKeys();
 
     // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
     // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
@@ -320,9 +323,6 @@ void LiteHarness::restoreSessions()
                 sessionsItem->adjustItemHeight(sessionsItem);
         }
     }
-    // 候选词表在循环外一次性重建：updateSearchKeys 内部遍历全部子项，
-    // 放循环里即 O(N²)，恢复期（启动路径）尤其要避免
-    refreshSearchKeys();
 }
 
 void LiteHarness::hookContextMenu(QWidget *childItem)
@@ -436,9 +436,6 @@ void LiteHarness::renameSession(const QString &key)
         return;
 
     childItem->getLabel()->setText(text);
-    // 改名即改匹配面：搜索按 label 全文全等比对，候选词表须同步重建，
-    // 否则旧名仍可被搜到（命中失败）而新名搜不到
-    refreshSearchKeys();
     // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确
     if (m_navView->isLong())
     {
@@ -494,8 +491,6 @@ void LiteHarness::deleteSession(const QString &key)
     // 注销登记：页面/数据ID/子项本体→key/受控控件表→key 一并摘除（与原四表清理同位置同时序）。
     // （过滤器表若不清理，已 delete 控件的悬空地址可能被新控件复用导致误命中）
     m_registry.unregister(key);
-    // 子项已摘除，候选词表须同步（否则删掉的会话仍可被搜到并触发切页到空键）
-    refreshSearchKeys();
 
     // 移出 index.json 条目（根路径经 SessionStore::rootDirFor 单源派生）
     SessionStore::removeEntry(
@@ -544,12 +539,6 @@ void LiteHarness::refreshNavBadges()
         if (auto *page = m_registry.page(key))
             applyNavBadge(key, page->isRunning());
     }
-}
-
-void LiteHarness::refreshSearchKeys()
-{
-    if (m_navView)
-        m_navView->updateSearchKeys();
 }
 
 void LiteHarness::onThemeChanged()

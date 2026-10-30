@@ -141,7 +141,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ### UI 层
 
-- **LiteHarness** — 主窗口（FluFrameLessWidget）：FluVNavigationView + FluStackedLayout，会话新建/恢复（按索引升序）/重命名/删除，关闭时运行守卫。
+- **LiteHarness** — 主窗口（FluFrameLessWidget）：FluVNavigationView + FluStackedLayout，会话新建/恢复（按索引升序）/重命名/删除，关闭时运行守卫。**导航搜索项按用户裁决关闭（s17.1）**，此处历史上**反复过两次**（`bde1630` 曾 `hideSearchItem()`、`a78722d` 的 P0-5 又刻意接回），机制记清以免第三次踩：FluentUI 的导航搜索不是过滤器而是 **jump box**——`FluVNavigationView` 拿输入文本对每个子项 label 做**全等**比对，命中才 `onItemClickedDirect` + `emit searchKeyChanged`；故「可用」需**三件套齐备**：本体可见 + `updateSearchKeys` 喂候选（该方法在 FluentUI 内部**无任何调用点**，候选恒空即恒不命中，必须宿主自建喂入通路）+ 宿主接 `searchKeyChanged` 切页，三者缺一即是个点不到的死输入框。**增删本项一律三件同进同出**，只改一处必然留下白跑的候选重建或永不执行的接线。关闭走 `hideSearchItem()` 而非删控件：`expandView`/`collapseView` 对 Search 类型只 `setFixedWidth` + `hideSearchButton()`（框内按钮，非本体），全程不 `show()` 本体，故折叠导航不会把它打回可见；唯一能复活它的 `setOnlyCollapseView(false)` 本仓从未调用。
 - **ChatSessionPage** — 每会话一页：AgentLoop + 滚动消息流 + 输入框 + 只读路径条；历史回放与就地刷新。
 - **NewChatPage / SettingsPage / BasePage** — 发起页（进入时重读 settings.ini 默认目录）、设置页（settings.ini `defaultWorkDir`、`contextCharLimit`、`apiBaseUrl`/`apiToken` 模型服务卡）、页面基类。
 - **MessageBubbleWidget** — 气泡流式渲染（打字机），首次工具/思考事件后重建为时间线。
