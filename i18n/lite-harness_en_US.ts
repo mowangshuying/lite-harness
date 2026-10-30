@@ -432,25 +432,25 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>LiteHarness</name>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="132"/>
-        <location filename="../src/LiteHarness.cpp" line="680"/>
+        <location filename="../src/LiteHarness.cpp" line="138"/>
+        <location filename="../src/LiteHarness.cpp" line="669"/>
         <source>新建对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="139"/>
-        <location filename="../src/LiteHarness.cpp" line="682"/>
+        <location filename="../src/LiteHarness.cpp" line="145"/>
+        <location filename="../src/LiteHarness.cpp" line="671"/>
         <source>会话</source>
         <translation>Sessions</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="142"/>
-        <location filename="../src/LiteHarness.cpp" line="684"/>
+        <location filename="../src/LiteHarness.cpp" line="148"/>
+        <location filename="../src/LiteHarness.cpp" line="673"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="201"/>
+        <location filename="../src/LiteHarness.cpp" line="204"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -461,7 +461,7 @@ After a restart the turn count is seeded from the number of user messages in his
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="405"/>
-        <location filename="../src/LiteHarness.cpp" line="469"/>
+        <location filename="../src/LiteHarness.cpp" line="466"/>
         <source>删除会话</source>
         <translation>Delete Session</translation>
     </message>
@@ -476,17 +476,17 @@ After a restart the turn count is seeded from the number of user messages in his
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="470"/>
+        <location filename="../src/LiteHarness.cpp" line="467"/>
         <source>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</source>
         <translation>Delete this session and all of its data (tasks/memory/history)? This action cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="625"/>
+        <location filename="../src/LiteHarness.cpp" line="614"/>
         <source>退出确认</source>
         <translation>Confirm Exit</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="626"/>
+        <location filename="../src/LiteHarness.cpp" line="615"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>Tasks are still running. Exiting will lose incomplete turns. Quit anyway?</translation>
     </message>
@@ -1144,382 +1144,343 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ToolBlock</name>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="38"/>
-        <location filename="../src/ToolBlock.cpp" line="87"/>
-        <location filename="../src/ToolBlock.cpp" line="136"/>
+        <location filename="../src/ToolBlock.cpp" line="35"/>
+        <location filename="../src/ToolBlock.cpp" line="69"/>
+        <location filename="../src/ToolBlock.cpp" line="118"/>
         <source>已执行</source>
         <translation>Ran</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="61"/>
-        <source>查看完整输出</source>
-        <translation>View full output</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolBlock.cpp" line="89"/>
+        <location filename="../src/ToolBlock.cpp" line="71"/>
         <source>已读取</source>
         <translation>Read</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="91"/>
+        <location filename="../src/ToolBlock.cpp" line="73"/>
         <source>已写入</source>
         <translation>Wrote</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="93"/>
+        <location filename="../src/ToolBlock.cpp" line="75"/>
         <source>已编辑</source>
         <translation>Edited</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="95"/>
+        <location filename="../src/ToolBlock.cpp" line="77"/>
         <source>已查找</source>
         <translation>Searched</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="97"/>
+        <location filename="../src/ToolBlock.cpp" line="79"/>
         <source>已代办</source>
         <translation>Delegated</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="99"/>
+        <location filename="../src/ToolBlock.cpp" line="81"/>
         <source>已加载</source>
         <translation>Loaded</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="101"/>
+        <location filename="../src/ToolBlock.cpp" line="83"/>
         <source>已压缩</source>
         <translation>Compacted</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="103"/>
+        <location filename="../src/ToolBlock.cpp" line="85"/>
         <source>已记忆</source>
         <translation>Saved memory</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="105"/>
+        <location filename="../src/ToolBlock.cpp" line="87"/>
         <source>已建任务</source>
         <translation>Created task</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="107"/>
+        <location filename="../src/ToolBlock.cpp" line="89"/>
         <source>已连依赖</source>
         <translation>Linked dependencies</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="109"/>
+        <location filename="../src/ToolBlock.cpp" line="91"/>
         <source>任务清单</source>
         <translation>Listed tasks</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="111"/>
+        <location filename="../src/ToolBlock.cpp" line="93"/>
         <source>任务详情</source>
         <translation>Task details</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="113"/>
+        <location filename="../src/ToolBlock.cpp" line="95"/>
         <source>已认领</source>
         <translation>Claimed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="115"/>
+        <location filename="../src/ToolBlock.cpp" line="97"/>
         <source>已完成</source>
         <translation>Completed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="117"/>
+        <location filename="../src/ToolBlock.cpp" line="99"/>
         <source>已排定时</source>
         <translation>Scheduled</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="119"/>
+        <location filename="../src/ToolBlock.cpp" line="101"/>
         <source>定时清单</source>
         <translation>Listed cron jobs</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="121"/>
+        <location filename="../src/ToolBlock.cpp" line="103"/>
         <source>已取消定时</source>
         <translation>Canceled cron job</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="123"/>
+        <location filename="../src/ToolBlock.cpp" line="105"/>
         <source>已建队友</source>
         <translation>Created teammate</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="125"/>
+        <location filename="../src/ToolBlock.cpp" line="107"/>
         <source>队友清单</source>
         <translation>Listed teammates</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="127"/>
+        <location filename="../src/ToolBlock.cpp" line="109"/>
         <source>已发消息</source>
         <translation>Sent message</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="129"/>
+        <location filename="../src/ToolBlock.cpp" line="111"/>
         <source>已请下线</source>
         <translation>Requested shutdown</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="131"/>
+        <location filename="../src/ToolBlock.cpp" line="113"/>
         <source>已索计划</source>
         <translation>Requested plan</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="133"/>
+        <location filename="../src/ToolBlock.cpp" line="115"/>
         <source>已评计划</source>
         <translation>Reviewed plan</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="135"/>
+        <location filename="../src/ToolBlock.cpp" line="117"/>
         <source>已建工作树</source>
         <translation>Created worktree</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="143"/>
-        <location filename="../src/ToolBlock.cpp" line="192"/>
+        <location filename="../src/ToolBlock.cpp" line="125"/>
+        <location filename="../src/ToolBlock.cpp" line="174"/>
         <source>执行失败</source>
         <translation>Execution failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="145"/>
+        <location filename="../src/ToolBlock.cpp" line="127"/>
         <source>读取失败</source>
         <translation>Read failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="147"/>
+        <location filename="../src/ToolBlock.cpp" line="129"/>
         <source>写入失败</source>
         <translation>Write failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="149"/>
+        <location filename="../src/ToolBlock.cpp" line="131"/>
         <source>编辑失败</source>
         <translation>Edit failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="151"/>
+        <location filename="../src/ToolBlock.cpp" line="133"/>
         <source>查找失败</source>
         <translation>Search failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="153"/>
+        <location filename="../src/ToolBlock.cpp" line="135"/>
         <source>代办失败</source>
         <translation>Todo failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="155"/>
+        <location filename="../src/ToolBlock.cpp" line="137"/>
         <source>加载失败</source>
         <translation>Load failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="157"/>
+        <location filename="../src/ToolBlock.cpp" line="139"/>
         <source>压缩失败</source>
         <translation>Compact failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="159"/>
+        <location filename="../src/ToolBlock.cpp" line="141"/>
         <source>记忆失败</source>
         <translation>Memory failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="161"/>
+        <location filename="../src/ToolBlock.cpp" line="143"/>
         <source>建任务失败</source>
         <translation>Task creation failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="163"/>
+        <location filename="../src/ToolBlock.cpp" line="145"/>
         <source>依赖登记失败</source>
         <translation>Dependency link failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="165"/>
+        <location filename="../src/ToolBlock.cpp" line="147"/>
         <source>清单读取失败</source>
         <translation>Task list failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="167"/>
+        <location filename="../src/ToolBlock.cpp" line="149"/>
         <source>详情读取失败</source>
         <translation>Task details failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="169"/>
+        <location filename="../src/ToolBlock.cpp" line="151"/>
         <source>认领失败</source>
         <translation>Claim failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="171"/>
+        <location filename="../src/ToolBlock.cpp" line="153"/>
         <source>完结失败</source>
         <translation>Complete failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="173"/>
+        <location filename="../src/ToolBlock.cpp" line="155"/>
         <source>定时登记失败</source>
         <translation>Schedule failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="175"/>
+        <location filename="../src/ToolBlock.cpp" line="157"/>
         <source>定时清单读取失败</source>
         <translation>Cron list failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="177"/>
+        <location filename="../src/ToolBlock.cpp" line="159"/>
         <source>取消定时失败</source>
         <translation>Cron cancel failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="179"/>
+        <location filename="../src/ToolBlock.cpp" line="161"/>
         <source>建队友失败</source>
         <translation>Teammate spawn failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="181"/>
+        <location filename="../src/ToolBlock.cpp" line="163"/>
         <source>队友清单读取失败</source>
         <translation>Teammate list failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="183"/>
+        <location filename="../src/ToolBlock.cpp" line="165"/>
         <source>消息投递失败</source>
         <translation>Message delivery failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="185"/>
+        <location filename="../src/ToolBlock.cpp" line="167"/>
         <source>下线请求失败</source>
         <translation>Shutdown request failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="187"/>
+        <location filename="../src/ToolBlock.cpp" line="169"/>
         <source>索计划失败</source>
         <translation>Plan request failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="189"/>
+        <location filename="../src/ToolBlock.cpp" line="171"/>
         <source>计划评审失败</source>
         <translation>Plan review failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="191"/>
+        <location filename="../src/ToolBlock.cpp" line="173"/>
         <source>工作树创建失败</source>
         <translation>Worktree create failed</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="225"/>
+        <location filename="../src/ToolBlock.cpp" line="207"/>
         <source>(无输出)</source>
         <translation>(no output)</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="230"/>
+        <location filename="../src/ToolBlock.cpp" line="212"/>
         <source>──── 子代理最终结果 ────</source>
         <translation>──── Subagent final result ────</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="275"/>
+        <location filename="../src/ToolBlock.cpp" line="253"/>
         <source>子代理执行中</source>
         <translation>Subagent running</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="297"/>
+        <location filename="../src/ToolBlock.cpp" line="275"/>
         <source>第 %1 轮</source>
         <translation>Turn %1</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="336"/>
+        <location filename="../src/ToolBlock.cpp" line="314"/>
         <source>已中断</source>
         <translation>Interrupted</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="357"/>
-        <location filename="../src/ToolBlock.cpp" line="397"/>
+        <location filename="../src/ToolBlock.cpp" line="335"/>
+        <location filename="../src/ToolBlock.cpp" line="375"/>
         <source>队友 %1 执行中</source>
         <translation>Teammate %1 working</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="382"/>
+        <location filename="../src/ToolBlock.cpp" line="360"/>
         <source>回合推进</source>
         <translation>Turn advanced</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="384"/>
+        <location filename="../src/ToolBlock.cpp" line="362"/>
         <source>交付成果</source>
         <translation>Delivered result</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="386"/>
+        <location filename="../src/ToolBlock.cpp" line="364"/>
         <source>出错</source>
         <translation>Error</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="388"/>
+        <location filename="../src/ToolBlock.cpp" line="366"/>
         <source>空闲待命</source>
         <translation>Idle</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="395"/>
+        <location filename="../src/ToolBlock.cpp" line="373"/>
         <source>队友 %1 空闲待命</source>
         <translation>Teammate %1 idle</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="449"/>
+        <location filename="../src/ToolBlock.cpp" line="427"/>
         <source>队友 %1 已交付</source>
         <translation>Teammate %1 delivered</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="454"/>
+        <location filename="../src/ToolBlock.cpp" line="432"/>
         <source>队友 %1 已退出</source>
         <translation>Teammate %1 exited</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="459"/>
+        <location filename="../src/ToolBlock.cpp" line="437"/>
         <source>队友 %1 已中止</source>
         <translation>Teammate %1 aborted</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="472"/>
+        <location filename="../src/ToolBlock.cpp" line="450"/>
         <source>执行中</source>
         <translation>Running</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="504"/>
+        <location filename="../src/ToolBlock.cpp" line="482"/>
         <source>已停止</source>
         <translation>Stopped</translation>
     </message>
     <message>
-        <location filename="../src/ToolBlock.cpp" line="524"/>
+        <location filename="../src/ToolBlock.cpp" line="502"/>
         <source>…更早 %1 条进度已省略</source>
         <translation>…%1 earlier progress lines omitted</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolBlock.cpp" line="616"/>
-        <source>工具输出</source>
-        <translation>Tool output</translation>
-    </message>
-</context>
-<context>
-    <name>ToolOutputDialog</name>
-    <message>
-        <location filename="../src/ToolOutputDialog.cpp" line="90"/>
-        <location filename="../src/ToolOutputDialog.cpp" line="137"/>
-        <source>复制全部</source>
-        <translation>Copy all</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolOutputDialog.cpp" line="94"/>
-        <source>关闭</source>
-        <translation>Close</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolOutputDialog.cpp" line="109"/>
-        <source>已复制</source>
-        <translation>Copied</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolOutputDialog.cpp" line="142"/>
-        <source>共 %1 字符 · %2 行</source>
-        <translation>%1 characters · %2 lines</translation>
-    </message>
-    <message>
-        <location filename="../src/ToolOutputDialog.cpp" line="144"/>
-        <source>（已达上游输出上限 %1 字符，更长部分在数据源头即被丢弃，非本视图遮挡）</source>
-        <translation>(Upstream output limit of %1 characters reached; the longer part was dropped at the data source, not hidden by this view)</translation>
     </message>
 </context>
 <context>

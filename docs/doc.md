@@ -510,9 +510,9 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `SettingsPage.cpp` 802、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `CompactManager.cpp` 744（本轮计量抽纯头后转发 + 两段循环改增量，+19）、`AgentLoopTeam.cpp` 676（s13 接线 + s15 异步 fail-closed）、
      `SessionSidebar.cpp` 576（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节）、
-     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 29049 行，s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 226）。
+     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 30697 行，s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 226；s17.1 摘除「查看完整输出」入口后由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 669、
-     `LiteHarness.cpp` 572、`ToolBlock.cpp` 562 未列入是**有意的**——前者的体量几乎全是静态 system
+     `LiteHarness.cpp` 572、`ToolBlock.cpp` 565（s17.1 摘除「查看完整输出」入口与其对话框后回落）未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
      是单函数长 UI 装配，线性可读。勿因「669 > 547」就把它补进候选或动手拆 prompt。
 5. **测试覆盖面**：**十五套件**已落地——`tst_lineending` / `tst_messagebus` / `tst_taskstore_lease` /

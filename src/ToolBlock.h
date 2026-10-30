@@ -5,7 +5,6 @@
 #include <QStringList>
 
 class QLabel;
-class QToolButton;
 
 // 工具执行折叠块（对齐 ThinkingBlock 的视觉与交互语言）：
 //   标题栏（bash：$ 提示符；其余工具：等宽工具名标签 + 中文动作词条 + 成败字形位 ✓/✕
@@ -103,13 +102,6 @@ protected:
 private:
     void refreshSummaryLabel();       // 按当前宽度对关键参数做中部省略
     QString singleLineSummary() const;
-    // 完整输出查看器：内容区被 kMaxOutputHeight(160px) 限高 + 折叠遮挡，长输出读不全。
-    // 数据源直接取 m_content->toPlainText()——ToolBlock 已完整持有 ≤kOutputCharLimit 的
-    // 输出串，无需新数据管道；再往上的原文在上游 BashRunner::truncateOutput 即被丢弃，
-    // 任何 UI 都取不到，故查看器如实标注规模与截断边界而非假装「完整」。
-    void openFullOutput();
-    // 查看钮可见性收口：仅「有内容可看」时点亮（live 期结果未产生 → 隐藏）
-    void setViewAllVisible(bool visible);
     bool usesPromptGlyph() const { return m_toolName == QLatin1String("bash"); }
     void renderSubagentLog();         // 进度窗口（含省略提示）整体写入内容区
     QStringList displayedSubagentLines() const;  // 原始行 + 顶部「更早 N 条已省略」提示行
@@ -121,7 +113,6 @@ private:
     QLabel *m_tagLabel = nullptr;     // 非 bash 工具：等宽工具名标签（read_file 等）
     QLabel *m_outcomeLabel = nullptr; // 成败字形位（✓/✕/■，QSS 按 outcome 属性着色；live 期隐藏）
     QLabel *m_summaryLabel = nullptr; // 关键参数（等宽观感，单行中部省略）
-    QToolButton *m_viewAllButton = nullptr; // 「查看完整输出」入口（仅终态有内容时点亮）
 
     QString m_toolName;               // 工具名（bash/read_file/write_file/edit_file/glob/...）
     QString m_summary;                // 关键参数原文（省略显示 + tooltip 全文）

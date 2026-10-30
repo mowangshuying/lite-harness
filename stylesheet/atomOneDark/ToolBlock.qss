@@ -111,29 +111,3 @@ QLabel#toolOutcome[outcome="fail"] {
 QLabel#toolOutcome[outcome="stopped"] {
     color: rgb(147, 157, 167);
 }
-
-/* 「查看完整输出」入口钮：图标由 FluIconUtils 按主题取色，此处只管交互态底与焦点环。
-   基础态完全透明——它坐在不透明头部之上，常态不该抢视觉重心，hover/focus 才现身。 */
-QToolButton#toolViewAll {
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-}
-
-/* hover 实色 = 与 #toolHeader:hover 同档的一档提亮（43,47,55 → 47,51,58） */
-QToolButton#toolViewAll:hover {
-    background-color: rgb(47, 51, 58);
-}
-
-/* 按下态（P2-C2）：本钮是 QToolButton（非 QWidget 头部），:pressed 真实生效。
-   暗色主题按既有阶梯继续提亮（base 43,47,55 → hover 47,51,58 → focus 55,59,66
-   → pressed 62,66,73），与本主题「越活跃越亮」的口径一致。 */
-QToolButton#toolViewAll:pressed {
-    background-color: rgb(62, 66, 73);
-}
-
-/* 键盘可达：本钮已进 Tab 链（StrongFocus），焦点环取本主题 #toolHeader:focus 同色 */
-QToolButton#toolViewAll:focus {
-    border: 1px solid rgb(82, 139, 255);
-    background-color: rgb(55, 59, 66);
-}
