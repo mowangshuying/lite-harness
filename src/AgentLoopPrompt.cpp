@@ -354,6 +354,17 @@ QJsonArray AgentLoop::createToolsDefinition()
         QJsonObject promptSchema;
         promptSchema[QStringLiteral("type")] = QStringLiteral("string");
         promptSchema[QStringLiteral("minLength")] = 1;
+        // s17.2：子代理 system prompt 是独立单源（SubAgent::subSystemPrompt 仅一句
+        // "coding agent at <workDir>"，**没有**主循环的临时目录引导语），且它拿不到
+        // sessionDataRoot——temp 路径只能由宿主在 prompt 文本里转述给它。
+        // 本仓工具表是函数级 static const QJsonArray cached（禁运行期插值、全会话字节
+        // 恒定），故这里只给「把你自己 system prompt 里那条路径抄进来」的自指式指令，
+        // 不写实际路径。禁翻区：QStringLiteral、永不 tr()（纪律同 function 级 description）。
+        promptSchema[QStringLiteral("description")] = QStringLiteral(
+            "The task for the subagent. The subagent starts with no knowledge of your "
+            "session temp directory, so when the task involves temporary/test/scratch "
+            "files, copy the absolute temp path from your own system prompt into this "
+            "text; otherwise the subagent will drop throwaway files in the project root.");
 
         QJsonObject properties;
         properties[QStringLiteral("prompt")] = promptSchema;
@@ -541,6 +552,15 @@ QJsonArray AgentLoop::createToolsDefinition()
 
         QJsonObject promptSchema;
         promptSchema[QStringLiteral("type")] = QStringLiteral("string");
+        // s17.2：与 task 的 prompt 同款自指式引导（纪律见彼处注释）——队友 system prompt
+        // （TeammateRuntime::systemPrompt）同样没有临时目录引导语，只说"文件/壳工具用 Task
+        // 的工作目录、该目录不是沙箱"。围栏根取 m_workDir、worktree 落其子树内，故会话
+        // .temp 对队友可写，转述路径是有效指令。
+        promptSchema[QStringLiteral("description")] = QStringLiteral(
+            "First message for the teammate. The teammate starts with no knowledge of "
+            "your session temp directory, so when its task involves temporary/test/scratch "
+            "files, copy the absolute temp path from your own system prompt into this text; "
+            "otherwise it will drop throwaway files in the project root.");
 
         QJsonObject taskIdSchema;
         taskIdSchema[QStringLiteral("type")] = QStringLiteral("string");
