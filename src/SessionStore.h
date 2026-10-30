@@ -20,11 +20,10 @@
 class SessionStore
 {
 public:
-    // 全局存储根：<workDir>/.lite-harness（索引与 skills 均在此，会话数据在其下 sessions/<id>）
-    static QString rootDirFor(const QString &workDir)
-    {
-        return QDir(workDir).filePath(QStringLiteral(".lite-harness"));
-    }
+    // 索引根 = 存储根本身（`<exeDir>/../config`，单源见 LitePaths.h）。
+    // 改造前本头提供 rootDirFor(workDir) → <workDir>/.lite-harness，索引钉在「进程当前目录」
+    // 之下、会话数据钉在 m_workDir 之下——同一个逻辑存储区被两套锚切开，启动目录一变就
+    // 「索引看得见、数据看不见」。现由调用方统一传 LitePaths::configRoot()，本头不再自行派生根。
     static QString indexFilePath(const QString &root)
     {
         return root + QStringLiteral("/index.json");

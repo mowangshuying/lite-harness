@@ -25,6 +25,7 @@
 #include "SubAgent.h"
 #include "ToolNames.h"
 #include "AgentConstants.h"
+#include "LitePaths.h" // 存储根单源：会话数据根锚 <exeDir>/../config，不再随 m_workDir 漂移
 #include "QOpenAi.h"
 
 #include <QProcess>
@@ -196,10 +197,27 @@ QString AgentLoop::sessionDataId() const
 
 QString AgentLoop::sessionDataRoot() const
 {
-    // 回退分支（无 ID）保持改造前的全局行为：m_workDir/.lite-harness
-    if (m_sessionDataId.isEmpty())
-        return QDir(m_workDir).filePath(QStringLiteral(".lite-harness"));
-    return QDir(m_workDir).filePath(QStringLiteral(".lite-harness/sessions/") + m_sessionDataId);
+    // 会话数据根改由 LitePaths 单源派生：存储根统一到 exe 同级 config/ 后，本值不再随
+    // m_workDir 漂移——「同一逻辑存储区被 CWD/workDir 两套锚切开」正是本次收口的对象。
+    // 空 ID 回退语义逐字保留（LitePaths::sessionDataRootFor 内实现）：删除护栏与
+    // ChatSessionPage 的「未隔离」判定都依赖这条回退形态。
+    return LitePaths::sessionDataRoot(m_sessionDataId);
+}
+
+QStringList AgentLoop::sandboxRoots(const QString &toolCwd) const
+{
+    // 围栏根集合：工具 cwd（相对路径解析基准 + glob 遍历根）+ 本会话数据根。
+    // 会话数据根里承载 prompt 引导模型写入的 `.temp`，以及队友 worktree（.worktrees 落在
+    // 会话根下）——统一锚后这两者都不再是 workDir 的子树，不并入围栏就会每次写临时文件
+    // 都判越界：主循环弹审批卡，队友侧直接折成硬拒文本（队友无交互批准通道）。
+    // 无 ID 时 sessionDataRoot() 回退到会话存储区本身，此时围栏等于「整个 .lite-harness」——
+    // 与改造前单根 workDir 覆盖 <workDir>/.lite-harness 的范围等价，不额外放宽。
+    QStringList roots;
+    roots << toolCwd;
+    const QString dataRoot = sessionDataRoot();
+    if (!dataRoot.isEmpty() && dataRoot != toolCwd)
+        roots << dataRoot;
+    return roots;
 }
 
 void AgentLoop::setModel(const QString &model)

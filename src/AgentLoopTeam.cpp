@@ -115,7 +115,9 @@ void AgentLoop::initTeamEngine()
         // 注入⑤（钩子链）无需改动：它复用主循环 permission 钩子，开关关闭时那侧已返回空串。
         if (!AgentConst::permissionApprovalEnabled())
             return QString();
-        const QString reason = checkPermissionRules(m_workDir, toolName, params);
+        // 围栏根与队友工具适配器同源（sandboxRoots）：worktree 落在会话根 .worktrees 下，
+        // 会话根已统一锚到 config/，单根 m_workDir 口径会把队友在自己 worktree 内的读写弹成待审批。
+        const QString reason = checkPermissionRules(sandboxRoots(m_workDir), toolName, params);
         if (!reason.isEmpty())
             return QStringLiteral("Permission required: ") + reason;
         return QString();
@@ -155,21 +157,24 @@ void AgentLoop::initTeamEngine()
     // 注入⑥（挂载十八）：基五件适配器。文件四件直通 run*In 静态内核——cwd 由
     // 引擎按 assignmentCwd 现读传入（fix-4 钉死第 3 条：禁读租约缓存），与 Lead
     // 主循环同一套实现（含 LineEnding 三道防线/截断/限界，零复制）。
+    // 围栏根经 sandboxRoots(cwd) 现取：worktree 落在会话根 .worktrees 下，而会话根已统一锚到
+    // exe 同级 config/——它不再是 workDir 的子树，单根口径会把队友在自己 worktree 里的
+    // 绝对路径读写判成越狱（队友无交互批准通道，越界直接折成硬拒文本）。
     m_teams.setToolAdapter(ToolNames::READ_FILE,
                            [this](const QJsonObject &params, const QString &cwd) {
-        return runReadFileIn(cwd, params);
+        return runReadFileIn(sandboxRoots(cwd), params);
     });
     m_teams.setToolAdapter(ToolNames::WRITE_FILE,
                            [this](const QJsonObject &params, const QString &cwd) {
-        return runWriteFileIn(cwd, params);
+        return runWriteFileIn(sandboxRoots(cwd), params);
     });
     m_teams.setToolAdapter(ToolNames::EDIT_FILE,
                            [this](const QJsonObject &params, const QString &cwd) {
-        return runEditFileIn(cwd, params);
+        return runEditFileIn(sandboxRoots(cwd), params);
     });
     m_teams.setToolAdapter(ToolNames::GLOB,
                            [this](const QJsonObject &params, const QString &cwd) {
-        return runGlobIn(cwd, params);
+        return runGlobIn(sandboxRoots(cwd), params);
     });
     // bash 适配器（Gate③ MINOR-4 异步化真实落地）：改走异步桥——原同步形态把
     // lcc daemon 线程里的 subprocess.run(timeout) 压缩成主线程有界等待

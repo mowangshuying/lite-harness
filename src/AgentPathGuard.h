@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QString>
+#include <QStringList>
 
 /**
  * AgentPathGuard —— 路径/名字守护纯头（header-only，仅 QtCore，inline 单源）。
@@ -60,6 +61,37 @@ inline bool isWithinPathCanonical(const QString &child, const QString &parent)
     if (canonicalParent.isEmpty())
         return false; // fail-closed：目录存在却解析不出规范路径，不放行
     return isWithinPath(QDir::cleanPath(child), canonicalParent);
+}
+
+// 沙箱围栏多根判定——`AgentLoop::safePathIn` 的判定内核，抽到本头是为了能进 ctest 直测
+// （AgentLoop 带 Q_OBJECT，其 TU 依赖 moc + QOpenAi + FluentUI，测试目标只链 Qt6::Core，
+// 原样留在类内就是 L4 零覆盖区；判定外提后类内只剩「取规范路径 + 转调本口」）。
+//
+// 为什么是**根集合**而不是单根：存储根统一到 exe 同级 config/ 后，会话数据根
+// （含 system prompt 引导写入的 `.temp`）不再落在 workDir 之内，单根围栏会把模型自己的
+// 临时目录判成越狱（每次写临时文件都弹审批卡、或直接 Error: Path escapes workspace）。
+// 故围栏 = { workDir, 会话数据根 }。
+//
+// 口径与改造前的 safePathIn 逐字保持：入参必须是已归一的词法路径（cleanPath，或存在时的
+// canonicalFilePath），本口不再自行归一（谁归一、归一到哪一层，是调用方的契约，两处各归
+// 一次会得出不同形态）；前缀比较带目录分隔符边界（防 "D:/work" 误判 "D:/work-evil"）；
+// Windows 文件系统大小写不敏感，故比较忽略大小写。
+// fail-closed：roots 为空一律拒——「没配围栏」不等于「围栏全开」。空串根同样跳过，
+// 否则空串会让 startsWith("") 恒真、把整条判定变成放行一切。
+inline bool isWithinSandboxRoots(const QString &path, const QStringList &roots)
+{
+    for (const QString &rawRoot : roots)
+    {
+        if (rawRoot.isEmpty())
+            continue;
+        const QString root = QDir::cleanPath(rawRoot);
+        if (root.isEmpty())
+            continue;
+        if (path.compare(root, Qt::CaseInsensitive) == 0
+            || path.startsWith(root + QLatin1Char('/'), Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
 }
 
 } // namespace AgentPathGuard

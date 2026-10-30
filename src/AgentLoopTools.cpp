@@ -321,19 +321,23 @@ bool AgentLoop::isToolFailure(const QString &output)
 QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QString &workDir)
 {
     // 宿主与子代理共用的同步文件工具集（lcc s06 toolsHandlers/subToolsHandlers 的交集部分）：
-    // 各自以传入的 workDir 为沙箱根构建，互不串扰
+    // 各自以传入的 workDir 为沙箱根构建，互不串扰。
+    // 本表是**单根**形态且刻意保持：子代理没有会话数据根（`.temp` 归宿主会话），
+    // 传 QStringList{workDir} 即与其改造前的单根语义逐字等价。主循环与队友适配器不走这里，
+    // 它们经 sandboxRoots() 现取双根（会话数据根统一锚到 config/ 后不再是 workDir 子树）。
+    const QStringList roots{workDir};
     QHash<QString, ToolHandler> handlers;
-    handlers.insert(ToolNames::READ_FILE, [workDir](const QJsonObject &args) {
-        return runReadFileIn(workDir, args);
+    handlers.insert(ToolNames::READ_FILE, [roots](const QJsonObject &args) {
+        return runReadFileIn(roots, args);
     });
-    handlers.insert(ToolNames::WRITE_FILE, [workDir](const QJsonObject &args) {
-        return runWriteFileIn(workDir, args);
+    handlers.insert(ToolNames::WRITE_FILE, [roots](const QJsonObject &args) {
+        return runWriteFileIn(roots, args);
     });
-    handlers.insert(ToolNames::EDIT_FILE, [workDir](const QJsonObject &args) {
-        return runEditFileIn(workDir, args);
+    handlers.insert(ToolNames::EDIT_FILE, [roots](const QJsonObject &args) {
+        return runEditFileIn(roots, args);
     });
-    handlers.insert(ToolNames::GLOB, [workDir](const QJsonObject &args) {
-        return runGlobIn(workDir, args);
+    handlers.insert(ToolNames::GLOB, [roots](const QJsonObject &args) {
+        return runGlobIn(roots, args);
     });
     return handlers;
 }
@@ -356,16 +360,16 @@ QHash<QString, AgentLoop::ToolHandler> AgentLoop::mainToolHandlers()
     // baseFileToolHandlers 保持构造期按值固化语义不动——SubAgent 仍复用它（P4 既定：
     // 子代理不做租约切换）。
     handlers.insert(ToolNames::READ_FILE, [this](const QJsonObject &args) {
-        return runReadFileIn(leadToolCwd(), args);
+        return runReadFileIn(sandboxRoots(leadToolCwd()), args);
     });
     handlers.insert(ToolNames::WRITE_FILE, [this](const QJsonObject &args) {
-        return runWriteFileIn(leadToolCwd(), args);
+        return runWriteFileIn(sandboxRoots(leadToolCwd()), args);
     });
     handlers.insert(ToolNames::EDIT_FILE, [this](const QJsonObject &args) {
-        return runEditFileIn(leadToolCwd(), args);
+        return runEditFileIn(sandboxRoots(leadToolCwd()), args);
     });
     handlers.insert(ToolNames::GLOB, [this](const QJsonObject &args) {
-        return runGlobIn(leadToolCwd(), args);
+        return runGlobIn(sandboxRoots(leadToolCwd()), args);
     });
     handlers.insert(ToolNames::TODO_WRITE, [this](const QJsonObject &args) {
         return runTodoWrite(args);

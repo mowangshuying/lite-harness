@@ -4,6 +4,7 @@
 #include "AgentLoop.h"
 
 #include "AgentConstants.h"
+#include "AgentPathGuard.h" // 沙箱围栏多根判定单源（纯头，可进 ctest 直测）
 #include "BashRunner.h"
 #include "LineEnding.h" // 行尾归一单源：edit_file 两级匹配 / write_file 覆盖保真（read_file 交还 LF 文本）
 
@@ -62,12 +63,24 @@ QRegularExpression globToRegex(const QString &pattern)
 }
 } // namespace
 
-QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString *error)
+QString AgentLoop::safePathIn(const QStringList &roots, const QString &p, QString *error)
 {
-    // 相对路径按工作区解析，绝对路径直接使用；cleanPath 归一化 "../" 与分隔符（Windows 反斜杠转正斜杠）
+    // 围栏是**根集合**而非单根：roots[0] 是工具 cwd（相对路径的解析基准），其余根只参与
+    // 包含性判定。改造前会话数据根落在 <workDir>/.lite-harness/ 之内，单根围栏顺带把它
+    // 覆盖；存储根统一到 exe 同级 config/ 后，`.temp` 等会话目录不再在 workDir 之下，
+    // 单根判定会把模型自己的临时目录判成越狱（写一次弹一次审批卡）。
+    // 空集合 fail-closed：无根可比即拒，不让「没配围栏」滑成「围栏全开」。
+    if (roots.isEmpty())
+    {
+        if (error)
+            *error = QStringLiteral("Error: Path escapes workspace: %1").arg(p);
+        return QString();
+    }
+
+    // 相对路径按首个根（工具 cwd）解析，绝对路径直接使用；cleanPath 归一化 "../" 与分隔符（Windows 反斜杠转正斜杠）
     const QString joined = QDir::isAbsolutePath(p)
         ? QDir::cleanPath(p)
-        : QDir::cleanPath(workDir + QLatin1Char('/') + p);
+        : QDir::cleanPath(roots.first() + QLatin1Char('/') + p);
 
     // 存在部分尽量取 canonical path（消解符号链接/大小写真实形态）；
     // 文件尚不存在时（write 场景）规范化已存在的父目录后接原文件名
@@ -87,9 +100,9 @@ QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString 
     }
 
     // 前缀比较带目录分隔符边界（防 "D:/work" 误判 "D:/work-evil"），Windows 下大小写不敏感
-    const QString root = QDir::cleanPath(workDir);
-    if (absPath.compare(root, Qt::CaseInsensitive) != 0
-        && !absPath.startsWith(root + QLatin1Char('/'), Qt::CaseInsensitive))
+    // ——判定口径整体外提 AgentPathGuard::isWithinSandboxRoots（本类带 Q_OBJECT 进不了
+    // 只链 Qt6::Core 的测试目标，外提后这条安全边界才有红线测试）
+    if (!AgentPathGuard::isWithinSandboxRoots(absPath, roots))
     {
         if (error)
             *error = QStringLiteral("Error: Path escapes workspace: %1").arg(p);
@@ -98,11 +111,11 @@ QString AgentLoop::safePathIn(const QString &workDir, const QString &p, QString 
     return absPath;
 }
 
-QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args)
+QString AgentLoop::runReadFileIn(const QStringList &roots, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     QString err;
-    const QString abs = safePathIn(workDir, path, &err);
+    const QString abs = safePathIn(roots, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -144,12 +157,12 @@ QString AgentLoop::runReadFileIn(const QString &workDir, const QJsonObject &args
     return result;
 }
 
-QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &args)
+QString AgentLoop::runWriteFileIn(const QStringList &roots, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     const QString content = args.value(QStringLiteral("content")).toString();
     QString err;
-    const QString abs = safePathIn(workDir, path, &err);
+    const QString abs = safePathIn(roots, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -187,7 +200,7 @@ QString AgentLoop::runWriteFileIn(const QString &workDir, const QJsonObject &arg
     return QStringLiteral("Wrote %1 bytes to %2").arg(bytes.size()).arg(path);
 }
 
-QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args)
+QString AgentLoop::runEditFileIn(const QStringList &roots, const QJsonObject &args)
 {
     const QString path = args.value(QStringLiteral("path")).toString();
     // lcc s10 破坏性改名跟随（tools_manager.py EDIT_FILE schema）：old_text/new_text → old_string/new_string，
@@ -195,7 +208,7 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     const QString oldString = args.value(QStringLiteral("old_string")).toString();
     const QString newString = args.value(QStringLiteral("new_string")).toString();
     QString err;
-    const QString abs = safePathIn(workDir, path, &err);
+    const QString abs = safePathIn(roots, path, &err);
     if (abs.isEmpty())
         return err;
 
@@ -276,8 +289,15 @@ QString AgentLoop::runEditFileIn(const QString &workDir, const QJsonObject &args
     return QStringLiteral("Edited %1").arg(path);
 }
 
-QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
+QString AgentLoop::runGlobIn(const QStringList &roots, const QJsonObject &args)
 {
+    // 遍历根固定取首个根（工具 cwd）：会话数据根只参与包含性判定，不作为遍历起点——
+    // glob 是「在项目里找文件」的工具，把 config 根一起遍历会把别的会话文件混进结果。
+    // 空根集合无从遍历，与 safePathIn 同口径 fail-closed。
+    if (roots.isEmpty())
+        return QStringLiteral("Error: no sandbox root configured");
+    const QString workDir = roots.first();
+
     // 统一分隔符风格（模型可能给出反斜杠模式）
     QString pattern = args.value(QStringLiteral("pattern")).toString();
     pattern.replace(QLatin1Char('\\'), QLatin1Char('/'));
@@ -322,7 +342,9 @@ QString AgentLoop::runGlobIn(const QString &workDir, const QJsonObject &args)
             if (!re.match(rel).hasMatch())
                 continue;
             QString err;
-            if (safePathIn(workDir, rel, &err).isEmpty())
+            // 越界过滤同样走根集合：符号链接指向围栏外时按整条丢弃，判定口径必须与
+            // read/write/edit 一致，否则「能 glob 到但读不到」
+            if (safePathIn(roots, rel, &err).isEmpty())
                 continue;
             if (!seen.contains(rel))
             {

@@ -95,17 +95,20 @@ QString AgentLoop::checkDenyList(const QString &command)
     return QString();
 }
 
-QString AgentLoop::checkPermissionRules(const QString &workDir, const QString &toolName,
+QString AgentLoop::checkPermissionRules(const QStringList &roots, const QString &toolName,
                                         const QJsonObject &args)
 {
     // 规则 1（lcc PERMISSION_RULES）：read/write/edit_file 的 path 逃逸工作区。
     // lcc 用未归一化的拼接判定，这里复用 safePathIn 的越界检测结果，语义一致
-    // （s06 起以显式 workDir 参数为准：子代理共用同一逻辑、各查各的沙箱根）
+    // （s06 起以显式沙箱根参数为准：子代理共用同一逻辑、各查各的沙箱根）
+    // 参数从单根 workDir 升为根集合 roots：本门与工具实现必须同口径，否则工具放行而门弹卡——
+    // 存储根统一到 config/ 后，会话 `.temp` 不再落在 workDir 之下，单根口径会让每次写临时文件
+    // 都命中「Writing outside workspace」。调用方经 sandboxRoots() 单源构造，两侧不可能分叉。
     if (toolName == ToolNames::READ_FILE || toolName == ToolNames::WRITE_FILE
         || toolName == ToolNames::EDIT_FILE)
     {
         QString err;
-        if (safePathIn(workDir, args.value(QStringLiteral("path")).toString(), &err).isEmpty())
+        if (safePathIn(roots, args.value(QStringLiteral("path")).toString(), &err).isEmpty())
             return QStringLiteral("Writing outside workspace"); // 新增此类 reason 须同步 PermissionCard::tr 映射表（F7）
         return QString();
     }

@@ -4,7 +4,8 @@
 // 禁再引入默认构造 QSettings——org/app 注册表路径已成历史）。
 // 键清单：defaultWorkDir / sidebarVisible / language / contextCharLimit / maxToolIterations
 // / apiBaseUrl / apiToken / modelOptions / defaultModel / maxRetries / fallbackModelId
-// / goalEvaluatorModelId / stopHookBlockCap / permissionApproval。
+// / goalEvaluatorModelId / stopHookBlockCap / permissionApproval
+// / fluConfigDir / fluConfigFile / fluConfigFormat（FluentUI 配置落点三段定位，见 App.cpp 注入点）。
 // apiToken 明文存 ini 属用户裁决（设置页配置取代环境变量，本机 exe 同目录文件，属主可见可改）。
 // 手工篡改/非法值由各消费点自带校验回退默认（既有语义，本头不做聚合校验）。
 //
@@ -25,6 +26,7 @@
 #include <QString>
 #include <QVariant>
 
+#include "LitePaths.h"    // 存储根单源：settings.ini 落 <exeDir>/../config/，与索引/会话数据同根
 #include "SettingsCache.h" // QSettings 由本头内部使用（Reader 装载/写回），此处不再直接构造
 
 namespace AppSettings {
@@ -32,7 +34,13 @@ namespace AppSettings {
 // 配置文件绝对路径单源（Reader 构造期取一次，杜绝两处拼法漂移）
 inline QString filePath()
 {
-    return QCoreApplication::applicationDirPath() + QStringLiteral("/settings.ini");
+    // 存储根单源见 LitePaths.h：settings.ini 从 exe 同目录搬到 exe 同级的 config/ 之下。
+    // 改造前它钉 <exe 目录>/settings.ini、会话索引钉 <进程 CWD>/.lite-harness/index.json、
+    // 会话数据钉 <workDir>/.lite-harness/sessions/<id>——三套锚点切开一个逻辑存储区。
+    // 注意：config/ 在打包产物里被 CMake 的 staging 清理剥掉、由运行期 mkpath 生成，
+    // 而本头的 Reader 不建目录（QSettings 写不存在的目录会静默 AccessError），
+    // 故 App.cpp 必须在任何写之前先 mkpath 存储根。
+    return LitePaths::settingsFilePath();
 }
 
 // 进程级唯一读写门面。函数内 static（C++17 inline 函数跨 TU 唯一实体，同 TestHarness 计数口径）；
@@ -64,9 +72,14 @@ inline QVariant bootstrapValue(const char *argv0, const QString &key, const QVar
 {
     if (argv0 == nullptr)
         return fallback;
-    const QString path = QFileInfo(QString::fromLocal8Bit(argv0)).absolutePath()
-                         + QStringLiteral("/settings.ini");
-    const SettingsCache::Reader bootstrap(path);
+    // 引导期同样走 LitePaths 派生，只是锚点从 applicationDirPath() 换成 argv[0] 反推的 exe 目录
+    // ——两条拼法必须同源，否则「引导读 <exe>/settings.ini、运行读 <exe>/../config/settings.ini」
+    // 会把同一个配置文件劈成两个文件，dpiRounding 改了不生效且无声。
+    const QString exeDir = QFileInfo(QString::fromLocal8Bit(argv0)).absolutePath();
+    const QString root = LitePaths::configRootFor(exeDir);
+    if (root.isEmpty())
+        return fallback; // 反推不出 exe 目录：取缺省，绝不猜一个根去落盘
+    const SettingsCache::Reader bootstrap(LitePaths::settingsFilePathFor(root));
     return bootstrap.value(key, fallback);
 }
 

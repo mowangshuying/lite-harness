@@ -3,6 +3,8 @@
 
 #include "AgentLoop.h"
 
+#include "LitePaths.h" // 技能库根单源：<configRoot>/.lite-harness/skills（全局共享，不随 workDir）
+
 
 #include <QDir>
 #include <QFile>
@@ -14,8 +16,10 @@ void AgentLoop::scanSkills()
     // 对应 lcc scan_skills()：整表重建；skills 目录缺失静默为空（对应 python return）
     m_skills.clear();
 
-    // lcc env.py: workDir/"skills"；lite 有意偏差：收进 .lite-harness 中间目录，不在用户项目根撒目录
-    const QString skillsDir = QDir(m_workDir).filePath(QStringLiteral(".lite-harness/skills"));
+    // lcc env.py: workDir/"skills"；lite 有意偏差：收进 .lite-harness 中间目录，不在用户项目根撒目录。
+    // 存储根统一后技能库改落 <configRoot>/.lite-harness/skills——**全局共享一套**（用户裁决），
+    // 不再随 workDir 隔离：换工作目录不再换技能，与 skills 本就跨会话共享的既有语义一致。
+    const QString skillsDir = LitePaths::skillsDir();
     if (!QFileInfo(skillsDir).isDir())
         return;
 

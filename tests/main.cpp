@@ -28,6 +28,10 @@ int tst_streamrate();         // 输出速度纯头（StreamRate.h），零夹�
 int tst_goalmanager();        // s17：goal 引擎六门/七决策/转录预算，零夹具，任何环境全跑
 int tst_cronmanager();        // s17 P1：cron 判据 + 台账快照，零夹具（durable=false 不触盘），任何环境全跑
 int tst_uiscale();            // UI 优化 P1-11：字号/DPI 策略名/几何编解码判据，零夹具，任何环境全跑
+int tst_fluconfigstore();     // FluentUI 配置定位层（FluConfigStore.h）：三段定位/格式折叠/JSON 后端，判据组恒跑 + 文件组夹具门控
+int tst_fluconfigutils();     // FluentUI 配置门面（FluConfigUtils）：configure 注入→后端重建→读写往返，缺省组恒跑 + 落盘组夹具门控
+int tst_litepaths();          // 运行时路径锚点单源（LitePaths.h）：存储根反推/中间层只一次/空 ID 回退，零夹具恒跑
+int tst_pathguard();          // 沙箱围栏多根判定（AgentPathGuard.h）：边界/大小写/fail-closed，零夹具恒跑
 
 int main()
 {
@@ -49,6 +53,10 @@ int main()
     failed += tst_goalmanager();
     failed += tst_cronmanager();
     failed += tst_uiscale();
+    failed += tst_fluconfigstore();
+    failed += tst_fluconfigutils();
+    failed += tst_litepaths();
+    failed += tst_pathguard();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

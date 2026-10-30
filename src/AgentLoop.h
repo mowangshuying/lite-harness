@@ -283,14 +283,17 @@ private:
     const QHash<QString, ToolHandler> &ensureToolHandlers();
     // 基础文件工具 handler 表（lcc s06 主/子代理共享注册形态）：以传入 workDir 为沙箱根，
     // 宿主与子代理各自构建、互不串扰（子代理不经 todo_write/task，工具集为其白名单子集）
+    // 存储根统一后本表是**单根**形态（子代理专用：子代理无会话数据根，围栏就是它自己的 workDir）；
+    // 主循环与队友适配器改走 sandboxRoots() 双根，见 mainToolHandlers 的四个覆盖项。
     static QHash<QString, ToolHandler> baseFileToolHandlers(const QString &workDir);
 
     // 权限门·硬拒绝列表（仅 bash）：命中返回 "Blocked: {pattern} is on the deny list"，未命中返回空串
     // （s04 起由内置 permission 钩子调用，逻辑与文案未变；s06 提为静态供子代理共用）
     static QString checkDenyList(const QString &command);
     // 权限门·询问规则：命中返回规则文案（钩子链据此携带 ASK 前缀触发 permissionRequired 暂停），未命中返回空串
-    // （s06 起显式传入 workDir：文件工具逃逸判定以该沙箱根为准，供子代理共用同一逻辑）
-    static QString checkPermissionRules(const QString &workDir, const QString &toolName,
+    // （s06 起显式传入沙箱根：文件工具逃逸判定以该沙箱根为准，供子代理共用同一逻辑；
+    //  存储根统一后参数形态为根集合 roots，与工具实现同源，见 sandboxRoots()）
+    static QString checkPermissionRules(const QStringList &roots, const QString &toolName,
                                         const QJsonObject &args);
     // —— 内部工具（toolSummary / askPrefix / bashDenyList / parseToolCall）不再经此静态转发：
     //    SubAgent 与 ChatSessionPage 直接 #include "AgentLoopInternal.h" 取用（声明单源、零转发层）。
@@ -413,16 +416,25 @@ private:
     // 用压缩后的会话（不含 system）替换 m_messages：[system] + conversation 重新拼接
     void applyCompressedConversation(const QVector<QJsonObject> &conversation);
     // 文件类工具（本地 IO，同步执行；经 handler 表路由，参数取自解析后的 arguments JSON）。
-    // s06 起为静态并以 workDir 为沙箱根参数：宿主与子代理共用同一实现、各传各的目录
-    static QString runReadFileIn(const QString &workDir, const QJsonObject &args);
-    static QString runWriteFileIn(const QString &workDir, const QJsonObject &args);
-    static QString runEditFileIn(const QString &workDir, const QJsonObject &args);
-    static QString runGlobIn(const QString &workDir, const QJsonObject &args);
+    // s06 起为静态并以 workDir 为沙箱根参数：宿主与子代理共用同一实现、各传各的目录。
+    // 存储根统一到 exe 同级 config/ 后，沙箱参数从「单根 workDir」升为「根集合 roots」：
+    // roots.first() 仍是工具 cwd（相对路径解析基准 + glob 遍历根），追加的会话数据根
+    // 承载 `.temp`——它不再落在 workDir 之下，单根围栏会把模型自己的临时目录判成越狱。
+    // 单根调用点（子代理）经 baseFileToolHandlers 的旧签名重载继续工作，语义不变。
+    static QString runReadFileIn(const QStringList &roots, const QJsonObject &args);
+    static QString runWriteFileIn(const QStringList &roots, const QJsonObject &args);
+    static QString runEditFileIn(const QStringList &roots, const QJsonObject &args);
+    static QString runGlobIn(const QStringList &roots, const QJsonObject &args);
     // 待办工具（lcc s06 update_todos 等价：无状态）：校验入参并返回本次输入的渲染文本
     // （不落盘不持久，成功时以输入快照发射 todoUpdated）；任一校验失败返回 "Error:..."
     QString runTodoWrite(const QJsonObject &args);
-    // 沙箱路径解析（静态化供上述工具共用）：相对路径按 workDir 解析；逃逸时返回空串并置 *error
-    static QString safePathIn(const QString &workDir, const QString &p, QString *error);
+    // 沙箱路径解析（静态化供上述工具共用）：相对路径按 roots.first() 解析；逃逸时返回空串并置 *error。
+    // roots 为空 fail-closed（判定内核 AgentPathGuard::isWithinSandboxRoots，纯头可直测）。
+    static QString safePathIn(const QStringList &roots, const QString &p, QString *error);
+    // 沙箱根集合单源：工具 cwd（相对路径基准）+ 本会话数据根（`.temp` 落点）。
+    // 会话数据根统一到 exe 同级 config/ 后不再落在 workDir 之下，必须由本口显式并入围栏，
+    // 否则 system prompt 引导模型写的临时目录会被自己的越界判定拒掉。
+    QStringList sandboxRoots(const QString &toolCwd) const;
     // 工具定义（bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact
     // / create_task / update_task / list_tasks / get_task / claim_task / complete_task
     // / schedule_cron / list_crons / cancel_cron

@@ -116,11 +116,28 @@ jobs:
         # 本机全量实跑 1397（含 1 条 junction 夹具 skip，同为下浮基准）。下界 1066→1250 按本轮
         # 实跑 1397 留约 10% 余量上调（1397×0.9≈1257，取整 1250）。若 CI 首跑 pass 数明显低于
         # 1397，按实测回落本行与下方阈值。
+        # FluentUI 配置落点改造口径：新增 tst_fluconfigstore（本机实跑 75 条 = 恒跑组 18 + 夹具门控组
+        # 57，FluConfigStore.h 纯 QtCore 定位层：三段解析/格式折叠/落点拼接不越界/JSON 后端往返与坏文件
+        # 拒用）与 tst_fluconfigutils（本机实跑 49 条 = 恒跑组 4 + 夹具门控组 45，FluConfigUtils 门面侧：
+        # 缺省三段逐字复现改造前硬编码落点 / configure 注入后 JSON 落点与嵌套形态 / 同值注入不重建 /
+        # 换定位不迁移旧值 / 扩展名由 format 强制 / 既有 API 在新后端照常往返）；十八套件本机全量实跑
+        # 1612（含 1 条 junction 夹具 skip，同为下浮基准）。下界 1250→1400 按实跑 1565 留约 10% 余量
+        # 上调（1565×0.9≈1408，取整 1400），fluconfigutils 套件补入后实跑 1612、下界仍留 1400
+        # （1612×0.9≈1451，但两套件共 102/124 条挂在 LITE_TEST_TMPROOT 夹具门上，缺该变量只残 22 条，
+        # 逼到满量附近即成赌环境波动）——本步已注入该变量。
+        # 存储锚点统一口径：新增 tst_litepaths（本机实跑 29 条，LitePaths.h 纯字符串派生、零 IO 零夹具
+        # 恒跑：存储根反推与三种写法归一 / .lite-harness 中间层只出现一次 / 空 dataId 回退形态 /
+        # 删除护栏的严格包含前提）与 tst_pathguard（本机实跑 21 条，AgentPathGuard.h::isWithinSandboxRoots
+        # 多根围栏：分隔符边界 / 兄弟会话不可互达 / 大小写不敏感 / 空根集合与空根串 fail-closed /
+        # 根入参 cleanPath 归一，同为零夹具恒跑）；二十套件本机全量实跑 1662（含 1 条 junction 夹具
+        # skip，同为下浮基准；与 AGENTS.md 登记值逐条对账：1612 + 29 + 21 = 1662）。下界 1400→1450：
+        # 本批 50 条**全部挂在恒跑组上、不依赖 LITE_TEST_TMPROOT**，故按同幅度等量上移（1662×0.9≈1496，
+        # 仍留 1450 而非 1496，沿用上一条「不逼到满量附近」的取舍）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1250'
+          $env:LITE_TEST_MIN_PASS = '1450'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

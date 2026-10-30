@@ -23,6 +23,7 @@
 #include <QUuid>
 #include "QOpenAi.h"
 #include "SessionStore.h"
+#include "LitePaths.h"    // 索引根单源：登记/恢复/重命名/删除四处同源，不再钉进程当前目录
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -221,11 +222,12 @@ void LiteHarness::createSession(const QString &text)
 
     // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
     // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型。
-    // 索引「根」固定为进程当前目录下 .lite-harness（即 restoreSessions 启动读取处，
-    // 路径经 SessionStore::rootDirFor 单源派生），只有条目「工作目录字段」记所选目录——
-    // 若把根也改到所选目录，切换工作目录后旧会话将无法被发现。
+    // 索引根 = 存储根单源（LitePaths::configRoot()，即 <exeDir>/../config）。
+    // 改造前此处钉「进程当前目录」，而会话数据钉「m_workDir」——同一个逻辑存储区被两套锚
+    // 切开，启动目录一变就索引看得见、数据看不见。现在两处同锚，且与所选工作目录无关：
+    // 只有条目「工作目录字段」记所选目录，切换工作目录后旧会话仍可被发现。
     SessionStore::upsertEntry(
-        SessionStore::rootDirFor(QDir::currentPath()),
+        LitePaths::configRoot(),
         sessionDataId, title, m_newChatPage->currentModel(), newWorkDir);
 
     auto sessionsItem = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup));
@@ -256,7 +258,7 @@ void LiteHarness::createSession(const QString &text)
 
 void LiteHarness::restoreSessions()
 {
-    const QString root = SessionStore::rootDirFor(QDir::currentPath());
+    const QString root = LitePaths::configRoot(); // 存储根单源，与登记/刷新/删除四处同源
     const QJsonArray index = SessionStore::loadIndex(root);
     if (index.isEmpty())
         return;
@@ -443,9 +445,9 @@ void LiteHarness::renameSession(const QString &key)
             grp->adjustItemHeight(childItem);
     }
     // 仅更新索引标题（model/workDir 传空即不覆盖），刷新 lastActiveMs；
-    // 根路径经 SessionStore::rootDirFor 单源派生（与原手写 ".lite-harness" 拼接等价）
+    // 根路径经 LitePaths::configRoot() 单源派生（与登记/恢复/删除四处同源）
     SessionStore::upsertEntry(
-        SessionStore::rootDirFor(QDir::currentPath()),
+        LitePaths::configRoot(),
         dataId, text, QString(), QString());
 
     // 回填会话页：右侧信息面板的标题单源在 ChatSessionPage，不推这一步即表现为「导航已改、面板仍旧」。
@@ -492,20 +494,32 @@ void LiteHarness::deleteSession(const QString &key)
     // （过滤器表若不清理，已 delete 控件的悬空地址可能被新控件复用导致误命中）
     m_registry.unregister(key);
 
-    // 移出 index.json 条目（根路径经 SessionStore::rootDirFor 单源派生）
+    // 移出 index.json 条目（根路径经 LitePaths::configRoot() 单源派生）
     SessionStore::removeEntry(
-        SessionStore::rootDirFor(QDir::currentPath()), dataId);
+        LitePaths::configRoot(), dataId);
 
     // 连同磁盘数据目录一并删除。仅对已隔离会话（dataId 非空）执行——未注入 ID 时
-    // sessionDataRoot() 回退全局 .lite-harness（含 index.json/skills），据此护栏避免误删全局数据。
+    // sessionDataRoot() 回退会话存储区本身（含全部 sessions 与 skills），据此护栏避免误删全局数据。
+    // 存储根统一到 config/ 之后，回退根不再落在 workDir 子树里、而是全应用共享的**唯一**目录，
+    // 误删半径从「单个项目」放大到「所有项目的所有会话」，故在 dataId 之外再加一道**路径前缀**护栏：
+    // 只有严格落在 sessionsRoot 之下的目录才允许递归删除。两条护栏任一失守都足以毁掉全部历史，
+    // 单靠一条不算数（改造前那版靠「回退根恰好也在 workDir 里」这种巧合，巧合已随锚点统一消失）。
     // singleShot(0) 延一拍：确保 page 的 deleteLater→~AgentLoop 完成（杀子进程/停 cron）后目录无占用，
     // removeRecursively 方可成功；返回 false 仅告警容忍（外部编辑器占用等），不阻断。
-    if (!dataId.isEmpty() && !dataRoot.isEmpty())
+    const QString sessionsRoot = LitePaths::sessionsRoot();
+    if (!dataId.isEmpty() && !dataRoot.isEmpty()
+        && !sessionsRoot.isEmpty()
+        && QDir::cleanPath(dataRoot).startsWith(QDir::cleanPath(sessionsRoot) + QLatin1Char('/'),
+                                                Qt::CaseInsensitive))
     {
         QTimer::singleShot(0, this, [dataRoot] {
             if (!QDir(dataRoot).removeRecursively())
                 LOG_WARN << "session data dir removal failed: " << dataRoot;
         });
+    }
+    else if (!dataId.isEmpty())
+    {
+        LOG_WARN << "session data dir not under sessions root, refuse to delete: " << dataRoot;
     }
 }
 

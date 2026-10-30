@@ -4,8 +4,10 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <FluLogUtils.h>
+#include <FluConfigUtils.h>
 // #include <FluFrameLessWidget.h>
 #include "AppSettings.h"
+#include "LitePaths.h" // 存储根单源：运行期建根 + FluentUI 配置恒注入本根
 #include "I18n.h"
 #include "LiteHarness.h"
 #include "UiScale.h"
@@ -28,6 +30,36 @@ int main(int argc, char *argv[])
             .toString()));
 
     QApplication a(argc, argv);
+
+    // 存储根落地：settings.ini / index.json / 会话数据 / skills / FluentUI 配置同锚
+    // <exe 目录>/../config（单源见 LitePaths.h）。
+    // **必须在此处 mkpath，且早于任何配置读写**：打包时 CMake 的 staging 清理会把 config 目录
+    // 从产物里剥掉（那是 FluentUI gallery 的同名残留），发布包首次启动根本没有 config/；
+    // 而 SettingsCache::Reader 不建目录——QSettings 往不存在的目录写会静默 AccessError，
+    // 表现为「设置页改了没反应」且无任何报错。SessionStore 与 FluConfigStore 各自会 mkpath
+    // 自己那一层，但 settings.ini 这条链没有兜底，只能在此统一建根。
+    QDir().mkpath(LitePaths::configRoot());
+
+    // FluentUI 配置定位注入：FluConfigUtils 原把配置文件写死成 CWD 相对的 ../config/config.ini，
+    // 启动目录一变（快捷方式/分发/从别处拉起）主题与语言镜像就静默回到缺省——第三方库没有注入口，
+    // 故本仓在 3rdparty/FluentUI 内给它开 configure 静态口（改造点见该文件注释）。
+    // 三键（settings.ini，均可缺省）：fluConfigDir / fluConfigFile / fluConfigFormat(=ini|json)。
+    // **必须早于任何 FluConfigUtils::getUtils()**：单例先建则 configure 只能重建后端且不迁移旧值，
+    // 而 LiteHarness 构造经 FluThemeUtils 就会触发单例。
+    // 存储根统一后本注入改为**恒调用**（改造前是「三键皆无则不调」，落点沿用库内 CWD 相对缺省）：
+    // 缺省目录直接给绝对存储根，杜绝 CWD 漂移——库内默认值一字未动（pinned 测试仍钉
+    // ../config/config.ini），被改掉的只是宿主是否注入，这正是该注入接口存在的用途。
+    // 相对目录仍按 exe 目录锚定，绝对路径原样透传。
+    {
+        const QString fluDir = AppSettings::value(QStringLiteral("fluConfigDir")).toString().trimmed();
+        const QString fluFile = AppSettings::value(QStringLiteral("fluConfigFile")).toString().trimmed();
+        const QString fluFormat = AppSettings::value(QStringLiteral("fluConfigFormat")).toString();
+        FluConfigUtils::configure(
+            fluDir.isEmpty()
+                ? LitePaths::configRoot()
+                : FluConfigStore::anchorRelativeDir(fluDir, QCoreApplication::applicationDirPath()),
+            fluFile, FluConfigStore::formatFromName(fluFormat));
+    }
 
     // 字号倍率（P1-11）：settings.ini 键 uiFontScale（整数百分比，[80,200]，缺省 100）。
     // 走 QApplication::setFont 而非逐控件设字体——本仓 QSS 里正文面（#msgBrowser 气泡

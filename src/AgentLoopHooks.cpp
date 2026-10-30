@@ -79,8 +79,11 @@ void AgentLoop::registerBuiltinHooks()
         // 每次工具调用现取（经 AppSettings::value() 读缓存），故设置页改完下一个工具调用即生效。
         const bool approvalNeeded = AgentConst::permissionApprovalEnabled();
 
-        const QString reason = approvalNeeded ? checkPermissionRules(m_workDir, toolName, args)
-                                              : QString();
+        // 围栏根经 sandboxRoots(m_workDir) 现取，与主循环文件四件套同源（见 mainToolHandlers）：
+        // 门与工具必须同口径，否则工具放行、门弹卡——存储根统一后会话 .temp 已不在 workDir 之下。
+        const QString reason = approvalNeeded
+            ? checkPermissionRules(sandboxRoots(m_workDir), toolName, args)
+            : QString();
         if (!reason.isEmpty())
         {
             // lcc s15 af26862 异步回合 fail-closed：无人值守回合（wake/bg/cron）不得挂在永久审批卡上，

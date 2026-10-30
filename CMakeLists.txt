@@ -128,7 +128,10 @@ if (LITE_TESTS)
 	enable_testing()
 	file(GLOB test_src CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 	# 被测生产源需显式列出——仅允许 QtCore-only 的引擎进此清单（s13 P1 起）
+	# FluentUI 侧只进 FluConfigUtils.cpp：它没有 Q_OBJECT（无信号槽），依赖的 FluThemeUtils.h
+	# 也只取 FluTheme 枚举、从不实例化 FluThemeUtils，故不需要 QtGui/QtWidgets 也不需要额外 moc。
 	add_executable(lite-harness-tests ${test_src}
+		3rdparty/FluentUI/utils/FluConfigUtils.cpp
 		src/TaskStore.cpp
 		src/MessageBus.cpp
 		src/WorktreeManager.cpp
@@ -147,9 +150,12 @@ if (LITE_TESTS)
 	)
 	# src/ 入搜索路径：测试直接 include 生产头（LineEnding.h 等 header-only 单源），
 	# 测的是真实编译产物而非复制出来的算法副本
+	# FluentUI/utils 入搜索路径：FluConfigStore.h 是纯 QtCore 的定位层（不拖 QtGui/QtWidgets），
+	# 链 Qt6::Core 就能验路径解析与 JSON 读写往返，无需把 FluentUI::Utils 拉进测试目标
 	target_include_directories(lite-harness-tests PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/src"
 		"${CMAKE_CURRENT_SOURCE_DIR}/tests"
+		"${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/FluentUI/utils"
 	)
 	# 与主目标同款 /W4 /utf-8；Qt6::Core 由上方 Widgets 的依赖传递保证可用，无需再 find_package
 	target_compile_options(lite-harness-tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)

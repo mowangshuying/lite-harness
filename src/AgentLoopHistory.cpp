@@ -6,6 +6,7 @@
 
 #include "AgentLoopInternal.h"
 #include "SessionStore.h"
+#include "LitePaths.h" // 索引根单源，与 LiteHarness 登记/恢复/重命名/删除四处同源
 
 #include <QJsonDocument>
 #include <QDir>
@@ -53,10 +54,11 @@ void AgentLoop::persistHistory()
     }
 
     // 索引仅刷新已存在条目的 lastActiveMs（未登记则跳过，语义与 upsert 的"只更新不新建"分支一致）。
-    // 索引根固定为进程当前目录，与 LiteHarness 的登记/恢复/删除同源（rootDirFor 单源派生）：
+    // 索引根 = 存储根单源（LitePaths::configRoot()），与 LiteHarness 的登记/恢复/删除四处同源：
     // workDir 只是条目字段，用它派生会在「发起页选了自定义工作目录」的会话上读到不存在的
-    // index.json，found 恒 false 令续活静默失效。遍历+回写已下沉 SessionStore::touchEntry。
-    SessionStore::touchEntry(SessionStore::rootDirFor(QDir::currentPath()), m_sessionDataId);
+    // index.json，found 恒 false 令续活静默失效。改造前本处钉进程 CWD、会话数据钉 m_workDir，
+    // 同一个存储区被两套锚切开——此处正是分裂点。遍历+回写已下沉 SessionStore::touchEntry。
+    SessionStore::touchEntry(LitePaths::configRoot(), m_sessionDataId);
 }
 
 // 从磁盘恢复历史到 m_messages：保留 [0] 系统消息，追加落盘消息，恢复模型。
