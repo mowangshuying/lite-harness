@@ -985,49 +985,49 @@ After a restart the turn count is seeded from the number of user messages in his
     <name>SettingsPage</name>
     <message>
         <location filename="../src/SettingsPage.cpp" line="612"/>
-        <location filename="../src/SettingsPage.cpp" line="772"/>
+        <location filename="../src/SettingsPage.cpp" line="796"/>
         <source>外观与行为</source>
         <translation>Appearance &amp; Behavior</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="618"/>
-        <location filename="../src/SettingsPage.cpp" line="774"/>
+        <location filename="../src/SettingsPage.cpp" line="798"/>
         <source>应用主题</source>
         <translation>App theme</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="618"/>
-        <location filename="../src/SettingsPage.cpp" line="774"/>
+        <location filename="../src/SettingsPage.cpp" line="798"/>
         <source>选择应用显示的主题。</source>
         <translation>Select which theme to display.</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="620"/>
-        <location filename="../src/SettingsPage.cpp" line="775"/>
+        <location filename="../src/SettingsPage.cpp" line="799"/>
         <source>浅色</source>
         <translation>Light</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="621"/>
-        <location filename="../src/SettingsPage.cpp" line="776"/>
+        <location filename="../src/SettingsPage.cpp" line="800"/>
         <source>深色</source>
         <translation>Dark</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="622"/>
-        <location filename="../src/SettingsPage.cpp" line="777"/>
+        <location filename="../src/SettingsPage.cpp" line="801"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="642"/>
-        <location filename="../src/SettingsPage.cpp" line="779"/>
+        <location filename="../src/SettingsPage.cpp" line="803"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="642"/>
-        <location filename="../src/SettingsPage.cpp" line="779"/>
+        <location filename="../src/SettingsPage.cpp" line="803"/>
         <source>选择界面显示的语言。</source>
         <translation>Select which language to display.</translation>
     </message>
@@ -1043,48 +1043,84 @@ After a restart the turn count is seeded from the number of user messages in his
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="671"/>
-        <location filename="../src/SettingsPage.cpp" line="782"/>
+        <location filename="../src/SettingsPage.cpp" line="806"/>
         <source>工作目录</source>
         <translation>Working Directory</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="684"/>
-        <location filename="../src/SettingsPage.cpp" line="786"/>
+        <location filename="../src/SettingsPage.cpp" line="810"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="697"/>
-        <location filename="../src/SettingsPage.cpp" line="790"/>
+        <location filename="../src/SettingsPage.cpp" line="814"/>
         <source>最大轮次</source>
         <translation>Max Rounds</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="710"/>
-        <location filename="../src/SettingsPage.cpp" line="794"/>
+        <location filename="../src/SettingsPage.cpp" line="711"/>
+        <location filename="../src/SettingsPage.cpp" line="818"/>
+        <source>权限</source>
+        <translation>Permissions</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="715"/>
+        <location filename="../src/SettingsPage.cpp" line="819"/>
+        <source>工具执行权限审批</source>
+        <translation>Tool Execution Approval</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="715"/>
+        <location filename="../src/SettingsPage.cpp" line="819"/>
+        <source>命中询问规则时是否需要你批准。</source>
+        <translation>Whether a tool call that hits an ask rule needs your approval.</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="717"/>
+        <location filename="../src/SettingsPage.cpp" line="820"/>
+        <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
+        <translation>When off, tools run directly without an approval card. The bash deny list, workflow deny policies and workspace-escape checks are unaffected. Takes effect on the next tool call; no restart needed.</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="719"/>
+        <location filename="../src/SettingsPage.cpp" line="822"/>
+        <source>需要审批</source>
+        <translation>Requires approval</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="720"/>
+        <location filename="../src/SettingsPage.cpp" line="823"/>
+        <source>无需审批</source>
+        <translation>No approval needed</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="734"/>
+        <location filename="../src/SettingsPage.cpp" line="825"/>
         <source>模型服务</source>
         <translation>Model Service</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="730"/>
-        <location filename="../src/SettingsPage.cpp" line="802"/>
+        <location filename="../src/SettingsPage.cpp" line="754"/>
+        <location filename="../src/SettingsPage.cpp" line="833"/>
         <source>关于</source>
         <translation>About</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="735"/>
+        <location filename="../src/SettingsPage.cpp" line="759"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="736"/>
-        <location filename="../src/SettingsPage.cpp" line="803"/>
+        <location filename="../src/SettingsPage.cpp" line="760"/>
+        <location filename="../src/SettingsPage.cpp" line="834"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="749"/>
-        <location filename="../src/SettingsPage.cpp" line="805"/>
+        <location filename="../src/SettingsPage.cpp" line="773"/>
+        <location filename="../src/SettingsPage.cpp" line="836"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness is a lightweight C++ coding-agent harness that fills the gap of harness implementations in the C++ ecosystem. As a hands-on learning project, it demonstrates step by step how to build a harness from scratch with Qt and modern C++.</translation>
     </message>

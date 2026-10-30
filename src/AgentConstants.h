@@ -363,4 +363,22 @@ constexpr qsizetype kGlobScanEntryLimit = 20000;
 // 否则上限先于展示窗口生效、"more matches omitted" 提示失去意义）
 constexpr qsizetype kGlobCollectLimit = 2000;
 
+// ---- 工具执行权限审批开关（s17.2：设置页「工具执行权限审批」） ----
+// settings.ini 键 permissionApproval：true=需要审批（缺省，命中询问规则弹 PermissionCard 挂起队列），
+// false=无需审批（三道「询问类」门一律放行）。纯布尔无区间校验；键缺失或写成读不出来的串一律回退
+// true——回退方向刻意选更保守的一侧：配置解析不出来时宁可多问一次，也不静默放行。
+// 消费方两处同源：AgentLoopHooks.cpp 内置 permission 钩子（ASK 规则门 / mcp__ confirm 门 /
+// workflow confirm 门）与 AgentLoopTeam.cpp 队友 permissionCheck 注入。
+// **本开关撤的是「问不问」，不是「许不许」**：bash 硬拒绝黑名单（拒绝先于用户意志）与 workflow
+// 策略表的 deny 态都是定值硬拒，不受开关影响照常回填拒绝文本。
+// 生效时机：钩子每次工具调用现取（经 AppSettings::value() 读缓存，零 QSettings 构造），故改完
+// 下一个工具调用即生效，无需重启、无需新会话——与 contextCharLimit 同口径，不同于 maxToolIterations
+// 的回合入口快照。
+constexpr bool kPermissionApprovalDefault = true; // 未设置时需要审批
+inline const QString kPermissionApprovalKey = QStringLiteral("permissionApproval");
+inline bool permissionApprovalEnabled()
+{
+    return AppSettings::value(kPermissionApprovalKey, kPermissionApprovalDefault).toBool();
+}
+
 } // namespace AgentConst

@@ -4,6 +4,7 @@
 #include "AgentLoop.h"
 #include "LiteLog.h"
 
+#include "AgentConstants.h" // 审批开关 permissionApproval 单点取值（s17.2）
 #include "AgentLoopInternal.h"
 #include "ToolNames.h"
 #include "AgentRecovery.h"
@@ -70,7 +71,16 @@ void AgentLoop::registerBuiltinHooks()
         if (permissionGranted)
             return QString(); // 已批准：跳过询问，日志等其余钩子照常执行
 
-        const QString reason = checkPermissionRules(m_workDir, toolName, args);
+        // s17.2 审批总开关（settings.ini 键 permissionApproval，单点取值
+        // AgentConst::permissionApprovalEnabled()）：关闭时下面三道「询问类」门（ASK 规则 /
+        // mcp__ confirm / workflow confirm）一律放行——不出卡、不挂队列，异步回合也不再
+        // fail-closed 返拒串（压根不需要审批，就不存在「无人可问」的困境）。
+        // 上方 bash 硬拒绝黑名单与 workflow 的 deny 态是定值硬拒、不是审批，不受本开关影响。
+        // 每次工具调用现取（经 AppSettings::value() 读缓存），故设置页改完下一个工具调用即生效。
+        const bool approvalNeeded = AgentConst::permissionApprovalEnabled();
+
+        const QString reason = approvalNeeded ? checkPermissionRules(m_workDir, toolName, args)
+                                              : QString();
         if (!reason.isEmpty())
         {
             // lcc s15 af26862 异步回合 fail-closed：无人值守回合（wake/bg/cron）不得挂在永久审批卡上，
@@ -84,7 +94,7 @@ void AgentLoop::registerBuiltinHooks()
         // s14: MCP 策略门（lcc s14 7b4ac1c permission.py——置于 deny 链与 check_rules 之后；
         // mcp__ 名不命中前两者天然互斥。fail-closed：宿主表未登记 allow 一律询问）。
         // permissionGranted 短路的续跑分支在上方已 return，批准重入时直接放行，不动此顺序。
-        if (toolName.startsWith(ToolNames::MCP_PREFIX)
+        if (approvalNeeded && toolName.startsWith(ToolNames::MCP_PREFIX)
             && m_mcp.toolPolicy(toolName) != QLatin1String("allow"))
         {
             // lcc s15 af26862 异步回合 fail-closed：MCP confirm 门同样不得挂在审批卡上，
@@ -103,7 +113,7 @@ void AgentLoop::registerBuiltinHooks()
             const QString policy = m_workflow.policyFor(args.value(QStringLiteral("name")).toString());
             if (policy == QLatin1String("deny"))
                 return QStringLiteral("Permission denied by host policy"); // 定值硬拒回填通道
-            if (policy != QLatin1String("allow"))
+            if (approvalNeeded && policy != QLatin1String("allow"))
             {
                 if (m_asyncTurn)
                     return RecoveryRules::asyncApprovalDenied();

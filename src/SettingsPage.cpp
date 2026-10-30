@@ -704,6 +704,30 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
+    /// permission（s17.2：工具执行权限审批总开关，落 settings.ini 键 permissionApproval。
+    /// 控件沿用主题/语言盒同款 FluSettingsSelectBox——页内既有的「选择型」范式，零新控件类型）
+    m_permissionLabel = new FluLabel;
+    m_permissionLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_permissionLabel->setText(tr("权限"));
+    scrollView->getMainLayout()->addWidget(m_permissionLabel, 0, Qt::AlignTop);
+
+    m_permissionBox = new FluSettingsSelectBox;
+    m_permissionBox->setTitleInfo(tr("工具执行权限审批"), tr("命中询问规则时是否需要你批准。"));
+    m_permissionBox->setIcon(FluAwesomeType::Shield); // 权限语义（Lock 已被凭据卡占用）
+    m_permissionBox->setToolTip(tr("关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny "
+                                   "策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。"));
+    m_permissionBox->getComboBox()->addItem(tr("需要审批"));
+    m_permissionBox->getComboBox()->addItem(tr("无需审批"));
+    // 初值同步先于 connect：构造期 setCurrentIndex 不误触发写盘（与语言盒同纪律）
+    m_permissionBox->getComboBox()->setCurrentIndex(AgentConst::permissionApprovalEnabled() ? 0 : 1);
+    connect(m_permissionBox->getComboBox(), &FluComboBox::currentIndexChanged, this, [this](int index) {
+        const bool required = (index == 0);
+        if (required == AgentConst::permissionApprovalEnabled())
+            return; // 回选当前值不动作
+        AppSettings::setValue(AgentConst::kPermissionApprovalKey, required);
+    });
+    scrollView->getMainLayout()->addWidget(m_permissionBox, 0, Qt::AlignTop);
+
     /// model service（LLM 服务地址 / API Key 可设置，取代原环境变量；写 ini 后即时覆盖全局配置）
     m_modelLabel = new FluLabel;
     m_modelLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -790,6 +814,13 @@ void SettingsPage::retranslateUi()
     m_maxRoundsLabel->setText(tr("最大轮次"));
     if (m_maxRoundsCard)
         m_maxRoundsCard->retranslate();
+
+    m_permissionLabel->setText(tr("权限"));
+    m_permissionBox->setTitleInfo(tr("工具执行权限审批"), tr("命中询问规则时是否需要你批准。"));
+    m_permissionBox->setToolTip(tr("关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny "
+                                   "策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。"));
+    m_permissionBox->getComboBox()->setItemText(0, tr("需要审批"));
+    m_permissionBox->getComboBox()->setItemText(1, tr("无需审批"));
 
     m_modelLabel->setText(tr("模型服务"));
     if (m_apiUrlCard)

@@ -199,6 +199,9 @@ private:
     ContextLimitSettingCard* m_contextCard = nullptr;
     FluLabel* m_maxRoundsLabel = nullptr;
     MaxRoundsSettingCard* m_maxRoundsCard = nullptr;
+    // s17.2 权限审批总开关（settings.ini 键 permissionApproval）：下拉两项，与主题/语言盒同款
+    FluLabel* m_permissionLabel = nullptr;
+    FluSettingsSelectBox* m_permissionBox = nullptr;
     FluLabel* m_modelLabel = nullptr;
     ApiUrlSettingCard* m_apiUrlCard = nullptr;
     ApiTokenSettingCard* m_apiTokenCard = nullptr;
