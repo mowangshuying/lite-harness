@@ -23,10 +23,9 @@
 #include <QUuid>
 #include "QOpenAi.h"
 #include "SessionStore.h"
-#include "LitePaths.h"    // 索引根单源：登记/恢复/重命名/删除四处同源，不再钉进程当前目录
+#include "LitePaths.h"    // 存储根单源：会话索引落点 + 旧 index.json 迁移源
 #include <QDir>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QVector>
 #include <QDateTime>
 #include <QEvent>
@@ -216,18 +215,19 @@ void LiteHarness::createSession(const QString &text)
     // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
     sessionPage->setModel(m_newChatPage->currentModel());
     sessionPage->startConversation(text);
-    // 登记 key→页面/数据ID（数据ID 供右键删除/重命名定位 index.json 条目；子项控件→key 于建子项后再登记）
+    // 登记 key→页面/数据ID（数据ID 供右键删除/重命名定位 config.json 的 app/sessions 条目；
+    // 子项控件→key 于建子项后再登记）
     m_registry.insert(key, sessionPage, sessionDataId);
     m_sLayout->addWidget(key, sessionPage);
 
-    // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建/活跃时间，供下次启动恢复定位。
+    // 登记全局会话索引：dataId/标题/模型/工作目录 + 创建时间，供下次启动恢复定位。
     // 紧随 setModel 之后，故 currentModel() 已是本会话最终模型。
-    // 索引根 = 存储根单源（LitePaths::configRoot()，即 <exeDir>/../config）。
+    // 索引落点 = config.json 键 app/sessions（与宿主其它键同文件同口径，见 SessionStore.h）。
     // 改造前此处钉「进程当前目录」，而会话数据钉「m_workDir」——同一个逻辑存储区被两套锚
     // 切开，启动目录一变就索引看得见、数据看不见。现在两处同锚，且与所选工作目录无关：
     // 只有条目「工作目录字段」记所选目录，切换工作目录后旧会话仍可被发现。
     SessionStore::upsertEntry(
-        LitePaths::configRoot(),
+        AppSettings::reader(),
         sessionDataId, title, m_newChatPage->currentModel(), newWorkDir);
 
     auto sessionsItem = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup));
@@ -258,23 +258,33 @@ void LiteHarness::createSession(const QString &text)
 
 void LiteHarness::restoreSessions()
 {
-    const QString root = LitePaths::configRoot(); // 存储根单源，与登记/刷新/删除四处同源
-    const QJsonArray index = SessionStore::loadIndex(root);
+    // 索引读写一律经 AppSettings::reader()：格式（vendor jsonFormat）与键折叠口径是**成对**
+    // 绑死的，本处绝不自拼 QSettings——配错不报错，只会让缓存与直取给出两个不同答案
+    // （SettingsCache.h 不变量④，对表断言见 tst_configmerge）。
+    const SettingsCache::Reader &reader = AppSettings::reader();
+    // 一次性迁移旧存储根下的 index.json → config.json 键 app/sessions。
+    // 必须早于 loadIndex：迁移成功后旧文件即删除，两次启动不会重复搬。
+    SessionStore::migrateLegacyIndex(reader, LitePaths::legacyIndexFilePath());
+
+    const QVariantList index = SessionStore::loadIndex(reader);
     if (index.isEmpty())
         return;
 
-    // 收集并按创建时间升序稳定排序，使恢复后导航顺序与历史创建顺序一致
-    QVector<QJsonObject> entries;
+    // 收集并按创建时间升序稳定排序，使恢复后导航顺序与历史创建顺序一致。
+    // 排序键刻意是 createdMs 而非 lastActiveMs——后者原先每批历史落盘都续活一次，是本次
+    // 索引并入 config.json 唯一的写放大来源（重写整份配置并互相打穿两侧读缓存），
+    // 且全仓无任何读取方，故随本次合并连字段一起删除（理由见 SessionStore.h 顶部）。
+    QVector<QVariantMap> entries;
     entries.reserve(index.size());
-    for (const QJsonValue &v : index)
-        entries.append(v.toObject());
-    std::stable_sort(entries.begin(), entries.end(), [](const QJsonObject &a, const QJsonObject &b) {
-        return a.value(QStringLiteral("createdMs")).toDouble()
-             < b.value(QStringLiteral("createdMs")).toDouble();
+    for (const QVariant &v : index)
+        entries.append(v.toMap());
+    std::stable_sort(entries.begin(), entries.end(), [](const QVariantMap &a, const QVariantMap &b) {
+        return a.value(QStringLiteral("createdMs")).toLongLong()
+             < b.value(QStringLiteral("createdMs")).toLongLong();
     });
 
     auto sessionsItem = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup));
-    for (const QJsonObject &e : std::as_const(entries))
+    for (const QVariantMap &e : std::as_const(entries))
     {
         const QString dataId = e.value(QStringLiteral("dataId")).toString();
         if (dataId.isEmpty())
@@ -444,10 +454,10 @@ void LiteHarness::renameSession(const QString &key)
         if (auto *grp = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup)))
             grp->adjustItemHeight(childItem);
     }
-    // 仅更新索引标题（model/workDir 传空即不覆盖），刷新 lastActiveMs；
-    // 根路径经 LitePaths::configRoot() 单源派生（与登记/恢复/删除四处同源）
+    // 仅更新索引标题（model/workDir 传空即不覆盖）；读写经 AppSettings::reader() 单源
+    // （与登记/恢复/删除四处同源，口径成对绑死，此处不自拼 QSettings）
     SessionStore::upsertEntry(
-        LitePaths::configRoot(),
+        AppSettings::reader(),
         dataId, text, QString(), QString());
 
     // 回填会话页：右侧信息面板的标题单源在 ChatSessionPage，不推这一步即表现为「导航已改、面板仍旧」。
@@ -494,9 +504,9 @@ void LiteHarness::deleteSession(const QString &key)
     // （过滤器表若不清理，已 delete 控件的悬空地址可能被新控件复用导致误命中）
     m_registry.unregister(key);
 
-    // 移出 index.json 条目（根路径经 LitePaths::configRoot() 单源派生）
+    // 移出 config.json 的 app/sessions 条目（读写经 AppSettings::reader() 单源）
     SessionStore::removeEntry(
-        LitePaths::configRoot(), dataId);
+        AppSettings::reader(), dataId);
 
     // 连同磁盘数据目录一并删除。仅对已隔离会话（dataId 非空）执行——未注入 ID 时
     // sessionDataRoot() 回退会话存储区本身（含全部 sessions 与 skills），据此护栏避免误删全局数据。

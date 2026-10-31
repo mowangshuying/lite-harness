@@ -40,7 +40,7 @@ public:
     // 宿主注入初始模型（同步输入区下拉与 AgentLoop；需在 startConversation 前调用使首轮即用该模型）
     void setModel(const QString &model);
     // 宿主回传会话标题（右键重命名 / 启动恢复读 index 条目）：更新本页标题单源并推给右侧信息面板，
-    // 使导航子项、index.json、会话页面板三处同源一致；空串由面板回退占位「新会话」。
+    // 使导航子项、会话索引（config.json 键 app/sessions）、会话页面板三处同源一致；空串由面板回退占位「新会话」。
     void setSessionTitle(const QString &title);
     // 立即滚到底（不节流）：一次性路径专用——用户发送/新气泡、历史回放收尾、回底钮点击，
     // 以及外部宿主调用。同时清除「用户上翻离开」旗并恢复跟随。

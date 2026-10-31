@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引 `<config>/index.json` + 每会话 history 持久化（`<config>` = `<exe 目录>/../config`，全部运行时数据同此一锚）
+- **多会话**：新建 / 重命名 / 删除 / 重启恢复；全局索引在配置文件 `config.json` 的 `app/sessions` 键里（与宿主其它键、FluentUI 键同一个文件），每会话 history 单独落 `sessions/<id>/history.json`（`<config>` = `<exe 目录>/../config`，全部运行时数据同此一锚）
 - **工具主循环（27 工具）**：bash / read_file / write_file / edit_file / glob / todo_write / task / load_skill / compact / 任务图 6 工具（create/update/list/get/claim/complete_task）/ cron 3 工具（schedule_cron / list_crons / cancel_cron）/ Agent 团队 7 工具（spawn_teammate / list_teammates / send_message / request_shutdown / request_plan / review_plan / create_worktree）/ MCP 入口（connect_mcp）/ 编排入口（workflow，s16）
 - **子代理**：`task` 工具派发独立上下文子代理，黑盒回传结果
 - **权限门**：内联审批卡（拒绝为默认焦点），bash 危险命令硬拒绝表 + 工作区外写入 ASK 规则；异步回合（cron / 团队唤醒 / 后台唤醒）fail-closed——不弹卡，直接定值拒绝

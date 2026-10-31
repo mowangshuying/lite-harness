@@ -955,7 +955,7 @@ void ChatSessionPage::setModel(const QString &model)
 }
 
 // 宿主回传会话标题：右侧信息面板是纯视图，其标题唯一来源就是本页 m_sessionTitle，
-// 导航子项改名只动 nav label + index.json，不回填此处即表现为「左边已改、右边仍显旧标题」。
+// 导航子项改名只动 nav label + 会话索引（config.json 键 app/sessions），不回填此处即表现为「左边已改、右边仍显旧标题」。
 // 定值后 maybeCaptureSessionTitle 的「非空即 no-op」顺带保证改名不被后续首条消息派生标题覆盖。
 void ChatSessionPage::setSessionTitle(const QString &title)
 {

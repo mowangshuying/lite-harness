@@ -83,8 +83,10 @@ int tst_litepaths()
     const QString root = QString::fromLatin1(kPkgRoot);
     check(LitePaths::configFilePathFor(root) == root + QStringLiteral("/config.json"),
           "config file lives directly under the storage root");
-    check(LitePaths::indexFilePathFor(root) == root + QStringLiteral("/index.json"),
-          "index lives directly under the storage root (not inside .lite-harness)");
+    // 旧会话索引落点：只剩「一次性迁移的源」这一个用途（索引本体已并入 config.json 的
+    // app/sessions）。此处钉的仍是它的拼法——迁移代码要靠这个串找旧文件，拼错等于静默不迁移。
+    check(LitePaths::legacyIndexFilePathFor(root) == root + QStringLiteral("/index.json"),
+          "legacy index path lives directly under the storage root (not inside .lite-harness)");
     // 空根必须被拦住，而不是拼出 "/config.json" 这种「看起来能用、实际落到驱动器根」的路径。
     // joined() 内是 Q_ASSERT： NDEBUG（Release）下断言被编译掉，故这条形态在此钉**结果**
     // 而非崩溃——空根拼出的串绝不能被当成合法路径静默返回。
@@ -150,14 +152,15 @@ int tst_litepaths()
     // 本身的可执行定义：锚点若再次分叉，这里立刻红。
     check(LitePaths::configFilePathFor(root).startsWith(root + QLatin1Char('/')),
           "config.json is under the storage root");
-    check(LitePaths::indexFilePathFor(root).startsWith(root + QLatin1Char('/')),
-          "index.json is under the storage root");
+    check(LitePaths::legacyIndexFilePathFor(root).startsWith(root + QLatin1Char('/')),
+          "legacy index.json is under the storage root");
     check(store.startsWith(root + QLatin1Char('/')), "store root is under the storage root");
     check(LitePaths::skillsDirFor(root) != LitePaths::sessionsRootFor(root),
           "skills and sessions are distinct siblings");
-    // 索引与会话数据同根，但索引不在 .lite-harness 里（用户裁定的目标布局）。
-    check(!LitePaths::indexFilePathFor(root).startsWith(store + QLatin1Char('/')),
-          "index.json sits at the storage root, not inside .lite-harness");
+    // 旧索引与会话数据同根，但旧索引不在 .lite-harness 里（用户裁定的目标布局；
+    // 现行索引已在 config.json 的 app/sessions，此处只钉迁移源那一格）。
+    check(!LitePaths::legacyIndexFilePathFor(root).startsWith(store + QLatin1Char('/')),
+          "legacy index.json sits at the storage root, not inside .lite-harness");
 
     return TestHarness::failCount() == 0 ? 0 : 1;
 }

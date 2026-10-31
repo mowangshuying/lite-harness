@@ -31,8 +31,8 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
-    // 存储根落地：config.json（宿主键 + FluentUI 键合流）/ index.json / 会话数据 / skills
-    // 同锚 <exe 目录>/../config（单源见 LitePaths.h）。
+    // 存储根落地：config.json（宿主键 + FluentUI 键 + 会话索引 app/sessions 合流一个文件）
+    // / 会话数据 / skills —— 全部同锚 <exe 目录>/../config（单源见 LitePaths.h）。
     // **必须在此处 mkpath，且早于任何配置读写**：打包时 CMake 的 staging 清理会把 config 目录
     // 从产物里剥掉（那是 FluentUI gallery 的同名残留），发布包首次启动根本没有 config/；
     // 而 SettingsCache::Reader 不建目录——QSettings 往不存在的目录写会静默 AccessError，

@@ -6,6 +6,10 @@
 //   defaultWorkDir / sidebarVisible / language / contextCharLimit / maxToolIterations
 // / apiBaseUrl / apiToken / modelOptions / defaultModel / maxRetries / fallbackModelId
 // / goalEvaluatorModelId / stopHookBlockCap / permissionApproval / uiFontScale / windowGeometry
+// / sessions（会话索引，值是 QVariantList of QVariantMap；**读写归 SessionStore.h 不归本头**——
+//   它经 SettingsCache::Reader 单点走同一支 reader()，所以同文件同格式同折叠口径，见该头顶注释。
+//   这里登记它是因为「宿主键一律挂 app/ 组」这条规则对它同样成立，漏登记就会让本清单看起来
+//   是完整的键空间地图，而下一个加键的人会以为顶层才是 sessions 的位置）
 // 分组是合流的硬要求：同一个文件里 FluentUI 自己写 `config/*` 与 `translation/*`，宿主键若仍
 // 平铺在顶层就会与它们抢顶层命名空间（`language` 首当其冲）。收进 `app/` 后两个 owner 各占
 // 一个子对象，互不可见。

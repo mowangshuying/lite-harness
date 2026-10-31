@@ -27,7 +27,8 @@ public:
     void onThemeChanged();
 private:
     void createSession(const QString &text);
-    // 启动恢复：从 index.json 读取历史会话，按创建时间升序重建会话页/导航项/堆叠布局，
+    // 启动恢复：先把旧 <config>/index.json 一次性搬进 config.json 键 app/sessions，再从该键读取
+    // 历史会话，按创建时间升序重建会话页/导航项/堆叠布局，
     // 不切换当前页（保持停留在 NewChatPage）
     void restoreSessions();
 

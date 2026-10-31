@@ -74,7 +74,7 @@ public:
     // 须在首次落盘前设置；正常会话经 ChatSessionPage 构造注入。
     void setSessionDataId(const QString &id);
     // 会话数据目录短 ID（构造注入或 setSessionDataId 设置；空=未隔离）。供上层按 dataId
-    // 定位/清理 index.json 条目与会话数据根。
+    // 定位/清理会话索引条目（config.json 键 app/sessions）与会话数据根。
     QString sessionDataId() const;
     // 会话数据根：有 ID → <m_workDir>/.lite-harness/sessions/<id>，无 ID → <m_workDir>/.lite-harness（回退）。
     // 供 CompactManager/MemoryManager/CronSchedulerManager/TaskStore 注入回调使用；
@@ -507,7 +507,8 @@ private:
     void setRunning(bool running);
 
     // 将 m_messages（除 [0] 系统消息）落盘到会话数据根/history.json；无 ID 或历史为空则 no-op。
-    // 顺带在索引已登记该会话时刷新 lastActiveMs（不新建条目，登记由 LiteHarness 负责）
+    // **不碰会话索引**（索引已并入 config.json 键 app/sessions；原先这里刷一次 lastActiveMs 续活，
+    // 该字段与续活链已随合并一并删除，判据见 AgentLoopHistory.cpp 末尾注释）；条目登记归 LiteHarness
     void persistHistory();
 
     // ---- 定时任务（lcc s12 cron 三件套 handler，mainToolHandlers 表路由；改台账+落盘故非 const；

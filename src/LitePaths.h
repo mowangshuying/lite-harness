@@ -9,10 +9,10 @@
 //
 //   <exe 目录>/../config            ← 唯一存储根（configRoot）
 //   ├── config.json                 唯一配置文件（自定义 json 格式，单源 FluConfigStore::jsonFormat）
-//   │                                 · app/*      宿主键（AppSettings 统一加组前缀，见该头）
-//   │                                 · config/*   FluentUI 自有键（主题/导航/语言镜像）
+//   │                                 · app/*        宿主键（AppSettings 统一加组前缀，见该头）
+//   │                                 · app/sessions 会话索引（原 index.json，见 SessionStore.h）
+//   │                                 · config/*     FluentUI 自有键（主题/导航/语言镜像）
 //   │                                 · translation/* FluentUI 翻译语言
-//   ├── index.json                  会话索引
 //   └── .lite-harness/              会话存储区
 //
 // 配置文件从「settings.ini + config.ini 两份 Ini」合流为「config.json 一份 Json」的判据：
@@ -79,7 +79,11 @@ public:
     {
         return joined(root, configFileName() + QStringLiteral(".json"));
     }
-    static QString indexFilePathFor(const QString &root)
+    // 旧会话索引落点：**只作一次性迁移的源**，不再有任何读写走这里（索引已并入 config.json
+    // 的 app/sessions，见 SessionStore.h）。保留这一个派生函数的唯一理由是迁移必须知道旧文件名，
+    // 而文件名散在调用点就等于开出第二个存储根锚点。名字里的 legacy 是刻意的：它让「新代码
+    // 误当现行落点用」在评审时一眼可见——现行落点是 configFilePath() + 键 app/sessions。
+    static QString legacyIndexFilePathFor(const QString &root)
     {
         return joined(root, QStringLiteral("index.json"));
     }
@@ -110,7 +114,7 @@ public:
 
     // ---- 无参便捷口（生产调用点用这一组）----
     static QString configFilePath() { return configFilePathFor(configRoot()); }
-    static QString indexFilePath() { return indexFilePathFor(configRoot()); }
+    static QString legacyIndexFilePath() { return legacyIndexFilePathFor(configRoot()); }
     static QString storeRoot() { return storeRootFor(configRoot()); }
     static QString sessionsRoot() { return sessionsRootFor(configRoot()); }
     static QString skillsDir() { return skillsDirFor(configRoot()); }

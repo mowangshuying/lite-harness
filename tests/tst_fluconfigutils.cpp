@@ -153,6 +153,9 @@ int groupRebuild(FluConfigUtils* utils, const QString& jsonDir, const QString& j
     int failed = 0;
     QSettings* before = utils->getSettings();
     CHECK(before != nullptr);
+    // 重建前先把旧对象的落点抄成字符串：换定位之后 before 已悬垂，任何解引用都是 UB，
+    // 而「新旧指针不相等」本来就不是可靠判据（见下面那条断言的注释）。
+    const QString beforeFileName = before->fileName();
 
     // 同值重复注入：必须原地不动，否则交出去的裸指针会被 free 掉
     FluConfigUtils::configure(jsonDir, QStringLiteral("ui-config"), FluConfigFormat::Json);
@@ -163,7 +166,12 @@ int groupRebuild(FluConfigUtils* utils, const QString& jsonDir, const QString& j
     FluConfigUtils::configure(iniDir, QStringLiteral("ui-config"), FluConfigFormat::Ini);
     const QString iniPath = FluConfigUtils::configFilePath();
     CHECK(iniPath == QDir(iniDir).filePath(QStringLiteral("ui-config.ini")));
-    CHECK(utils->getSettings() != before);
+    // 「换定位 = 换后端」这条**不能**用 `getSettings() != before` 判：rebuildSettings 是
+    // `sync(); delete m_settings; m_settings = createSettings(...)`，同尺寸对象 delete 后 new，
+    // 分配器把刚释放的地址原样还回来是**合法行为**，于是这条会在链接布局/堆历史变化时随机假红
+    // （本仓实测约 1/10 跑）。可证伪的判据是「后端绑定的文件换了」——旧对象绑 json、新对象绑 ini，
+    // 两个串必然不同，与分配器无关。同值不重建那一侧仍用指针等号（那里没有 delete/new）。
+    CHECK(utils->getSettings()->fileName() != beforeFileName);
     CHECK(utils->getSettings()->fileName() == iniPath);
 
     // 换定位等于换文件：旧值留在原处、不迁移过来，所以这里读到的是回落值

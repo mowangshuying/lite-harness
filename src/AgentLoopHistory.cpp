@@ -1,12 +1,10 @@
-// 会话历史持久化：history.json 落盘（含索引 lastActiveMs 续活）与磁盘恢复
-// （保留 [0] system、回填孤儿 tool_call 占位、恢复模型）。
+// 会话历史持久化：history.json 落盘与磁盘恢复（保留 [0] system、回填孤儿 tool_call 占位、恢复模型）。
+// 本函数**不再**碰会话索引——索引已并入 config.json，续活链随 lastActiveMs 一并删除（理由见末尾注释）。
 
 #include "AgentLoop.h"
 #include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
-#include "SessionStore.h"
-#include "LitePaths.h" // 索引根单源，与 LiteHarness 登记/恢复/重命名/删除四处同源
 
 #include <QJsonDocument>
 #include <QDir>
@@ -18,8 +16,8 @@
 #include <QJsonArray>
 
 // 会话历史落盘（按会话隔离，路径派生自 sessionDataRoot）：仅写纯 wire 消息（除 [0] 系统消息），
-// 展示层元数据不入库。落盘后顺带刷新索引 lastActiveMs——但只在该会话已在 index.json 登记时更新，
-// 不新建条目（条目登记由 LiteHarness::createSession 负责，此处仅续活）
+// 展示层元数据不入库。落盘后**不再**触碰会话索引——原先这里刷一次 lastActiveMs 续活，
+// 索引并入 config.json 后该字段连同续活链一并删除（判据见本函数末尾注释）。
 void AgentLoop::persistHistory()
 {
     // 回退路径（无 ID）与空历史：不落盘，避免污染全局 .lite-harness 目录
@@ -53,12 +51,14 @@ void AgentLoop::persistHistory()
         return;
     }
 
-    // 索引仅刷新已存在条目的 lastActiveMs（未登记则跳过，语义与 upsert 的"只更新不新建"分支一致）。
-    // 索引根 = 存储根单源（LitePaths::configRoot()），与 LiteHarness 的登记/恢复/删除四处同源：
-    // workDir 只是条目字段，用它派生会在「发起页选了自定义工作目录」的会话上读到不存在的
-    // index.json，found 恒 false 令续活静默失效。改造前本处钉进程 CWD、会话数据钉 m_workDir，
-    // 同一个存储区被两套锚切开——此处正是分裂点。遍历+回写已下沉 SessionStore::touchEntry。
-    SessionStore::touchEntry(LitePaths::configRoot(), m_sessionDataId);
+    // 此处**不再**续活会话索引（原 SessionStore::touchEntry 已随索引并入 config.json 一并删除）。
+    // 理由：索引现在住在 config.json 的 app/sessions 里，「每批落盘刷一次 lastActiveMs」等于
+    // **每回合重写整份配置**（含 apiToken 与 FluentUI 全部键），且文件身份一变就把宿主侧
+    // SettingsCache 与 FluentUI 两侧的读缓存互相打穿——正是 §9.10 问题② 花力气修掉的那格。
+    // 而全仓检索实证：lastActiveMs **没有任何读取方**（启动恢复排序用 createdMs，
+    // 见 LiteHarness::restoreSessions），所以删的是字段本身而非降频——留着它只会被下一个人
+    // 重新接上续活链。将来若真要做「按最近使用排序」，正确信号是这里刚写的 history.json 的
+    // mtime（它本来就是每回合被写的文件，读它不需要额外写配置）。
 }
 
 // 从磁盘恢复历史到 m_messages：保留 [0] 系统消息，追加落盘消息，恢复模型。

@@ -1,4 +1,4 @@
-// 测试入口：逐个调用套件，汇总计数，失败以非零退出码交给 ctest 判定。
+﻿// 测试入口：逐个调用套件，汇总计数，失败以非零退出码交给 ctest 判定。
 // 新增套件只需在此加一行调用（套件实现见 tests/tst_<模块>.cpp）。
 //
 // 假绿门禁（本轮新增）：套件的诚实跳过通道是 TestHarness::skip + return 0——它既不计
@@ -33,6 +33,7 @@ int tst_fluconfigutils();     // FluentUI 配置门面（FluConfigUtils）：con
 int tst_litepaths();          // 运行时路径锚点单源（LitePaths.h）：存储根反推/中间层只一次/空 ID 回退，零夹具恒跑
 int tst_pathguard();          // 沙箱围栏多根判定（AgentPathGuard.h）：边界/大小写/fail-closed，零夹具恒跑
 int tst_configmerge();        // 配置合流不变量（P2）：两侧同路径同格式、合写不互覆、json 大小写口径，判据组恒跑 + 落盘组夹具门控
+int tst_sessionstore();       // 会话索引并入 config.json（app/sessions）：读写换轨、不抹别人键、坏形态降级、旧 index.json 迁移四分支
 
 int main()
 {
@@ -59,6 +60,7 @@ int main()
     failed += tst_litepaths();
     failed += tst_pathguard();
     failed += tst_configmerge();
+    failed += tst_sessionstore();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

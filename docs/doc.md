@@ -165,7 +165,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `TaskStore` | 任务图文件存储：一任务一 `.task/task_<hex8>.json`，每操作直读盘；6 个 `run_*` 纯文本进出；**s13 租约扩展**：租约版 `claimTask` 六门（任务可读 / pending 且无主 / 该 owner 无内存租约 / 磁盘无该 owner 的 in_progress / blockedBy 全 completed / cwd 可解）；`completeTask` 完成后**故意不退租**（同回合后续工具仍需租约 cwd），释放只在两个回合边界 API（`releaseCompletedAssignment` / `releaseTeammateAssignment`，后者无条件清内存租约+触发 released 回调）；换工版本只在 claim 递增、释放不推；`assignmentCwd` 三分支热路径（无租约 Lead 键回落 / 无租约队友 fail-closed / 有租约读盘校验+自愈回写不推版本）；`scanUnclaimedTasks` 纯侦察；承重跨模块契约 claim 成功文案 `Claimed ` 前缀；租约台账纯内存 D7 重启作废；遗留非租约路径 `claimTaskUnleased`/`completeTaskUnleased` 逐字保留 | `AgentConstants` |
 | `CronSchedulerManager` | 定时任务台账：cron 校验/匹配、到期队列、`scheduled_tasks.json` 持久化、两段式 at-least-once 交付；`QTimer` 1s 轮询不建线程；**s17 P1**：`ledgerSnapshot()` 台账快照经宿主 tick 边沿广播侧栏「定时任务」节，判据入 `tst_cronmanager`（本 TU 已入测试目标表） | 仅 QtCore |
 | `BackgroundTasksManager` | 后台 bash 任务台账：登记 / 存结果 / 渲染 `<task_notification>`，进程由宿主驱动；**s15**：`hasPending()`（只查不清）作 AgentLoop tick 第 4 事件源；通知模板 `<summary>`[:200]（原 `<result>`[:500]）；成功占位逐字 "[Background task %1 started] Result will arrive as a task_notification."、start 失败串 "Error: Failed to start background task: %1" | **s17 P1**：`ledgerSnapshot()` 台账快照（在跑+待收割，收割即离账）经宿主 tick 边沿广播侧栏「后台任务」节 | `ToolNames` |
-| `SessionStore` | 全局索引 `<config>/index.json` 读写 + 条目 upsert（`QSaveFile` 原子写）；**根一律外部经 `LitePaths::indexFilePath()` 取得后传入**（本头原有的 `rootDirFor(workDir)` 已删除——它把索引钉在「进程当前目录」上，与钉 `m_workDir` 的 `sessionDataRoot()` 分叉成两个根，表现为「索引看得见、数据找不到」）；纯静态 header-only（无 `.cpp`，方法全在类内定义即隐式 inline） | 仅 QtCore |
+| `SessionStore` | 全局会话索引，**已并入配置文件**：落 `<config>/config.json` 的宿主键 `app/sessions`（盘上形态 `{"app":{"sessions":[{…}]}}`），条目 dataId/title/model/workDir/createdMs；读写**只经 `SettingsCache::Reader`**（生产传 `AppSettings::reader()`，测试注入自建 Reader），**严禁裸 `QSaveFile` 整文件重写**——同一文件还有宿主键与 FluentUI 键两个 owner，裸写会把对方刚落的键一起覆盖（QSettings 之间的合并保证只对 QSettings 实例存在）；`migrateLegacyIndex()` 一次性搬旧 `<config>/index.json`（目标键已是列表则只删残留、绝不回写；旧文件解析不出数组则保留待人工处理；写成功且回读条数一致才删）；`lastActiveMs` 字段与 `touchEntry()` 已删（全仓无读取方，且它是唯一的高频整表重写来源，续活链改由 history.json mtime 承担）；纯静态 header-only（无 `.cpp`） | 仅 QtCore |
 | `MessageBus` | s13 团队邮箱内核（lcc s13 34775c8 message_bus.py）：`<会话根>/.mailboxes/<name>.jsonl` 一代理一邮箱，append 写+**破坏性读**（读走即删）= at-most-once，无游标无 ack；三重 fail-closed 路径门（收件名 `^[A-Za-z0-9_-]{1,64}$` / 邮箱目录会聚 sessionRoot / 解析后路径仍在目录内）；信封 6 字段，type 9 种由调用方给定不校验；M8 drain 删除失败→**失败即空批**+lastError（宿主下一 tick 重试）；坏行跳过（D9-defensive 偏离 lcc raise） | 仅 QtCore |
 | `WorktreeManager` | s13 git worktree 隔离内核：落 `<会话根>/.worktrees/<name>`、分支 `wt/<name>`；create 十门 / remove 五门（`discardChanges` 只豁免 porcelain 门并加 `--force`，余四门绝对）；**铁律：git 失败绝不自动清理、remove 成功也永不删分支**；`removeWorktree` **刻意不是工具**（不进 ToolNames.h，仅宿主关停/手工，防模型误删）；create 返回折叠文本（`Error:`/`Partial operation:`/`Partial success:`）、remove bool+*error；`resolveWorktreeCwd` 是 `TaskStore::setCwdResolver` 注入目标 | 仅 QtCore |
 | `AgentTeamsManager` | s13 团队协议内核：Lead 7 工具内核（`runSpawnTeammate`…`runCreateWorktree`）+ 队友侧 `sendTeammateMessage`（收件恒 lead）/ `claimNextTask` / `runTeammateTool`（工具总闸：plan 门只拦 bash/write_file/edit_file，read/glob 恒放行）；五本账**全内存态**（队友台账 / planGates / 在评审请求 / 协议待决 / 运行时句柄，D7 重启作废；句柄持 `TeammateRuntime*` 偏离 lcc 线程句柄）；协议门 submit_plan 一案一批、`applyPlanResponse` 11 项合取、`applyShutdownRequest` 8 项——**门翻转只发生在队友侧**（Lead `runReviewPlan` 不触 planGates）；`consumeLeadInbox` 返回原始批（回执不吞）、`formatTeamEvents` 静态 `[Team events]…` 文本（空批回空串，偏G 优于 lcc）；注入点 `setTeammateLauncher`（create-then-deferred-start 契约、nullptr=回滚 fail-closed）/ `setWorktreeCreator` / `setPermissionCheck` / `setHooksTrigger` / `setToolAdapter`×5 | QtCore + MessageBus/WorktreeManager/TaskStore |
@@ -182,7 +182,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentConstants.h` | 模型清单（config.json `modelOptions` 逗号分隔 + `defaultModel` 缺省项，未配置回落内置 `kBuiltinModelOptions`；读值经头内 `textValue()` 归一化「列表」形态——ini 后端裸逗号串落成 `QStringList`、json 后端数组落成 `QVariantList`，两者裸 `.toString()` 都得空串）、**权限审批总开关**（config.json 键 `permissionApproval`，`kPermissionApprovalKey` + `permissionApprovalEnabled()`，缺省/读不出回退 true=多问一次的 fail-safe 方向；消费方两处同源：`AgentLoopHooks.cpp` permission 钩子与 `AgentLoopTeam.cpp` 队友 permissionCheck 注入）、`kMaxTokens` 与 s15 恢复常量（`kEscalatedMaxTokens=16000`/`kMaxConsecutive529=2`/`kMaxRecoveryRetries=2`）、`fallbackModelIdValue()`（读 config.json `fallbackModelId`，空=禁用换模仅退避）、bash 超时与错误文案、输出截断、上下文上限默认/校验界、glob 上限、**中间目录名**（`.task`/`.temp`/`.transcripts`/`.memory`/`.mailboxes`/`.worktrees`/`.workflows`（s16 编排台账），`AgentConstants.h:278-286`，拼法涉数据兼容不可改）、**token 口径**（`estimateTokens` 字符→token 折算基准 `kCharsPerTokenBudget=4`、全局预算 `contextTokenBudget()`、上下文上限 `contextCharLimitValue()`） |
 | `ToolNames.h` | 27 个工具名（18 基础：bash/read_file/write_file/edit_file/glob/todo_write/task/load_skill/compact/create_task/update_task/list_tasks/get_task/claim_task/complete_task/schedule_cron/list_crons/cancel_cron + 7 团队：spawn_teammate/list_teammates/send_message/request_shutdown/request_plan/review_plan/create_worktree + 1 MCP 入口：connect_mcp + 1 编排入口：workflow（s16，Lead 独占））；`submit_plan` 为队友专属名——单源在引擎匿名 ns+宿主队友 schema 字面量，**刻意不入本表**；另含 `MCP_PREFIX`（`mcp__` 前缀常量，供权限钩子识别命名域，非工具名）；动态 `mcp__{server}__{tool}` 工具不入本表、由 `McpManager::assemble` 每轮追加；队友侧 send_message/list_tasks/claim_task/complete_task 复用基础名 |
 | `LayoutConstants.h` | 聊天栏宽 800 / 边距 35 / 气泡系数 0.75 / 侧栏宽 280 |
-| `AppSettings.h` | 配置存储门面：一律 `LitePaths::configFilePath()` = **`<exe 目录>/../config/config.json`**（弃用注册表；改造前钉 `applicationDirPath()/settings.ini` 即 exe **同**目录，现与索引/会话数据同根，一个存储区一个锚。`filePath()` 是本头最后的字符串单源，路径本身不再自算）。**与 FluentUI 配置合流成同一个文件**：`App.cpp` 恒注入 `FluConfigUtils::configure(LitePaths::configRoot(), LitePaths::configFileName(), FluConfigFormat::Json)`，原 `fluConfigDir`/`fluConfigFile`/`fluConfigFormat` 三键**已删除**——它们定位的正是本文件自身，读键得先知道文件在哪，成了自指，且落点已由 `LitePaths` 钉死成单源。宿主键一律挂 `app/` 组（`scopedKey()` 单点拼前缀，键清单见 `AppSettings.h:5-9`：`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`/`fallbackModelId`/`permissionApproval`/`goalEvaluatorModelId`/`stopHookBlockCap`/`uiFontScale`/`windowGeometry`），与 FluentUI 自有的 `config/*`、`translation/*` 各占一个子对象、互不可见。**格式与折叠口径成对交出**：`fileFormat()` 取 vendor 的 `FluConfigStore::jsonFormat()`（宿主不自注册同名格式），`keyCaseSensitivity()` 返 `Qt::CaseSensitive` 与之配对——vendor 的 json 后端本就注册为大小写敏感，宿主无权为迁就自己的缓存去改第三方库的语义。**只剩路径单源 + 两个转发**：`value()`/`setValue()` 一律转给 `SettingsCache::Reader`；原 `ini()`（按值返回新鲜 QSettings 供各处自取）**已摘除**——它让「每次调用现构造一个」看起来是正当用法，即问题②的复发通道 |
+| `AppSettings.h` | 配置存储门面：一律 `LitePaths::configFilePath()` = **`<exe 目录>/../config/config.json`**（弃用注册表；改造前钉 `applicationDirPath()/settings.ini` 即 exe **同**目录，现与索引/会话数据同根，一个存储区一个锚。`filePath()` 是本头最后的字符串单源，路径本身不再自算）。**与 FluentUI 配置合流成同一个文件**：`App.cpp` 恒注入 `FluConfigUtils::configure(LitePaths::configRoot(), LitePaths::configFileName(), FluConfigFormat::Json)`，原 `fluConfigDir`/`fluConfigFile`/`fluConfigFormat` 三键**已删除**——它们定位的正是本文件自身，读键得先知道文件在哪，成了自指，且落点已由 `LitePaths` 钉死成单源。宿主键一律挂 `app/` 组（`scopedKey()` 单点拼前缀，键清单见 `AppSettings.h:5-9`：`defaultWorkDir`/`sidebarVisible`/`language`/`contextCharLimit`/`maxToolIterations`/`apiBaseUrl`/`apiToken`/`modelOptions`/`defaultModel`/`maxRetries`/`fallbackModelId`/`permissionApproval`/`goalEvaluatorModelId`/`stopHookBlockCap`/`uiFontScale`/`windowGeometry`/**`sessions`**（会话索引，值 = `QVariantList of QVariantMap`；**读写归 `SessionStore.h` 不归本头**，但它经同一支 `reader()` 走同一格式同口径，所以登记进这份键清单——漏登记会让清单看起来就是键空间地图，下一个加键的人会以为顶层才是 `sessions` 的位置）），与 FluentUI 自有的 `config/*`、`translation/*` 各占一个子对象、互不可见。**格式与折叠口径成对交出**：`fileFormat()` 取 vendor 的 `FluConfigStore::jsonFormat()`（宿主不自注册同名格式），`keyCaseSensitivity()` 返 `Qt::CaseSensitive` 与之配对——vendor 的 json 后端本就注册为大小写敏感，宿主无权为迁就自己的缓存去改第三方库的语义。**只剩路径单源 + 两个转发**：`value()`/`setValue()` 一律转给 `SettingsCache::Reader`；原 `ini()`（按值返回新鲜 QSettings 供各处自取）**已摘除**——它让「每次调用现构造一个」看起来是正当用法，即问题②的复发通道 |
 | `ToolTagKind.h` | 工具名 → 语义类别（read/search/plan/delegate/run/write/other）→ QSS `toolTagKind` 动态属性 |
 | `I18n.h` | 中英文切换：源文中文 + Linguist + **重启生效**（`exit(931)` 自重启） |
 | `ThemeAware.h` | 「加载 QSS + 订阅 themeChanged + 重载」样板单源 `bind(qss, widget, extraRefresh)` |
@@ -215,7 +215,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `AgentLoopBash.cpp` | 177 | bash 异步执行链与后台任务结果收割；**s15** bg 的 PostToolUse 时点由派发搬至 `QProcess::finished` 回调、以真实终态 output 触发（按值捕获 toolCall 零台账改动；FailedToStart 不触发=偏差登记） | `executeBashAsync`、`injectBackgroundResults` |
 | `AgentLoopPermission.cpp` | 162 | 权限门：硬拒绝黑名单、破坏性命令升级判定、ASK 规则、用户裁决续跑 | `checkDenyList`、`checkPermissionRules`、`resolvePermission`、`AgentLoopDetail::bashDenyList` 定义 |
 | `AgentLoopHooks.cpp` | 206 | 生命周期钩子注册表：注册顺序即执行顺序，四个 trigger（UserPromptSubmit/PreToolUse/PostToolUse/Stop）**首个非空返回短路**；**s15** ASK 门与 `mcp__` 策略门在异步回合（`m_asyncTurn`）改返 `RecoveryRules::asyncApprovalDenied()` 定值拒串（fail-closed 不弹卡，deny 表与 granted 短路顺序不动）；**s16** workflow 三态策略门位 `mcp__` 门后（deny→定值 "Permission denied by host policy" 硬拒 / confirm→ASK 卡且异步回合复用 asyncApprovalDenied / allow 放行；未登记名与空名 fail-closed 归 confirm）；**s17.2** 审批总开关 `AgentConst::permissionApprovalEnabled()`（config.json 键 `permissionApproval`，每次工具调用现取）为 false 时三道询问门（ASK 规则 / `mcp__` confirm / workflow confirm）整体跳过、异步 fail-closed 随之不可达，而 bash deny 表与 workflow 的 deny 定值硬拒**不受开关影响**（撤「问不问」非「许不许」） | `registerBuiltinHooks`（内置：`context_inject` / `permission` / `log_before` / `log_after`）、四个 `trigger*Hooks` |
-| `AgentLoopHistory.cpp` | 163 | `history.json` 落盘（含索引 `lastActiveMs` 续活）与磁盘恢复；条目登记归 `LiteHarness::createSession` | `persistHistory`、`loadSavedHistory` |
+| `AgentLoopHistory.cpp` | 163 | `history.json` 落盘与磁盘恢复；**不再碰会话索引**（原 `lastActiveMs` 续活链已随索引并入 config.json 一并删除，理由见本 TU 末尾注释）；条目登记归 `LiteHarness::createSession` | `persistHistory`、`loadSavedHistory` |
 | `AgentLoopSkills.cpp` | 196 | 技能扫描与 `load_skill`；技能目录**全局共享一套** `<config>/.lite-harness/skills`（路径单源 `LitePaths::skillsDir()`；用户裁决：不再按 workDir 隔离，跨会话、跨项目、跨队友 worktree 同一份）| `scanSkills`、`skillsCatalog`、`runLoadSkill` |
 | `AgentLoopTodo.cpp` | 169 | `todo_write`（无状态：只校验入参并渲染面板文本，成功即以本次快照发 `todoUpdated`）；校验+快照归一抽为 `normalizeTodoSnapshot` 静态单源，**历史回放共用**（s17 缺陷修复：回会话重建侧栏任务清单与快照卡，禁回放侧另写口径） | `renderTodos`、`normalizeTodoSnapshot`、`runTodoWrite` |
 | `AgentLoopSubAgent.cpp` | 80 | `task` 子代理的启动与统一收口（子代理信号直连转发为主循环信号） | `startSubAgentTask`、`cancelSubAgent` |
@@ -408,17 +408,17 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 不是用户主目录，也**不再随会话工作目录散落**。发布包布局本就是 `<pkg>/bin` + `<pkg>/config`、开发态是 `build/bin` + `build/config`，
 两处都已在盘上存在，故本次收敛零新增形态。
 
-> **改造前**同一个逻辑存储区被三套锚切开：settings.ini 钉 `applicationDirPath()`、index.json 钉**进程 CWD**
+> **改造前**同一个逻辑存储区被三套锚切开：settings.ini 钉 `applicationDirPath()`、会话索引 index.json 钉**进程 CWD**
 > （`SessionStore::rootDirFor(QDir::currentPath())`）、会话数据与 skills 钉 `m_workDir`、FluentUI 配置另走
-> CWD 相对的 `../config`。启动目录一变就出现「索引看得见、数据找不到」。现全部走 `LitePaths` 一个锚。
+> CWD 相对的 `../config`。启动目录一变就出现「索引看得见、数据找不到」。现全部走 `LitePaths` 一个锚，
+> 且索引本身也并进了 `config.json`（键 `app/sessions`，存储根本级只剩一份 json）。
 > **旧数据不迁移**（用户裁决）：升级后旧 `<workDir>/.lite-harness/` 与旧 exe 同目录 `settings.ini` 成为孤儿，
 > 表现为「历史列表为空」，属预期而非故障。
 
 ```
 <exe 目录>/../config/                     ← 唯一存储根（LitePaths::configRoot()）
-├── config.json                           ← 用户配置（宿主键挂 `app/` 组）与 FluentUI 配置（`config/*`、`translation/*`）**合流同一个文件**
+├── config.json                           ← 用户配置（宿主键挂 `app/` 组，**会话索引即其中的 `app/sessions` 键**）与 FluentUI 配置（`config/*`、`translation/*`）**合流同一个文件**
 │                                           （路径单源 `LitePaths::configFilePath()`；格式 Json、键名**大小写敏感**，判据见 `tests/tst_configmerge.cpp`）
-├── index.json                            ← 会话索引（SessionStore，QSaveFile 原子写；LitePaths::indexFilePath()）
 └── .lite-harness/                        ← 会话存储区（LitePaths::storeRoot()）
     ├── skills/<name>/SKILL.md            ← 技能，**全局共享一套**（跨会话、跨 workDir；LitePaths::skillsDir()）
     └── sessions/<dataId>/                ← 会话数据根 = LitePaths::sessionDataRoot(dataId) = AgentLoop::sessionDataRoot()
@@ -546,9 +546,10 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      两引擎判据；s17 宿主接线（评估器异步往返、代际守卫与单飞锁存、Block 回灌续跑、cancelActiveGoal 收口、
      `/goal` 零模型早退分流）与真 LLM 评估环同属本区——直测仅覆盖 `GoalRules.h` 纯头与 `GoalManager`
      引擎判据（`tst_goalmanager`）。
-   下一批最小切口（零改动或极小搬移即可入表）：`CronSchedulerManager::validateCron`/`cronMatches`
-   （已是 static）/ `BashRunner::dangerWarning`（安全关键却 0 直测）/ `AgentPathGuard` 三个 inline /
-   `SessionStore` 六个 static / `AgentConst::estimateTokens` / `AgentLoopDetail::toolSummary`
+   下一批最小切口（零改动或极小搬移即可入表；原列的 `CronSchedulerManager::validateCron`/`cronMatches`
+   已兑现为 `tst_cronmanager`、`AgentPathGuard` 三个 inline 已兑现为 `tst_pathguard`、
+   `SessionStore` 的静态方法已兑现为 `tst_sessionstore`）：`BashRunner::dangerWarning`（安全关键却 0 直测）/
+   `AgentConst::estimateTokens` / `AgentLoopDetail::toolSummary`
     /`parseToolCall`/`isToolFailure`（困在带 moc 的 TU，需仿 `LineEnding.h` 抽纯头；s15 注：失败文案族本身
     已有直测——`tst_agentrecovery` 契约串逐字、`tst_backgroundtasks` collect 模板与 "Error:" 前缀文案，函数本体仍 0 直测）/ frontmatter 解析。
     **夹具前置是硬要求**：四个依赖夹具的套件（MessageBus / TaskStore 租约 / Worktree / AgentTeams）依赖 `LITE_TEST_TMPROOT`（值须以 `tmp-test` 结尾），缺失即整组
@@ -603,11 +604,11 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ### 二、P0 会话生命周期
 
 - [ ] 新建对话页发起 → 导航「会话」下新增子项并进入对应会话页；标题为空显示「新会话」，超 12 字符截断加「...」
-- [ ] 检查 `<进程当前目录>/.lite-harness/index.json` → 条目含 dataId/title/model/workDir/时间戳；QSaveFile 原子写（异常退出不留半文件）。注意：索引根固定为进程当前目录，`workDir` 只是条目字段
+- [ ] 检查 `<config>/config.json` 的 `app/sessions` 键 → 数组，条目含 dataId/title/model/workDir/createdMs；写盘经 QSettings（`syncConfFile` 内 `QSaveFile`+`commit`，异常退出不留半文件）。注意：`workDir` 只是条目字段，索引落点与所选工作目录无关
 - [ ] 会话内发若干消息 → `<会话数据根>/.lite-harness/sessions/<dataId>/history.json` 存在且与可见消息一致（dataId 为 8 位 hex）
 - [ ] 重启程序 → 会话按 createdMs 升序恢复、历史气泡回放完整；恢复不自动切换当前页（仍停在新对话页）；workDir 失效时静默回退进程当前目录
 - [ ] 右键会话导航子项 → 仅弹「重命名 / 删除会话」菜单；单击子项不因基类 itemClicked 误翻页（eventFilter 吞 press/release）
-- [ ] 重命名：输入新名确认 → 导航与索引标题同步、刷新 lastActiveMs；取消/空/未变 → 保持原值
+- [ ] 重命名：输入新名确认 → 导航与索引标题同步（索引不再刷 `lastActiveMs`，该字段已删）；取消/空/未变 → 保持原值
 - [ ] 删除：弹「此操作不可撤销」确认 → 确认后页面销毁、索引条目移除、`sessions/<id>/` 整目录递归清理；删的若是当前页则切回新对话页；运行中会话先 `stop()` 再删；数据清理失败仅 qWarning、UI 状态照常收清
 - [ ] 有会话运行中点窗口关闭 → 弹「任务仍在运行，退出将丢失未完成回合。确定退出吗？」且默认焦点「否」；选「否」→ 不退出、任务继续；选「是」→ 逐页 `stop()` 后退出
 
