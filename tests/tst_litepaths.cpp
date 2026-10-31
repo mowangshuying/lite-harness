@@ -29,8 +29,8 @@ using TestHarness::check; // 本套件断言密度高，逐条写 TestHarness:: 
 // 固定桩：发布包与开发态两种 exe 形态。真值取自 CMakeLists 的产物布局
 // （发布包 <pkg>/bin/lite-harness.exe + <pkg>/config；开发态 build/bin + build/config），
 // 两处都满足「存储根 = exe 目录的上一级里的 config」。
-const char *kPkgExeDir = "D:/lite-harness-s17.2-win64/bin";
-const char *kPkgRoot = "D:/lite-harness-s17.2-win64/config";
+const char *kPkgExeDir = "D:/lite-harness-s17.3-win64/bin";
+const char *kPkgRoot = "D:/lite-harness-s17.3-win64/config";
 const char *kDevExeDir = "D:/WsyWorkSpaces/github/lite-harness/build/bin";
 const char *kDevRoot = "D:/WsyWorkSpaces/github/lite-harness/build/config";
 
@@ -58,7 +58,7 @@ int tst_litepaths()
     // 不归一就会让同一个目录派生出多个字符串根。
     //
     // 基准取「同一逻辑目录的朴素写法」的派生值，而不是上面那个发布包样例根：两者是**不同目录**
-    // （D:/pkg vs D:/lite-harness-s17.2-win64），拿样例根当基准会恒假——第一版就栽在这里，
+    // （D:/pkg vs D:/lite-harness-s17.3-win64），拿样例根当基准会恒假——第一版就栽在这里，
     // 三条归一化断言全红而实现无错。判据是「三种写法彼此相等」，基准必须由其中最朴素的一种现推。
     //
     // 反斜杠→正斜杠的转换来自 QDir::cleanPath 的 Windows 段归一（QDir::separator()=='/'），
