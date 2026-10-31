@@ -20,7 +20,7 @@
 namespace {
 
 // 子代理轮次预算：每次发起请求消耗一轮（lcc 9165f8f 后子代理不再触发 Stop，见最终回答分支）。
-// 用户裁决改与主循环一致：上限取 maxToolIterationsValue()（settings.ini 可设置，默认 500），
+// 用户裁决改与主循环一致：上限取 maxToolIterationsValue()（config.json 可设置，默认 500），
 // 于 start() 入口快照进 m_maxTurns，单次运行中不随设置变动（同主循环回合入口快照纪律）。
 
 // 子代理工具白名单（lcc s06 subTools）：主循环 7 工具定义中的前 5 个，

@@ -98,7 +98,7 @@ private:
     void startAssistantStream(const QString &userText);
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
-    // 侧栏显隐切换：写 settings.ini 键 sidebarVisible + 收起钮摆位 + 重钳消息列宽
+    // 侧栏显隐切换：写 config.json 键 sidebarVisible + 收起钮摆位 + 重钳消息列宽
     void setSidebarVisible(bool visible);
     // 重算并钳制消息列/输入组宽（min(800, 可用宽 − 侧栏可见时的占位)），resizeEvent 与侧栏切换共用
     void applyColumnWidth();
@@ -157,7 +157,7 @@ private:
     // settleTeammateCard 除表收口，幂等）
     QHash<QString, QPointer<ToolBlock>> m_liveTeammateCards;
 
-    SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 settings.ini sidebarVisible）
+    SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 config.json sidebarVisible）
     ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（轮步/消耗/速度三段文字；占用条+数字与状态灯在侧栏，见 SessionSidebar.h）
     // P1-9 通知条三件：条本体 + 自动淡出定时器 + 与消息列同栏宽的居中行布局。
     // 走「页面内常驻条」而非 FluentUI 的 FluInfoBarMgr 浮层：管理器把条做成父件上的

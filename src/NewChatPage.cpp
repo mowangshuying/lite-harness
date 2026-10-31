@@ -129,7 +129,7 @@ void NewChatPage::changeEvent(QEvent *event)
 void NewChatPage::showEvent(QShowEvent *event)
 {
     BasePage::showEvent(event);
-    // 每次进入发起页重读 settings.ini 的默认工作目录：设置页保存后无需重启即生效；
+    // 每次进入发起页重读 config.json 的默认工作目录：设置页保存后无需重启即生效；
     // 用户本会话内经「浏览」手动改选过则尊重其选择，不再覆盖。
     // （首次显示会紧随构造多读一次，值同源、无害）
     if (!m_workDirTouched)
@@ -138,7 +138,7 @@ void NewChatPage::showEvent(QShowEvent *event)
 
 void NewChatPage::applyStoredWorkDir()
 {
-    // 读 settings.ini 默认工作目录（存在且为目录时）优先，否则进程当前目录
+    // 读 config.json 默认工作目录（存在且为目录时）优先，否则进程当前目录
     const QString stored = AppSettings::value(QStringLiteral("defaultWorkDir")).toString();
     m_workDirBar->setPath(!stored.isEmpty() && QFileInfo(stored).isDir()
                               ? stored

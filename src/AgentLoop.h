@@ -233,7 +233,7 @@ signals:
     // P1-9 观测面：传输层退避重试已排期（QOpenAi::ChatStream::retryScheduled 直转，
     // 单源在传输层——idle 静默超时与 429/5xx 两条可重试路径都收口于 scheduleRetry）。
     // 此前重试对 UI 完全不可见：用户发出请求后界面静默 1s/2s/4s…，读起来像「卡死了」。
-    // attempt 自 1 起、totalAttempts＝配置上限（settings.ini maxRetries）、delayMs＝本次退避。
+    // attempt 自 1 起、totalAttempts＝配置上限（config.json maxRetries）、delayMs＝本次退避。
     void streamRetryScheduled(int attempt, int totalAttempts, int delayMs);
     // P1-9 观测面：换模型重发（s15 529 过载 fallback 切换）。传输层此前只打 LOG_WARN，
     // 用户看不到「这轮回答为什么来自另一个模型」。发射点在 messageFinished/error 的
@@ -656,7 +656,7 @@ private:
     WorkflowManager m_workflow;
     // s17 Goal 引擎（lcc goal_manager.py 移植，Lane P1 纯引擎、值成员接线，仿 m_workflow）：
     // 纯内存台账零盘 IO（v1 裁决：events 持久账不接线，restore 路径留观）。blockCap 构造期
-    // 快照（settings.ini 键 stopHookBlockCap，中途改值对既有会话不生效=登记）；
+    // 快照（config.json 键 stopHookBlockCap，中途改值对既有会话不生效=登记）；
     // backgroundRunning 注入 = m_backgroundTasks.has_running()（lcc background_tasks_active
     // 对应，port ④ defer 判据；lambda 惰性求值、声明序 m_backgroundTasks(:531 区) 先于本
     // 成员，init-list 位置同序防 C5038）

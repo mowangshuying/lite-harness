@@ -54,7 +54,8 @@ int tst_litepaths()
           "configRootFor: dev layout -> build/config");
 
     // 尾斜杠 / 反斜杠 / 冗余分隔符：同一目录的三种写法必须收敛到同一个根。
-    // 这条不是洁癖——settings.ini 的三键里 fluConfigDir 是用户手改面，反斜杠形态必然出现。
+    // 这条不是洁癖——根来自 applicationDirPath()/argv[0] 反推，Windows 下它本来就给反斜杠形态，
+    // 不归一就会让同一个目录派生出多个字符串根。
     //
     // 基准取「同一逻辑目录的朴素写法」的派生值，而不是上面那个发布包样例根：两者是**不同目录**
     // （D:/pkg vs D:/lite-harness-s17.2-win64），拿样例根当基准会恒假——第一版就栽在这里，
@@ -80,11 +81,11 @@ int tst_litepaths()
 
     // ---- ② 根下固定文件：一个根两个文件，拼法单源 ----
     const QString root = QString::fromLatin1(kPkgRoot);
-    check(LitePaths::settingsFilePathFor(root) == root + QStringLiteral("/settings.ini"),
-          "settings file lives directly under the storage root");
+    check(LitePaths::configFilePathFor(root) == root + QStringLiteral("/config.json"),
+          "config file lives directly under the storage root");
     check(LitePaths::indexFilePathFor(root) == root + QStringLiteral("/index.json"),
           "index lives directly under the storage root (not inside .lite-harness)");
-    // 空根必须被拦住，而不是拼出 "/settings.ini" 这种「看起来能用、实际落到驱动器根」的路径。
+    // 空根必须被拦住，而不是拼出 "/config.json" 这种「看起来能用、实际落到驱动器根」的路径。
     // joined() 内是 Q_ASSERT： NDEBUG（Release）下断言被编译掉，故这条形态在此钉**结果**
     // 而非崩溃——空根拼出的串绝不能被当成合法路径静默返回。
     // 注：本条在 Debug 下会先被断言拦停，这正是我们要的行为（测试构建为 Debug/Release 皆可跑，
@@ -147,8 +148,8 @@ int tst_litepaths()
     // ---- ⑤ 跨锚点一致性：同一个根派生的四个位置必须互不重叠且都在根内 ----
     // 改造前这四条路径分属三套锚（exe 目录 / 进程 CWD / workDir），本组断言是「统一」这件事
     // 本身的可执行定义：锚点若再次分叉，这里立刻红。
-    check(LitePaths::settingsFilePathFor(root).startsWith(root + QLatin1Char('/')),
-          "settings.ini is under the storage root");
+    check(LitePaths::configFilePathFor(root).startsWith(root + QLatin1Char('/')),
+          "config.json is under the storage root");
     check(LitePaths::indexFilePathFor(root).startsWith(root + QLatin1Char('/')),
           "index.json is under the storage root");
     check(store.startsWith(root + QLatin1Char('/')), "store root is under the storage root");

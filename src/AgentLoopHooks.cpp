@@ -71,7 +71,7 @@ void AgentLoop::registerBuiltinHooks()
         if (permissionGranted)
             return QString(); // 已批准：跳过询问，日志等其余钩子照常执行
 
-        // s17.2 审批总开关（settings.ini 键 permissionApproval，单点取值
+        // s17.2 审批总开关（config.json 键 permissionApproval，单点取值
         // AgentConst::permissionApprovalEnabled()）：关闭时下面三道「询问类」门（ASK 规则 /
         // mcp__ confirm / workflow confirm）一律放行——不出卡、不挂队列，异步回合也不再
         // fail-closed 返拒串（压根不需要审批，就不存在「无人可问」的困境）。

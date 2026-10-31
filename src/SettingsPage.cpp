@@ -23,7 +23,7 @@
 
 namespace {
 
-// 默认工作目录：settings.ini 配置文件（AppSettings 单源，exe 同目录）；
+// 默认工作目录：config.json 键 app/defaultWorkDir（AppSettings 单源，存储根 <exe 目录>/../config）；
 // 与主题/语言配置互不影响（语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
 const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 
@@ -44,9 +44,9 @@ QString workDirDisplayText(const QString &stored)
     return stored.isEmpty() ? QObject::tr("未设置（使用进程当前目录）") : stored;
 }
 
-// 模型服务：settings.ini 键 apiBaseUrl / apiToken（QOpenAi::initFromSettings 读同源，
+// 模型服务：config.json 键 apiBaseUrl / apiToken（QOpenAi::initFromSettings 读同源，
 // 设置页写入后立即 QOpenAi::setUrl/setToken 覆盖全局 client，无需重启）。
-// token 明文存 ini 属用户裁决：exe 同目录本机文件，属主可见可改（原环境变量方案已废弃）。
+// token 明文存配置文件属用户裁决：存储根下的本机文件，属主可见可改（原环境变量方案已废弃）。
 const QString kApiBaseUrlKey = QStringLiteral("apiBaseUrl");
 const QString kApiTokenKey = QStringLiteral("apiToken");
 
@@ -70,14 +70,14 @@ void writeApiToken(const QString &value)
     AppSettings::setValue(kApiTokenKey, value);
 }
 
-// 可选模型清单：settings.ini 键 modelOptions（逗号分隔）。解析与回退单源在
+// 可选模型清单：config.json 键 modelOptions（逗号分隔）。解析与回退单源在
 // AgentConst::modelOptions()（未配置/写空即内置两项）；输入框下拉在每次弹层展开前
 // 重读该键，故本页改完配置无需重启即可选到新模型（见 ChatMsgEdit::reloadModelOptions）。
 const QString kModelOptionsKey = QStringLiteral("modelOptions");
 
 QString readModelOptionsRaw()
 {
-    return AgentConst::iniTextValue(kModelOptionsKey); // 手改不带引号（ini 列表语法）也读得回
+    return AgentConst::textValue(kModelOptionsKey); // 裸逗号串（ini）或数组（json）两种列表形态都读得回
 }
 
 void writeModelOptions(const QString &value)
@@ -234,7 +234,7 @@ void WorkDirSettingCard::updateValue()
 // 上下文上限设置卡（第九轮）：说明位「超限自动压缩：200,000 字符（≈50,000 token）」，
 // 右侧只留「修改」。展示/回写均经 AgentConst::contextCharLimitValue() 单点取值
 // （未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
-// 写 settings.ini 后 CompactManager 下一回合管线现取即生效，无需重启。
+// 写 config.json 后 CompactManager 下一回合管线现取即生效，无需重启。
 ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
     : InfoSlotSettingCard(parent)
 {
@@ -266,7 +266,7 @@ void ContextLimitSettingCard::retranslate()
 void ContextLimitSettingCard::updateValue()
 {
     // 千分位展示（c-locale 固定逗号分组，不随界面语言变）；编辑预填用裸数字防解析歧义。
-    // 键语义保持字符域（规格修4：settings.ini 零新键零迁移）；括号内 token 仅为
+    // 键语义保持字符域（规格修4：config.json 零新键零迁移）；括号内 token 仅为
     // 展示层派生提示 = contextCharLimit/4（计量预算口径，与侧栏/触发同源），不参与校验回写。
     const QLocale loc(QLocale::c());
     setInfoValue(tr("超限自动压缩"),
@@ -311,7 +311,7 @@ void ContextLimitSettingCard::promptEdit()
 // 单轮最大调用次数设置卡（第十二轮）：与上下文上限卡同款结构——说明位
 // 「超限即终止循环：500」+「修改」。展示/回写均经 AgentConst::maxToolIterationsValue()
 // 单点取值（未设置/非法自动回退默认 500），与 AgentLoop 回合入口快照同源不分叉；
-// 写 settings.ini 后下一回合生效。数值域 [10,1000] 无需千分位，直接裸整数展示。
+// 写 config.json 后下一回合生效。数值域 [10,1000] 无需千分位，直接裸整数展示。
 // 前缀「超限即终止循环」非拟测：撞上限走 AgentLoopRequest.cpp 的
 // error(「工具调用轮次超过上限（N 轮），终止循环。」) 分支。
 MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
@@ -525,7 +525,7 @@ void ApiTokenSettingCard::promptEdit()
 // 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
 // 说明位展示的是**生效清单**（清洗去重后），非原始配置串——所见即下拉所得；
 // 原始串经 ToolTip 兜底（两者可能不同，留空不等于「没有模型可选」）。
-// 生效路径：本卡只写 settings.ini，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框下拉
+// 生效路径：本卡只写 config.json，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框下拉
 // 在每次弹层展开前重读该键并原地刷新，故改完配置无需重启即可选到新模型。
 ModelListSettingCard::ModelListSettingCard(QWidget *parent)
     : InfoSlotSettingCard(parent)
@@ -575,7 +575,7 @@ void ModelListSettingCard::updateValue()
         return;
     }
     // 展示清洗去重后的生效值；原始录入串经 ToolTip 兜底（两者可能不同）
-    setInfoValue(tr("下拉候选"), shown, tr("settings.ini: %1").arg(stored));
+    setInfoValue(tr("下拉候选"), shown, tr("config.json: %1").arg(stored));
 }
 
 void ModelListSettingCard::promptEdit()
@@ -704,7 +704,7 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
-    /// permission（s17.2：工具执行权限审批总开关，落 settings.ini 键 permissionApproval。
+    /// permission（s17.2：工具执行权限审批总开关，落 config.json 键 permissionApproval。
     /// 控件沿用主题/语言盒同款 FluSettingsSelectBox——页内既有的「选择型」范式，零新控件类型）
     m_permissionLabel = new FluLabel;
     m_permissionLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -728,7 +728,7 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     });
     scrollView->getMainLayout()->addWidget(m_permissionBox, 0, Qt::AlignTop);
 
-    /// model service（LLM 服务地址 / API Key 可设置，取代原环境变量；写 ini 后即时覆盖全局配置）
+    /// model service（LLM 服务地址 / API Key 可设置，取代原环境变量；写配置文件后即时覆盖全局配置）
     m_modelLabel = new FluLabel;
     m_modelLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
     m_modelLabel->setText(tr("模型服务"));

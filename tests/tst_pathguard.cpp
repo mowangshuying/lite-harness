@@ -112,7 +112,7 @@ int tst_pathguard()
           "empty root in the set does not admit outside paths");
 
     // ---- ⑥ 根入参归一：调用方给反斜杠/尾斜杠根，判定不得静默失配 ----
-    // safePathIn 传进来的根形态不止一种来源（settings.ini 手改面、QDir::currentPath、
+    // safePathIn 传进来的根形态不止一种来源（config.json 手改面、QDir::currentPath、
     // applicationDirPath 反推），本头自行 cleanPath 归一，否则「能读到的根」与「判得出的根」分叉。
     const QStringList backslashRoots{QStringLiteral("D:\\proj\\work"), session};
     check(AgentPathGuard::isWithinSandboxRoots(QStringLiteral("D:/proj/work/a.cpp"), backslashRoots),

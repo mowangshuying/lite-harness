@@ -581,8 +581,8 @@ After a restart the turn count is seeded from the number of user messages in his
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="578"/>
-        <source>settings.ini: %1</source>
-        <translation>settings.ini: %1</translation>
+        <source>config.json: %1</source>
+        <translation>config.json: %1</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="578"/>
@@ -972,8 +972,8 @@ After a restart the turn count is seeded from the number of user messages in his
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="740"/>
-        <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
-        <translation>Context usage: ≈%1 tokens estimated ÷ %2 token budget (the budget is derived from the settings.ini character limit /4, shares its source with the compaction trigger, and is overwritten by later read-backs).</translation>
+        <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
+        <translation>Context usage: ≈%1 tokens estimated ÷ %2 token budget (the budget is derived from the config-file character limit /4, shares its source with the compaction trigger, and is overwritten by later read-backs).</translation>
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="769"/>

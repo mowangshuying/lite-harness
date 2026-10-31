@@ -18,16 +18,16 @@
 - **工作流编排（s16）**：`workflow` 工具启动宿主预注册编排流程（当前唯一条目 `review-changes` 审查工作流）；六原语 agent/parallel/pipeline/phase/log/workflow 零线程异步状态机，journal 落盘、`resume_from_run_id` 续跑未变步骤直接命中缓存；宿主单飞卫兵 + 异步延迟回填；策略三态门 deny 硬拒 / confirm 弹卡（异步回合 fail-closed）/ allow 放行
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
 - **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
-- **模型选择**：下拉切换（生效清单与缺省项由 `settings.ini` 键 `modelOptions` / `defaultModel` 决定，未配置或非法则回落内置 `kBuiltinModelOptions`），API 经设置页配置
+- **模型选择**：下拉切换（生效清单与缺省项由 `config.json` 键 `app/modelOptions` / `app/defaultModel` 决定，未配置或非法则回落内置 `kBuiltinModelOptions`），API 经设置页配置
 
 ## 运行时配置
 
-用户配置单源为 **`<config>/settings.ini`**（`<config>` = `<exe 目录>/../config`，路径单源 `LitePaths::settingsFilePath()`；`AppSettings.h`，QSettings IniFormat；弃用注册表）。设置页可编辑大部分键，其余手改 ini 即可（非法值由各消费点校验后回退默认）——读侧带按文件身份 `(exists,mtime,size)` 的惰性重载缓存（`SettingsCache.h`），**手改在下一次取值即生效，不需要重启**；写侧落盘与缓存失效成对发生：
+用户配置单源为 **`<config>/config.json`**（`<config>` = `<exe 目录>/../config`，路径单源 `LitePaths::configFilePath()`；`AppSettings.h`，QSettings 自定义 Json 格式；弃用注册表）。**同一个文件也是 FluentUI 自己的配置落点**（主题 / 导航宽度 / 语言镜像）——两侧合流后各占一个子对象互不可见：宿主键一律挂在 `app/` 组下（下表键名即 `app/<键>`，盘上形态 `{"app":{…}}`），FluentUI 自有键在 `config/`、`translation/` 组下。Json 后端**大小写敏感**，手改时键名须逐字写对（`apiToken` 写成 `apitoken` 读不到）。设置页可编辑大部分键，其余手改配置文件即可（非法值由各消费点校验后回退默认）——读侧带按文件身份 `(exists,mtime,size)` 的惰性重载缓存（`SettingsCache.h`），**手改在下一次取值即生效，不需要重启**；写侧落盘与缓存失效成对发生：
 
 | 键 | 含义 | 默认 |
 | --- | --- | --- |
 | `apiBaseUrl` | OpenAI 兼容 API 基地址（http/https） | — |
-| `apiToken` | API token（设置页值区脱敏显示；明文存本机 ini） | — |
+| `apiToken` | API token（设置页值区脱敏显示；明文存本机配置文件） | — |
 | `modelOptions` | 模型下拉清单，逗号分隔（裸串与列表两种形态都能读回） | 内置 `kBuiltinModelOptions` |
 | `defaultModel` | 缺省选中模型 | 清单首项 |
 | `defaultWorkDir` | 新建会话的默认工作目录 | — |
@@ -35,10 +35,10 @@
 | `maxToolIterations` | 单轮最大工具调用次数（校验界 10~1000；子代理预算同源） | 500 |
 | `maxRetries` | 429/5xx 指数退避重试上限（校验界 0~5） | 2 |
 | `permissionApproval` | 工具执行权限审批总开关（true=命中询问规则弹审批卡挂起队列；false=三道询问门一律放行、工具直接执行）。**撤的是「问不问」不是「许不许」**：bash 硬拒绝黑名单、workflow 的 deny 策略、文件工具的工作区越界拦截都不受开关影响。缺省/读不出的一律回退 true（fail-safe 多问一次）；设置页「权限」卡可改，**下一个工具调用即生效**（钩子现取），无需重启 | 需要审批 |
-| `fallbackModelId` | 连续 529 过载后换用的兜底模型（空=禁用换模，仅退避；设置页无编辑卡，手改 ini） | 空 |
+| `fallbackModelId` | 连续 529 过载后换用的兜底模型（空=禁用换模，仅退避；设置页无编辑卡，手改配置文件） | 空 |
 | `language` | 界面语言（`zh-CN` / `en-US`，切换需重启） | `zh-CN` |
 | `sidebarVisible` | 会话侧栏显隐偏好 | 显示 |
-| `uiFontScale` | 界面字号倍率（整数百分比，校验界 80~200；**改后需重启**，与 `language` 同语义；设置页无编辑卡，手改 ini）。生效三面：应用字体、本仓 QSS 的 `font-size`、以及代码里 `setPixelSize` 的组件（三面同读**启动快照**，故不会半生效）；刻意不改 FluentUI 自有 QSS，导航项等保留原字号 | 100 |
+| `uiFontScale` | 界面字号倍率（整数百分比，校验界 80~200；**改后需重启**，与 `language` 同语义；设置页无编辑卡，手改配置文件）。生效三面：应用字体、本仓 QSS 的 `font-size`、以及代码里 `setPixelSize` 的组件（三面同读**启动快照**，故不会半生效）；刻意不改 FluentUI 自有 QSS，导航项等保留原字号 | 100 |
 | `dpiRounding` | 高 DPI 缩放取整策略（`Round`/`Ceil`/`Floor`/`RoundPreferFloor`/`PassThrough`，大小写与首尾空白不敏感；缺失或非法回退 `PassThrough`）。**必须在 `QApplication` 构造前落定**，故读值走 `AppSettings::bootstrapValue(argv[0], …)`——这是「读一律 `value()`」的唯一例外 | `PassThrough` |
 | `windowGeometry` | 主窗口几何（`saveGeometry()` 的 base64 串，编解码单源 `UiScale::encodeGeometry`/`decodeGeometry`）。写点在 `LiteHarness::closeEvent` 且仅退出被接受时覆盖，读点在构造函数末尾 `show()` 之前；串被手改坏则回退默认尺寸，绝不猜一个尺寸 | 无（首启用默认尺寸） |
 

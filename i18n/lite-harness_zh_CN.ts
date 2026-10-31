@@ -581,8 +581,8 @@
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="578"/>
-        <source>settings.ini: %1</source>
-        <translation>settings.ini: %1</translation>
+        <source>config.json: %1</source>
+        <translation>config.json: %1</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="578"/>
@@ -972,8 +972,8 @@
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="740"/>
-        <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
-        <translation>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 settings.ini 字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</translation>
+        <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
+        <translation>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是 配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</translation>
     </message>
     <message>
         <location filename="../src/SessionSidebar.cpp" line="769"/>

@@ -20,7 +20,7 @@
 //      效果一致：不进评估器、不动 blocks/iterations 账。
 //   ⑥ 评估器模型三级回退的次级语义替换（s17 比对审计登记）：lcc 次级=静态
 //      ANTHROPIC_DEFAULT_HAIKU_MODEL（组装根启动期固化）；lite 次级=m_recoveryCurrentModel
-//      （s15 回合内 fallback 动态粘滞），且首级每次评估现读 settings.ini——生效时机与
+//      （s15 回合内 fallback 动态粘滞），且首级每次评估现读 config.json——生效时机与
 //      可变性均不同。
 // 权限门/工具分发零改动——goal 不是模型工具（ToolNames.h 零触碰），分流只在 run() 入口，
 // 终局门只在 messageFinished 的无 tool_calls 分支；max_turns 与流错误两终局不经本门
@@ -72,7 +72,7 @@ bool AgentLoop::gateGoalTerminal(const QJsonObject &finalMsg)
 // system/user 两条 + max_tokens；无 tools、无 stream_options（一次性文本 JSON 回答）。
 // 模型三级回退：settings goalEvaluatorModelId → 回合内粘滞 fallback → 主模型。
 // （次级用 m_recoveryCurrentModel 动态粘滞、非 lcc 静态 HAIKU 环境变量，首级每次评估
-//   现读 ini——时机与可变性差异=偏差⑥登记。）
+//   现读配置文件——时机与可变性差异=偏差⑥登记。）
 void AgentLoop::startGoalEvaluation(const QJsonObject &finalMsg, const GoalManager::StopGateResult &gate)
 {
     const QString configured = AgentConst::goalEvaluatorModelIdValue();

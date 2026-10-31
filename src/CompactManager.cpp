@@ -21,7 +21,7 @@
 namespace {
 
 // 第九轮：阈值经「可设置主上限 S + 等比派生」——S 单点取值走
-// AgentConst::contextCharLimitValue()（settings.ini + 校验 + 默认回退，与设置页共用
+// AgentConst::contextCharLimitValue()（config.json + 校验 + 默认回退，与设置页共用
 // 实现防口径分叉；每次消费点现取，改设置后下一回合即生效）。
 // 修4（token 口径迁移，D8/D11）：batch=4S / large=0.6S / 压缩目标=0.8S 的判定对象
 // 由字符改 token，且基准从 S 改为会话体预算 T'（prepareAsync 现算：全局 token 预算

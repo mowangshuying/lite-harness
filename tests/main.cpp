@@ -32,6 +32,7 @@ int tst_fluconfigstore();     // FluentUI 配置定位层（FluConfigStore.h）�
 int tst_fluconfigutils();     // FluentUI 配置门面（FluConfigUtils）：configure 注入→后端重建→读写往返，缺省组恒跑 + 落盘组夹具门控
 int tst_litepaths();          // 运行时路径锚点单源（LitePaths.h）：存储根反推/中间层只一次/空 ID 回退，零夹具恒跑
 int tst_pathguard();          // 沙箱围栏多根判定（AgentPathGuard.h）：边界/大小写/fail-closed，零夹具恒跑
+int tst_configmerge();        // 配置合流不变量（P2）：两侧同路径同格式、合写不互覆、json 大小写口径，判据组恒跑 + 落盘组夹具门控
 
 int main()
 {
@@ -57,6 +58,7 @@ int main()
     failed += tst_fluconfigutils();
     failed += tst_litepaths();
     failed += tst_pathguard();
+    failed += tst_configmerge();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

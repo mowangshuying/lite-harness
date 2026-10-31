@@ -44,7 +44,7 @@ private:
     QString m_toolTip; // 空=回落「prefix：值」全量；非空=调用方指定（如机密状态、原始录入串）
 };
 
-// 默认工作目录设置卡（实现在 SettingsPage.cpp，复用其匿名命名空间的 settings.ini 读写助手）。
+// 默认工作目录设置卡（实现在 SettingsPage.cpp，复用其匿名命名空间的配置文件读写助手）。
 // 说明位展示当前路径，**无解释前缀**（原「新建会话将继承该工作目录。」提示按需求移除）。
 // i18n 第八轮：必须置于头文件并带 Q_OBJECT——若无 Q_OBJECT，成员里的 tr() 会静态绑定到
 // 最近祖先的宏生成 tr，运行期翻译上下文变成基类，而 lupdate 按词法类名提取，两者错位
@@ -68,7 +68,7 @@ private:
 
 // 上下文上限设置卡（第九轮）：说明位「超过即自动压缩：200,000 字符（≈50,000 token）」，
 // 右侧只留「修改」，弹 FluentInputDialog 输入，校验 [kContextCharLimitMin,
-// kContextCharLimitMax] 拒绝非法值，写 settings.ini 后立即回显。
+// kContextCharLimitMax] 拒绝非法值，写 config.json 后立即回显。
 // 生效语义：CompactManager 每次管线现取设置值，下一回合生效，无需重启。
 // Q_OBJECT 理由同 WorkDirSettingCard（tr 上下文与 lupdate 提取词法类名对齐）。
 class ContextLimitSettingCard : public InfoSlotSettingCard
@@ -88,7 +88,7 @@ private:
 
 // 单轮最大调用次数设置卡（第十二轮）：与 ContextLimitSettingCard 同款结构——说明位
 // 「超限即终止循环：500」+「修改」弹 FluentInputDialog 输入，校验 [kMaxToolIterationsMin,
-// kMaxToolIterationsMax] 拒绝非法值，写 settings.ini 后立即回显。
+// kMaxToolIterationsMax] 拒绝非法值，写 config.json 后立即回显。
 // 生效语义：AgentLoop 每回合 run() 入口现取设置值，下一回合生效，无需重启。
 // 「终止循环」非拟测：撞上限走 AgentLoopRequest.cpp 的
 // error(「工具调用轮次超过上限（N 轮），终止循环。」) 分支。
@@ -111,7 +111,7 @@ private:
 // 服务地址设置卡（模型服务组）：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
 // 编辑弹 FluentInputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
 // 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
-// 生效语义：写 settings.ini 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
+// 生效语义：写 config.json 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
 // 明文展示（URL 非机密），ToolTip 回落全量 URL 供省略后读全文。
 // Q_OBJECT 理由同前三卡。
 class ApiUrlSettingCard : public InfoSlotSettingCard
@@ -135,7 +135,7 @@ private:
 // 且 ToolTip 回落的也是同一摘要——基类会把 value 原样写进 ToolTip，故进说明位的必须
 // 已是摘要，绝不能把 stored 明文交给基类。
 // 编辑框不预填存量明文 + Password 回显；留空=不修改，清除另有「清除」按钮（职责不重叠）。
-// 生效语义：写 settings.ini 键 apiToken 后立即 QOpenAi::setToken()，下一回合请求即用新值。
+// 生效语义：写 config.json 键 apiToken 后立即 QOpenAi::setToken()，下一回合请求即用新值。
 class ApiTokenSettingCard : public InfoSlotSettingCard
 {
     Q_OBJECT
@@ -155,7 +155,7 @@ private:
 // 可选模型清单设置卡（模型服务组）：说明位「输入框下拉候选：<清单>」+「修改 + 清除」操作行。
 // 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
 // 编辑弹 FluentInputDialog 录入逗号分隔模型名（落盘前逐项 trim、丢空、保序去重）。
-// 生效语义：写 settings.ini 键 modelOptions；输入框模型下拉在每次弹层展开前重读该键并原地
+// 生效语义：写 config.json 键 modelOptions；输入框模型下拉在每次弹层展开前重读该键并原地
 // 刷新（ChatMsgEdit::reloadModelOptions），故改完配置无需重启即可选到新模型。
 // 说明位展示的是**生效清单**（清洗去重后），非原始录入串；原始串经 ToolTip 兜底（两者可能不同）。
 // Q_OBJECT 理由同前四卡。
@@ -199,7 +199,7 @@ private:
     ContextLimitSettingCard* m_contextCard = nullptr;
     FluLabel* m_maxRoundsLabel = nullptr;
     MaxRoundsSettingCard* m_maxRoundsCard = nullptr;
-    // s17.2 权限审批总开关（settings.ini 键 permissionApproval）：下拉两项，与主题/语言盒同款
+    // s17.2 权限审批总开关（config.json 键 permissionApproval）：下拉两项，与主题/语言盒同款
     FluLabel* m_permissionLabel = nullptr;
     FluSettingsSelectBox* m_permissionBox = nullptr;
     FluLabel* m_modelLabel = nullptr;

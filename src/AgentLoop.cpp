@@ -59,7 +59,7 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
              [this] { return m_backgroundTasks.has_running(); })
 {
     // 模型 ID：优先环境变量 MODEL_ID，缺省回落 AgentConst::defaultModel()
-    // （settings.ini 的 defaultModel 键，未配置则取生效清单首项；清单本身可由
+    // （config.json 的 defaultModel 键，未配置则取生效清单首项；清单本身可由
     // modelOptions 键配置，单点取值见 AgentConstants.h）
     m_model = QString::fromUtf8(qgetenv("MODEL_ID"));
     if (m_model.isEmpty())

@@ -5,7 +5,7 @@
 //   · 倍率写成 0 或 999：不报错，只是文字突然看不见或卡片被撑破；
 //   · 策略名手改拼错（"roundPreferFlour"）：不报错，静默回落另一档缩放；
 //   · 几何串被手改截半：不报错，restoreGeometry 返回 false，窗口回默认尺寸——
-//     用户读成「软件忘了我的窗口」，而真相是那一行 ini 坏了。
+//     用户读成「软件忘了我的窗口」，而真相是配置文件里那个值坏了。
 // 三条都是「跑得通但结果不对」的路径，只能靠断言钉死，冒烟运行看不全。
 //
 // 覆盖面边界（勿高估）：本套件测的是**判据与折算**。它不证明 App.cpp 真的在
@@ -55,7 +55,7 @@ int tst_uiscale()
     check(fontScalePercent(QVariant(kFontScaleMin)) == kFontScaleMin, "fontScale: min bound accepted");
     check(fontScalePercent(QVariant(kFontScaleMax)) == kFontScaleMax, "fontScale: max bound accepted");
     check(fontScalePercent(QVariant(150)) == 150, "fontScale: in-range passthrough");
-    // 字符串形态的合法数字也要能读回（ini 是手改面，QSettings 交出来的常是 QString）
+    // 字符串形态的合法数字也要能读回（配置文件是手改面，QSettings 交出来的常是 QString）
     check(fontScalePercent(QVariant(QStringLiteral("120"))) == 120, "fontScale: numeric string reads back");
     check(fontScalePercent(QVariant(QStringLiteral(" 120 "))) == 120, "fontScale: surrounding spaces tolerated");
     // 千分位不是我们的约定（与 contextCharLimit 的展示格式刻意不同）：带逗号的串判非法回退，

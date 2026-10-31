@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
     // 故这里不能走 AppSettings::value()（其 reader() 的 Q_ASSERT 要求实例已存在），
     // 改走同头的 bootstrapValue（exe 目录从 argv[0] 反推，同源不同路）。
     // 缺省档 = PassThrough，正是 Qt6 自己的默认值（qguiapplication.cpp:142-143），
-    // 所以「没配过 ini」与「配了个错值」都与改动前完全一致：本行的价值是把
+    // 所以「没配过配置文件」与「配了个错值」都与改动前完全一致：本行的价值是把
     // 「依赖 Qt 默认」变成「本仓显式声明」，并给 125%/150% 分数缩放留一个不改代码
-    // 就能切档的出口（ini 写 Round / RoundPreferFloor / Ceil / Floor）。
+    // 就能切档的出口（config.json 写 Round / RoundPreferFloor / Ceil / Floor）。
     // 第三参 fallback 给空 QVariant：toString() 得空串，dpiPolicyFromName 的空串分支
     // 正是 PassThrough——与「键从未写过」同一路，缺省语义不因引导通道而漂移。
     QApplication::setHighDpiScaleFactorRoundingPolicy(UiScale::dpiPolicyFromName(
@@ -31,37 +31,25 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
 
-    // 存储根落地：settings.ini / index.json / 会话数据 / skills / FluentUI 配置同锚
-    // <exe 目录>/../config（单源见 LitePaths.h）。
+    // 存储根落地：config.json（宿主键 + FluentUI 键合流）/ index.json / 会话数据 / skills
+    // 同锚 <exe 目录>/../config（单源见 LitePaths.h）。
     // **必须在此处 mkpath，且早于任何配置读写**：打包时 CMake 的 staging 清理会把 config 目录
     // 从产物里剥掉（那是 FluentUI gallery 的同名残留），发布包首次启动根本没有 config/；
     // 而 SettingsCache::Reader 不建目录——QSettings 往不存在的目录写会静默 AccessError，
     // 表现为「设置页改了没反应」且无任何报错。SessionStore 与 FluConfigStore 各自会 mkpath
-    // 自己那一层，但 settings.ini 这条链没有兜底，只能在此统一建根。
+    // 自己那一层，但宿主这条链没有兜底，只能在此统一建根。
     QDir().mkpath(LitePaths::configRoot());
 
-    // FluentUI 配置定位注入：FluConfigUtils 原把配置文件写死成 CWD 相对的 ../config/config.ini，
-    // 启动目录一变（快捷方式/分发/从别处拉起）主题与语言镜像就静默回到缺省——第三方库没有注入口，
-    // 故本仓在 3rdparty/FluentUI 内给它开 configure 静态口（改造点见该文件注释）。
-    // 三键（settings.ini，均可缺省）：fluConfigDir / fluConfigFile / fluConfigFormat(=ini|json)。
+    // FluentUI 配置定位注入：合流后它与宿主配置**同一个文件、同一个格式**——库内默认值一字未动
+    // （pinned 测试仍钉 ../config/config.ini + Ini），被改掉的只是宿主注入什么。
     // **必须早于任何 FluConfigUtils::getUtils()**：单例先建则 configure 只能重建后端且不迁移旧值，
     // 而 LiteHarness 构造经 FluThemeUtils 就会触发单例。
-    // 存储根统一后本注入改为**恒调用**（改造前是「三键皆无则不调」，落点沿用库内 CWD 相对缺省）：
-    // 缺省目录直接给绝对存储根，杜绝 CWD 漂移——库内默认值一字未动（pinned 测试仍钉
-    // ../config/config.ini），被改掉的只是宿主是否注入，这正是该注入接口存在的用途。
-    // 相对目录仍按 exe 目录锚定，绝对路径原样透传。
-    {
-        const QString fluDir = AppSettings::value(QStringLiteral("fluConfigDir")).toString().trimmed();
-        const QString fluFile = AppSettings::value(QStringLiteral("fluConfigFile")).toString().trimmed();
-        const QString fluFormat = AppSettings::value(QStringLiteral("fluConfigFormat")).toString();
-        FluConfigUtils::configure(
-            fluDir.isEmpty()
-                ? LitePaths::configRoot()
-                : FluConfigStore::anchorRelativeDir(fluDir, QCoreApplication::applicationDirPath()),
-            fluFile, FluConfigStore::formatFromName(fluFormat));
-    }
+    // 三段一律取自单源，不留可配面：原 fluConfigDir/fluConfigFile/fluConfigFormat 三键已删除——
+    // 它们定位的正是本文件自身，读键得先知道文件在哪，成了自指；且 QConfFile 缓存键只有 absPath，
+    // 一旦允许注入出另一个路径，宿主与库就会各持一份内存表写两个文件，合流当场失效。
+    FluConfigUtils::configure(LitePaths::configRoot(), LitePaths::configFileName(), FluConfigFormat::Json);
 
-    // 字号倍率（P1-11）：settings.ini 键 uiFontScale（整数百分比，[80,200]，缺省 100）。
+    // 字号倍率（P1-11）：config.json 键 app/uiFontScale（整数百分比，[80,200]，缺省 100）。
     // 走 QApplication::setFont 而非逐控件设字体——本仓 QSS 里正文面（#msgBrowser 气泡
     // 与输入框 #textEdit）**刻意不写 font-size**，字号由应用字体单源决定，故这一行
     // 就覆盖到用户真正要读的内容；反之 QSS 里显式写了 font-size 的次要文字（卡片

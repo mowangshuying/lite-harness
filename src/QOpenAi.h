@@ -15,7 +15,7 @@ namespace QOpenAi {
 //   ① idle 静默超时转可重试：重试预算尚存则与 429/5xx 同走 scheduleRetry 退避重发通道，
 //      预算耗尽维持原终态文案（口径逐字节不变）；
 //   ② 过载（529/overloaded）连续计数：达到 AgentConst::kMaxConsecutive529 界且配置了
-//      fallback 模型（settings.ini 键 fallbackModelId，空=禁用）即自动换模重发，
+//      fallback 模型（config.json 键 fallbackModelId，空=禁用）即自动换模重发，
 //      每条流至多换一次；收到任一有效 SSE 帧即清零（lcc 成功即清零语义）；
 //   ③ finish_reason 值随 messageFinished 一并上抛——length 两拍恢复的上层消费在后续 lane，
 //      本轮只开通道、不改任何既有行为。
@@ -163,12 +163,12 @@ void setToken(const QString &token);
 QString token();
 
 // 设置 / 获取最大重试次数（仅 5xx / 429，指数退避；默认 AgentConst::kMaxRetriesDefault，
-// 启动由 initFromSettings 读 settings.ini 的 maxRetries 键注入，校验界见 AgentConstants.h）
+// 启动由 initFromSettings 读 config.json 的 maxRetries 键注入，校验界见 AgentConstants.h）
 void setMaxRetries(int retries);
 int maxRetries();
 
 // 设置 / 获取过载换模后备模型 ID（s15，lcc s15 af26862 recovery.py fallbackModel；默认空=禁用）。
-// 启动由 initFromSettings 读 settings.ini 的 fallbackModelId 键注入；529/overloaded 族错误
+// 启动由 initFromSettings 读 config.json 的 fallbackModelId 键注入；529/overloaded 族错误
 // 连续达 AgentConst::kMaxConsecutive529 时，ChatStream 重发体的 model 字段改用此值（每流至多一次）。
 void setFallbackModelId(const QString &modelId);
 QString fallbackModelId();
@@ -181,7 +181,7 @@ int timeout();
 void setVerbose(bool enabled);
 bool verbose();
 
-// 初始化：从 settings.ini 键 apiBaseUrl / apiToken 读取配置，并注入 maxRetries / fallbackModelId
+// 初始化：从 config.json 键 apiBaseUrl / apiToken 读取配置，并注入 maxRetries / fallbackModelId
 // （后两者经 AgentConst 单点取值，见 AgentConstants.h）
 void initFromSettings();
 

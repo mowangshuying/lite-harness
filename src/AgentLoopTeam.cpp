@@ -109,7 +109,7 @@ void AgentLoop::initTeamEngine()
             if (!danger.isEmpty())
                 return danger;
         }
-        // 审批总开关（settings.ini 键 permissionApproval，单源 AgentConst::permissionApprovalEnabled，
+        // 审批总开关（config.json 键 permissionApproval，单源 AgentConst::permissionApprovalEnabled，
         // 与主循环 permission 钩子同源同语义）：关闭时本注入不再把「需询问」折成硬拒——用户已裁决
         // 无需审批，替审批的拦阻也该一并撤掉。上方 bash 硬拒绝黑名单不受开关影响。
         // 注入⑤（钩子链）无需改动：它复用主循环 permission 钩子，开关关闭时那侧已返回空串。

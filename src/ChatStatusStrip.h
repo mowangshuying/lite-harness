@@ -50,7 +50,7 @@ public:
     /// 就直接答完），照实显示「第 0 步」，不隐藏：隐藏会让「第 3 轮」单独出现并读成
     /// 「第 3 轮什么都没干」。
     /// `stepLimit`=步数的上限（tooltip 里要写「撞上限即终止」这个数），**由页面传入**：
-    /// 本类是纯视图，不读 settings.ini（同「不订阅 AgentLoop」那条纪律的另一半——视图也
+    /// 本类是纯视图，不读 config.json（同「不订阅 AgentLoop」那条纪律的另一半——视图也
     /// 不自己取设置），页面 `refreshContextUsage` 已在读 `contextTokenBudget()`，同批读上限
     /// 顺手带进来，口径与压缩/轮次上限的入口单取一致。
     void setTurnStep(int turns, int steps, int stepLimit);

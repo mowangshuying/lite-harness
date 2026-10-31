@@ -63,8 +63,10 @@ void testDefaultEquivalence()
               == QStringLiteral("../config/config.ini"),
           "empty dir+name resolves to the historical '../config/config.ini'");
 
-    // 空白串等同未设：settings.ini 是手改面，`fluConfigDir=` 与 `fluConfigDir=   ` 都得走缺省，
-    // 否则解析出 "/.ini" 这种落点（QDir("").filePath 会给出相对当前目录的裸文件名）
+    // 空白串等同未设。宿主侧自配置合流批起**恒注入非空**目录/文件名（原 fluConfigDir/
+    // fluConfigFile/fluConfigFormat 三键已删除），所以这条钉的不再是「用户手改留空」，而是
+    // vendor API 自身的契约边界：一旦空白被当成有效目录，就会解析出 "/.ini" 这种落点
+    // （QDir("").filePath 给出相对当前目录的裸文件名），错误比缺省更难查。
     check(FluConfigStore::resolveFilePath(QStringLiteral("   "), QStringLiteral("  "),
                                          FluConfigFormat::Ini)
               == QStringLiteral("../config/config.ini"),
@@ -100,7 +102,7 @@ void testSuffixAlignment()
               == QStringLiteral("D:/app/My.JSON"),
           "case-variant matching extension is accepted as-is");
     // 只剥最后一个点之后的部分：多段名 "app.config" 的后段被当作扩展名换掉（文档化行为，
-    // 免得日后有人「顺手修成只认已知扩展名」，把同一份 settings.ini 写出两种落点）
+    // 免得日后有人「顺手修成只认已知扩展名」，把同一份 config.json 写出两种落点）
     check(FluConfigStore::resolveFilePath(QStringLiteral("D:/app"), QStringLiteral("app.config"),
                                          FluConfigFormat::Ini)
               == QStringLiteral("D:/app/app.ini"),

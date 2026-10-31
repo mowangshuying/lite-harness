@@ -204,7 +204,7 @@ void ChatSessionPage::buildLayout()
     connect(m_jumpBottomBtn, &QToolButton::clicked, this,
             [this]() { scrollToBottom(); });
 
-    // 显隐偏好恢复（settings.ini 键 sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
+    // 显隐偏好恢复（config.json 键 sidebarVisible，默认显示）；放在最后令首帧布局即按最终态钳宽
     setSidebarVisible(AppSettings::value(QStringLiteral("sidebarVisible"), true).toBool());
 }
 
@@ -1131,7 +1131,7 @@ void ChatSessionPage::stop()
         m_agentLoop->stop();
 }
 
-// 侧栏显隐切换单点：偏好落 settings.ini（键 sidebarVisible，默认显示）+ 浮动钮互斥 +
+// 侧栏显隐切换单点：偏好落 config.json（键 sidebarVisible，默认显示）+ 浮动钮互斥 +
 // 消息列重钳。构造期 buildLayout 尾部也走此函数完成首帧恢复
 void ChatSessionPage::setSidebarVisible(bool visible)
 {
@@ -1197,7 +1197,7 @@ void ChatSessionPage::applyColumnWidth()
 //   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
 // 口径（规格修4）：≈token 估算与压缩触发同源——服务端 usage.prompt_tokens 锚 + 本地增量估算，
 // 锚失效时兜底全量本地估算（含 system + tools schema + 注入块，即 B4 修复）；
-// 预算为 settings.ini 字符上限的纯派生值（/4），键语义不变。
+// 预算为 config.json 字符上限的纯派生值（/4），键语义不变。
 void ChatSessionPage::refreshContextUsage()
 {
     if (!m_agentLoop || !m_statusStrip)
@@ -1218,7 +1218,7 @@ void ChatSessionPage::refreshContextUsage()
     // m_toolIterations 已在 continueWithToolResults 前 ++ 完成）；回合数在
     // startAssistantStream（用户消息已入历史、run() 已自增）即抬升，发送即见「第 N 轮」。
     // 上限走 AgentConst::maxToolIterationsValue() 现读喂进 tooltip——本类是纯视图不读
-    // settings.ini，与上面 contextTokenBudget() 同批取值同型纪律
+    // config.json，与上面 contextTokenBudget() 同批取值同型纪律
     m_statusStrip->setTurnStep(m_agentLoop->userTurnCount(),
                                m_agentLoop->toolIterationCount(),
                                AgentConst::maxToolIterationsValue());

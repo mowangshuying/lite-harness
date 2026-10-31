@@ -15,11 +15,11 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 #include <FluComboBox.h>
-#include "AgentConstants.h" // 模型清单单源（settings.ini 可配置，取值见 AgentConst::modelOptions()）
+#include "AgentConstants.h" // 模型清单单源（config.json 可配置，取值见 AgentConst::modelOptions()）
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
 
-// 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：settings.ini 的
+// 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：config.json 的
 // modelOptions 键（逗号分隔）优先，未配置/写空回退内置两项；生效清单首项为回落默认项
 // （AgentLoop::model() 不在清单内时下拉显示并选中它），可用 defaultModel 键单独指定
 
@@ -106,9 +106,9 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 模型下拉框：FluComboBox 自带三主题 QSS 与 hover/pressed 态，弹层为 FluIndicatorRoundMenu
     // （当前项左侧画主题色选中标识竖条，WinUI ComboBox 观感）；高度 30 与 SendMsgButton 同高
     m_modelComboBox = new FluComboBox(this);
-    m_modelComboBox->addItems(AgentConst::modelOptions()); // 清单来自 settings.ini（未配置回退内置两项）
+    m_modelComboBox->addItems(AgentConst::modelOptions()); // 清单来自 config.json（未配置回退内置两项）
     m_modelComboBox->setFixedWidth(modelComboWidth(AgentConst::modelOptions())); // 占位宽随清单最长名自适应，理由见 modelComboWidth
-    // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 settings.ini
+    // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 config.json
     // 不必重启即可在下拉里选中新加的模型；清单未变时 reloadModelOptions 整体早退
     m_modelComboBox->installEventFilter(this);
     toolSetsLayout->addWidget(m_modelComboBox);
@@ -148,7 +148,7 @@ ChatMsgEdit::~ChatMsgEdit()
 
 void ChatMsgEdit::setCurrentModel(const QString &model)
 {
-    // 不在清单内回落默认项（AgentConst::defaultModel()：settings.ini 的 defaultModel 键，
+    // 不在清单内回落默认项（AgentConst::defaultModel()：config.json 的 defaultModel 键，
     // 未配置即生效清单首项）；blockSignals 抑制 currentTextChanged，
     // 程序化设置不对外回环 emit modelChanged
     int index = m_modelComboBox->findText(model);
@@ -166,7 +166,7 @@ QString ChatMsgEdit::currentModel() const
     return m_modelComboBox->currentText();
 }
 
-// 重读 settings.ini 的可选模型清单并原地刷新下拉项（配置化改造的核心收益：改完配置
+// 重读 config.json 的可选模型清单并原地刷新下拉项（配置化改造的核心收益：改完配置
 // 不必重启即可选新模型）。清单未变则整体早退——不动弹层、不发信号，避免每次点击都
 // 重建 item 列表与无谓的 currentTextChanged 广播；原选中项被配置移除时回落默认项，
 // 并对外 emit modelChanged 同步后端（否则 UI 显示与实际请求模型分叉）。

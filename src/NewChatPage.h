@@ -34,11 +34,11 @@ protected:
     // WorkDirPathBar 自身的 changeEvent 处理，Qt 按控件逐个投递、父级无需转发）
     void changeEvent(QEvent *event) override;
 
-    // 每次进入发起页重读 settings.ini 的默认工作目录，使设置页保存即时生效、无需重启
+    // 每次进入发起页重读 config.json 的默认工作目录，使设置页保存即时生效、无需重启
     void showEvent(QShowEvent *event) override;
 
 private:
-    // 读 settings.ini 默认工作目录并写入路径条（空/非法回退进程当前目录）；
+    // 读 config.json 默认工作目录并写入路径条（空/非法回退进程当前目录）；
     // 构造与 showEvent 共用
     void applyStoredWorkDir();
 

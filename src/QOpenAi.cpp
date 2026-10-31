@@ -2,7 +2,7 @@
 #include "LiteLog.h"
 
 #include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）+ s15 恢复常量（kMaxConsecutive529）
-#include "AppSettings.h"    // settings.ini 单源（apiBaseUrl / apiToken 两个键）
+#include "AppSettings.h"    // config.json 单源（apiBaseUrl / apiToken 两个键）
 #include "AgentRecovery.h"  // s15 过载文本判据单源（RecoveryRules::isOverloadedText，lcc s15 af26862）
 
 #include <QNetworkAccessManager>
@@ -25,12 +25,12 @@ public:
     QNetworkAccessManager manager;
     QString url;
     QString token;
-    int maxRetries = AgentConst::kMaxRetriesDefault; // 最大重试次数（仅 5xx / 429）；启动由 initFromSettings 读 settings.ini 覆盖
+    int maxRetries = AgentConst::kMaxRetriesDefault; // 最大重试次数（仅 5xx / 429）；启动由 initFromSettings 读 config.json 覆盖
     int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
     // 流式总时长哨兵（毫秒）：idle 每收字节即重置，杀不死"慢而不断"的流（持续有字节、
     // 永不发 [DONE]），需总量防线——与 AsyncRequest 的总超时同机制；取值进 AgentConstants.h
     int streamTotalTimeout = AgentConst::kStreamTotalTimeoutMs;
-    QString fallbackModelId;     // s15 过载换模后备模型（空=禁用）；启动由 initFromSettings 读 settings.ini 键 fallbackModelId 注入
+    QString fallbackModelId;     // s15 过载换模后备模型（空=禁用）；启动由 initFromSettings 读 config.json 键 fallbackModelId 注入
     bool verbose = false;        // 调试日志开关
 };
 
@@ -842,14 +842,14 @@ void initFromSettings()
     // 读侧统一走 AppSettings::value()（缓存解析产物），不再为两个键现构造 QSettings
     setUrl(AppSettings::value(QStringLiteral("apiBaseUrl")).toString());
     c.token = AppSettings::value(QStringLiteral("apiToken")).toString();
-    // 重试次数同源于 settings.ini（键 maxRetries，默认/校验界见 AgentConst::kMaxRetries*）：
+    // 重试次数同源于 config.json（键 maxRetries，默认/校验界见 AgentConst::kMaxRetries*）：
     // 原默认 0 且全仓无调用方，429/5xx 退避链路运行时不可达
     setMaxRetries(AgentConst::maxRetriesValue());
-    // s15 后备模型同源于 settings.ini（键 fallbackModelId，空=禁用换模；对照 lcc env.py
+    // s15 后备模型同源于 config.json（键 fallbackModelId，空=禁用换模；对照 lcc env.py
     // FALLBACK_MODEL_ID "or None" 口径——未配置则全程不换模，行为与 s15 前逐字节一致）
     setFallbackModelId(AgentConst::fallbackModelIdValue());
     if (c.url.isEmpty() || c.token.isEmpty())
-        LOG_WARN << "QOpenAi: settings.ini 的 apiBaseUrl / apiToken 未配置或为空。";
+        LOG_WARN << "QOpenAi: config.json 的 app/apiBaseUrl / app/apiToken 未配置或为空。";
 }
 
 } // namespace QOpenAi

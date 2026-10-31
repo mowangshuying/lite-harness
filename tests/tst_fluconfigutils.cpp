@@ -135,6 +135,9 @@ int groupJsonFirstSingleton(const QString& jsonDir, FluConfigUtils** outUtils, Q
     // 从未写过的键走各自的回落值
     CHECK(utils->getTranslationLanguage() == QStringLiteral("zh-CN"));
 
+    // 盘上键名保持驼峰：json 后端注册为 Qt::CaseSensitive（vendor 自己的语义，宿主不得为迁就
+    // 缓存去改它）。代价落在读侧——换大小写取不到，所以宿主 SettingsCache 的归一化必须与格式
+    // 成对配置（Reader 的 keyCaseSensitivity 入参），不能无条件 toLower()。判据见 tst_configmerge。
     const QJsonObject config = jsonAt(jsonPath).value(QStringLiteral("config")).toObject();
     CHECK(config.value(QStringLiteral("language")).toString() == QStringLiteral("en-US"));
     CHECK(config.value(QStringLiteral("navWidth")).toInt() == 260);

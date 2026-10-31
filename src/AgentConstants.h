@@ -9,34 +9,47 @@
 #include <QString>
 #include <QStringList>
 #include <QtGlobal> // qsizetype
-#include <QMetaType> // iniTextValue 判返回值形态
-#include <QVariant>  // iniTextValue 取原始值
+#include <QMetaType> // textValue 判返回值形态
+#include <QVariant>  // textValue 取原始值
 #include "AppSettings.h"
 
 namespace AgentConst {
 
-// 可选模型清单：内置兜底两项 + settings.ini 覆盖（键 modelOptions，逗号分隔）。
+// 可选模型清单：内置兜底两项 + config.json 覆盖（键 modelOptions，逗号分隔）。
 // 用户裁决（配置化改造）：加模型改配置文件即可，下拉框即时可选，不再改代码重编。
 // 生效清单首项为回落默认项（AgentLoop::model() 不在清单内时下拉显示并选中它），
 // 也可用 defaultModel 键越过首项单独指定默认模型。
-// 值带不带引号都认：不带引号的逗号串在 ini 语法里是「列表」写法，由 iniTextValue 归一化回逗号串。
+// 值带不带引号都认：ini 后端的裸逗号串（QStringList）与 json 后端的数组（QVariantList）
+// 两种「列表」形态，都由 textValue 归一化回逗号串。
 inline const QStringList kBuiltinModelOptions = {QStringLiteral("qwen3.8-flash"),
                                                  QStringLiteral("qwen3.8-max")};
 inline const QString kModelOptionsKey = QStringLiteral("modelOptions");
 inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 
-// ini 取值归一化（读侧唯一入口）：手改 settings.ini 时值一般不带引号，而「逗号分隔的一串」恰好是
-// QSettings ini 语法的列表写法——它被解析成 QStringList，此时 .toString() 返回空串（Qt 6.9 实测），
-// 配置就被误判成「未配置」而静默回退内置清单。故统一走这里：QStringList 用逗号回接（Qt 解析时已逐项
-// trim），其余形态按字符串取。标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
-// 取原始值走 AppSettings::value()（缓存解析产物，按文件身份惰性重载）而非现构造 QSettings——
-// 本函数被 modelOptions/defaultModel/fallbackModelIdValue 共用，消费点已下沉到 per-tool 级。
-inline QString iniTextValue(const QString &key)
+// 「一串」的两种列表形态 → 逗号串回接（纯函数，零 QSettings/零夹具，故可进 ctest 直测）。
+// 为什么必须判**两种**形态，这是配置文件由 ini 合流成 json 后才出现的分叉：
+//   · ini 后端：手改时值一般不带引号，而「逗号分隔的一串」恰好是 QSettings ini 的列表语法，
+//     被解析成 QStringList；
+//   · json 后端：自定义格式的 flatten 走 QJsonValue::toVariant()，数组落 **QVariantList**
+//     而非 QStringList（Qt 6.9 实测：typeId=9，`== QStringList` 判据为假）。
+// 两种形态的 .toString() 都返回空串，一旦被当成标量取走，配置就被误判「未配置」而静默回退
+// 内置清单——合流前只判 QStringList 是对的，合流后只判 QStringList 会让用户手写
+// `"modelOptions": ["a","b"]`（JSON 下最自然的清单写法）读不回。故两个判据并列，缺一不可。
+// 标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
+inline QString normalizedText(const QVariant &stored)
 {
-    const QVariant stored = AppSettings::value(key);
-    if (stored.metaType() == QMetaType::fromType<QStringList>())
+    if (stored.metaType() == QMetaType::fromType<QStringList>()
+        || stored.metaType() == QMetaType::fromType<QVariantList>())
         return stored.toStringList().join(QLatin1Char(','));
     return stored.toString();
+}
+
+// 取值归一化（读侧唯一入口）：取原始值走 AppSettings::value()（缓存解析产物，按文件身份惰性
+// 重载）而非现构造 QSettings——本函数被 modelOptions/defaultModel/fallbackModelIdValue 共用，
+// 消费点已下沉到 per-tool 级。归一化本体是上面的纯函数 normalizedText，此处只做取数转发。
+inline QString textValue(const QString &key)
+{
+    return normalizedText(AppSettings::value(key));
 }
 constexpr qsizetype kModelOptionsMax = 32; // 清单条数上限（防手工篡改塞进超长清单）
 
@@ -58,12 +71,12 @@ inline QStringList parseModelOptions(const QString &stored)
     return result;
 }
 
-// 生效清单单点取值：settings.ini 的 modelOptions 解析结果为空（键缺失/空串/全空白）
+// 生效清单单点取值：config.json 的 modelOptions 解析结果为空（键缺失/空串/全空白）
 // 一律回退内置清单——配置文件只增不改语义，写坏或清空都不会让下拉框变成空下拉。
 inline QStringList modelOptions()
 {
     const QStringList parsed =
-        parseModelOptions(iniTextValue(kModelOptionsKey));
+        parseModelOptions(textValue(kModelOptionsKey));
     return parsed.isEmpty() ? kBuiltinModelOptions : parsed;
 }
 
@@ -72,7 +85,7 @@ inline QStringList modelOptions()
 inline QString defaultModel()
 {
     const QStringList options = modelOptions();
-    const QString stored = iniTextValue(kDefaultModelKey).trimmed();
+    const QString stored = textValue(kDefaultModelKey).trimmed();
     if (!stored.isEmpty() && options.contains(stored))
         return stored;
     return options.first();
@@ -82,11 +95,11 @@ inline QString defaultModel()
 // 传输层连续过载（529/overloaded）达 kMaxConsecutive529 上限时，重发体 model 字段改用此值。
 // 空串 = 禁用换模（对照 lcc env.py 的 "or None" 归一：未配置则全程不换模，行为与 s15 前逐字节一致）。
 // 刻意**不做** defaultModel 式的「清单内才采信」校验：fallback 语义是给清单外的另一服务兜底，
-// 且换模失败自然回落既有错误链，无须入口设闸。读值必须经 iniTextValue（同清单键纪律，防逗号串形态误判未配置）。
+// 且换模失败自然回落既有错误链，无须入口设闸。读值必须经 textValue（同清单键纪律，防逗号串形态误判未配置）。
 inline const QString kFallbackModelKey = QStringLiteral("fallbackModelId");
 inline QString fallbackModelIdValue()
 {
-    return iniTextValue(kFallbackModelKey).trimmed();
+    return textValue(kFallbackModelKey).trimmed();
 }
 
 // LLM 请求输出上限（lcc s06 create 调用显式 max_tokens=8000，主/子两条链一致）
@@ -96,7 +109,7 @@ constexpr int kMaxTokens = 8000;
 // kMaxConsecutive529 本轮由 QOpenAi 传输层消费；另两个的消费点在 AgentLoop 恢复接线（后续 lane），
 // 先入本头单源，防后续 lane 各处字面量分叉。
 // 偏差登记：lcc 的 MAX_RETRIES=3 与退避（500ms·2^n 封顶 32s + 25% 抖动）**不采**——lite 重试预算
-// 与退避沿用 settings.ini 键 maxRetries 的既有口径（1s,2s,4s…封顶 64s 无抖动），语义等价，
+// 与退避沿用 config.json 键 maxRetries 的既有口径（1s,2s,4s…封顶 64s 无抖动），语义等价，
 // 不引入随机抖动也保证事件驱动下的行为可复现。
 constexpr int kEscalatedMaxTokens = 16000; // max_tokens 溢出第一拍：升档到该值重发（lcc ESCALATED_MAX_TOKENS）
 constexpr int kMaxConsecutive529 = 2;      // 连续过载计数界：达到即换 fallback 模型（lcc MAX_CONSECUTIVE_529）
@@ -104,18 +117,18 @@ constexpr int kMaxRecoveryRetries = 2;     // 恢复级重试预算（lcc MAX_RE
 
 // ---- s17 goal loop 常量（对照 lcc s17 a20fdec goal_manager.py 常量块 L38-43）----
 // 消费点在 GoalRules.h / GoalManager 引擎层；前三个是契约值（评估器单次输出上限、条件长度门、
-// 转录渲染预算），第四个同时是 settings.ini 键 stopHookBlockCap 的缺省回退值。
+// 转录渲染预算），第四个同时是 config.json 键 stopHookBlockCap 的缺省回退值。
 constexpr int kGoalEvaluatorMaxTokens = 512;    // lcc DEFAULT_EVALUATOR_MAX_TOKENS：评估器不传 tools 的单发上限
 constexpr int kGoalMaxConditionLength = 4000;   // lcc MAX_GOAL_LENGTH：goal 条件长度门（超限折叠逐字错误串）
 constexpr int kGoalTranscriptCharLimit = 24000; // lcc TRANSCRIPT_CHAR_LIMIT：评估器转录预算（从新往回累加）
 
 // 评估器专用模型（lcc env GOAL_EVALUATOR_MODEL_ID，port ⑦ 三级回退的 lite 形）：
-// 空串 = 用主循环当前模型。读值必须经 iniTextValue（同 fallbackModelId 的裸逗号串纪律）。
+// 空串 = 用主循环当前模型。读值必须经 textValue（同 fallbackModelId 的裸逗号串纪律）。
 // 刻意不做「清单内才采信」校验：与 fallbackModelId 同理，评估器允许挂在模型清单外的服务上。
 inline const QString kGoalEvaluatorModelKey = QStringLiteral("goalEvaluatorModelId");
 inline QString goalEvaluatorModelIdValue()
 {
-    return iniTextValue(kGoalEvaluatorModelKey).trimmed();
+    return textValue(kGoalEvaluatorModelKey).trimmed();
 }
 
 // 连续 block 上限（lcc env STOP_HOOK_BLOCK_CAP + GoalController block_cap 唯一守卫 L249-250）：
@@ -143,7 +156,7 @@ constexpr double kTopP = 0.75;
 
 // ---- 工具调用轮次上限（第十二轮：改为可设置项） ----
 // 防止模型反复请求工具形成死循环（原 kMaxToolIterations=300，自 AgentLoop.cpp 匿名 ns
-// 收敛）。用户可在设置页调整，落 settings.ini 配置文件（键 maxToolIterations）。校验界
+// 收敛）。用户可在设置页调整，落 config.json 配置文件（键 maxToolIterations）。校验界
 // [10,1000]：下界防误设 0/过小值导致回合刚起步即被掐死，上界是失控防线的天花板——
 // 再大也只是放大死循环损失，无正当用途。
 constexpr int kMaxToolIterationsDefault = 500; // 未设置时的默认上限（用户裁决值）
@@ -151,10 +164,11 @@ constexpr int kMaxToolIterationsMin = 10;      // 校验下界
 constexpr int kMaxToolIterationsMax = 1000;    // 校验上界
 inline const QString kMaxToolIterationsKey = QStringLiteral("maxToolIterations");
 
-// 轮次上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// 轮次上限单点取值：config.json 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // AgentLoop（回合入口快照）共用同一实现，避免多处读盘/校验口径分叉；缺失、
 // 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
-// （exe 同目录 settings.ini）；取值经 AppSettings::value() 的读缓存，调用频率不再受读盘成本约束。
+// （存储根下唯一的 config.json，宿主键挂 `app/` 组）；取值经 AppSettings::value() 的读缓存，
+// 调用频率不再受读盘成本约束。
 inline int maxToolIterationsValue()
 {
     bool ok = false;
@@ -173,7 +187,7 @@ constexpr int kMaxRetriesMin = 0;     // 校验下界（0 = 关闭重试）
 constexpr int kMaxRetriesMax = 5;     // 校验上界
 inline const QString kMaxRetriesKey = QStringLiteral("maxRetries");
 
-// 重试次数单点取值：settings.ini 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律，
+// 重试次数单点取值：config.json 读取 + 范围校验 + 默认回退（与 maxToolIterationsValue 同纪律，
 // 含同走 AppSettings::value() 读缓存）。
 // 消费方：QOpenAi::initFromSettings（启动注入）；缺失、非整数、越界一律回退默认值。
 inline int maxRetriesValue()
@@ -239,7 +253,7 @@ constexpr int kStreamTotalTimeoutMs = 1800000;
 
 // ---- 上下文压缩主上限（第九轮：改为可设置项） ----
 // 原 CompactManager 文件级常量 kContextCharLimit=50000 现为本默认值；用户可在设置页
-// 调整，落 settings.ini 配置文件（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
+// 调整，落 config.json 配置文件（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
 // （batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S——比例与原 lcc 常量在 50000
 // 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）。
 constexpr qsizetype kContextCharLimitDefault = 200000; // 未设置时的主上限（用户裁决值）
@@ -247,10 +261,10 @@ constexpr qsizetype kContextCharLimitMin = 10000;      // 校验下界
 constexpr qsizetype kContextCharLimitMax = 5000000;    // 校验上界
 inline const QString kContextCharLimitKey = QStringLiteral("contextCharLimit");
 
-// 主上限单点取值：settings.ini 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
+// 主上限单点取值：config.json 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
 // CompactManager（管线消费）共用同一实现，避免多处读盘/校验口径分叉；缺失、
 // 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
-// （exe 同目录 settings.ini）；取值经 AppSettings::value() 读缓存——本函数被
+// （存储根下唯一的 config.json）；取值经 AppSettings::value() 读缓存——本函数被
 // contextTokenBudget 复用，而后者已下沉到 per-tool 级消费点（ChatSessionPage 侧栏刷新），
 // 每次现构造 QSettings 的读盘成本不再可忽略（§9.10 问题②）。
 inline qsizetype contextCharLimitValue()
@@ -264,8 +278,8 @@ inline qsizetype contextCharLimitValue()
 
 // ---- token 估算与预算派生（修4：计量口径 token 化） ----
 // 触发与 UI 从「UTF-16 字符数」切换到 token 估算：CJK 码点 1 字符 ≈ 1 token，
-// 其余 4 字符 ≈ 1 token（向上取整）。预算换算单点：contextCharLimit（键名拼法涉
-// settings.ini 数据兼容，不可改；语义自此为「预算派生基准」）÷ 每 token 均字符数。
+// 其余 4 字符 ≈ 1 token（向上取整）。预算换算单点：contextCharLimit（键名沿用不改——它是
+// 用户手改面，改名会让既有配置文件里的值静默失联；语义自此为「预算派生基准」）÷ 每 token 均字符数。
 // 不新增设置键（裁决）。锚点校准（usage.prompt_tokens 回填）在宿主侧与本估算组合，
 // 本头只提供纯函数估算，零 JSON 依赖。
 constexpr qsizetype kCharsPerTokenBudget = 4; // contextCharLimit(字符) → token 预算的换算基准
@@ -364,7 +378,7 @@ constexpr qsizetype kGlobScanEntryLimit = 20000;
 constexpr qsizetype kGlobCollectLimit = 2000;
 
 // ---- 工具执行权限审批开关（s17.2：设置页「工具执行权限审批」） ----
-// settings.ini 键 permissionApproval：true=需要审批（缺省，命中询问规则弹 PermissionCard 挂起队列），
+// config.json 键 permissionApproval：true=需要审批（缺省，命中询问规则弹 PermissionCard 挂起队列），
 // false=无需审批（三道「询问类」门一律放行）。纯布尔无区间校验；键缺失或写成读不出来的串一律回退
 // true——回退方向刻意选更保守的一侧：配置解析不出来时宁可多问一次，也不静默放行。
 // 消费方两处同源：AgentLoopHooks.cpp 内置 permission 钩子（ASK 规则门 / mcp__ confirm 门 /

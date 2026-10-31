@@ -649,7 +649,7 @@ void LiteHarness::closeEvent(QCloseEvent *event)
                               UiScale::encodeGeometry(saveGeometry()));
 }
 
-// 窗口尺寸/位置恢复（P1-11）：settings.ini 键 windowGeometry（saveGeometry 的 base64）。
+// 窗口尺寸/位置恢复（P1-11）：config.json 键 windowGeometry（saveGeometry 的 base64）。
 // 无存档 / 串被手改坏 → decodeGeometry 交出空字节串 → 直接 return，保持
 // FluFrameLessWidget 的默认尺寸与位置：**绝不猜一个尺寸**（猜出来的尺寸会盖掉默认值，
 // 而默认值是 Qt 按屏幕与工作区算出来的，比任何猜测都可信）。

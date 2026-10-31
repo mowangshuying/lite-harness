@@ -8,10 +8,18 @@
 // 「索引看得见、数据看不见」或反之，一个区域散在三个根上。本头把锚点收敛为一个：
 //
 //   <exe 目录>/../config            ← 唯一存储根（configRoot）
-//   ├── settings.ini                用户配置（P1 仅搬家，仍 IniFormat；P2 与 FluentUI 配置合流）
-//   ├── config.ini                  FluentUI 配置（App.cpp 恒注入本根，不再 CWD 相对）
+//   ├── config.json                 唯一配置文件（自定义 json 格式，单源 FluConfigStore::jsonFormat）
+//   │                                 · app/*      宿主键（AppSettings 统一加组前缀，见该头）
+//   │                                 · config/*   FluentUI 自有键（主题/导航/语言镜像）
+//   │                                 · translation/* FluentUI 翻译语言
 //   ├── index.json                  会话索引
 //   └── .lite-harness/              会话存储区
+//
+// 配置文件从「settings.ini + config.ini 两份 Ini」合流为「config.json 一份 Json」的判据：
+// 同一个存储区被两份配置、两套键名口径切开，改一处要记得改另一处；且 QConfFile 缓存键**只有
+// absPath**（qsettings.cpp:153-171），同一路径被两种格式打开时先解析者的 readFunc 会独占那张
+// 共享表——合流成一份文件后，这条约束只能靠「全仓同一个 Format 枚举值」满足，故格式单源必须是
+// FluConfigStore::jsonFormat()，宿主侧不得自己 registerFormat 一个同名格式。
 //       ├── skills/<name>/SKILL.md  技能库（全局共享，不再按 workDir 隔离）
 //       └── sessions/<dataId>/      history.json + AgentConstants.h 登记的叶子目录
 //
@@ -59,9 +67,17 @@ public:
     }
 
     // ---- 存储根下的固定文件 ----
-    static QString settingsFilePathFor(const QString &root)
+    // 配置文件名（不含扩展名）单源。App.cpp 把它交给 FluentUI 的 configure()，vendor 侧按注入
+    // 的格式补扩展名（Json → .json）。两侧必须拼出**同一个绝对路径**：QConfFile 缓存键只有
+    // absPath，拼出两个名字就是两个文件、两套内存表，合流当场失效（对表断言见 tst_configmerge）。
+    static QString configFileName()
     {
-        return joined(root, QStringLiteral("settings.ini"));
+        return QStringLiteral("config");
+    }
+
+    static QString configFilePathFor(const QString &root)
+    {
+        return joined(root, configFileName() + QStringLiteral(".json"));
     }
     static QString indexFilePathFor(const QString &root)
     {
@@ -93,7 +109,7 @@ public:
     }
 
     // ---- 无参便捷口（生产调用点用这一组）----
-    static QString settingsFilePath() { return settingsFilePathFor(configRoot()); }
+    static QString configFilePath() { return configFilePathFor(configRoot()); }
     static QString indexFilePath() { return indexFilePathFor(configRoot()); }
     static QString storeRoot() { return storeRootFor(configRoot()); }
     static QString sessionsRoot() { return sessionsRootFor(configRoot()); }
@@ -104,7 +120,7 @@ public:
     }
 
 private:
-    // 拼接并归一：root 为空时炸——空根拼出来的 "/settings.ini" 在 Windows 下解析成
+    // 拼接并归一：root 为空时炸——空根拼出来的 "/config.json" 在 Windows 下解析成
     // 「当前驱动器根」，是改造前那条已知错路径，本头不再提供抵达它的路径。
     static QString joined(const QString &root, const QString &leaf)
     {

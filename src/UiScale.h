@@ -50,7 +50,7 @@ constexpr int kFontScaleMin = 80;      // 下界：再小就低于正文可读�
 constexpr int kFontScaleMax = 200;     // 上界：2 倍字号会把固定宽卡片撑破
 
 // 倍率校验（与 AgentConst::maxRetriesValue 同纪律：缺失、非整数、越界一律回退默认）。
-// 刻意用 toLongLong 而非 toInt：settings.ini 是手改面，写成 1e9 之类时 toInt 溢出成
+// 刻意用 toLongLong 而非 toInt：config.json 是手改面，写成 1e9 之类时 toInt 溢出成
 // 负数再被下界拦掉，语义上仍是「回退默认」，但日志里看不出用户到底写了什么。
 inline int fontScalePercent(const QVariant &stored)
 {
@@ -65,8 +65,8 @@ inline int fontScalePercent(const QVariant &stored)
 // 「放大 20%」变成「+2pt ≈ +22%」，倍率与观感不成比例。
 // 启动快照（进程级唯一值，App.cpp 在 QApplication 构造后写一次，消费方只读这里）：
 // 字号有**两个生效面**——应用字体（气泡正文/输入框，QSS 不写死字号）只在启动时设一次，
-// QSS 字号（卡片次要文字）则在每次主题切换时由 ThemeAware::bind 重放。若后者现取 ini，
-// 用户手改 ini 后切一次主题就会出现「卡片字变了、正文没变」的半生效，比完全没改更难解释。
+// QSS 字号（卡片次要文字）则在每次主题切换时由 ThemeAware::bind 重放。若后者现取配置文件，
+// 用户手改配置后切一次主题就会出现「卡片字变了、正文没变」的半生效，比完全没改更难解释。
 // 快照把两面钉在同一个值上，代价是本键与 language 同语义：**重启生效**（设置页据此提示）。
 // 函数内 static + inline 取引用，跨 TU 唯一实例（同 TestHarness / AppSettings 计数口径）。
 inline int &runtimeFontScale()
@@ -107,7 +107,8 @@ inline int scaledSize(int baseSize, int percent)
 // 名称表与 Qt 内建查找表逐项对齐（qtbase/src/gui/kernel/qhighdpiscaling.cpp 的
 // scaleFactorRoundingPolicyLookup：Round / Ceil / Floor / RoundPreferFloor /
 // PassThrough）。比的是 toLower 后的串，故 "roundpreferfloor" 与 "RoundPreferFloor"
-// 同解——ini 是手改面，大小写不该成为失败模式。
+// 同解——配置文件是手改面，大小写不该成为失败模式（键名侧则相反：json 后端大小写敏感，
+// 见 AppSettings::keyCaseSensitivity()；这里放宽的是**值**，别把两条口径混为一谈）。
 // 空串与未知值都回退 PassThrough：那是 Qt6 自己的默认值（qguiapplication.cpp:142-143
 // 实证），所以「没写过这个键」与「写错了值」看到同一套缩放，不会被静默切到另一档。
 inline Qt::HighDpiScaleFactorRoundingPolicy dpiPolicyFromName(const QString &name)
@@ -142,8 +143,8 @@ inline QString dpiPolicyName(Qt::HighDpiScaleFactorRoundingPolicy policy)
 }
 
 // ---- ③ 窗口几何 ----
-// saveGeometry() 交出的是不透明二进制（版本号 + 屏幕序号 + 矩形），直接进 ini 会写出
-// 乱码行、并让下一行的 ini 解析错位，故整串 base64 化。
+// saveGeometry() 交出的是不透明二进制（版本号 + 屏幕序号 + 矩形），直接写进配置文件会产出
+// 乱码值（ini 后端还会连带打乱下一行的解析），故整串 base64 化。
 inline QString encodeGeometry(const QByteArray &geometry)
 {
     return QString::fromLatin1(geometry.toBase64());

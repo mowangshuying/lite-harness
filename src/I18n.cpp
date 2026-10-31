@@ -44,7 +44,7 @@ namespace I18n {
 
 QString language()
 {
-    // 语言权威存储 = exe 同目录 settings.ini（键 "language"），非法/缺省回退 zh-CN
+    // 语言权威存储 = 存储根 config.json 的 app/language 键，非法/缺省回退 zh-CN
     const QString stored = AppSettings::value(QStringLiteral("language")).toString();
     return stored == kLangEn ? kLangEn : kLangZh; // 非法/缺省一律回退 zh-CN
 }
@@ -52,8 +52,8 @@ QString language()
 void setLanguage(const QString &lang)
 {
     AppSettings::setValue(QStringLiteral("language"), lang);
-    // 镜像同步 FluentUI 内部读值。其存储为 CWD 相对的 ../config/config.ini（分发场景
-    // 可能漂移），故仅作一致性同步、不作权威来源；且该写入不发任何信号。
+    // 镜像同步 FluentUI 内部读值（它写同一份 config.json 的 translation/language 键）。
+    // 权威来源仍是上面的 app/language，这里只为让 FluentUI 内部读值不落后；该写入不发任何信号。
     FluConfigUtils::getUtils()->setLanguage(lang);
 }
 

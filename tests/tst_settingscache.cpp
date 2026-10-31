@@ -3,13 +3,14 @@
 //
 // 本套件的存在意义（§9.10 问题②整改的安全前提）：
 // 整改把「每次取值现构造 QSettings」换成「按文件身份惰性重载的解析产物缓存」。缓存的失效
-// 判据一旦出错，症状是**静默读不到新配置**——用户手改 settings.ini 或设置页写完再读，界面
-// 显示旧值却不报错，属最难查的那类回归。README「运行时配置」节明确承诺「其余手改 ini 即可」，
+// 判据一旦出错，症状是**静默读不到新配置**——用户手改 config.json 或设置页写完再读，界面
+// 显示旧值却不报错，属最难查的那类回归。README「运行时配置」节明确承诺「其余手改配置文件即可」，
 // 这条承诺的全部技术依据就是本文件的组 3。
 //
 // 覆盖面边界（勿高估，与 §9.5 同口径）：
 // · 本套件测的是**缓存层**（Reader + 两个纯判据），不是 AppSettings 的门面绑定——后者把路径
-//   钉在 QCoreApplication::applicationDirPath()/settings.ini，测试里既造不出也不该往 exe 目录
+//   钉在 LitePaths::configFilePath()（存储根 <exe 目录>/../config 下的 config.json），测试里既造不出
+//   也不该往真实存储根
 //   写盘（ScopedTempRoot 禁的正是这类回退路径）。故 Reader 以「路径可注入」为设计前提，
 //   这也是它被抽成独立纯头而非写进 AppSettings.h 的唯一理由。
 // · 不变量⑤（装载失败不提交身份）在本套件里**只有判据级覆盖**（组 1b 穷举 loadIsCommittable），
@@ -55,7 +56,7 @@ Identity ident(bool exists, qint64 mtimeMs, qint64 sizeBytes)
     return identity;
 }
 
-// 绕过 Reader 直接落盘（模拟「用户手改 settings.ini」：外部写手，缓存无从得知，
+// 绕过 Reader 直接落盘（模拟「用户手改 config.json」：外部写手，缓存无从得知，
 // 只能靠文件身份判据发现——正是组 3 要证的那件事）
 bool writeIniExternally(const QString &path, const QString &key, const QVariant &value)
 {
@@ -75,7 +76,7 @@ QVariant readIniDirectly(const QString &path, const QString &key)
 // 手写裸内容落盘（不经 QSettings 写侧）。这条通道是**必需**的，有两个用途：
 // ① iniEscapedString（qsettings.cpp:592）见 `,` `;` `=` 就加引号，所以
 //    `setValue("k","a,b,c")` 落盘成 `k="a,b,c"`，读回来是 QString 而非 QStringList——
-//    「逗号串解析成列表」只在**人手编辑**无引号时才发生，要复现 iniTextValue 防的那个
+//    「逗号串解析成列表」只在**人手编辑**无引号时才发生，要复现 textValue 防的那个
 //    形态只能自己写文件。
 // ② QSettings 写侧必然产出 `[General]` 段头，于是「无段头的裸 key=value」（用户手写
 //    ini 的最常见形态）与「自定义 [Section]」两种形态用 QSettings 根本造不出来。
@@ -149,7 +150,7 @@ void testIdentityPredicate()
 
 // ---- 组 1b：装载可信判据穷举（不变量⑤，评审 B1 的红线）----
 // 症状：文件被编辑器/杀软/同步盘瞬时独占 → QFile::open 失败 → allKeys() 交出空表。
-// 若把「空表 + 当时身份」一起提交，一次瞬时失败就被放大成「直到 ini 再被改动前，所有键
+// 若把「空表 + 当时身份」一起提交，一次瞬时失败就被放大成「直到配置文件再被改动前，所有键
 // 静默回落默认值」（apiToken 读空、上限回默认、侧栏偏好被重置）——旧路径每次现构造天然
 // 会重试，缓存化必须显式保住这个行为。
 void testLoadCommittable()
@@ -175,13 +176,13 @@ void testLoadCommittable()
 }
 
 // ---- 组 1c：缺失文件态（零夹具：只要求该路径不存在）----
-// 启动时 settings.ini 还没被写过是常态。这一态下缓存必须：读到 fallback、且**不**每次重试
+// 启动时 config.json 还没被写过是常态。这一态下缓存必须：读到 fallback、且**不**每次重试
 // 装载。注意 Qt 自己的短路要求 size > 0（qsettings.cpp:1345），缺失/空文件它每次构造都会
 // 走读盘分支——这一格是本修复相对 Qt 内部 ConfFileCache 的净增益，故值得单独钉。
 void testMissingFileState()
 {
     const QString missing =
-        QStringLiteral("lite-harness-tst-absent-dir/settings.ini"); // 不存在的相对子目录
+        QStringLiteral("lite-harness-tst-absent-dir/config.json"); // 不存在的相对子目录
     TestHarness::check(!QFileInfo(missing).exists(),
                        "前置：该路径确实不存在（否则本组断言全部失效）");
 
@@ -197,8 +198,8 @@ void testMissingFileState()
     // 相对路径 + 运行期 cwd 变化会让两者分家。
     TestHarness::check(QFileInfo(reader.path()).isAbsolute(),
                        "构造期把路径归一成绝对形式（stat 与装载同目标）");
-    TestHarness::check(reader.path().endsWith(QStringLiteral("/settings.ini"))
-                           || reader.path().endsWith(QStringLiteral("\\settings.ini")),
+    TestHarness::check(reader.path().endsWith(QStringLiteral("/config.json"))
+                           || reader.path().endsWith(QStringLiteral("\\config.json")),
                        "归一只补前缀不改末段文件名");
 
     TestHarness::check(reader.loadCount() == 0, "构造 Reader 零装载（装载只发生在首次取值）");
@@ -247,7 +248,7 @@ void testCacheHitIsFree(const QString &iniPath)
                        "缺失键交出 fallback，不是空 QVariant");
 }
 
-// ---- 组 3：外部手改立即生效（README「其余手改 ini 即可」的技术依据）----
+// ---- 组 3：外部手改立即生效（README「其余手改配置文件即可」的技术依据）----
 // 简单 static 缓存会让这四条全红——那正是当初否决它的原因。
 void testExternalEditTakesEffect(const QString &iniPath)
 {
@@ -402,7 +403,7 @@ void testHandWrittenForms(const QString &barePath, const QString &groupPath, con
         Reader reader(barePath);
         const QVariant cached = reader.value(QStringLiteral("modelOptions"));
         TestHarness::check(cached.metaType() == QMetaType::fromType<QStringList>(),
-                           "缓存保留 QStringList 形态（iniTextValue 的归一化前提不被绕过）");
+                           "缓存保留 QStringList 形态（textValue 的归一化前提不被绕过）");
         TestHarness::check(cached.toStringList() == direct.toStringList(),
                            "无段头形态下缓存与现取逐项一致");
         TestHarness::check(cached.toStringList().size() == 3, "裸逗号串仍是 3 项");
