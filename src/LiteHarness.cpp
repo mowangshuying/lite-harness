@@ -79,8 +79,8 @@ void LiteHarness::initUi()
     setWindowIcon(QIcon(":/res/LiteHarness.ico"));
 
     // 最小窗口尺寸落地（P0-2）：LayoutConst::kWindowMinWidth/Height 自评审 A1 起就定义在
-    // 常量头里，但从未被任何地方引用——固定宽开销（导航 256 + 侧栏 280 + 间隙 12 + 页面
-    // 边距 70 = 618px）叠加后，窗口一窄消息列就被钳到 0，表现为「白屏」假象。
+    // 常量头里，但从未被任何地方引用——固定宽开销（导航 225 + 侧栏 225 + 间隙 12 + 页面
+    // 边距 70 = 532px）叠加后，窗口一窄消息列就被钳到 0，表现为「白屏」假象。
     // 这里补上唯一缺失的一环；常量本身仍是单源，改窄/改宽只动 LayoutConstants.h。
     setMinimumSize(LayoutConst::kWindowMinWidth, LayoutConst::kWindowMinHeight);
 

@@ -29,8 +29,9 @@ inline constexpr int kHeroVMargin = 24;
 /// ChatMsgEdit 工具集行同用 15，此前四处各抄一遍裸值。
 inline constexpr int kColGap = 15;
 
-/// 会话侧边栏固定宽度：SessionSidebar 自钳制 + ChatSessionPage 列宽计算扣除量
-inline constexpr int kSidebarWidth = 280;
+/// 会话侧边栏固定宽度：SessionSidebar 自钳制 + ChatSessionPage 列宽计算扣除量。
+/// 与 kNavWidth 同宽（两栏统一为 225）——此前 280/256 两个值并存，左右两栏不等宽
+inline constexpr int kSidebarWidth = 225;
 
 /// 消息列与侧栏之间的间隙：页面外层 QHBoxLayout 的 spacing，
 /// 亦计入 ChatSessionPage::resizeEvent 的侧栏占用扣除（宽 + 隙为一个整块）
@@ -52,8 +53,9 @@ inline constexpr int kJumpBottomBtnMargin = 12;
 
 /// 导航列展开宽（UI 优化 P2-D1）：LiteHarness::initNavView 的 setViewWidth 与下方
 /// kWindowMinWidth 的推导式同源。此前 256 只在 cpp 里裸写、注释里再手抄一遍，
-/// 改宽不会报错但最小宽推导立刻失真（窄窗白屏假象的正是这条算式）
-inline constexpr int kNavWidth = 256;
+/// 改宽不会报错但最小宽推导立刻失真（窄窗白屏假象的正是这条算式）。
+/// 与 kSidebarWidth 同宽（两栏统一为 225）
+inline constexpr int kNavWidth = 225;
 
 /// 主窗口最小尺寸（评审 A1）：导航 kNavWidth + 侧栏 kSidebarWidth + 隙 kSidebarGap
 /// + 页面边距 2×kSideMargin 之外仍须留出可读的消息列，兜住「三列固定宽叠加把消息列
