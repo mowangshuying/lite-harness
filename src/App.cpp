@@ -24,10 +24,13 @@ int main(int argc, char *argv[])
     // 就能切档的出口（config.json 写 Round / RoundPreferFloor / Ceil / Floor）。
     // 第三参 fallback 给空 QVariant：toString() 得空串，dpiPolicyFromName 的空串分支
     // 正是 PassThrough——与「键从未写过」同一路，缺省语义不因引导通道而漂移。
-    QApplication::setHighDpiScaleFactorRoundingPolicy(UiScale::dpiPolicyFromName(
-        AppSettings::bootstrapValue(argc > 0 ? argv[0] : nullptr, UiScale::kDpiRoundingKey,
-                                    QVariant())
-            .toString()));
+    // 原始串留到日志接管后再复核（P1）：越界/拼错此前一律静默回退，用户只能怀疑
+    // 「这功能坏了」。此刻 qWarning 还没有 handler 可落（GUI 子系统无 stderr，日志
+    // 单源要到下方 FluLogUtils::__init() 才接管），故这里只取值，告警统一放在那之后。
+    const QString dpiRoundingRaw =
+        AppSettings::bootstrapValue(argc > 0 ? argv[0] : nullptr, UiScale::kDpiRoundingKey, QVariant())
+            .toString();
+    QApplication::setHighDpiScaleFactorRoundingPolicy(UiScale::dpiPolicyFromName(dpiRoundingRaw));
 
     QApplication a(argc, argv);
 
@@ -56,7 +59,9 @@ int main(int argc, char *argv[])
     // 标题/徽标/状态条等 87 处）**不随本键缩放**，属已知边界：那些值与固定行高
     // （kHeaderHeight=32 等）成对设计，单独放大字号会把卡片撑破。
     // 生效时机 = 启动（改后需重启，与 language 键同语义，设置页据此给重启提示）。
-    const int fontScalePercent = UiScale::fontScalePercent(AppSettings::value(UiScale::kFontScaleKey));
+    // 原始 QVariant 一并留存：日志接管后要能打出「盘上原值 → 实际生效值」两端（见下方告警段）
+    const QVariant fontScaleRaw = AppSettings::value(UiScale::kFontScaleKey);
+    const int fontScalePercent = UiScale::fontScalePercent(fontScaleRaw);
     UiScale::setRuntimeFontScale(fontScalePercent); // 快照：ThemeAware 重放 QSS 时读这里，两面同值
     if (fontScalePercent != UiScale::kFontScaleDefault)
     {
@@ -79,6 +84,18 @@ int main(int argc, char *argv[])
     // 故先按同一路径 mkpath 兜底；不改第三方源码（仓内惯例）。
     QDir().mkpath(QStringLiteral("../log"));
     FluLogUtils::__init();
+
+    // 配置校验告警（P1）：非法值一律静默回退到默认档，日志是用户唯一能自查的地方。
+    // 打出「盘上原值 → 实际生效值」两端——否则用户对着一个看不出问题的 config.json
+    // 只能怀疑功能坏了（uiFontScale 写 250、dpiRounding 拼错都属这条路径）。
+    if (!dpiRoundingRaw.trimmed().isEmpty())
+    {
+        const QString effective = UiScale::dpiPolicyName(UiScale::dpiPolicyFromName(dpiRoundingRaw));
+        if (effective.compare(dpiRoundingRaw.trimmed(), Qt::CaseInsensitive) != 0)
+            qWarning() << "config: dpiRounding" << dpiRoundingRaw << "is invalid, fallback to" << effective;
+    }
+    if (fontScaleRaw.isValid() && fontScalePercent != fontScaleRaw.toInt())
+        qWarning() << "config: uiFontScale" << fontScaleRaw << "is out of range, fallback to" << fontScalePercent;
 
     // 版本号进运行时：LITE_VERSION 宏由 CMake target_compile_definitions 注入
     // （= project VERSION 拼 s 前缀，唯一真源，如 "s17.5"），供设置页等展示点取用

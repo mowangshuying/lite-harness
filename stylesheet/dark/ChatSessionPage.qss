@@ -57,12 +57,13 @@ ChatSessionPage QLabel#emptyHintLine {
 /* 「回到底部」浮动钮（评审 B1）：此前全仓零规则，钮体吃 Qt 原生绘制——而它浮在
    消息流之上，与 #sidebarRestoreBtn（嵌在工具条里、transparent 底成立）**不同**：
    这里必须实底，否则气泡文字会从钮体底下透出来。底色取本页底色同源、描边取页面
-   描边同源，圆角 15px 按 30×30 定出正圆（与 SendMsgButton 同规格同值，不另造一档）。
+   描边同源，圆角 16px 按 32×32 定出正圆（命中区下限 32px 见 LayoutConstants；
+   与 SendMsgButton 的 30×30/15px 已分档，勿再按「同规格」理解）。
    hover/pressed 逐档加深沿用 SendMsgButton 的 alpha 阶梯，保证两个圆形动作钮手感一致。 */
 ChatSessionPage QToolButton#jumpBottomBtn {
     background-color: rgb(40, 40, 40);
     border: 1px solid rgb(70, 70, 70);
-    border-radius: 15px;
+    border-radius: 16px;
 }
 
 /* hover/pressed 用**合成实色**而非 rgba 半透明：本钮浮在消息气泡之上，半透明底会让

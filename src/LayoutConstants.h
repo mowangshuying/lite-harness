@@ -38,7 +38,9 @@ inline constexpr int kSidebarWidth = 225;
 inline constexpr int kSidebarGap = 12;
 
 /// 侧栏收起后浮动展开钮的边长（手动摆位的小按钮，ChatSessionPage 创建/定位）
-inline constexpr int kSidebarRestoreBtnSize = 28;
+/// 侧栏收起后浮动展开钮的边长（P1-B 命中区下限 32px：28px 在触控板/高 DPI 下容易点偏）。
+/// 与 #sidebarRestoreBtn 的 QSS 圆角（4px，非正圆）无联动，改值无需同步样式。
+inline constexpr int kSidebarRestoreBtnSize = 32;
 
 /// 浮动展开钮距页面顶部的偏移（右上角定位，横向沿用 kSideMargin）
 inline constexpr int kSidebarRestoreTop = 12;
@@ -48,7 +50,7 @@ inline constexpr int kSidebarRestoreTop = 12;
 inline constexpr int kNearBottomPx = 80;
 
 /// 「回到底部」浮动钮边长与距滚动区底部的内边距
-inline constexpr int kJumpBottomBtnSize = 30;
+inline constexpr int kJumpBottomBtnSize = 32;
 inline constexpr int kJumpBottomBtnMargin = 12;
 
 /// 导航列展开宽（UI 优化 P2-D1）：LiteHarness::initNavView 的 setViewWidth 与下方

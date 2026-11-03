@@ -33,6 +33,22 @@ QSize cardActionButtonSize()
                  UiScale::scaled(LayoutConst::kCardActionHeight));
 }
 
+/// 写配置并就地提示失败（P1）：AppSettings::setValue 返回是否成功落盘，此前 7 个
+/// 调用点全部丢弃返回值 —— config.json 只读/被占用/磁盘满时，卡片值区会回读成旧值，
+/// 用户只看到「改了没反应」，没有任何错误说明（语言项还会接着弹「重启生效」的假承诺）。
+/// anchor 必须非空：FluMessageBox 的约定是 parent 不可为 null（各调用点传 window()）。
+bool applySetting(const QString &key, const QVariant &value, QWidget *anchor)
+{
+    if (AppSettings::setValue(key, value))
+        return true;
+    FluMessageBox(QObject::tr("保存失败"),
+                  QObject::tr("配置无法写入 config.json，本次修改不会保留。"
+                              "请检查文件是否只读或被其它程序占用。"),
+                  anchor)
+        .exec();
+    return false;
+}
+
 // 默认工作目录：config.json 键 app/defaultWorkDir（AppSettings 单源，存储根 <exe 目录>/../config）；
 // 与主题/语言配置互不影响（语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
 const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
@@ -40,11 +56,6 @@ const QString kDefaultWorkDirKey = QStringLiteral("defaultWorkDir");
 QString readDefaultWorkDir()
 {
     return AppSettings::value(kDefaultWorkDirKey).toString();
-}
-
-void writeDefaultWorkDir(const QString &value)
-{
-    AppSettings::setValue(kDefaultWorkDirKey, value); // 空串=清除，读取侧 isEmpty 判缺省
 }
 
 // 未设置时的占位文案（现占用卡片标题下方的说明位 m_infoLabel；
@@ -65,19 +76,9 @@ QString readApiBaseUrl()
     return AppSettings::value(kApiBaseUrlKey).toString();
 }
 
-void writeApiBaseUrl(const QString &value)
-{
-    AppSettings::setValue(kApiBaseUrlKey, value); // 空串=清除，读取侧 isEmpty 判缺省
-}
-
 QString readApiToken()
 {
     return AppSettings::value(kApiTokenKey).toString();
-}
-
-void writeApiToken(const QString &value)
-{
-    AppSettings::setValue(kApiTokenKey, value);
 }
 
 // 可选模型清单：config.json 键 modelOptions（逗号分隔）。解析与回退单源在
@@ -88,11 +89,6 @@ const QString kModelOptionsKey = QStringLiteral("modelOptions");
 QString readModelOptionsRaw()
 {
     return AgentConst::textValue(kModelOptionsKey); // 裸逗号串（ini）或数组（json）两种列表形态都读得回
-}
-
-void writeModelOptions(const QString &value)
-{
-    AppSettings::setValue(kModelOptionsKey, value); // 空串=清除，读取侧回退内置清单
 }
 
 // 录入规范化：逐项去空白、丢空项、保序去重（重名会让下拉出现同文两项，选中歧义且
@@ -215,11 +211,11 @@ WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
             this, tr("选择默认工作目录"), startDir);
         if (dir.isEmpty())
             return; // 取消：保持原值
-        writeDefaultWorkDir(dir);
+        applySetting(kDefaultWorkDirKey, dir, window());
         updateValue();
     });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        writeDefaultWorkDir(QString());
+        applySetting(kDefaultWorkDirKey, QString(), window());
         updateValue();
     });
 }
@@ -314,7 +310,7 @@ void ContextLimitSettingCard::promptEdit()
             .exec();
         return;
     }
-    AppSettings::setValue(AgentConst::kContextCharLimitKey, parsed);
+    applySetting(AgentConst::kContextCharLimitKey, parsed, window());
     updateValue();
 }
 
@@ -386,7 +382,7 @@ void MaxRoundsSettingCard::promptEdit()
             .exec();
         return;
     }
-    AppSettings::setValue(AgentConst::kMaxToolIterationsKey, parsed);
+    applySetting(AgentConst::kMaxToolIterationsKey, parsed, window());
     updateValue();
 }
 
@@ -416,7 +412,7 @@ ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
 
     connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        writeApiBaseUrl(QString());
+        applySetting(kApiBaseUrlKey, QString(), window());
         QOpenAi::setUrl(QString()); // 即时生效：下一回合请求走空配置报错路径
         updateValue();
     });
@@ -454,7 +450,7 @@ void ApiUrlSettingCard::promptEdit()
             .exec();
         return;
     }
-    writeApiBaseUrl(cleaned);
+    applySetting(kApiBaseUrlKey, cleaned, window());
     QOpenAi::setUrl(cleaned); // 即时生效，无需重启
     updateValue();
 }
@@ -486,7 +482,7 @@ ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
 
     connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        writeApiToken(QString());
+        applySetting(kApiTokenKey, QString(), window());
         QOpenAi::setToken(QString()); // 即时生效：下一回合请求走空配置报错路径
         updateValue();
     });
@@ -526,7 +522,7 @@ void ApiTokenSettingCard::promptEdit()
     const QString cleaned = input.trimmed();
     if (cleaned.isEmpty())
         return; // 留空＝不修改
-    writeApiToken(cleaned);
+    applySetting(kApiTokenKey, cleaned, window());
     QOpenAi::setToken(cleaned); // 即时生效，无需重启
     updateValue();
 }
@@ -560,7 +556,7 @@ ModelListSettingCard::ModelListSettingCard(QWidget *parent)
 
     connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        writeModelOptions(QString()); // 即时生效：下拉下次展开回退内置清单
+        applySetting(kModelOptionsKey, QString(), window()); // 即时生效：下拉下次展开回退内置清单
         updateValue();
     });
 }
@@ -597,7 +593,7 @@ void ModelListSettingCard::promptEdit()
         return; // 取消：保持原值
     // 清洗后全空（只输了逗号或空白）按清除处理而非报错：语义与「清除」按钮一致，
     // 且空清单本就不该落盘——下拉无项可展，AgentLoop 白名单也会把所有模型判成回落
-    writeModelOptions(normalizeModelOptions(input));
+    applySetting(kModelOptionsKey, normalizeModelOptions(input), window());
     updateValue();
 }
 
@@ -746,7 +742,7 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
         const bool required = (index == 0);
         if (required == AgentConst::permissionApprovalEnabled())
             return; // 回选当前值不动作
-        AppSettings::setValue(AgentConst::kPermissionApprovalKey, required);
+        applySetting(AgentConst::kPermissionApprovalKey, required, window());
     });
     scrollView->getMainLayout()->addWidget(m_permissionBox, 0, Qt::AlignTop);
 

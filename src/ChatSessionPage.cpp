@@ -185,6 +185,8 @@ void ChatSessionPage::buildLayout()
     m_restoreBtn->setIconSize(QSize(14, 14));
     m_restoreBtn->setCursor(Qt::PointingHandCursor);
     m_restoreBtn->setToolTip(tr("展开侧边栏"));
+    // 无障碍（P1-B）：纯图标钮，读屏器只能靠名称/描述，tooltip 不参与可访问名
+    m_restoreBtn->setAccessibleName(tr("展开侧边栏"));
     connect(m_restoreBtn, &QToolButton::clicked, this,
             [this]() { setSidebarVisible(true); });
     ThemeAware::bind("SessionSidebar.qss", m_restoreBtn, [this]() {
@@ -200,6 +202,8 @@ void ChatSessionPage::buildLayout()
     m_jumpBottomBtn->setIconSize(QSize(14, 14));
     m_jumpBottomBtn->setCursor(Qt::PointingHandCursor);
     m_jumpBottomBtn->setToolTip(tr("回到底部"));
+    // 无障碍（P1-B）：纯图标钮，读屏器只能靠名称/描述，tooltip 不参与可访问名
+    m_jumpBottomBtn->setAccessibleName(tr("回到底部"));
     m_jumpBottomBtn->setVisible(false);
     connect(m_jumpBottomBtn, &QToolButton::clicked, this,
             [this]() { scrollToBottom(); });
@@ -827,7 +831,16 @@ void ChatSessionPage::restoreFromDisk()
 {
     // 载入内存历史失败（无 ID/文件不存在/损坏）→ 保持空会话（全新会话即此态）
     if (!m_agentLoop->loadSavedHistory())
+    {
+        // 区分「全新会话」与「历史读不出来」：前者从未落盘、标题也为空，静默空页是对的；
+        // 后者用户明明在侧栏点了一个有内容的会话，却得到一个看起来全新的空页 —— 不提示
+        // 会被读成「消息丢了」或「点错了会话」。判据用会话标题（侧栏建页时注入）。
+        if (!m_sessionTitle.isEmpty())
+            showNotice(NoticeLevel::Error, tr("历史加载失败"),
+                       tr("会话历史无法读取，已按空会话打开。原文件可能损坏或被占用。"),
+                       kNoticeErrorMs);
         return;
+    }
     replayHistory(m_agentLoop->messages());
     // 恢复后端生效模型到下拉框；setCurrentModel 不发 modelChanged，无回环
     m_inputEdit->setCurrentModel(m_agentLoop->model());

@@ -29,6 +29,7 @@
 #include <QVector>
 #include <QDateTime>
 #include <QEvent>
+#include <QContextMenuEvent>
 #include <QMouseEvent>
 #include <QColor>
 #include <QHBoxLayout>
@@ -103,6 +104,8 @@ void LiteHarness::initUi()
     if (buttonLayout)
     {
         themeButton = new FluThemeButton;
+        // 无障碍（P1-B）：纯图标钮，读屏器只能靠名称/描述（FluentUI 未设可访问名）
+        themeButton->setAccessibleName(tr("切换主题"));
         buttonLayout->insertWidget(0, themeButton);
     }
     else
@@ -378,6 +381,21 @@ bool LiteHarness::eventFilter(QObject *watched, QEvent *event)
         return FluFrameLessWidget::eventFilter(watched, event);
 
     const QEvent::Type type = event->type();
+    // 键盘上下文菜单（P1-B）：Shift+F10 / 菜单键走 QEvent::ContextMenu，不产生鼠标事件，
+    // 此前只处理 press/release —— 键盘用户完全无法重命名或删除会话。
+    // 只接 Keyboard 触发：鼠标右键的 ContextMenu 由下面 press/release 路径（延一拍）负责，
+    // 两条路都弹会各弹一次菜单。
+    if (type == QEvent::ContextMenu)
+    {
+        auto *ce = static_cast<QContextMenuEvent *>(event);
+        if (ce->reason() != QContextMenuEvent::Keyboard)
+            return true; // 鼠标右键：已由 press/release 路径处理，这里吞掉不转给基类
+        auto *item = resolveSessionItem(widget);
+        if (!item)
+            return false;
+        showSessionMenu(item, ce->globalPos());
+        return true;
+    }
     if (type != QEvent::MouseButtonPress && type != QEvent::MouseButtonRelease)
         return FluFrameLessWidget::eventFilter(watched, event);
 

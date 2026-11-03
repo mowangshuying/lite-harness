@@ -369,6 +369,8 @@ SessionSidebar::SessionSidebar(QWidget* parent) : QWidget(parent) {
     m_hideBtn->setIconSize(QSize(14, 14));
     m_hideBtn->setCursor(Qt::PointingHandCursor);
     m_hideBtn->setToolTip(tr("收起侧边栏"));
+    // 无障碍（P1-B）：纯图标钮，读屏器只能靠名称/描述，tooltip 不参与可访问名
+    m_hideBtn->setAccessibleName(tr("收起侧边栏"));
     connect(m_hideBtn, &QToolButton::clicked, this, &SessionSidebar::hideRequested);
     head->addWidget(panelTitle);
     head->addStretch();

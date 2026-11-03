@@ -256,7 +256,8 @@ void ChatMsgEdit::applyBusyState()
     // （方块字形 + 强调蓝淡染），点击走 stopRequested 分支；空闲恢复发送形态。
     // 输入框禁用口径不变（Enter 发送在禁用控件上天然收不到键事件）；模型下拉不禁
     m_sendMsgButton->setStopMode(m_turnBusy);
-    m_sendMsgButton->setToolTip(m_turnBusy ? tr("停止") : tr("发送"));
+    // tooltip 与无障碍名由 SendMsgButton::setStopMode 按形态单源维护（P1-B）：
+    // 原先在这里再设一次，既双源、又因首次 setTurnBusy(false) 同值早退而漏设
 }
 
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
