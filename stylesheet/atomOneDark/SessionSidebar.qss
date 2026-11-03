@@ -65,8 +65,10 @@
 /* ---- 节头 ---- */
 #sbSectionHead { background: transparent; border: none; }
 /* 可折叠节头预置 1px 透明边框：焦点态只换描边色而不改变边框宽度，
-   避免头部内容在 hover/focus 之间位移 1px（本节走 QVBoxLayout 自然布局，无手动几何） */
-#sbSectionHead[clickable="true"] { cursor: pointinghand; border: 1px solid transparent; border-radius: 5px; }
+   避免头部内容在 hover/focus 之间位移 1px（本节走 QVBoxLayout 自然布局，无手动几何）。
+   手型光标不在 QSS 里设：Qt 样式表没有 cursor 属性（此前的 cursor: pointinghand
+   是解析期静默丢弃的死声明），改由 SidebarSection::setCollapsible 按可折叠性设置。 */
+#sbSectionHead[clickable="true"] { border: 1px solid transparent; border-radius: 5px; }
 #sbSectionHead[clickable="true"]:hover { background: rgba(255, 255, 255, 8); }
 /* 键盘可达（P1-6）：节头已进 Tab 链，必须给可见焦点环（描边取本主题强调色） */
 #sbSectionHead[clickable="true"]:focus { border: 1px solid rgb(82, 139, 255); background: rgba(82, 139, 255, 24); }

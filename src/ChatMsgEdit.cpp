@@ -61,6 +61,10 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     m_textEdit = new QTextEdit(this);
     new FluScrollDelegate(m_textEdit); // 仅需 parent 联动滚轮行为，无需持有引用
     m_textEdit->setObjectName("textEdit");
+    // 空态引导：此前输入框无 placeholder，而空态引导卡在首条消息后即永久隐藏，
+    // 新用户没有任何「这里能打字 / Enter 发送」的提示（Enter 与 Shift+Enter 的分工
+    // 只藏在右键菜单与提交说明里）。文案在构造期取 tr()，与 language 键同语义。
+    m_textEdit->setPlaceholderText(tr("输入消息，Enter 发送，Shift+Enter 换行"));
     m_textEdit->setContextMenuPolicy(Qt::CustomContextMenu);
     m_textEdit->installEventFilter(this);
     vMainLayout->addWidget(m_textEdit);

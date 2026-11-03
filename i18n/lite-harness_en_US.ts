@@ -4,22 +4,22 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="72"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="74"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>The session has no data directory ID; cannot locate the history file</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="85"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="87"/>
         <source>无法打开历史文件：%1</source>
         <translation>Cannot open history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="93"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="95"/>
         <source>历史文件解析失败：%1</source>
         <translation>Failed to parse history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="259"/>
+        <location filename="../src/AgentLoop.cpp" line="277"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
@@ -45,7 +45,7 @@
         <translation>Manual compaction (compact tool)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="509"/>
+        <location filename="../src/AgentLoop.cpp" line="527"/>
         <source>已停止。</source>
         <translation>Stopped.</translation>
     </message>
@@ -150,42 +150,47 @@
 <context>
     <name>ChatMsgEdit</name>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="81"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="67"/>
+        <source>输入消息，Enter 发送，Shift+Enter 换行</source>
+        <translation>Type a message — Enter to send, Shift+Enter for a new line.</translation>
+    </message>
+    <message>
+        <location filename="../src/ChatMsgEdit.cpp" line="85"/>
         <source>撤销</source>
         <translation>Undo</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="83"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="87"/>
         <source>重做</source>
         <translation>Redo</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="86"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="90"/>
         <source>剪切</source>
         <translation>Cut</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="88"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="92"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="90"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="94"/>
         <source>粘贴</source>
         <translation>Paste</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="92"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="96"/>
         <source>全选</source>
         <translation>Select All</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="249"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="253"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="249"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="253"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
@@ -223,22 +228,22 @@
         <translation>Back to bottom</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="269"/>
+        <location filename="../src/ChatSessionPage.cpp" line="278"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent is still running. Please wait for it to finish before sending</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="338"/>
+        <location filename="../src/ChatSessionPage.cpp" line="347"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="345"/>
+        <location filename="../src/ChatSessionPage.cpp" line="354"/>
         <source>本轮失败</source>
         <translation>This turn failed</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="412"/>
+        <location filename="../src/ChatSessionPage.cpp" line="421"/>
         <source>%1 %2:
 ```
 %3
@@ -259,34 +264,34 @@ Output:
 ```</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="679"/>
+        <location filename="../src/ChatSessionPage.cpp" line="688"/>
         <source>正在重试</source>
         <translation>Retrying</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="680"/>
+        <location filename="../src/ChatSessionPage.cpp" line="689"/>
         <source>第 %1/%2 次重试，%3 秒后重新发送（服务限流或无响应）。</source>
         <translation>Retry %1 of %2: resending in %3 s (service rate limit or no response).</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="690"/>
+        <location filename="../src/ChatSessionPage.cpp" line="699"/>
         <source>已切换到备用模型</source>
         <translation>Switched to the fallback model</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="691"/>
+        <location filename="../src/ChatSessionPage.cpp" line="700"/>
         <source>服务端过载，本轮改用 %1 继续。</source>
         <translation>The server is overloaded; this turn continues with %1.</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="799"/>
-        <location filename="../src/ChatSessionPage.cpp" line="857"/>
-        <location filename="../src/ChatSessionPage.cpp" line="876"/>
+        <location filename="../src/ChatSessionPage.cpp" line="808"/>
+        <location filename="../src/ChatSessionPage.cpp" line="866"/>
+        <location filename="../src/ChatSessionPage.cpp" line="885"/>
         <source>处理中…</source>
         <translation>Working…</translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="1238"/>
+        <location filename="../src/ChatSessionPage.cpp" line="1256"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -433,19 +438,19 @@ After a restart the turn count is seeded from the number of user messages in his
     <name>LiteHarness</name>
     <message>
         <location filename="../src/LiteHarness.cpp" line="138"/>
-        <location filename="../src/LiteHarness.cpp" line="669"/>
+        <location filename="../src/LiteHarness.cpp" line="693"/>
         <source>新建对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="145"/>
-        <location filename="../src/LiteHarness.cpp" line="671"/>
+        <location filename="../src/LiteHarness.cpp" line="695"/>
         <source>会话</source>
         <translation>Sessions</translation>
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="148"/>
-        <location filename="../src/LiteHarness.cpp" line="673"/>
+        <location filename="../src/LiteHarness.cpp" line="697"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
@@ -455,38 +460,38 @@ After a restart the turn count is seeded from the number of user messages in his
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="404"/>
+        <location filename="../src/LiteHarness.cpp" line="416"/>
         <source>重命名</source>
         <translation>Rename</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="405"/>
-        <location filename="../src/LiteHarness.cpp" line="466"/>
+        <location filename="../src/LiteHarness.cpp" line="417"/>
+        <location filename="../src/LiteHarness.cpp" line="478"/>
         <source>删除会话</source>
         <translation>Delete Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="433"/>
+        <location filename="../src/LiteHarness.cpp" line="445"/>
         <source>重命名会话</source>
         <translation>Rename Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="433"/>
+        <location filename="../src/LiteHarness.cpp" line="445"/>
         <source>名称</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="467"/>
+        <location filename="../src/LiteHarness.cpp" line="479"/>
         <source>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</source>
         <translation>Delete this session and all of its data (tasks/memory/history)? This action cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="614"/>
+        <location filename="../src/LiteHarness.cpp" line="638"/>
         <source>退出确认</source>
         <translation>Confirm Exit</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="615"/>
+        <location filename="../src/LiteHarness.cpp" line="639"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>Tasks are still running. Exiting will lose incomplete turns. Quit anyway?</translation>
     </message>
@@ -534,17 +539,17 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="136"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="196"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="138"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="198"/>
         <source>全选</source>
         <translation>Select All</translation>
     </message>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="501"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="564"/>
         <source>记忆整理中</source>
         <translation>Consolidating memory</translation>
     </message>
@@ -765,218 +770,218 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>SessionSidebar</name>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="349"/>
+        <location filename="../src/SessionSidebar.cpp" line="354"/>
         <source>会话面板</source>
         <translation>Session Panel</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="356"/>
+        <location filename="../src/SessionSidebar.cpp" line="361"/>
         <source>收起侧边栏</source>
         <translation>Hide Sidebar</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="392"/>
+        <location filename="../src/SessionSidebar.cpp" line="397"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="405"/>
+        <location filename="../src/SessionSidebar.cpp" line="410"/>
         <source>状态</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="412"/>
+        <location filename="../src/SessionSidebar.cpp" line="417"/>
         <source>当前目标</source>
         <translation>Current Goal</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="418"/>
+        <location filename="../src/SessionSidebar.cpp" line="423"/>
         <source>队友清单</source>
         <translation>Teammates</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="424"/>
+        <location filename="../src/SessionSidebar.cpp" line="429"/>
         <source>任务清单</source>
         <translation>Todo List</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="426"/>
+        <location filename="../src/SessionSidebar.cpp" line="431"/>
         <source>暂无任务</source>
         <translation>No tasks yet</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="432"/>
+        <location filename="../src/SessionSidebar.cpp" line="437"/>
         <source>后台任务</source>
         <translation>Background Tasks</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="438"/>
+        <location filename="../src/SessionSidebar.cpp" line="443"/>
         <source>定时任务</source>
         <translation>Scheduled Tasks</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="451"/>
+        <location filename="../src/SessionSidebar.cpp" line="456"/>
         <source>lite-harness %1</source>
         <translation>lite-harness %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="466"/>
+        <location filename="../src/SessionSidebar.cpp" line="471"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="517"/>
+        <location filename="../src/SessionSidebar.cpp" line="522"/>
         <source>%1 进行中</source>
         <translation>%1 in progress</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="518"/>
+        <location filename="../src/SessionSidebar.cpp" line="523"/>
         <source>%1 待办</source>
         <translation>%1 pending</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="519"/>
+        <location filename="../src/SessionSidebar.cpp" line="524"/>
         <source>%1 完成</source>
         <translation>%1 done</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="547"/>
+        <location filename="../src/SessionSidebar.cpp" line="552"/>
         <source>%1 · 执行中</source>
         <translation>%1 · working</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="550"/>
+        <location filename="../src/SessionSidebar.cpp" line="555"/>
         <source>%1 · 等待审批</source>
         <translation>%1 · waiting approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="553"/>
+        <location filename="../src/SessionSidebar.cpp" line="558"/>
         <source>%1 · 停止中</source>
         <translation>%1 · stopping</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="556"/>
+        <location filename="../src/SessionSidebar.cpp" line="561"/>
         <source>%1 · 空闲</source>
         <translation>%1 · idle</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="564"/>
+        <location filename="../src/SessionSidebar.cpp" line="569"/>
         <source>%1 执行中</source>
         <translation>%1 working</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="565"/>
+        <location filename="../src/SessionSidebar.cpp" line="570"/>
         <source>%1 待审批</source>
         <translation>%1 pending approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="566"/>
+        <location filename="../src/SessionSidebar.cpp" line="571"/>
         <source>%1 停止中</source>
         <translation>%1 stopping</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="567"/>
+        <location filename="../src/SessionSidebar.cpp" line="572"/>
         <source>%1 空闲</source>
         <translation>%1 idle</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="600"/>
+        <location filename="../src/SessionSidebar.cpp" line="605"/>
         <source>最近判定：</source>
         <translation>Last verdict: </translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="609"/>
+        <location filename="../src/SessionSidebar.cpp" line="614"/>
         <source>轮次 %1</source>
         <translation>Round %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="610"/>
+        <location filename="../src/SessionSidebar.cpp" line="615"/>
         <source>拦阻 %1/%2</source>
         <translation>Blocked %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="612"/>
+        <location filename="../src/SessionSidebar.cpp" line="617"/>
         <source>消耗≈%1 tok</source>
         <translation>Used ≈%1 tok</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="641"/>
+        <location filename="../src/SessionSidebar.cpp" line="646"/>
         <source>失败</source>
         <translation>Failed</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="644"/>
+        <location filename="../src/SessionSidebar.cpp" line="649"/>
         <source>已完成</source>
         <translation>Completed</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="658"/>
+        <location filename="../src/SessionSidebar.cpp" line="663"/>
         <source>%1 运行中</source>
         <translation>%1 running</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="660"/>
+        <location filename="../src/SessionSidebar.cpp" line="665"/>
         <source>%1 待收割</source>
         <translation>%1 awaiting collection</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="700"/>
+        <location filename="../src/SessionSidebar.cpp" line="705"/>
         <source>周期</source>
         <translation>Recurring</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="700"/>
+        <location filename="../src/SessionSidebar.cpp" line="705"/>
         <source>一次性</source>
         <translation>One-shot</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="701"/>
+        <location filename="../src/SessionSidebar.cpp" line="706"/>
         <source>持久</source>
         <translation>Durable</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="701"/>
+        <location filename="../src/SessionSidebar.cpp" line="706"/>
         <source>仅本会话</source>
         <translation>Session-only</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="703"/>
+        <location filename="../src/SessionSidebar.cpp" line="708"/>
         <source>上次触发 %1</source>
         <translation>Last fired %1</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="711"/>
+        <location filename="../src/SessionSidebar.cpp" line="716"/>
         <source>%1 待交付</source>
         <translation>%1 pending delivery</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="712"/>
+        <location filename="../src/SessionSidebar.cpp" line="717"/>
         <source>%1 待触发</source>
         <translation>%1 waiting to fire</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="765"/>
+        <location filename="../src/SessionSidebar.cpp" line="770"/>
         <source>等待审批</source>
         <translation>Awaiting Approval</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="638"/>
-        <location filename="../src/SessionSidebar.cpp" line="767"/>
+        <location filename="../src/SessionSidebar.cpp" line="643"/>
+        <location filename="../src/SessionSidebar.cpp" line="772"/>
         <source>运行中</source>
         <translation>Running</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="732"/>
+        <location filename="../src/SessionSidebar.cpp" line="737"/>
         <source>≈%1 / %2 token · %3%</source>
         <translation>≈%1 / %2 tokens · %3%</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="740"/>
+        <location filename="../src/SessionSidebar.cpp" line="745"/>
         <source>上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。</source>
         <translation>Context usage: ≈%1 tokens estimated ÷ %2 token budget (the budget is derived from the config-file character limit /4, shares its source with the compaction trigger, and is overwritten by later read-backs).</translation>
     </message>
     <message>
-        <location filename="../src/SessionSidebar.cpp" line="769"/>
+        <location filename="../src/SessionSidebar.cpp" line="774"/>
         <source>空闲</source>
         <translation>Idle</translation>
     </message>
@@ -985,142 +990,142 @@ After a restart the turn count is seeded from the number of user messages in his
     <name>SettingsPage</name>
     <message>
         <location filename="../src/SettingsPage.cpp" line="612"/>
-        <location filename="../src/SettingsPage.cpp" line="796"/>
+        <location filename="../src/SettingsPage.cpp" line="808"/>
         <source>外观与行为</source>
         <translation>Appearance &amp; Behavior</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="618"/>
-        <location filename="../src/SettingsPage.cpp" line="798"/>
+        <location filename="../src/SettingsPage.cpp" line="810"/>
         <source>应用主题</source>
         <translation>App theme</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="618"/>
-        <location filename="../src/SettingsPage.cpp" line="798"/>
+        <location filename="../src/SettingsPage.cpp" line="810"/>
         <source>选择应用显示的主题。</source>
         <translation>Select which theme to display.</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="620"/>
-        <location filename="../src/SettingsPage.cpp" line="799"/>
+        <location filename="../src/SettingsPage.cpp" line="811"/>
         <source>浅色</source>
         <translation>Light</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="621"/>
-        <location filename="../src/SettingsPage.cpp" line="800"/>
+        <location filename="../src/SettingsPage.cpp" line="812"/>
         <source>深色</source>
         <translation>Dark</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="622"/>
-        <location filename="../src/SettingsPage.cpp" line="801"/>
+        <location filename="../src/SettingsPage.cpp" line="813"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="642"/>
-        <location filename="../src/SettingsPage.cpp" line="803"/>
+        <location filename="../src/SettingsPage.cpp" line="654"/>
+        <location filename="../src/SettingsPage.cpp" line="815"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="642"/>
-        <location filename="../src/SettingsPage.cpp" line="803"/>
+        <location filename="../src/SettingsPage.cpp" line="654"/>
+        <location filename="../src/SettingsPage.cpp" line="815"/>
         <source>选择界面显示的语言。</source>
         <translation>Select which language to display.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="657"/>
+        <location filename="../src/SettingsPage.cpp" line="669"/>
         <source>语言设置</source>
         <translation>Language Settings</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="657"/>
+        <location filename="../src/SettingsPage.cpp" line="669"/>
         <source>语言切换将在重启后生效。是否立即重启？</source>
         <translation>The language change takes effect after a restart. Restart now?</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="671"/>
-        <location filename="../src/SettingsPage.cpp" line="806"/>
+        <location filename="../src/SettingsPage.cpp" line="683"/>
+        <location filename="../src/SettingsPage.cpp" line="818"/>
         <source>工作目录</source>
         <translation>Working Directory</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="684"/>
-        <location filename="../src/SettingsPage.cpp" line="810"/>
+        <location filename="../src/SettingsPage.cpp" line="696"/>
+        <location filename="../src/SettingsPage.cpp" line="822"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="697"/>
-        <location filename="../src/SettingsPage.cpp" line="814"/>
+        <location filename="../src/SettingsPage.cpp" line="709"/>
+        <location filename="../src/SettingsPage.cpp" line="826"/>
         <source>最大轮次</source>
         <translation>Max Rounds</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="711"/>
-        <location filename="../src/SettingsPage.cpp" line="818"/>
+        <location filename="../src/SettingsPage.cpp" line="723"/>
+        <location filename="../src/SettingsPage.cpp" line="830"/>
         <source>权限</source>
         <translation>Permissions</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="715"/>
-        <location filename="../src/SettingsPage.cpp" line="819"/>
+        <location filename="../src/SettingsPage.cpp" line="727"/>
+        <location filename="../src/SettingsPage.cpp" line="831"/>
         <source>工具执行权限审批</source>
         <translation>Tool Execution Approval</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="715"/>
-        <location filename="../src/SettingsPage.cpp" line="819"/>
+        <location filename="../src/SettingsPage.cpp" line="727"/>
+        <location filename="../src/SettingsPage.cpp" line="831"/>
         <source>命中询问规则时是否需要你批准。</source>
         <translation>Whether a tool call that hits an ask rule needs your approval.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="717"/>
-        <location filename="../src/SettingsPage.cpp" line="820"/>
+        <location filename="../src/SettingsPage.cpp" line="729"/>
+        <location filename="../src/SettingsPage.cpp" line="832"/>
         <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
         <translation>When off, tools run directly without an approval card. The bash deny list, workflow deny policies and workspace-escape checks are unaffected. Takes effect on the next tool call; no restart needed.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="719"/>
-        <location filename="../src/SettingsPage.cpp" line="822"/>
+        <location filename="../src/SettingsPage.cpp" line="731"/>
+        <location filename="../src/SettingsPage.cpp" line="834"/>
         <source>需要审批</source>
         <translation>Requires approval</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="720"/>
-        <location filename="../src/SettingsPage.cpp" line="823"/>
+        <location filename="../src/SettingsPage.cpp" line="732"/>
+        <location filename="../src/SettingsPage.cpp" line="835"/>
         <source>无需审批</source>
         <translation>No approval needed</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="734"/>
-        <location filename="../src/SettingsPage.cpp" line="825"/>
+        <location filename="../src/SettingsPage.cpp" line="746"/>
+        <location filename="../src/SettingsPage.cpp" line="837"/>
         <source>模型服务</source>
         <translation>Model Service</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="754"/>
-        <location filename="../src/SettingsPage.cpp" line="833"/>
+        <location filename="../src/SettingsPage.cpp" line="766"/>
+        <location filename="../src/SettingsPage.cpp" line="845"/>
         <source>关于</source>
         <translation>About</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="759"/>
+        <location filename="../src/SettingsPage.cpp" line="771"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="760"/>
-        <location filename="../src/SettingsPage.cpp" line="834"/>
+        <location filename="../src/SettingsPage.cpp" line="772"/>
+        <location filename="../src/SettingsPage.cpp" line="846"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="773"/>
-        <location filename="../src/SettingsPage.cpp" line="836"/>
+        <location filename="../src/SettingsPage.cpp" line="785"/>
+        <location filename="../src/SettingsPage.cpp" line="848"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness is a lightweight C++ coding-agent harness that fills the gap of harness implementations in the C++ ecosystem. As a hands-on learning project, it demonstrates step by step how to build a harness from scratch with Qt and modern C++.</translation>
     </message>

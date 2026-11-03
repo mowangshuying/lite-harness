@@ -633,6 +633,18 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
         else
             FluThemeUtils::getUtils()->setTheme(FluTheme::AtomOneDark);
     });
+    // 标题栏 FluThemeButton 换主题不经过本下拉 → 订阅 themeChanged 回灌选中项。
+    // 缺这条时：从标题栏切到深色后进设置页，下拉仍显示「浅色」，且用户再选「浅色」
+    // 会因上面「index == 当前主题」的早退什么都不做，控件看起来失效。
+    connect(FluThemeUtils::getUtils(), &FluThemeUtils::themeChanged, this, [this](FluTheme theme) {
+        auto *combo = m_appThemeBox ? m_appThemeBox->getComboBox() : nullptr;
+        if (!combo || combo->currentIndex() == (int)theme)
+            return;
+        // 屏蔽回灌触发的 currentIndexChanged：否则会反向再 setTheme 一次（同值无害但多余）
+        const bool blocked = combo->blockSignals(true);
+        combo->setCurrentIndex((int)theme);
+        combo->blockSignals(blocked);
+    });
 
     scrollView->getMainLayout()->addWidget(m_appThemeBox, 0, Qt::AlignTop);
 

@@ -229,7 +229,16 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     // 滚轮经视口事件过滤器捕获——两路都只重算跟随态
     if (auto *bar = m_scrollView->verticalScrollBar())
     {
-        connect(bar, &QScrollBar::sliderMoved, this, [this](int) { evaluateFollowState(); });
+        // 用 valueChanged 而非 sliderMoved：后者只在鼠标拖动滑块时发出，键盘
+        // PageUp/Home/End、中键自动滚动、触控板惯性都不发 —— 那些路径上
+        // m_userScrolledAway 永不置位，下一个流式增量就把视野拽回底部，且回底钮
+        // 不出现（键盘用户在流式期间根本无法回看历史）。程序化贴底由
+        // m_programmaticScroll 旗标屏蔽，语义等价于原「setValue 不发 sliderMoved」。
+        connect(bar, &QScrollBar::valueChanged, this, [this](int) {
+            if (m_programmaticScroll)
+                return;
+            evaluateFollowState();
+        });
         m_scrollView->viewport()->installEventFilter(this);
     }
 
@@ -989,7 +998,11 @@ void ChatSessionPage::doScrollToBottom()
     if (auto* vlayout = m_scrollView->getMainLayout())
         vlayout->activate();
     auto scrollBar = m_scrollView->verticalScrollBar();
+    // 程序化贴底期间屏蔽 valueChanged → evaluateFollowState：否则每次跟随滚动都会
+    // 重算一次跟随态，且 range 结算瞬间的 value 钳位可能被误判成「用户离开底部」。
+    m_programmaticScroll = true;
     scrollBar->setValue(scrollBar->maximum());
+    m_programmaticScroll = false;
 }
 
 void ChatSessionPage::followScrollToBottom()
@@ -1100,7 +1113,7 @@ void ChatSessionPage::resizeEvent(QResizeEvent *event)
                            LayoutConst::kSidebarRestoreTop);
     }
     applyColumnWidth();
-
+    // 延帧重钳：布局结算后气泡按新列宽重排（「回到底部」钮摆位已并入 applyColumnWidth）
     QTimer::singleShot(0, this, [this]() { applyColumnWidth(); });
 }
 
@@ -1188,6 +1201,11 @@ void ChatSessionPage::applyColumnWidth()
         if (bubble)
             bubble->refreshSize();
     }
+    // 「回到底部」浮动钮的摆位依赖 m_scrollView 的几何，而本函数是 resizeEvent 与
+    // setSidebarVisible 的共用入口（侧栏收起不触发本页 resizeEvent）：摆位必须跟这里
+    // 一起结算，否则钮会停在旧右下角——变窄时被裁一半、变宽时飘在消息流中间。
+    // 放在末尾：上面刚改完 m_scrollView 的 maximumWidth，延帧调用时几何已结算。
+    updateJumpBottomBtn();
 }
 
 // 上下文占用快照 → 侧栏「上下文」节（条+数字）+ 底部状态条（轮步/消耗/速度）。刷新时机

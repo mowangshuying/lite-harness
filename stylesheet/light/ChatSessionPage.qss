@@ -18,13 +18,11 @@ MessageBubbleWidget {
     color: rgb(50, 50, 50);
 }
 
-#msgBrowser[role="Assistant"] blockquote {
-    color: rgb(98, 98, 98);
-    font-style: italic;
-    border-left: 3px solid rgba(128, 128, 128, 80);
-    margin-left: 4px;
-    padding-left: 8px;
-}
+/* 文档内 blockquote / pre / code 的样式**不在这里**：Qt 样式表只匹配 QWidget，
+   setMarkdown 生成的富文本内容根本不参与选择器匹配（本条此前是一条解析期
+   静默丢弃的死规则，三套主题各写了一遍）。实际样式见
+   MessageBubbleWidget::makeTextView 的 QTextDocument::setDefaultStyleSheet，
+   取值半透明灰，三主题共用一份、无需随主题切换重刷。 */
 
 /* 只读工作目录页眉：12px 次要灰字（字号在代码设定以对齐 elide 量纲），
    题头比路径更浅一档，与 NewChatPage 路径条同一套灰阶 token */

@@ -12,4 +12,16 @@ ChatMsgEdit[focused="true"] {
     background-color: rgb(40, 44, 52);
     border: 1px solid transparent;
     color: rgb(255, 255, 255);
+    /* 空态引导字色（ChatMsgEdit::setPlaceholderText）：placeholder 只能由这条
+       Qt6 原生 QSS 属性着色（palette 的 PlaceholderText 会被本样式表的 re-polish
+       覆盖回默认值，故不在 C++ 里设）。 */
+    placeholder-text-color: rgb(140, 140, 140);
+}
+
+/* 运行中（turn busy）禁用态：此前只 setEnabled(false)，而 QSS 又显式写了 color，
+   禁用时不会退回 palette 灰 —— 整个回合输入框与可用态外观完全相同，点了没反应
+   像是界面卡死。这里显式降一档字色 + 压暗一档底色（与 atomOneDark 编辑器底色同族）。 */
+#textEdit:disabled {
+    background-color: rgb(33, 37, 43);
+    color: rgb(140, 140, 140);
 }

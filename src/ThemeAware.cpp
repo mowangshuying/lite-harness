@@ -4,6 +4,7 @@
 #include <FluStyleSheetUtils.h>
 #include <FluThemeUtils.h>
 
+#include <QHash>
 #include <QStyle>
 #include <QWidget>
 
@@ -34,9 +35,22 @@ void ThemeAware::bind(const QString &qssFileName, QWidget *widget,
         Q_UNUSED(theme);
         const QString path = FluStyleSheetUtils::getUtils()->getStyleSheetDir()
                              + FluThemeUtils::getThemeName() + QLatin1Char('/') + qssFileName;
-        QString qss = FluStyleSheetUtils::getQssByFileName(path);
-        FluStyleSheetUtils::doForQrcQssText(qss);
-        qss = UiScale::scaleQssFontSizes(qss, UiScale::runtimeFontScalePercent());
+        // 「读盘 + qrc 改写 + 字号缩放」结果缓存（P2）：此前每次 apply 都重跑一遍，而
+        // ChatSessionPage 每个实例各持一份 bind —— 开 10 个会话切一次主题就是 10 次
+        // 同文件 QFile::readAll + 10 次全串字符扫描 + 10 次整页 re-polish，卡顿随
+        // 「打开过的会话数」线性增长。键含主题名（path 已含）与倍率，故不存在失效问题：
+        // 进程内主题 3 档、倍率是启动快照（App.cpp 写一次），条目上限 = 文件数×3。
+        static QHash<QString, QString> qssCache;
+        const int percent = UiScale::runtimeFontScalePercent();
+        const QString cacheKey = path + QLatin1Char('#') + QString::number(percent);
+        QString qss = qssCache.value(cacheKey);
+        if (qss.isEmpty())
+        {
+            qss = FluStyleSheetUtils::getQssByFileName(path);
+            FluStyleSheetUtils::doForQrcQssText(qss);
+            qss = UiScale::scaleQssFontSizes(qss, percent);
+            qssCache.insert(cacheKey, qss);
+        }
         FluStyleSheetUtils::scheduleBatchUpdate(widget, qss);
         // 组件特有行为放在 QSS 重载之后：依赖新样式级联的子级刷新
         // （如 ChatSessionPage 对气泡按 #msgBrowser[role] 重 polish）必须

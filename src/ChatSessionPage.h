@@ -180,6 +180,7 @@ private:
     QToolButton *m_jumpBottomBtn = nullptr; // 「回到底部」浮动钮（挂滚动区，上翻抑制跟随时出现）
     bool m_userScrolledAway = false;        // 用户主动上翻离开底部（流式跟随抑制位，回近底清除）
     bool m_restorePending = false;          // 惰性恢复挂起旗：scheduleRestoreFromDisk 置位、首次 showEvent 消费
+    bool m_programmaticScroll = false;      // 程序化贴底在途：valueChanged 回调据此跳过跟随态重算
     bool m_replaying = false;               // 回放进行中：逐泡贴底 no-op，replayHistory 尾部单次结算
     QString m_sessionTitle;                // 会话标题单源：首条用户消息派生，宿主重命名/恢复经 setSessionTitle 回传覆盖
 };

@@ -82,6 +82,11 @@ public:
     void setCollapsible(bool on) {
         m_collapsible = on;
         m_header->setProperty("clickable", on);
+        // 手型光标在这里设而非 QSS：Qt 样式表没有 cursor 属性，此前三套主题
+        // #sbSectionHead[clickable="true"] 里的 cursor: pointinghand 是解析期静默丢弃的
+        // 死声明；同面板 m_hideBtn 一直走 C++ 设置，两处可点控件因此光标行为不一致。
+        // 按 on 双向设置：恒展开的节不可点，不该给手型。
+        m_header->setCursor(on ? Qt::PointingHandCursor : Qt::ArrowCursor);
         // 键盘可达（P1-6）：只有真能折叠的节才该进 Tab 链——恒展开的节没有可执行动作，
         // 给焦点等于凭空多一个停靠点。本方法会被反复调用（节数增减时重算折叠资格），
         // 所以这里必须按 on 双向设置，不能只在构造期设一次。
