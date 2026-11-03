@@ -31,7 +31,7 @@ QHBoxLayout *CollapsibleBlock::initHeader(const QString &objectName,
 {
     m_header = new QWidget(this);
     m_header->setObjectName(objectName);
-    m_header->setFixedHeight(kHeaderHeight);
+    m_header->setFixedHeight(headerHeight());
     m_header->setCursor(Qt::PointingHandCursor);
     // 键盘可达（P1-6）：折叠头此前只吃鼠标左键，键盘用户完全无法展开工具块/思考块/清单卡。
     // StrongFocus 让头部进 Tab 链，配合 eventFilter 的 Space/Enter 分支等价于点击；
@@ -48,7 +48,7 @@ QLabel *CollapsibleBlock::createGlyphLabel(const QString &objectName)
 {
     auto *label = new QLabel(m_header);
     label->setObjectName(objectName);
-    label->setFixedSize(kGlyphSize, kGlyphSize);
+    label->setFixedSize(glyphSize(), glyphSize());
     label->setAlignment(Qt::AlignCenter);
     return label;
 }
@@ -274,10 +274,10 @@ void CollapsibleBlock::resizeEvent(QResizeEvent *event)
     // 手动几何定位（照抄 FluExpander.cpp:79-89 的公式）：
     // 头部铺满宽度固定在顶部；内容满尺寸，顶部锚定在 32 + contentHeight - full，
     // 即 contentHeight 增大时内容从头部背后向下滑出，缩小时无可见区变化导致的重排
-    m_header->resize(event->size().width(), kHeaderHeight);
+    m_header->resize(event->size().width(), headerHeight());
     m_header->move(0, 0);
     m_contentArea->resize(event->size().width(), m_fullContentHeight);
-    m_contentArea->move(0, kHeaderHeight + m_contentHeight - m_fullContentHeight);
+    m_contentArea->move(0, headerHeight() + m_contentHeight - m_fullContentHeight);
 
     // 块宽变化后子类副效应（ToolBlock：关键参数省略宽度随块宽重算）
     onGeometryApplied();

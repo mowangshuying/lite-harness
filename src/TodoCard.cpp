@@ -12,11 +12,19 @@
 
 #include <FluUtils.h>
 
+#include "UiScale.h" // P0 字号缩放：行高/记号位按启动倍率放大
+
 // 行几何常量与 QSS #todoRow/#todoList 保持耦合：
 //   行高 26px、列表上下边距各 4px、行间距 2px（改动需同步 stylesheet/*/TodoCard.qss 注释）
+// P0：行高与记号位是「字号的从属量」——QSS 的 #todoRow 字号随 uiFontScale 放大，
+// 行高若写死 26px，200% 时中文上下被削；故这两项统一经 UiScale::scaled 取值。
 static constexpr int kRowHeight = 26;
 static constexpr int kListVerticalMargin = 4;
 static constexpr int kListSpacing = 2;
+static constexpr int kMarkSize = 16;
+
+static int rowHeight() { return UiScale::scaled(kRowHeight); }
+static int markSize() { return UiScale::scaled(kMarkSize); }
 
 TodoCard::TodoCard(QWidget *parent) : CollapsibleBlock(parent)
 {
@@ -108,7 +116,7 @@ void TodoCard::rebuildRows(const QJsonArray &todos)
         auto *row = new QWidget(m_list);
         row->setObjectName("todoRow");
         row->setProperty("status", QString::fromLatin1(rowStatus.data(), rowStatus.size()));
-        row->setFixedHeight(kRowHeight);
+        row->setFixedHeight(rowHeight());
         row->setToolTip(text);
 
         auto *rowLayout = new QHBoxLayout(row);
@@ -118,7 +126,7 @@ void TodoCard::rebuildRows(const QJsonArray &todos)
         // 状态记号：文本字形（○ 待办 / ● 进行中 / ✓ 完成），颜色由 QSS 行状态选择器控制
         auto *mark = new QLabel(row);
         mark->setObjectName("todoMark");
-        mark->setFixedSize(16, 16);
+        mark->setFixedSize(markSize(), markSize());
         mark->setAlignment(Qt::AlignCenter);
         mark->setText(active ? QStringLiteral("\u25CF")   // ●
                              : (done ? QStringLiteral("\u2713")  // ✓
@@ -154,8 +162,9 @@ QString TodoCard::elidedFor(const Row &row, int avail) const
 
 void TodoCard::refreshRowTexts()
 {
-    // 行可用宽 = 视口宽 - 行左侧透明描边 2 - 行边距 10+10 - 记号 16 - 间距 8 - 余量 2
-    const int avail = qMax(40, m_scroll->viewport()->width() - (2 + 10 + 16 + 8 + 10 + 2));
+    // 行可用宽 = 视口宽 - 行左侧透明描边 2 - 行边距 10+10 - 记号位 - 间距 8 - 余量 2
+    // （记号位随字号倍率放大，故取 markSize() 而非裸 16，否则省略宽会算偏、文字溢出被裁）
+    const int avail = qMax(40, m_scroll->viewport()->width() - (2 + 10 + markSize() + 8 + 10 + 2));
     for (const Row &row : m_rows)
         row.textLabel->setText(elidedFor(row, avail));
 }
@@ -185,7 +194,7 @@ void TodoCard::measureContent()
     const int n = m_rows.size();
     const int naturalHeight = n == 0
                                   ? 0
-                                  : kListVerticalMargin * 2 + n * kRowHeight + (n - 1) * kListSpacing;
+                                  : kListVerticalMargin * 2 + n * rowHeight() + (n - 1) * kListSpacing;
     m_fullContentHeight = qMin(naturalHeight, expandedHeightCap());
 
     // 依据当前展开态把内容高度平滑跟到新值（数量变化时的"就地刷新"动效仅此一处，克制）；

@@ -1,6 +1,7 @@
 #include "SettingsPage.h"
 #include "AgentConstants.h"
 #include "LayoutConstants.h" // P2-D2：页面留白与其余页同源（kSideMargin/kPageVMargin）
+#include "UiScale.h"         // P0 字号缩放：设置卡动作钮尺寸按启动倍率放大
 #include "FluentInputDialog.h"
 #include "I18n.h"
 #include "QOpenAi.h" // 写入 ini 后即时覆盖全局配置（setUrl / setToken）
@@ -22,6 +23,15 @@
 #include <FluPushButton.h>
 
 namespace {
+
+/// 设置卡右侧「修改/清除」钮尺寸（P0 字号缩放）：基值在 LayoutConstants（单源），
+/// 这里按启动倍率放大 —— 写死 64×30 时英文文案（Change/Clear）+ 大字号会把按钮文字
+/// 截掉，且截断处没有省略号可提示。
+QSize cardActionButtonSize()
+{
+    return QSize(UiScale::scaled(LayoutConst::kCardActionWidth),
+                 UiScale::scaled(LayoutConst::kCardActionHeight));
+}
 
 // 默认工作目录：config.json 键 app/defaultWorkDir（AppSettings 单源，存储根 <exe 目录>/../config）；
 // 与主题/语言配置互不影响（语言权威存储见 I18n.cpp，主题走 FluentUI themeChanged）。
@@ -183,9 +193,9 @@ WorkDirSettingCard::WorkDirSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
     m_clearButton = new FluPushButton(tr("清除"), this);
-    m_clearButton->setFixedSize(64, 30);
+    m_clearButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
@@ -243,7 +253,7 @@ ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
@@ -322,7 +332,7 @@ MaxRoundsSettingCard::MaxRoundsSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
@@ -391,9 +401,9 @@ ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
     m_clearButton = new FluPushButton(tr("清除"), this);
-    m_clearButton->setFixedSize(64, 30);
+    m_clearButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
@@ -461,9 +471,9 @@ ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
     m_clearButton = new FluPushButton(tr("清除"), this);
-    m_clearButton->setFixedSize(64, 30);
+    m_clearButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
@@ -535,9 +545,9 @@ ModelListSettingCard::ModelListSettingCard(QWidget *parent)
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
     m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(64, 30);
+    m_modifyButton->setFixedSize(cardActionButtonSize());
     m_clearButton = new FluPushButton(tr("清除"), this);
-    m_clearButton->setFixedSize(64, 30);
+    m_clearButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);

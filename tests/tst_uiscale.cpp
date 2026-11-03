@@ -80,6 +80,23 @@ int tst_uiscale()
     check(scaledSize(0, 150) == 0, "scaledSize: base 0 passthrough (unset, not zero-pixel)");
     check(scaledSize(-1, 150) == -1, "scaledSize: negative base passthrough");
 
+    // ---- ①b 构造期便捷封装 scaled()：按「当前生效倍率」取值 ----
+    // 它是 scaledSize 的调用方便捷入口，必须与显式传倍率的写法逐值一致；
+    // 100%（未配置/越界回退）时恒等，保证默认路径与改造前完全等价。
+    // 消费方（行高、字形位、按钮高、卡片高）全靠它摆脱写死像素，故这一条是
+    // 「200% 字号不再裁字」的地基，必须钉死。
+    setRuntimeFontScale(100);
+    check(scaled(26) == 26, "scaled: 100% identity (row height untouched)");
+    check(scaled(16) == 16, "scaled: 100% identity (glyph slot untouched)");
+    setRuntimeFontScale(200);
+    check(scaled(26) == 52, "scaled: 200% doubles row height");
+    check(scaled(16) == 32, "scaled: 200% doubles glyph slot");
+    check(scaled(360) == 720, "scaled: 200% doubles card width (caller caps it at 640)");
+    setRuntimeFontScale(80);
+    check(scaled(26) == 21, "scaled: 80% -> 26*0.8=20.8 -> 21");
+    check(scaled(1) == 1, "scaled: never collapses to 0px");
+    setRuntimeFontScale(kFontScaleDefault); // 复位：后续断言不得受本段影响
+
     // ---- ② 高 DPI 策略名 ----
     // 五个合法名（与 Qt 内建查找表逐项对齐），大小写混写与前后空格都要能命中
     check(policyRoundTrip(QStringLiteral("Round")) == "Round", "dpi: Round");

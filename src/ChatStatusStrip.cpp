@@ -1,4 +1,6 @@
 #include "ChatStatusStrip.h"
+
+#include "UiScale.h" // P0 字号缩放：状态条高按启动倍率放大
 #include "ThemeAware.h"
 #include "UsageTokens.h"
 
@@ -29,7 +31,9 @@ class StripRow : public QWidget {
 public:
     explicit StripRow(QWidget* parent = nullptr) : QWidget(parent) {
         setObjectName(QStringLiteral("stripRow"));
-        setFixedHeight(26);
+        // P0 字号缩放：26px 高承载 #statusText 的字号（QSS 里 11px 会随倍率放大），
+    // 写死会在 200% 时把中文上下削掉
+    setFixedHeight(UiScale::scaled(26));
         auto* h = new QHBoxLayout(this);
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(kSpacing);

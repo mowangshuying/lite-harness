@@ -63,4 +63,10 @@ inline constexpr int kNavWidth = 225;
 inline constexpr int kWindowMinWidth = 900;
 inline constexpr int kWindowMinHeight = 600;
 
+/// 设置卡右侧「修改/清除」钮的基值（P0 字号缩放）：实际尺寸经 UiScale::scaled 放大。
+/// 此前 10 处各自写死 setFixedSize(64, 30)，英文文案（Change/Clear）+ 大字号下按钮
+/// 文字被截且无省略号；单源后改一处即改全部，且与字号倍率同步。
+inline constexpr int kCardActionWidth = 64;
+inline constexpr int kCardActionHeight = 30;
+
 } // namespace LayoutConst

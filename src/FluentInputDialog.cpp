@@ -1,5 +1,7 @@
 #include "FluentInputDialog.h"
 
+#include "UiScale.h" // P0 字号缩放：卡片尺寸与按钮行高按启动倍率放大
+
 #include "ThemeAware.h"
 #include <QFrame>
 #include <QHBoxLayout>
@@ -47,7 +49,10 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
 
     m_card = new QFrame(this);
     m_card->setObjectName("centerWidget");
-    m_card->setFixedSize(360, 232);
+    // P0 字号缩放：卡片此前写死 360×232，而标题/说明是 wordWrap —— uiFontScale 放大或
+    // 英文长提示下文字变成 3~4 行，底部输入行与按钮行被压掉且卡片无滚动。宽度同时设
+    // 上限 640：200% 时 720px 在最小窗口（900）里已逼近边界，640 仍能容纳两枚 130px 按钮。
+    m_card->setFixedSize(qMin(UiScale::scaled(360), 640), UiScale::scaled(232));
     boxLayout->addWidget(m_card, 1, Qt::AlignCenter);
 
     auto cardLayout = new QVBoxLayout(m_card);
@@ -83,7 +88,8 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
     // 按钮行：确定（FluStyleButton 强调样式）在前、取消在后，同 FluMessageBox 排布与宽度
     m_btnWidget = new QWidget(m_card);
     m_btnWidget->setObjectName("btnWidget");
-    m_btnWidget->setFixedHeight(80);
+    // P0 字号缩放：按钮行 80px 承载两枚按钮的文字，随倍率放大
+    m_btnWidget->setFixedHeight(UiScale::scaled(80));
 
     auto btnLayout = new QHBoxLayout(m_btnWidget);
     btnLayout->setContentsMargins(24, 0, 24, 0);
@@ -91,12 +97,12 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
 
     m_okButton = new FluStyleButton(m_btnWidget);
     m_okButton->setText(tr("确定"));
-    m_okButton->setFixedWidth(130);
+    m_okButton->setFixedWidth(UiScale::scaled(130));
     m_okButton->setDefault(true); // Enter 兜底（FluLineEdit 自身回车走下方 returnPressed 通路）
 
     m_cancelButton = new FluPushButton(m_btnWidget);
     m_cancelButton->setText(tr("取消"));
-    m_cancelButton->setFixedWidth(130);
+    m_cancelButton->setFixedWidth(UiScale::scaled(130));
 
     btnLayout->addWidget(m_okButton);
     btnLayout->addWidget(m_cancelButton);

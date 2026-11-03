@@ -103,6 +103,18 @@ inline int scaledSize(int baseSize, int percent)
     return scaled > 0 ? scaled : 1;
 }
 
+// 构造期便捷封装（P0 字号缩放）：把「从属字号」的固定像素基值按启动快照倍率放大。
+// 只用于行高、字形位、按钮高、卡片高这类**随文字一起长大**的几何——它们此前是
+// static constexpr 写死值，字号放大到 200% 时字形被裁在旧框里（用户看到的是
+// 「字被吃了」而不是「字变大了」）。倍率是启动快照（重启生效，见 runtimeFontScale），
+// 故构造/布局期算一次即可，不需要运行时重算，也不需要订阅主题。
+// 与 scaledSize 的分工：scaledSize 是显式传倍率的纯函数（测试与需要特定倍率的调用方用），
+// scaled 是「按当前生效倍率」的调用方便捷入口。
+inline int scaled(int baseSize)
+{
+    return scaledSize(baseSize, runtimeFontScalePercent());
+}
+
 // ---- ② 高 DPI 取整策略 ----
 // 名称表与 Qt 内建查找表逐项对齐（qtbase/src/gui/kernel/qhighdpiscaling.cpp 的
 // scaleFactorRoundingPolicyLookup：Round / Ceil / Floor / RoundPreferFloor /

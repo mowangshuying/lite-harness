@@ -1,4 +1,6 @@
 #include "PermissionCard.h"
+
+#include "UiScale.h" // P0 字号缩放：徽章位/按钮高/最小宽按启动倍率放大
 #include "ThemeAware.h"
 #include "ToolTagKind.h"
 #include <QFontMetrics>
@@ -69,7 +71,7 @@ PermissionCard::PermissionCard(QWidget *parent) : FluWidget(parent)
     row1->setSpacing(8);
     m_badgeLabel = new QLabel(QStringLiteral("!"), m_body);
     m_badgeLabel->setObjectName(QStringLiteral("pcBadge"));
-    m_badgeLabel->setFixedSize(18, 18);
+    m_badgeLabel->setFixedSize(UiScale::scaled(18), UiScale::scaled(18));
     m_badgeLabel->setAlignment(Qt::AlignCenter);
     m_titleLabel = new QLabel(tr("需要权限确认"), m_body);
     m_titleLabel->setObjectName(QStringLiteral("pcTitle"));
@@ -108,8 +110,8 @@ PermissionCard::PermissionCard(QWidget *parent) : FluWidget(parent)
     m_allowButton->setToolTip(tr("快捷键：Y"));
     for (auto *button : {m_denyButton, m_allowButton})
     {
-        button->setFixedHeight(28);
-        button->setMinimumWidth(64);
+        button->setFixedHeight(UiScale::scaled(28));
+        button->setMinimumWidth(UiScale::scaled(64));
         button->setCursor(Qt::PointingHandCursor);
     }
     row3->addWidget(m_reasonLabel, 0, Qt::AlignVCenter);

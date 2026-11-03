@@ -1,6 +1,7 @@
 #include "SessionSidebar.h"
 #include "ThemeAware.h"
 #include "LayoutConstants.h"
+#include "UiScale.h" // P0 字号缩放：节头/状态行/TODO 行高与字形位按启动倍率放大
 #include "UsageTokens.h"   // 占用比例算术（usageRatio）——本节数字与占用条共用同一实现（一次计算喂两处）
 
 #include <QApplication>
@@ -39,7 +40,9 @@ public:
 
         m_header = new QWidget(this);
         m_header->setObjectName(QStringLiteral("sbSectionHead"));
-        m_header->setFixedHeight(28);
+        // P0 字号缩放：节头 28px 是承载标题字号的从属量——QSS 的 #sbSectionTitle 字号会随
+        // uiFontScale 放大，写死行高会在 200% 时把中文上下削掉
+        m_header->setFixedHeight(UiScale::scaled(28));
         m_header->setProperty("clickable", false);
         auto* hv = new QHBoxLayout(m_header);
         hv->setContentsMargins(8, 0, 8, 0);
@@ -129,7 +132,8 @@ public:
             m_arrow->setFixedWidth(0);
             return;
         }
-        m_arrow->setFixedWidth(18);
+        // P0 字号缩放：18px 是节头箭头字形位，随倍率放大（0 = 收起态，scaled 对 0 原样返回）
+        m_arrow->setFixedWidth(UiScale::scaled(18));
         const FluAwesomeType type = m_expanded ? FluAwesomeType::ChevronUp
                                               : FluAwesomeType::ChevronDown;
         m_arrow->setPixmap(FluIconUtils::getFluentIconPixmap(
@@ -252,13 +256,15 @@ public:
     explicit StatusRow(QWidget* parent = nullptr) : QWidget(parent) {
         setObjectName(QStringLiteral("statusRow"));
         setProperty("state", QStringLiteral("idle"));
-        setFixedHeight(26);
+        // P0 字号缩放：状态行 26px 承载 #statusText 的字号，随倍率放大
+        setFixedHeight(UiScale::scaled(26));
         auto* h = new QHBoxLayout(this);
         h->setContentsMargins(8, 0, 8, 0);
         h->setSpacing(7);
         m_dot = new QLabel(QStringLiteral("\u25CF"), this);
         m_dot->setObjectName(QStringLiteral("statusDot"));
-        m_dot->setFixedWidth(14);
+        // P0 字号缩放：14px 是状态灯字形位，随倍率放大
+        m_dot->setFixedWidth(UiScale::scaled(14));
         m_dot->setAlignment(Qt::AlignCenter);
         m_text = new QLabel(this);
         m_text->setObjectName(QStringLiteral("statusText"));
@@ -288,8 +294,12 @@ private:
 
 namespace {
 constexpr int kPanelHMargin = 14;    // 面板左右内边距
-constexpr int kRowHeight = 24;       // TODO 行高（比消息流 TodoCard 稍密）
-constexpr int kMarkWidth = 16;       // 行首状态点宽
+int rowHeight() { return UiScale::scaled(24); } // TODO 行高基值 24（比消息流 TodoCard 稍密），按倍率放大
+constexpr int kMarkWidth = 16;       // 行首状态点宽基值（实际取 markWidth()）
+/// P0 字号缩放：状态点宽是承载字形（○●✓）的从属量，随倍率放大。
+/// 必须是函数而非 namespace 级变量：UiScale 的倍率是 main() 里的启动快照，
+/// 静态初始化期读到的还是默认 100，会把缩放静默吃掉（构造期才读才是对的）。
+int markWidth() { return UiScale::scaled(kMarkWidth); }
 // 行左右留白(8+8) + 点距(6) = 20 的取整常量曾在此定义却零引用（UI 优化 P2-D5 删除）：
 // 可用文本宽的同一口径已由 bodyTextAvail 现算（- 2 * 8 - kMarkWidth - 6），留两份
 // 只会让改边距时其中一份静默失效。
@@ -303,13 +313,13 @@ QWidget* makeRow(const char* propName, const QString& propValue,
     auto* row = new QWidget;
     row->setObjectName(QStringLiteral("sbRow"));
     row->setProperty(propName, propValue);
-    row->setFixedHeight(kRowHeight);
+    row->setFixedHeight(rowHeight());
     auto* h = new QHBoxLayout(row);
     h->setContentsMargins(8, 0, 8, 0);
     h->setSpacing(6);
     auto* mark = new QLabel(markText, row);
     mark->setObjectName(QStringLiteral("sbMark"));
-    mark->setFixedWidth(kMarkWidth);
+    mark->setFixedWidth(markWidth());
     mark->setAlignment(Qt::AlignCenter);
     auto* text = new QLabel(row);
     text->setObjectName(QStringLiteral("sbText"));
@@ -324,7 +334,7 @@ QWidget* makeRow(const char* propName, const QString& propValue,
 /// 节体可用文本宽（行内边距/状态点之外的余量）；未布局时 width() 不可信，回退面板宽推算
 int bodyTextAvail(int bodyWidth, int sidebarWidth) {
     const int raw = (bodyWidth > 60 ? bodyWidth : sidebarWidth - 2 * kPanelHMargin - 2 * kBodyHPadding)
-                    - 2 * 8 - kMarkWidth - 6;
+                    - 2 * 8 - markWidth() - 6;
     return qMax(raw, 60);
 }
 

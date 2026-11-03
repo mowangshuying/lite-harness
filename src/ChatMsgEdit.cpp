@@ -17,6 +17,7 @@
 #include <FluComboBox.h>
 #include "AgentConstants.h" // 模型清单单源（config.json 可配置，取值见 AgentConst::modelOptions()）
 #include "LayoutConstants.h"
+#include "UiScale.h" // P0 字号缩放：输入框最大高按启动倍率放大
 #include "ThemeAware.h"
 
 // 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：config.json 的
@@ -34,7 +35,10 @@ static int modelComboWidth(const QStringList &options)
     int longest = 0;
     for (const QString &option : options)
         longest = qMax(longest, option.size());
-    return qMin(220, qMax(130, 24 + longest * 8));
+    // P0 字号缩放：系数 8 是按默认 14px 字体估的每字符宽，上下限 130/220 是同一口径——
+// 三者必须一起乘倍率，否则 200% 时模型名被截成看不懂的片段（上限 220 尤其明显）。
+    // 宽度是「承载字号的固定像素」，与行高/字形位同一类，故同样走 UiScale。
+    return UiScale::scaled(qMin(220, qMax(130, 24 + longest * 8)));
 }
 
 // IME 组合态判定（P0-1）见 eventFilter：中文输入法在候选词未上屏时，Enter 的语义是
@@ -52,7 +56,9 @@ static int modelComboWidth(const QStringList &options)
 ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
 {
     setMaximumWidth(LayoutConst::kColumnMaxWidth);
-    setMaximumHeight(100);
+    // P0 字号缩放：100px 上限减去上下边距与工具行后，200% 时只剩约 1.8 行可见；
+    // 按倍率放大才能保持「约 3 行」的同一观感
+    setMaximumHeight(UiScale::scaled(100));
     auto vMainLayout = new QVBoxLayout(this);
     vMainLayout->setContentsMargins(4, 4, 4, 4);
     vMainLayout->setSpacing(0);

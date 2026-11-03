@@ -1,5 +1,7 @@
 #pragma once
 
+#include "UiScale.h" // P0 字号缩放：头部高/字形位按启动倍率放大（headerHeight/glyphSize）
+
 #include <FluWidget.h>
 #include <QElapsedTimer>
 #include <QTextBrowser>
@@ -128,7 +130,12 @@ protected:
     QTimer *m_liveTimer = nullptr;  // 懒建 400ms 轮播定时器
     QElapsedTimer m_liveElapsed;    // live 进行时长（startLiveTimer 起表，复用实例时重起）
 
-    static constexpr int kHeaderHeight = 32;   // 头部固定高（几何公式与 setContentHeight 共用）
+    static constexpr int kHeaderHeight = 32;   // 头部固定高基值（实际几何取 headerHeight()）
+    /// 头部高 / 字形位边长（P0 字号缩放）：按启动倍率放大后再用于几何——这两个值是
+    /// 「字号的从属量」，写死 32/16 时 200% 字号会把标题与 $/✓/✕ 裁在旧框里。
+    /// 基值仍是下面两个常量，改值即改两处；倍率是启动快照，故可直接在此算。
+    int headerHeight() const { return UiScale::scaled(kHeaderHeight); }
+    int glyphSize() const { return UiScale::scaled(kGlyphSize); }
     static constexpr int kVerticalChrome = 8;  // 内容区 QSS 上下 padding 各 4px（三主题一致）
 
     // 头部几何单源（UI 优化 P2-D7）：这两个值此前只活在 initHeader/createGlyphLabel 的
