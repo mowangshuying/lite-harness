@@ -607,7 +607,9 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 检查 `<config>/config.json` 的 `app/sessions` 键 → 数组，条目含 dataId/title/model/workDir/createdMs；写盘经 QSettings（`syncConfFile` 内 `QSaveFile`+`commit`，异常退出不留半文件）。注意：`workDir` 只是条目字段，索引落点与所选工作目录无关
 - [ ] 会话内发若干消息 → `<会话数据根>/.lite-harness/sessions/<dataId>/history.json` 存在且与可见消息一致（dataId 为 8 位 hex）
 - [ ] 重启程序 → 会话按 createdMs 升序恢复、历史气泡回放完整；恢复不自动切换当前页（仍停在新对话页）；workDir 失效时静默回退进程当前目录
+- [ ] 会话历史损坏（手工把 `history.json` 截半/写坏）→ 打开该会话弹「历史加载失败」Error 提示（`kNoticeErrorMs` 自动消失）并按空会话打开；全新会话（无 ID / 无文件）静默空页、**不**弹提示（判据：会话标题非空才提示）
 - [ ] 右键会话导航子项 → 仅弹「重命名 / 删除会话」菜单；单击子项不因基类 itemClicked 误翻页（eventFilter 吞 press/release）
+- [ ] 键盘上下文菜单：选中会话子项后按 Shift+F10 或菜单键 → 同样弹「重命名 / 删除会话」；鼠标右键与键盘**各弹一次**（鼠标路径走 press/release 延拍、键盘走 ContextMenu，两条路不得双弹）
 - [ ] 重命名：输入新名确认 → 导航与索引标题同步（索引不再刷 `lastActiveMs`，该字段已删）；取消/空/未变 → 保持原值
 - [ ] 删除：弹「此操作不可撤销」确认 → 确认后页面销毁、索引条目移除、`sessions/<id>/` 整目录递归清理；删的若是当前页则切回新对话页；运行中会话先 `stop()` 再删；数据清理失败仅 qWarning、UI 状态照常收清
 - [ ] 有会话运行中点窗口关闭 → 弹「任务仍在运行，退出将丢失未完成回合。确定退出吗？」且默认焦点「否」；选「否」→ 不退出、任务继续；选「是」→ 逐页 `stop()` 后退出
@@ -653,6 +655,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 - [ ] 设置页六卡说明位约定（共用基类 `InfoSlotSettingCard`）：值显示在**标题下方说明位**（基类 `m_infoLabel`，12px 次要灰），格式「简短解释：值」；解释前缀**恒完整、只省略值**（对整串 `ElideMiddle` 会把省略点切在交界上、说明与值两头都残，实证见 W=420 组）；右侧操作行只剩按钮；长值 ToolTip 兜底全量；分隔符走 `tr("：")`（英文回落 `": "`，其尾随空格经 lrelease + QTranslator 实测保留）。API Key 卡进说明位的**必须**是 `maskedApiToken` 摘要，明文绝不进值区也不进 ToolTip。已知边界：窄到连前缀都放不下（实测 ≤300px / infoW≈88）时退化为整串省略
 - [ ] 设置页「默认工作目录」：选新目录 → `config.json` `defaultWorkDir` 更新；对话框取消 → 保持原值；清除 → 展示「未设置（使用进程当前目录）」
+- [ ] 写盘失败可见：把 `config.json` 设为只读后改任意设置项（工作目录 / 端点 / 密钥 / 模型清单 / 上下文上限 / 迭代上限 / 审批开关）→ 弹「保存失败」提示（文案含 `config.json` 与「只读或被占用」），卡片值区保持旧值；恢复可写后重试 → 正常落盘且不再弹。注意：失败后**回读可能显示新值**（QSettings 进程级 `QConfFile` 缓存），故判据只看是否弹框、不看值区
 - [ ] 设置页「上下文上限（字符）」改为 300000 → 落盘即下一回合压缩管线现取生效（无需重启）；卡片展示千分位（QLocale::c() 固定，不随界面语言变），数值行带派生提示「≈N token」（= 字符上限/4，仅展示、键语义仍是字符）；侧栏占用同为 ≈token 口径（contextCharLimit/4 派生预算，非字符）
 - [ ] 上下文上限输入 9999 / 5000001 / 非数字 → 「无效数值」弹窗不落盘；输入带千分位的 `200,000` → 剥逗号解析成功；合法界 10000~5000000、默认 200000
 - [ ] 键位巡检 → `language` / `defaultWorkDir` / `sidebarVisible` / `contextCharLimit` / `maxToolIterations` / `maxRetries` / `apiBaseUrl` / `apiToken` / `modelOptions` / `defaultModel` / `permissionApproval` 均落于 `<config>/config.json`（`<config>` = `<exe 目录>/../config`，单源 `LitePaths::configFilePath()`；手工编辑重启即生效，注册表路径不再被读写）
