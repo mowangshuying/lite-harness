@@ -80,6 +80,10 @@ protected:
     // live 轮播标题文案：仅参与圆点轮播的子类需要覆写；
     // 无进行态的子类（TodoCard）落到默认空串实现（轮播定时器仅在 startLiveTimer 后取文案）
     virtual QString liveText() const;
+    // live 轮播每 tick（400ms）回调：子类可在此刷新自己的进行态显示（如思考块的预览行）。
+    // 默认空实现 —— 预览刷新必须挂在既有轮播上，否则每 delta 刷一次标签会让头部
+    // 每秒重排几十次（思考块曾经正是这么做的反面教材）
+    virtual void onLiveTick() {}
     // 展开高度上限：默认 m_maxExpandedHeight（ThinkingBlock 进行态压缩为单行）
     virtual int expandedHeightCap() const;
     // 头部点击路径（程序化切换走 setExpanded 不经过此）：

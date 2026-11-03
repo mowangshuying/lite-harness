@@ -145,6 +145,7 @@ void CollapsibleBlock::startLiveTimer()
         connect(m_liveTimer, &QTimer::timeout, this, [this]() {
             m_liveDots = (m_liveDots + 1) % 4;
             m_titleLabel->setText(liveText());
+            onLiveTick();
         });
     }
     // 时长与轮播同表起算：本轮 live 的秒数从此刻累计（同一块复用则重起）

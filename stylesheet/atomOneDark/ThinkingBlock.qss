@@ -27,6 +27,13 @@ ThinkingBlock {
     font-size: 13px;
 }
 
+/* 进行态预览行（P1）：思考期间块保持折叠，最新输出行显示在头部。
+   比标题淡一档 —— 它是「正在输出的片段」，不是需要读的结论 */
+#thinkingPreview {
+    color: rgb(130, 137, 150);
+    font-size: 12px;
+}
+
 #thinkingContent {
     background-color: rgba(255, 255, 255, 3);
     border-left: 2px solid rgb(62, 68, 81);

@@ -47,16 +47,19 @@ protected:
     // ---- CollapsibleBlock 钩子 ----
     void refreshIcons() override;              // 灯泡 + 箭头方向
     QString liveText() const override;         // 「思考中」+ 轮播圆点 + 已耗时
-    int expandedHeightCap() const override;    // 进行态压缩为单行
-    void toggleExpanded() override;            // 记忆用户意愿
+    void onLiveTick() override;                // 400ms 轮播 tick：刷新顶部预览行（当前输出行）
+    int expandedHeightCap() const override;    // 终态展开限高（进行态不允许展开，故无压缩分支）
+    void toggleExpanded() override;            // 进行态拒绝展开；终态记忆用户意愿
+    void measureContent() override;            // 折叠态跳过测量：流式期间省掉文档布局 pass
 
 private:
     QString durationText() const;
     QString durationPhrase(int seconds) const;   // 时长短语单源（"< 1 秒"/"N 秒"/"N 分 M 秒"）
-    int liveLineHeight() const;
+    void updatePreview();                        // 取 m_liveTail 的当前行写入预览标签
 
     QLabel *m_iconLabel = nullptr;
-    QTimer *m_pinTimer = nullptr;   // 展开态钉底跟随（复用成员，勿每 delta 新建单次定时器）
+    QLabel *m_previewLabel = nullptr;   // 进行态顶部预览（当前输出行，ElideRight 单行）
+    QString m_liveTail;                 // 进行态思考文本末尾窗口（取当前行用，截断防常驻）
+    QString m_previewText;              // 上一次非空预览行（刚换行时不闪空）
     int m_durationSeconds = 0;      // 思考耗时（秒）
-    bool m_userInteracted = false;  // 用户手动展开/折叠过：进行/终态切换不再自动改展开状态
 };

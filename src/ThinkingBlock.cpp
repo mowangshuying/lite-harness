@@ -21,9 +21,15 @@ ThinkingBlock::ThinkingBlock(QWidget *parent) : CollapsibleBlock(parent)
     m_iconLabel = createGlyphLabel("thinkingIcon");
     m_titleLabel = createTitleLabel("thinkingTitle");
     m_arrowLabel = createGlyphLabel("thinkingArrow");
+    // 进行态预览行（P1 思考块）：思考期间块保持折叠，最新输出行显示在这里 ——
+    // 替代原先「自动展开 + 单行限高 + 钉底滚动」那套（块会张开，用户读成「一直在输出」）。
+    // 占 stretch 位：空文本时也不让布局跳动；文本按可用宽度 ElideRight。
+    m_previewLabel = createTitleLabel("thinkingPreview");
+    m_previewLabel->setTextFormat(Qt::PlainText);
 
     headerLayout->addWidget(m_iconLabel);
-    headerLayout->addWidget(m_titleLabel, 1);
+    headerLayout->addWidget(m_titleLabel);
+    headerLayout->addWidget(m_previewLabel, 1);
     headerLayout->addWidget(m_arrowLabel);
 
     // ---- 思考内容区：纯文本，尺寸固定为 min(自然高度, 上限)，动画期间仅平移 ----
@@ -63,27 +69,29 @@ void ThinkingBlock::startLive()
         return;
     m_live = true;
     m_liveDots = 0;
+    m_liveTail.clear();
+    m_previewText.clear();
     m_titleLabel->setText(liveText());
+    m_previewLabel->clear();
 
-    // 圆点轮播骨架（400ms 懒建定时器）已下沉基类
+    // 圆点轮播骨架（400ms 懒建定时器）已下沉基类；预览行经 onLiveTick 同表刷新
     startLiveTimer();
 
-    if (!m_userInteracted)
-        setExpanded(true);
+    // 进行态不允许展开（用户裁决）：思考期间只看顶部预览行，结束后再手动展开看全文。
+    // 若该块此前被展开过（同块复用 / 异常路径），这里强制收起，避免「张开」观感回归。
+    if (m_expanded)
+        setExpanded(false);
 }
 
 void ThinkingBlock::stopLive(int seconds)
 {
     stopLiveTimer();
     setThinkingDuration(seconds);
-    if (!m_userInteracted)
-    {
-        setExpanded(false);   // 折叠动画启动前的重测已按完整限高进行
-    }
-    else
-    {
-        scheduleMeasure();    // 用户保持展开：解除单行限高，按完整限高重测
-    }
+    // 预览让位给终态标题；块保持折叠（进行态从未展开过，无需再折叠一次）。
+    // 此后用户点头部即可展开看全文（toggleExpanded 不再受进行态闸门限制）。
+    m_previewLabel->clear();
+    m_previewText.clear();
+    m_liveTail.clear();
 }
 
 void ThinkingBlock::appendLiveText(const QString &delta)
@@ -92,24 +100,48 @@ void ThinkingBlock::appendLiveText(const QString &delta)
     cur.movePosition(QTextCursor::End);
     cur.insertText(delta);
 
-    // 展开态钉底跟随最新思考：延迟一帧等 measureContent 更新尺寸后再取最大值。
-    // 效率 P2：此前每个 delta 都 QTimer::singleShot(0, …) 新建一个单次定时器对象 ——
-    // 高频流式下每 token 一次堆分配 + 一个 lambda 捕获，且旧定时器仍排在事件队列里。
-    // 改用一个可重启的成员定时器：语义相同（0ms 单次、后到者覆盖先到者），不再每次分配。
-    if (m_expanded)
-    {
-        if (m_pinTimer == nullptr)
-        {
-            m_pinTimer = new QTimer(this);
-            m_pinTimer->setSingleShot(true);
-            m_pinTimer->setInterval(0);
-            connect(m_pinTimer, &QTimer::timeout, this, [this]() {
-                QScrollBar *bar = m_content->verticalScrollBar();
-                bar->setValue(bar->maximum());
-            });
-        }
-        m_pinTimer->start();
-    }
+    // 预览行只取「当前输出行」，故只保留文本末尾窗口：整段思考不常驻内存，
+    // 取当前行也不需要全文。
+    m_liveTail += delta;
+    if (m_liveTail.size() > 512)
+        m_liveTail = m_liveTail.right(512);
+
+    // 不在此刷新预览：每 delta 刷标签会让头部每秒重排几十次，统一由 400ms 轮播 tick
+    // （onLiveTick）刷新。钉底跟随同理删除 —— 进行态不允许展开，内容区不可见。
+}
+
+void ThinkingBlock::onLiveTick()
+{
+    updatePreview();
+}
+
+void ThinkingBlock::updatePreview()
+{
+    if (m_previewLabel == nullptr)
+        return;
+    // 当前输出行 = 末尾窗口里最后一个换行之后的部分
+    const int nl = m_liveTail.lastIndexOf(QLatin1Char('\n'));
+    QString line = (nl >= 0) ? m_liveTail.mid(nl + 1) : m_liveTail;
+    line.replace(QLatin1Char('\r'), QLatin1Char(' '));
+    line = line.trimmed();
+    if (!line.isEmpty())
+        m_previewText = line;
+    // 刚换行、当前行尚无内容时保留上一行，避免预览闪空。
+    // 宽度在布局完成前可能为 0：先放完整行，下一次 tick 再按真实宽度省略。
+    const int avail = m_previewLabel->width();
+    m_previewLabel->setText(avail > 0
+                                ? m_previewLabel->fontMetrics().elidedText(m_previewText, Qt::ElideRight, avail)
+                                : m_previewText);
+}
+
+void ThinkingBlock::measureContent()
+{
+    // 折叠态跳过测量（效率）：流式期间文档每次变更都触发 contentsChanged→scheduleMeasure，
+    // 而折叠态内容不可见，测出的高度只服务展开动画起点。跳过可省掉流式期间最重的
+    // 一次文档布局 pass；展开时 startExpandAnimation 会重新 measureContent 补测。
+    if (!m_expanded)
+        return;
+    CollapsibleBlock::measureContent();
 }
 
 QString ThinkingBlock::liveText() const
@@ -125,18 +157,17 @@ QString ThinkingBlock::liveText() const
 
 int ThinkingBlock::expandedHeightCap() const
 {
-    // 进行态且用户未手动操作时压缩为单行，钉底滚动只显示最新一行思考内容；
-    // 其余情况用构造期写入 m_maxExpandedHeight 的完整限高
-    if (m_live && !m_userInteracted)
-        return liveLineHeight();
+    // 恒用构造期写入的完整限高：进行态已不允许展开（startLive 强制折叠），
+    // 原先「进行态压缩为单行」的分支随之失效，删掉以免留一个走不到的口径
     return m_maxExpandedHeight;
 }
 
 void ThinkingBlock::toggleExpanded()
 {
-    // 仅用户点击路径经过此处（程序化切换走 setExpanded）：记住用户意愿，
-    // 后续进行/终态的自动展开折叠不再覆盖
-    m_userInteracted = true;
+    // 进行态不允许展开（用户裁决）：思考期间只看顶部预览行，点头部无反应。
+    // 终态（stopLive 之后 m_live 已复位）才允许展开看全文。
+    if (m_live)
+        return;
     setExpanded(!m_expanded);
 }
 
@@ -162,11 +193,4 @@ QString ThinkingBlock::durationPhrase(int seconds) const
     if (seconds < 60)
         return tr("%1 秒").arg(seconds);
     return tr("%1 分 %2 秒").arg(seconds / 60).arg(seconds % 60);
-}
-
-int ThinkingBlock::liveLineHeight() const
-{
-    // 单行思考文本高度：文档默认字体（随 QSS 主题）行高 + 内容区上下 padding
-    const QFontMetricsF fm(m_content->document()->defaultFont());
-    return qCeil(fm.lineSpacing()) + kVerticalChrome;
 }
