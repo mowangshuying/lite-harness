@@ -35,6 +35,11 @@ int tst_pathguard();          // 沙箱围栏多根判定（AgentPathGuard.h）�
 int tst_configmerge();        // 配置合流不变量（P2）：两侧同路径同格式、合写不互覆、json 大小写口径，判据组恒跑 + 落盘组夹具门控
 int tst_sessionstore();       // 会话索引并入 config.json（app/sessions）：读写换轨、不抹别人键、坏形态降级、旧 index.json 迁移四分支
 int tst_uiux();               // P1 UI 优化：命中区下限/组前缀契约/写失败可观测/数值域自洽，判据组恒跑 + 写失败组夹具门控
+int tst_tooltagkind();        // P2：工具名→标签类别映射（ToolTagKindNames.h），零夹具恒跑
+int tst_toolnames();          // P2：工具名常量表契约（ToolNames.h 交叉映射），零夹具恒跑
+int tst_navkeys();            // P2：导航键前缀一致性（NavKeys.h），零夹具恒跑
+int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h），零夹具恒跑
+int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
 
 int main()
 {
@@ -63,6 +68,11 @@ int main()
     failed += tst_configmerge();
     failed += tst_sessionstore();
     failed += tst_uiux();
+    failed += tst_tooltagkind();
+    failed += tst_toolnames();
+    failed += tst_navkeys();
+    failed += tst_layoutconst();
+    failed += tst_agentconst();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
