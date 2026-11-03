@@ -40,6 +40,7 @@ int tst_toolnames();          // P2：工具名常量表契约（ToolNames.h 交
 int tst_navkeys();            // P2：导航键前缀一致性（NavKeys.h），零夹具恒跑
 int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h），零夹具恒跑
 int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
+int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 
 int main()
 {
@@ -73,6 +74,7 @@ int main()
     failed += tst_navkeys();
     failed += tst_layoutconst();
     failed += tst_agentconst();
+    failed += tst_compacttranscript();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

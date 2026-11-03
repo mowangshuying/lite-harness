@@ -83,6 +83,11 @@ public:
 
     // 只读会话消息（供 ChatSessionPage 在磁盘恢复后重放 UI；系统消息在下标 0，重放侧自行跳过）
     const QVector<QJsonObject> &messages() const { return m_messages; }
+    // 会话重启的**只读回放序列**（展示层专用）：在 messages() 基础上把压缩摘要消息
+    // 沿 <会话根>/.transcripts/transcript_*.jsonl 转写链展开成被它替换掉的前序消息
+    // （规则单源 CompactTranscript.h）。刻意返回**副本**且不写回 m_messages：展开内容不进
+    // 请求上下文、不进 token 计量、不随 persistHistory 落盘——压缩后的上下文仍是唯一发送源。
+    QVector<QJsonObject> replayHistoryMessages() const;
     // 从会话数据根/history.json 恢复历史：保留 [0] 系统消息、追加落盘消息、为缺失结果的 tool_call
     // 回填占位，恢复模型。无 ID / 文件不存在（全新会话）返回 false 且不置 error
     bool loadSavedHistory(QString *error = nullptr);

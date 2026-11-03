@@ -140,11 +140,14 @@ jobs:
         # 二十二套件本机全量实跑 1798（含 1 条 junction 夹具 skip，同为下浮基准；与 AGENTS.md 登记值逐条对账：
         # 1697 + 101 = 1798）。下界 1450→1600：本批 101 条里 97 条挂在 LITE_TEST_TMPROOT 夹具门上，
         # 但 CI 本步已注入该变量，故按 1798×0.9≈1618 取整 1600（仍留「不逼到满量附近」的余量）。
+        # s17.6 UI 优化批：新增 6 个零夹具套件 78 条断言（tst_uiux + P2 五件），下界 1600→1680。
+        # 压缩转写回放：新增 tst_compacttranscript（本机实跑 40 条全绿，CompactTranscript.h 纯头，
+        # 零夹具恒跑）。本机全量实跑 1903 + 40 = 1943，下界 1680→1720（1943×0.9≈1749，取整仍留余量）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1680'
+          $env:LITE_TEST_MIN_PASS = '1720'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

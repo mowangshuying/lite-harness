@@ -841,7 +841,9 @@ void ChatSessionPage::restoreFromDisk()
                        kNoticeErrorMs);
         return;
     }
-    replayHistory(m_agentLoop->messages());
+    // 回放源用 replayHistoryMessages()：它把压缩摘要消息沿 .transcripts 转写链
+    // 展开成被压缩掉的前序消息，只影响展示；m_messages / 请求上下文仍是压缩后的内容
+    replayHistory(m_agentLoop->replayHistoryMessages());
     // 恢复后端生效模型到下拉框；setCurrentModel 不发 modelChanged，无回环
     m_inputEdit->setCurrentModel(m_agentLoop->model());
     // 侧栏上下文占用基线：重放完成后按内存历史估算一次

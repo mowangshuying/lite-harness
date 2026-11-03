@@ -608,6 +608,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 会话内发若干消息 → `<会话数据根>/.lite-harness/sessions/<dataId>/history.json` 存在且与可见消息一致（dataId 为 8 位 hex）
 - [ ] 重启程序 → 会话按 createdMs 升序恢复、历史气泡回放完整；恢复不自动切换当前页（仍停在新对话页）；workDir 失效时静默回退进程当前目录
 - [ ] 会话历史损坏（手工把 `history.json` 截半/写坏）→ 打开该会话弹「历史加载失败」Error 提示（`kNoticeErrorMs` 自动消失）并按空会话打开；全新会话（无 ID / 无文件）静默空页、**不**弹提示（判据：会话标题非空才提示）
+- [ ] （**压缩后重启回放**）触发一次全量压缩（`compact` 工具或自动压缩）→ 侧栏出现压缩卡且气泡时间线被摘要替换；**退出重启** → 打开同一会话，摘要之前的原始对话按原顺序回放出来（含工具块），摘要消息仍在原位；模型上下文仍是压缩后内容（侧栏占用读数与压缩后一致，非全量）。反例判定：重启后只剩一条 `[Compacted] …` 摘要 = 回放没接上（转写缺失/判据漂移）。另验降级：手工删掉该会话 `.transcripts/transcript_*.jsonl` 后重启 → 仅剩摘要、不弹错、不崩
 - [ ] 右键会话导航子项 → 仅弹「重命名 / 删除会话」菜单；单击子项不因基类 itemClicked 误翻页（eventFilter 吞 press/release）
 - [ ] 键盘上下文菜单：选中会话子项后按 Shift+F10 或菜单键 → 同样弹「重命名 / 删除会话」；鼠标右键与键盘**各弹一次**（鼠标路径走 press/release 延拍、键盘走 ContextMenu，两条路不得双弹）
 - [ ] 重命名：输入新名确认 → 导航与索引标题同步（索引不再刷 `lastActiveMs`，该字段已删）；取消/空/未变 → 保持原值
@@ -885,6 +886,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - 回放三处调用点与实时链路**同参传法**：`startStreaming(tr("处理中…"))` 占位 → `appendHistoryThinkingText(reasoning)` → `appendToolExecution(...)`；回放是同步填满，占位无滞留窗口。
 - 工具摘要与成败判定**共用单源**：回放走 `AgentLoopDetail::toolSummary` + `AgentLoop::isToolFailure`，与实时链路一字不差——靠 `ChatSessionPage` 直接 include 内核内部头 `AgentLoopInternal.h`（`friend` 授权的有意例外，见结构篇 §9 异常 2）。
 - 任务清单**同样走查**（s17 缺陷修复，曾漏）：`todo_write` 成功调用在回放时经 `normalizeTodoSnapshot` 重建快照卡与侧栏终态——曾只重放气泡时间线，回会话后侧栏「任务清单」节空到模型新回合重发为止，即本条契约的反例。
+- 压缩过的会话：回放源是 `AgentLoop::replayHistoryMessages()` 而非 `messages()`——它把压缩摘要消息沿 `<会话根>/.transcripts/transcript_*.jsonl` 转写链展开成被替换掉的前序消息（规则单源 `CompactTranscript.h`），展开内容**只进展示**、不进 `m_messages`。故「压缩前对话可见」与「模型上下文仍是压缩后」同时成立；展开失败（转写缺失 / 坏行 / 路径越界 / 环）一律保留摘要消息降级，绝不比不回放更少内容。
 - 因此「重启后看到的」与「当时看到的」必然一致；任何只改实时侧的渲染改动都会在回放里露馅。
 
 ### 13. 折叠骨架的三条公共纪律（CollapsibleBlock）
@@ -965,6 +967,11 @@ void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
   `estimateTokens`——两口径可能微偏，入口判超而各段都判达标时**不强推** compactHistory，靠反应式 400
   兜底，防摘要空转抖动。侧链从不增量改 `m_messages`，只在既有检查点整体替换 → tool_use/tool_result
   配对协议安全。
+- **压缩后的历史与「回放用的历史」是两份**：`history.json` 只存压缩后的内容（压缩即替换 +
+  `persistHistory` 落盘），压缩前全量只在本次压缩的转写快照里；重启时 `AgentLoop::replayHistoryMessages()`
+  经纯头 `CompactTranscript.h` 沿摘要正文的 `Full transcript:` 行把转写读回来，交给
+  `ChatSessionPage::replayHistory` 平铺在摘要之前——**只读**，不写回 `m_messages`。故「压缩前对话能否看到」
+  与「模型上下文」彻底解耦：前者靠回放展开，后者恒为压缩后内容。
 
 ### 5. `AgentLoop` 侧链槽位与 `stop()` 收口顺序
 

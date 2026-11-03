@@ -5,6 +5,7 @@
 #include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
+#include "CompactTranscript.h"
 
 #include <QJsonDocument>
 #include <QDir>
@@ -173,4 +174,15 @@ bool AgentLoop::loadSavedHistory(QString *error)
     m_tokenAnchor = -1;
     m_historyRewrittenSinceAnchor = true;
     return true;
+}
+
+// 会话重启的只读回放序列：把压缩摘要消息沿 <会话根>/.transcripts 的转写链
+// 展开成被它替换掉的前序消息（判据与降级语义单源 CompactTranscript.h）。
+// 红线：本函数只读——不写回 m_messages，故展开内容不进请求上下文、不进 token 计量、
+// 不随 persistHistory 落盘；压缩后的历史仍是唯一发送源。失败一律保留原摘要消息。
+QVector<QJsonObject> AgentLoop::replayHistoryMessages() const
+{
+    if (m_messages.isEmpty())
+        return QVector<QJsonObject>();
+    return CompactTranscript::expand(m_messages.mid(1), sessionDataRoot());
 }
