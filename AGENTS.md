@@ -29,7 +29,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **本地跑:** `cmake --build build --config Release --target lite-harness-tests`，再设
   `$env:LITE_TEST_TMPROOT`（**值必须以 `tmp-test` 结尾**，`ScopedTempRoot` 的构造/析构双守卫之一）后跑
   `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由
-  install-qt-action 注入）。变量缺失时四个依赖夹具的套件整组 SKIP 且**不计失败**——见下条门禁。
+  install-qt-action 注入）。变量缺失或尾缀不是 `tmp-test` 时，依赖夹具的**十一个套件**按各自口径 SKIP
+  （`MessageBus` / `Worktree` / `WorkflowRuntime` / `FluConfigStore` 等整组跳，`WorkflowManager` 一类刻意
+  「纯在前、文件在后」只跳文件组）且**不计失败**——见下条门禁。
 - **CI 位置:** 构建之后、打包之前——单测失败即中止流程，坏产物不进 zip。workflow 除注入
   `LITE_TEST_TMPROOT` 外还注入 `LITE_TEST_MIN_PASS`（断言下界，`tests/main.cpp` 判定）：SKIP 通道本身
   不产生断言也不报失败，早期 CI 未注入 TMPROOT 时 4/5 套件静默跳过仍判通过（假绿），下界门禁即为此设。
@@ -40,7 +42,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **二十二个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
+- **覆盖现状:** **二十三个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
   路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
   名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环）/ `tst_mcpmanager`（MCP 命名净化、
   拼名上限、装配碰撞与快照原子性门）/ `tst_agentrecovery`（s15 契约串逐字 + 分类器判据矩阵 + 恢复常量门，
@@ -102,7 +104,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    任何夹具套件被整组 SKIP 后的恒跑残量，门禁效力不减，勿为数字好看而把下界逼到满量附近赌环境波动。
    FluentUI 配置落点改造批后实跑 1565（新增 `tst_fluconfigstore` 75 条 = 恒跑组 18 + 夹具门控组 57），
    该批按「新增套件时同步上调」把下界 1250→1400（1565×0.9≈1408，取整 1400）——注意本套件 57/75 条挂在
-   `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）。
+   `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
+   CI 注释留痕、未回写本文——现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，本轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
+   （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
 - **StreamRate 的两层口径（本轮措辞缺陷修复）:** 聚合口径与 last 归属是两件事。`Meter::beginTurn()`
   在 `AgentLoop::startRateWindow()` 每请求置位、**只降级归属不清账**（账只增不减）；本轮无增量起点
   （纯 tool_calls 回合）时 last 仍是上一个可定窗，UI 措辞必须说「上一可定窗」而非「本轮」。UI 文案走
@@ -111,7 +115,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## 架构（src/）
 
-> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 15 个 TU 的职责地图、
+> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 16 个 TU 的职责地图、
 > `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
 > 异常与技术债、新增代码落位决策树**见 [docs/doc.md](docs/doc.md) 第二部分「模块结构总览」（锚点 `#architecture`）——改结构须同步它**。
 > 本仓文档的权威等级、「该读哪篇」与同步纪律见同文件**第一部分（锚点 `#index`）**。

@@ -67,13 +67,13 @@ cmake --build build --config Release
 
 ```powershell
 cmake --build build --config Release --target lite-harness-tests
-$env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，否则四个套件整组 SKIP
+$env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，否则带夹具门的套件走 SKIP
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖十六个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据 / `UiScale` 字号倍率与 DPI 策略名与几何编解码判据），全量实跑 1490 条断言（静态断言点 1415）。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**。当前覆盖二十三个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据 / `UiScale` 字号倍率与 DPI 策略名与几何编解码判据 / `CronManager` s12 cron 引擎报错族与 Vixie 双限定语义 / `LitePaths` 运行时路径锚点单源 / `PathGuard` 沙箱围栏多根判定 / `FluConfigStore` FluentUI 配置三段定位 / `FluConfigUtils` 配置门面注入与后端重建往返 / `ConfigMerge` 宿主与 FluentUI 配置合流不变量 / `SessionStore` 会话索引并入 `app/sessions` 的读写与迁移），全量实跑 1798 条断言（fail=0 skip=1；静态断言点 1543，口径为行首 `check(` 调用点）。
 
-**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：四个依赖夹具的套件（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams`）依赖 `ScopedTempRoot` 夹具，变量缺失时整组走 SKIP 通道，而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非整组 SKIP 的套件（`LineEnding` / `McpManager` / s15 两套件 / s16 两引擎套件的恒跑组——其文件组与端到端组自带夹具门控）。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
+**本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：十一个套件依赖 `ScopedTempRoot` 夹具（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams` / `SettingsCache` / `WorkflowManager` / `WorkflowRuntime` / `FluConfigStore` / `FluConfigUtils` / `ConfigMerge` / `SessionStore`），变量缺失或未以 `tmp-test` 结尾时按各套件口径走 SKIP 通道（`MessageBus` / `Worktree` / `WorkflowRuntime` / `FluConfigStore` 等整组 SKIP；`WorkflowManager` 一类刻意「纯在前、文件在后」，只跳文件组、纯组断言照常计数），而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非 SKIP 的组。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
 ### 手工回归
 
@@ -98,11 +98,10 @@ cpack --config build/CPackConfig.cmake -B build
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
 | `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |
 | `scripts/` | 仓库维护脚本：`update-i18n.ps1`（成对刷新两份 `.ts`，勿跑 `lupdate` 目标） |
-| `cmake/` | 辅助 Find 模块 |
 | `.github/workflows/` | CI `Windows-Qt6.9.0.yml`：干净环境全量 Release 构建 + ctest + cpack 验收；`v*`/`s*` tag 末尾把 zip 上传为该 tag 的 GitHub Release |
 | `3rdparty/FluentUI` | UI 框架子模块（构建必需） |
 | `3rdparty/lcc` | 移植规格参考仓库子模块（不参与构建） |
-| `res/` | 应用图标与 Windows 资源脚本 |
+| `res/` | 应用图标（`LiteHarness.ico`）；Windows 资源脚本 `LiteHarness.rc` 在仓库根，不在本目录 |
 | `docs/` | 单一文档 `doc.md`（五部分）：第一部分索引与同步纪律 / 第二部分结构总览 / 第三部分冒烟清单 / 第四部分交互设计原理 / 第五部分异步链现状契约 |
 
 ## 文档
@@ -112,7 +111,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 - [第一部分 · 文档索引与同步纪律](docs/doc.md#index) — 各部分权威等级、「该读哪篇」速查表、冲突优先级与同步纪律
 - [第二部分 · 模块结构总览](docs/doc.md#architecture) — **结构与依赖边**：六层清单、AgentLoop 家族 TU 职责地图、一条消息的完整数据流、运行时目录布局、单源纪律一览、新增代码落位决策树（活文档，改结构须同步）
-- [第三部分 · 手工冒烟回归清单](docs/doc.md#checklist) — 十组 P0/P1/P2，发版必跑（活文档）
+- [第三部分 · 手工冒烟回归清单](docs/doc.md#checklist) — 十一组 P0/P1/P2，发版必跑（活文档）
 - [第四部分 · 交互 UI 设计逻辑](docs/doc.md#ui) — 折叠式渐进披露的设计原理（活文档）
 - [第五部分 · 异步链现状契约](docs/doc.md#async) — memory/compact 侧链的现行契约：全异步不变量、`AsyncRequest` 语义、`stop()` 收口顺序（活文档，改侧链契约须同步；原实施规格正文已删，历史决策与偏离登记见其 §7）
 
