@@ -20,8 +20,9 @@ ChatMsgEdit[focused="true"] {
 
 /* 运行中（turn busy）禁用态：此前只 setEnabled(false)，而 QSS 又显式写了 color，
    禁用时不会退回 palette 灰 —— 整个回合输入框与可用态外观完全相同，点了没反应
-   像是界面卡死。这里显式降一档字色 + 压暗一档底色。 */
+   像是界面卡死。这里只降一档字色表达禁用；**底色沿用正常态**（用户裁决：
+   压暗底色会让输入框看起来"陷下去"，与周围面板断开）。 */
 #textEdit:disabled {
-    background-color: rgb(238, 238, 238);
+    background-color: rgb(249, 249, 249);
     color: rgb(150, 150, 150);
 }
