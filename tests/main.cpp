@@ -34,6 +34,7 @@ int tst_litepaths();          // 运行时路径锚点单源（LitePaths.h）：
 int tst_pathguard();          // 沙箱围栏多根判定（AgentPathGuard.h）：边界/大小写/fail-closed，零夹具恒跑
 int tst_configmerge();        // 配置合流不变量（P2）：两侧同路径同格式、合写不互覆、json 大小写口径，判据组恒跑 + 落盘组夹具门控
 int tst_sessionstore();       // 会话索引并入 config.json（app/sessions）：读写换轨、不抹别人键、坏形态降级、旧 index.json 迁移四分支
+int tst_uiux();               // P1 UI 优化：命中区下限/组前缀契约/写失败可观测/数值域自洽，判据组恒跑 + 写失败组夹具门控
 
 int main()
 {
@@ -61,6 +62,7 @@ int main()
     failed += tst_pathguard();
     failed += tst_configmerge();
     failed += tst_sessionstore();
+    failed += tst_uiux();
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
