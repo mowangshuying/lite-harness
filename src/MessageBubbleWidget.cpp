@@ -12,11 +12,8 @@
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QStringList>
-#include <QColor>
-#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
-#include <QTextFormat>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QtMath>
@@ -24,56 +21,6 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 
-namespace {
-
-/// markdown 块级样式（引用块 / 代码块）：Qt 的 QTextMarkdownImporter **不消费**
-/// QTextDocument::defaultStyleSheet（qtextmarkdownimporter.cpp 全文不读它，那串 CSS
-/// 只在 setHtml/insertHtml 路径生效），所以文档内样式只能逐块写进格式。导入器确实
-/// 把 BlockQuoteLevel / BlockCodeFence / BlockCodeLanguage 记进了 blockFormat
-/// （qtextmarkdownimporter.cpp:632-640），这里按这三个属性回填。
-/// 取值刻意用半透明灰而非主题实色：深浅底都可读，三主题共用一份、无需随 themeChanged
-/// 重刷（气泡不持有主题订阅）。重复调用幂等（写入的都是固定值）。
-void applyMarkdownBlockStyles(QTextDocument *doc)
-{
-    if (!doc)
-        return;
-
-    const QColor codeBackground(128, 128, 128, 40);
-    const QColor quoteForeground(150, 150, 150);
-
-    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next())
-    {
-        const QTextBlockFormat blockFormat = block.blockFormat();
-        const bool isCode = blockFormat.hasProperty(QTextFormat::BlockCodeFence)
-                            || blockFormat.hasProperty(QTextFormat::BlockCodeLanguage);
-        const int quoteLevel = blockFormat.hasProperty(QTextFormat::BlockQuoteLevel)
-                                   ? blockFormat.intProperty(QTextFormat::BlockQuoteLevel)
-                                   : 0;
-        if (!isCode && quoteLevel <= 0)
-            continue;
-
-        QTextCursor cursor(block);
-        cursor.select(QTextCursor::BlockUnderCursor);
-        if (isCode)
-        {
-            // 底色写 blockFormat：字符格式的 background 只覆盖字形宽度，块底色才整行铺满。
-            // 等宽字体不在这里设：导入器已对代码块设过（qtextmarkdownimporter.cpp:642），
-            // 重复覆盖只会把用户的固定宽度字体换成本地猜测的字体族。
-            QTextBlockFormat codeFormat = blockFormat;
-            codeFormat.setBackground(codeBackground);
-            cursor.setBlockFormat(codeFormat);
-        }
-        if (quoteLevel > 0)
-        {
-            QTextCharFormat charFormat;
-            charFormat.setForeground(quoteForeground);
-            charFormat.setFontItalic(true);
-            cursor.mergeCharFormat(charFormat);
-        }
-    }
-}
-
-} // namespace
 
 // Actual row width available to a bubble: parent widget (the scroll area's
 // context widget, kept in sync with the viewport width by setWidgetResizable)
@@ -169,8 +116,8 @@ QTextBrowser *MessageBubbleWidget::makeTextView()
     view->setUndoRedoEnabled(false);
 
     // 文档内样式不在这里设：setDefaultStyleSheet 对 setMarkdown 无效
-    // （QTextMarkdownImporter 不读它，见 applyMarkdownBlockStyles 的注释），
-    // 引用块/代码块的样式在 setMarkdown 之后由该函数逐块写入。
+    // （QTextMarkdownImporter 不读它）。按用户裁决，引用块/代码块不做任何样式 ——
+    // 原先的逐块回填（半透明底 + 灰斜体）已整体删除。
 
     // Prevent cursor navigation from exposing a hidden horizontal range.
     view->setLineWrapMode(QTextEdit::WidgetWidth);
@@ -286,7 +233,6 @@ void MessageBubbleWidget::setContent(const QString &content)
     else
     {
         m_content->setMarkdown(content);
-        applyMarkdownBlockStyles(m_content->document());
     }
 
     // Defer measurement so the document finishes its internal layout pass
@@ -730,7 +676,6 @@ void MessageBubbleWidget::finalizeStreamedText()
     {
         // 无思考、无工具块：直接渲染正文 markdown（保持原横向布局）
         m_content->setMarkdown(m_liveText);
-        applyMarkdownBlockStyles(m_content->document());
         scheduleSizeUpdate();
         return;
     }
@@ -750,7 +695,6 @@ void MessageBubbleWidget::finalizeStreamedText()
         else
         {
             run.view->setMarkdown(run.markdown);
-            applyMarkdownBlockStyles(run.view->document());
         }
     }
 
