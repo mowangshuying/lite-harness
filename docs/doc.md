@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-    （`s17.5`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+    （`s17.6`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
     **但 `s17` 在本仓有两个语境**：lcc 移植阶段名（`3rdparty/lcc` 子模块 tag 即 `s17`，属历史台账、
     永不随版本 bump 改）与当前版本示例（随 bump 改）。s17.1 起二者不再同名，grep 到 `s17` 须先判语境。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
@@ -483,7 +483,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 17.5）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s17.5；lcc 阶段名仍是 s17，补丁位见 AGENTS「发布」节）|
+| 版本号 | CMake `project VERSION`（数字段 17.6）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s17.6；lcc 阶段名仍是 s17，补丁位见 AGENTS「发布」节）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条 + 条下精确数字行，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
@@ -522,7 +522,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `SessionSidebar.cpp` 783（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节；s17 P1 再加「后台任务」/「当前目标」两节）、
      `CompactManager.cpp` 758（计量抽纯头后转发 + 两段循环改增量）、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `AgentLoopTeam.cpp` 692（s13 接线 + s15 异步 fail-closed + s17.2 审批开关放行 +11）、
-     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 31258 行，本轮 HEAD 实测；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.5 各批净增，现值以本轮实测为准）。
+     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 31258 行，本轮 HEAD 实测；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.6 各批净增，现值以本轮实测为准）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 716、
      `LiteHarness.cpp` 698、`ToolBlock.cpp` 565（s17.1 摘除「查看完整输出」入口与其对话框后回落）未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
@@ -700,7 +700,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17.5）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17.5`；lcc 阶段名仍是 `s17`，`.5` 是补丁位、先例 `s13.1`/`s16.1`/`s17.1`/`s17.2`；补丁位不要求连号，`s17.4` 已按用户裁决跳过且后续不再启用），全仓无散落硬编码；侧栏页脚 `lite-harness s17.5` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17.6）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17.6`；lcc 阶段名仍是 `s17`，`.6` 是补丁位、先例 `s13.1`/`s16.1`/`s17.1`/`s17.2`；补丁位不要求连号，`s17.4` 已按用户裁决跳过且后续不再启用），全仓无散落硬编码；侧栏页脚 `lite-harness s17.6` 不带多余 `v`
 
 ### 八、P2 记忆与子代理
 
