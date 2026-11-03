@@ -71,4 +71,17 @@ inline constexpr int kWindowMinHeight = 600;
 inline constexpr int kCardActionWidth = 64;
 inline constexpr int kCardActionHeight = 30;
 
+/// 输入框右侧发送/停止钮的边长（P3-3）：从 SendMsgButton.cpp 的 setFixedSize(30, 30)
+/// 收敛而来。QSS 圆角取一半（15px）成正圆，改这个值必须同步 SendMsgButton.qss 的圆角。
+/// 与 kCardActionHeight 同值但语义不同（那是设置卡动作钮的高），不合并。
+inline constexpr int kSendBtnSize = 30;
+
+/// 新建会话页中心图标的边长（P3-4）：从 NewChatPage.cpp 的 setFixedSize(45, 45) 收敛。
+inline constexpr int kNewChatIconSize = 45;
+
+// 同义常量防漂移（P3-6）：s17.3 把导航列与侧栏统一收窄到 225px，两个常量同值同义
+// （都表示左侧栏宽），下次若只改一处会出现「导航列比侧栏宽/窄」的错位。编译期钉住。
+static_assert(kSidebarWidth == kNavWidth,
+              "sidebar width and nav width must stay equal (both = left column width)");
+
 } // namespace LayoutConst

@@ -1,4 +1,5 @@
 #include "SendMsgButton.h"
+#include "LayoutConstants.h"
 #include "ThemeAware.h"
 #include <FluUtils.h>
 #include <QFile>
@@ -9,7 +10,7 @@
 
 SendMsgButton::SendMsgButton(QWidget *parent) : QPushButton(parent)
 {
-    setFixedSize(30, 30);
+    setFixedSize(LayoutConst::kSendBtnSize, LayoutConst::kSendBtnSize);
     setIconSize(QSize(24, 24));
     // 无障碍与可发现性（P1-B）：本钮是纯图标件（字形随 setStopMode 变），读屏器此前
     // 拿不到任何名称；tooltip 原先只在 ChatMsgEdit::applyBusyState 里设，而首次

@@ -395,4 +395,17 @@ inline bool permissionApprovalEnabled()
     return AppSettings::value(kPermissionApprovalKey, kPermissionApprovalDefault).toBool();
 }
 
+// 数值域编译期自洽（P3-5）：min/default/max 写反时，取值函数会把**所有**合法配置判成非法、
+// 全部静默回退默认，表现是「设置页改了不生效」且没有任何报错。单测能抓到，但编译期更早、
+// 也不依赖谁记得跑测试。
+static_assert(kContextCharLimitMin < kContextCharLimitDefault
+                  && kContextCharLimitDefault < kContextCharLimitMax,
+              "contextCharLimit: min < default < max");
+static_assert(kMaxToolIterationsMin < kMaxToolIterationsDefault
+                  && kMaxToolIterationsDefault < kMaxToolIterationsMax,
+              "maxToolIterations: min < default < max");
+// maxRetries 下界是 0（= 关闭重试），故用 <= 而非 <
+static_assert(kMaxRetriesMin <= kMaxRetriesDefault && kMaxRetriesDefault <= kMaxRetriesMax,
+              "maxRetries: min <= default <= max");
+
 } // namespace AgentConst

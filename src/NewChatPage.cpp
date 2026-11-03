@@ -44,7 +44,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     heroLayout->setSpacing(10);
 
     auto iconLabel = new QLabel(this);
-    iconLabel->setFixedSize(45, 45);
+    iconLabel->setFixedSize(LayoutConst::kNewChatIconSize, LayoutConst::kNewChatIconSize);
     QPixmap pixmap(":/res/LiteHarness.ico");
     iconLabel->setPixmap(pixmap.scaled(45, 45));
     heroLayout->addWidget(iconLabel, 0, Qt::AlignHCenter);
