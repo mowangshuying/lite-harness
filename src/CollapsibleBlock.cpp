@@ -71,6 +71,9 @@ void CollapsibleBlock::initContent(const QString &objectName)
     m_content->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_content->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_content->setLineWrapMode(QTextEdit::WidgetWidth);
+    // 只读展示，撤销栈纯属浪费（内存 P1）：思考块/工具块的内容是流式追加的，
+    // 每次 appendLiveText 都是一次文档编辑，undo 栈会为每一步保存中间状态。
+    m_content->setUndoRedoEnabled(false);
     attachContentArea(m_content);
 
     // 内容写入后延迟测量完整高度（等文档内部布局完成）

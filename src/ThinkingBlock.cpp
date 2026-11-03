@@ -92,13 +92,23 @@ void ThinkingBlock::appendLiveText(const QString &delta)
     cur.movePosition(QTextCursor::End);
     cur.insertText(delta);
 
-    // 展开态钉底跟随最新思考：延迟一帧等 measureContent 更新尺寸后再取最大值
+    // 展开态钉底跟随最新思考：延迟一帧等 measureContent 更新尺寸后再取最大值。
+    // 效率 P2：此前每个 delta 都 QTimer::singleShot(0, …) 新建一个单次定时器对象 ——
+    // 高频流式下每 token 一次堆分配 + 一个 lambda 捕获，且旧定时器仍排在事件队列里。
+    // 改用一个可重启的成员定时器：语义相同（0ms 单次、后到者覆盖先到者），不再每次分配。
     if (m_expanded)
     {
-        QTimer::singleShot(0, this, [this]() {
-            QScrollBar *bar = m_content->verticalScrollBar();
-            bar->setValue(bar->maximum());
-        });
+        if (m_pinTimer == nullptr)
+        {
+            m_pinTimer = new QTimer(this);
+            m_pinTimer->setSingleShot(true);
+            m_pinTimer->setInterval(0);
+            connect(m_pinTimer, &QTimer::timeout, this, [this]() {
+                QScrollBar *bar = m_content->verticalScrollBar();
+                bar->setValue(bar->maximum());
+            });
+        }
+        m_pinTimer->start();
     }
 }
 

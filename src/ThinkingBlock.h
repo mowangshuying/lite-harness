@@ -3,6 +3,7 @@
 #include "CollapsibleBlock.h"
 
 class QLabel;
+class QTimer;
 
 // 思考过程折叠块（Ollama 风格）：
 //   标题栏（灯泡图标 + "思考了 N 秒" + 折叠箭头）+ 可展开/折叠的思考内容区。
@@ -55,6 +56,7 @@ private:
     int liveLineHeight() const;
 
     QLabel *m_iconLabel = nullptr;
+    QTimer *m_pinTimer = nullptr;   // 展开态钉底跟随（复用成员，勿每 delta 新建单次定时器）
     int m_durationSeconds = 0;      // 思考耗时（秒）
     bool m_userInteracted = false;  // 用户手动展开/折叠过：进行/终态切换不再自动改展开状态
 };

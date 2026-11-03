@@ -162,6 +162,11 @@ QTextBrowser *MessageBubbleWidget::makeTextView()
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     view->setContextMenuPolicy(Qt::CustomContextMenu);
+    // 只读展示，undo/redo 栈纯属浪费（内存 P1）：QTextDocument 默认开启撤销栈，
+    // 流式输出每来一个 delta 就 insertText 一次，每步的中间状态都会入栈 —— 一条长回复
+    // 几千个 delta，栈里存的是同一段文字的几千个历史版本。气泡只读、从不撤销，禁用后
+    // 内存随输出量线性增长的那一项直接归零（不影响选中/复制/外链点击）。
+    view->setUndoRedoEnabled(false);
 
     // 文档内样式不在这里设：setDefaultStyleSheet 对 setMarkdown 无效
     // （QTextMarkdownImporter 不读它，见 applyMarkdownBlockStyles 的注释），
