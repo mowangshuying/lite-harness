@@ -29,7 +29,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **本地跑:** `cmake --build build --config Release --target lite-harness-tests`，再设
   `$env:LITE_TEST_TMPROOT`（**值必须以 `tmp-test` 结尾**，`ScopedTempRoot` 的构造/析构双守卫之一）后跑
   `ctest --test-dir build -C Release --output-on-failure`（需 Qt bin 在 PATH 供 `Qt6Core.dll`；CI 由
-  install-qt-action 注入）。变量缺失或尾缀不是 `tmp-test` 时，依赖夹具的**十一个套件**按各自口径 SKIP
+  install-qt-action 注入）。变量缺失或尾缀不是 `tmp-test` 时，依赖夹具的**十二个套件**按各自口径 SKIP
   （`MessageBus` / `Worktree` / `WorkflowRuntime` / `FluConfigStore` 等整组跳，`WorkflowManager` 一类刻意
   「纯在前、文件在后」只跳文件组）且**不计失败**——见下条门禁。
 - **CI 位置:** 构建之后、打包之前——单测失败即中止流程，坏产物不进 zip。workflow 除注入
@@ -58,7 +58,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    19 静态点·实跑 48 条，零夹具）/ `tst_compacttranscript`（压缩转写回溯纯头 `CompactTranscript.h`：摘要消息判据两形 label + 普通 user 消息不误判 / `Full transcript:` 解析（`(transcript unavailable)` 占位与缺失行降级）/ 路径守卫（子目录·`..` 越界·他会话根·`snip_archive.jsonl`·错扩展名全拒，反斜杠写法归一）/ JSONL 坏行与非对象行跳过 / 链式展开（单层「原文在摘要前」·两层嵌套顺序·自引用只展开一次·深度上限·读失败与不安全路径一律保留摘要），40 条零夹具恒跑）/ `tst_settingscache`（设置读缓存纯头 `SettingsCache.h`：身份三元组
    穷举 / 缺失文件态 / 200 次热读只装载一次 / 四类外部手改（等长·变长·新增·删除）立即生效 / 缓存与
    现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，
-   实跑 75 条 = 恒跑组 18 + 夹具门控组 57）/ `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 /
+   实跑 89 条 = 恒跑组 35 + 夹具门控组 54）/ `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 /
    只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 details 缺失即 0，49 条，零夹具）/
    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last /
    定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径
@@ -66,9 +66,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     last 归属（`beginTurn` 只降级归属不清账，本轮无法定窗时不冒充本轮），30 条，零夹具）/
     `tst_goalmanager`（s17 goal 引擎：`parseEvaluatorJson` 六门逐字定值串 / 七决策记账矩阵（Achieved·Failed·Limit·Error·Block 的 record 与状态流转）/ 代际守卫（setGoal·replace·clear 成功即 ++，迟到代静默按默认 Allow 丢弃零记账）/ `transcriptText` 24000 预算与独占超限插标记 / CLEAR_ALIASES 六词 / stopGate 三门（无 goal·bg running·NeedEval 载荷），实跑 209 条 = 静态点 195 + 别名循环展开，零夹具）/
     `tst_cronmanager`（s17 P1：validateCron 五报错族逐字 / cronFieldMatches 逗号列表全不中必假=647b22e 回归钉 + `*/0` 折叠不命中 / cronMatches Vixie 双限定 OR、单限定只看限定侧、分/时/月 AND / ledgerSnapshot 走 durable=false 全程不触盘——拒绝形不入账、取消逐字回执且快照即干净，26 条，零夹具），
-    `tst_uiscale`（UI 优化 P1-11：字号倍率校验界 80~200 与「缺失/空串/非数字/0/负数/越界」一律回退 100（含 `1,20` 千分位拒收）/ `scaledSize` 四舍五入不进位为 0（`1px@80%→1`、`2px@80%→2`）与 base≤0 原样透传 / DPI 策略名往返（大小写不敏感、trim、空串与错拼 `roundPreferFlour` 与数字形态 `2` 一律落 `PassThrough`）/ 几何 base64 编解码（回环等值、编码态纯 latin1 即 ini 安全、空串与纯空白交还空字节、垃圾串与截半串必短于原载荷、`encode°decode` 幂等）/ `scaleQssFontSizes` 判据（100% 恒等返回同对象、`font-size: 12px`@150%→18px、简写 `font: bold 12px "Consolas"` 与 `font: 1.5 12px` 只缩放第一个 px 字面量、`font-weight:600`/`line-height:1.5` 无 px 数字不动、注释里的 `/* font-size: 14px */` 不被当声明、值区不跨 `;` 与 `}`），61 条，零夹具、任何环境全跑），
-    `tst_fluconfigstore`（FluentUI 配置落点改造：`FluConfigStore.h` 纯 QtCore 定位层——三段解析（目录/文件名/格式各自空串回落默认，`../config`+`config`+`ini` 即历史硬编码值，默认路径逐字钉住旧行为）/ 格式名折叠（`ini`·`json` 大小写不敏感、带点 `.JSON`、前后空白、错拼与数字形态一律回落 Ini，`formatFromName↔nameOfFormat` 往返幂等）/ 落点拼接（目录尾斜杠与反斜杠归一、文件名含路径分隔符拒收不越界、`ensureDirFor` 建目录且重复调用幂等）/ JSON 后端读写往返（嵌套 group 展开为点分键、`QVariantMap`↔`QJsonObject` 双向、空设备与坏 JSON 必返 false 不抛、写出的文件可被同格式读回且值等值），75 条 = 恒跑组 18 + 夹具门控组 57），
-    `tst_fluconfigutils`（FluentUI 配置落点改造的门面侧：`FluConfigUtils` 注入 → 后端重建 → 读写往返端到端——缺省三段逐字复现改造前硬编码 `../config/config.ini`（组 A 纯字符串、**绝不建单例**，否则相对 CWD 的缺省落点会把测试产物写进仓库）/ 首次注入即建单例时 JSON 落点与嵌套对象形态（`config/theme` 写成 `{"config":{"theme":…}}` 而非顶层斜杠键，且不串同名 `.ini`）/ 同值重复注入必不重建（重建会 free 掉已交出的 `getSettings()` 裸指针）/ 换定位等于换文件、**旧值不迁移**（切 ini 后读到回落值、原 JSON 内容原样躺在旧处，切回 JSON 又读回自己那份）/ 文件名带扩展名时扩展名由 format 强制决定 / 既有 API（theme·language·navWidth·viewCollapsed·navStyle·exportToIni）在新后端照常往返与回落，49 条 = 恒跑组 4 + 夹具门控组 45），
+    `tst_uiscale`（UI 优化 P1-11：字号倍率校验界 80~200 与「缺失/空串/非数字/0/负数/越界」一律回退 100（含 `1,20` 千分位拒收）/ `scaledSize` 四舍五入不进位为 0（`1px@80%→1`、`2px@80%→2`）与 base≤0 原样透传 / DPI 策略名往返（大小写不敏感、trim、空串与错拼 `roundPreferFlour` 与数字形态 `2` 一律落 `PassThrough`）/ 几何 base64 编解码（回环等值、编码态纯 latin1 即 ini 安全、空串与纯空白交还空字节、垃圾串与截半串必短于原载荷、`encode°decode` 幂等）/ `scaleQssFontSizes` 判据（100% 恒等返回同对象、`font-size: 12px`@150%→18px、简写 `font: bold 12px "Consolas"` 与 `font: 1.5 12px` 只缩放第一个 px 字面量、`font-weight:600`/`line-height:1.5` 无 px 数字不动、注释里的 `/* font-size: 14px */` 不被当声明、值区不跨 `;` 与 `}`），68 条，零夹具、任何环境全跑），
+    `tst_fluconfigstore`（FluentUI 配置落点改造：`FluConfigStore.h` 纯 QtCore 定位层——三段解析（目录/文件名/格式各自空串回落默认，`../config`+`config`+`ini` 即历史硬编码值，默认路径逐字钉住旧行为）/ 格式名折叠（`ini`·`json` 大小写不敏感、带点 `.JSON`、前后空白、错拼与数字形态一律回落 Ini，`formatFromName↔nameOfFormat` 往返幂等）/ 落点拼接（目录尾斜杠与反斜杠归一、文件名含路径分隔符拒收不越界、`ensureDirFor` 建目录且重复调用幂等）/ JSON 后端读写往返（嵌套 group 展开为点分键、`QVariantMap`↔`QJsonObject` 双向、空设备与坏 JSON 必返 false 不抛、写出的文件可被同格式读回且值等值），75 条 = 恒跑组 49 + 夹具门控组 26），
+    `tst_fluconfigutils`（FluentUI 配置落点改造的门面侧：`FluConfigUtils` 注入 → 后端重建 → 读写往返端到端——缺省三段逐字复现改造前硬编码 `../config/config.ini`（组 A 纯字符串、**绝不建单例**，否则相对 CWD 的缺省落点会把测试产物写进仓库）/ 首次注入即建单例时 JSON 落点与嵌套对象形态（`config/theme` 写成 `{"config":{"theme":…}}` 而非顶层斜杠键，且不串同名 `.ini`）/ 同值重复注入必不重建（重建会 free 掉已交出的 `getSettings()` 裸指针）/ 换定位等于换文件、**旧值不迁移**（切 ini 后读到回落值、原 JSON 内容原样躺在旧处，切回 JSON 又读回自己那份）/ 文件名带扩展名时扩展名由 format 强制决定 / 既有 API（theme·language·navWidth·viewCollapsed·navStyle·exportToIni）在新后端照常往返与回落，47 条 = 恒跑组 4 + 夹具门控组 43），
     `tst_litepaths`（运行时路径锚点单源 `LitePaths.h`：存储根反推（发布包 `<pkg>/bin`→`<pkg>/config` 与开发态 `build/bin`→`build/config` 同一条规则、`..` 必被 cleanPath 折出结果、尾斜杠/反斜杠/冗余 `.` 段三种写法收敛到同一个根、空与全空白入参返空串**绝不猜一个根**）/ 根下固定文件（config.json 在存储根**本级**；旧 index.json 只剩「迁移源」一个用途、同样在根本级且不在 `.lite-harness` 里，函数名带 `legacy` 前缀防新代码误用）/ **`.lite-harness` 中间层只出现一次**（逐条数出现次数而非比整串——多拼一层是本头最容易犯且最难发现的错，引擎各自再拼叶子段就静默分叉）/ 单会话数据根 `sessions/<id>` 形态与**空 dataId 回退会话存储区本身**（改造前 `AgentLoop::sessionDataRoot()` 的「无 ID = 未隔离」语义逐字保留）/ **删除护栏前提**（数据根必须严格落在 sessionsRoot 之下、且不等于 sessionsRoot 本身；回退形态必须**不**落在 sessionsRoot 之下，否则「未隔离」被前缀检查误判恒真、删一个未隔离会话等于删全部会话）/ 跨锚点一致性（四个派生位置互不重叠且都在根内——锚点若再次分叉这里立刻红），29 条零夹具恒跑），
     `tst_pathguard`（沙箱围栏多根判定 `AgentPathGuard.h::isWithinSandboxRoots`：单根语义逐字保持改造前 `safePathIn` 行为（含「根本身放行」）/ **分隔符边界**（`work-evil` 这类共享名字前缀的兄弟目录必拒，纯 `startsWith` 会放行——改造前就有这条护栏，统一锚后不能丢）/ 第二根即会话数据根（`.temp` 与队友 `.worktrees` 统一锚到 `config/` 后不再是 workDir 子树，单根口径会把模型自己的临时目录判成越狱）/ **兄弟会话不可互达**（加的是自己那一个会话根、不是整个 sessions 根）/ 大小写不敏感（Windows 文件系统语义，放宽不越过分隔符边界）/ **fail-closed**（空根集合拒一切、空根串不得恒真、混在集合里的空根被跳过而非接管判定）/ 根入参自行 `cleanPath` 归一（反斜杠根与尾斜杠根照常命中，否则「能读到的根」与「判得出的根」分叉），21 条零夹具恒跑），
     `tst_configmerge`（配置合流不变量（P2）——**只有本套件同时握两侧入口**，因而也只有它能证明两个 owner 真在动同一个文件：① 静态对表（`LitePaths::configFilePathFor` 与 vendor `FluConfigStore::resolveFilePath` 逐字相同、宿主格式取 vendor 注册口同一枚举值、宿主键一律挂 `app/` 组）/ ② 动态合写不互覆（宿主写 `app/apiToken` 不抹掉 FluentUI 的 `config/navWidth`，反向亦然——**证否**改造规划里「两个 QSettings 实例写同一文件会互相覆盖」的错误前提，`QConfFile` 缓存键只有 absPath、`syncConfFile` 先 refresh 再 merge，单 owner 是多余约束）/ 盘上真相直读 JSON：两个子对象四把键都在、宿主键不漏顶层 / ③ **大小写口径与格式成对**（json 后端注册为 `CaseSensitive`，换大小写两侧同 miss；反证组：沿用 `Reader` 的 ini 缺省 `CaseInsensitive` 去读敏感后端会**缓存 hit 而直取 miss**——比①②更阴，错了读得到值、只是两侧给出不同答案，故 `AppSettings::keyCaseSensitivity()` 必须与 `fileFormat()` 一起交出）/ ④ **清单键的「列表形态」归一化在两种后端下都成立**（ini 裸逗号串→`QStringList`、json 数组→`QVariantList`，`AgentConst::normalizedText()` 两个判据并列；本批合流时旧写法只判 `QStringList` 会让手写 `"modelOptions":["a","b"]` 静默判未配置、回退内置清单，组 C 用 `metaType()!=QStringList` + `toString().isEmpty()` 两条现场取证钉住它为什么必须判两种），35 条 = 恒跑组 14 + 夹具门控组 21），
@@ -114,8 +114,24 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    FluentUI 配置落点改造批后实跑 1565（新增 `tst_fluconfigstore` 75 条 = 恒跑组 18 + 夹具门控组 57），
    该批按「新增套件时同步上调」把下界 1250→1400（1565×0.9≈1408，取整 1400）——注意本套件 57/75 条挂在
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
-   CI 注释留痕、未回写本文——现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，本轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
+   CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
+   **现值 `1720`**（压缩转写回放批 1680→1720，按本机实跑 1943×0.9≈1749 取整仍留余量）；同条里的静态断言点
+   `1543` 也已过期——本轮 HEAD 复核为 **1868**，口径勘误（任何单一口径都不是全量，勿再单独引用）：行首调用点
+   = 限定名 `TestHarness::check` **1354** + `using TestHarness::check` 引入后的裸 `check(` **331**
+   （新增套件一律走裸调用，只数限定名会少 331）+ 本地 `CHECK(cond)` 宏调用 **183**（`tst_configmerge` 35 /
+   `tst_fluconfigutils` 47 / `tst_sessionstore` 101，宏体展开为 `TestHarness::check`，故只数前两样会少 183）。
+   宏定义本身不计入：那 3 个套件各有一段 `#define CHECK(cond) \` + 续体 `TestHarness::check(...)`（共 6 行），
+   若把续体当调用点会重复计数（1357 即为此虚高值）；注释里的 `CHECK` 字样同样不计。静态点 **低于** 实跑数
+   （1868 vs 1943）不矛盾：循环/别名展开会让一个调用点跑多条（`tst_goalmanager` 195→209、`tst_settingscache`
+   76→89），个别套件反向（条件分支未走到）也正常，实跑数以当轮输出为准。计数须用大小写敏感匹配（PowerShell `-match`
+   默认不敏感，会把 `CHECK(` 混进裸 `check(` 得出 514 这类虚高值；`git grep` 对含高位字节的测试文件会漏行，
+   以逐行读取为准）。
+   另注：上文历史台账里登记的逐套拆分（`tst_fluconfigstore` 18+57、`tst_uiscale` 61 条）是**当时**的实跑值，
+   套件此后加过断言——本轮逐套件插桩实跑（带夹具 pass=1943 fail=0 skip=1 / 不带夹具 pass=988 fail=0 skip=34）为
+   `tst_fluconfigstore` 75 = 恒跑组 49 + 夹具门控组 26、`tst_fluconfigutils` 47 = 恒跑组 4 + 夹具门控组 43、
+   `tst_settingscache` 89 = 恒跑组 35 + 夹具门控组 54、`tst_uiscale` 68 条零夹具；历史条目按「不改历史只登记」
+   保留原值，当前口径以上文套件清单为准。
 - **StreamRate 的两层口径（本轮措辞缺陷修复）:** 聚合口径与 last 归属是两件事。`Meter::beginTurn()`
   在 `AgentLoop::startRateWindow()` 每请求置位、**只降级归属不清账**（账只增不减）；本轮无增量起点
   （纯 tool_calls 回合）时 last 仍是上一个可定窗，UI 措辞必须说「上一可定窗」而非「本轮」。UI 文案走

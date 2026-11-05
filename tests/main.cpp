@@ -42,39 +42,47 @@ int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h）�
 int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 
+static int runSuite(const char *name, int (*fn)())
+{
+    const int before = TestHarness::passCount();
+    const int f = fn();
+    std::printf("SUITE %s pass=%d fail=%d\n", name, TestHarness::passCount() - before, f);
+    return f;
+}
+
 int main()
 {
     int failed = 0;
-    failed += tst_lineending();
-    failed += tst_messagebus();
-    failed += tst_taskstore_lease();
-    failed += tst_worktree();
-    failed += tst_agentteams();
-    failed += tst_mcpmanager();
-    failed += tst_agentrecovery();
-    failed += tst_backgroundtasks();
-    failed += tst_workflowmanager();
-    failed += tst_workflowruntime();
-    failed += tst_compacttokens();
-    failed += tst_settingscache();
-    failed += tst_usagetokens();
-    failed += tst_streamrate();
-    failed += tst_goalmanager();
-    failed += tst_cronmanager();
-    failed += tst_uiscale();
-    failed += tst_fluconfigstore();
-    failed += tst_fluconfigutils();
-    failed += tst_litepaths();
-    failed += tst_pathguard();
-    failed += tst_configmerge();
-    failed += tst_sessionstore();
-    failed += tst_uiux();
-    failed += tst_tooltagkind();
-    failed += tst_toolnames();
-    failed += tst_navkeys();
-    failed += tst_layoutconst();
-    failed += tst_agentconst();
-    failed += tst_compacttranscript();
+    failed += runSuite("lineending", tst_lineending);
+    failed += runSuite("messagebus", tst_messagebus);
+    failed += runSuite("taskstore_lease", tst_taskstore_lease);
+    failed += runSuite("worktree", tst_worktree);
+    failed += runSuite("agentteams", tst_agentteams);
+    failed += runSuite("mcpmanager", tst_mcpmanager);
+    failed += runSuite("agentrecovery", tst_agentrecovery);
+    failed += runSuite("backgroundtasks", tst_backgroundtasks);
+    failed += runSuite("workflowmanager", tst_workflowmanager);
+    failed += runSuite("workflowruntime", tst_workflowruntime);
+    failed += runSuite("compacttokens", tst_compacttokens);
+    failed += runSuite("settingscache", tst_settingscache);
+    failed += runSuite("usagetokens", tst_usagetokens);
+    failed += runSuite("streamrate", tst_streamrate);
+    failed += runSuite("goalmanager", tst_goalmanager);
+    failed += runSuite("cronmanager", tst_cronmanager);
+    failed += runSuite("uiscale", tst_uiscale);
+    failed += runSuite("fluconfigstore", tst_fluconfigstore);
+    failed += runSuite("fluconfigutils", tst_fluconfigutils);
+    failed += runSuite("litepaths", tst_litepaths);
+    failed += runSuite("pathguard", tst_pathguard);
+    failed += runSuite("configmerge", tst_configmerge);
+    failed += runSuite("sessionstore", tst_sessionstore);
+    failed += runSuite("uiux", tst_uiux);
+    failed += runSuite("tooltagkind", tst_tooltagkind);
+    failed += runSuite("toolnames", tst_toolnames);
+    failed += runSuite("navkeys", tst_navkeys);
+    failed += runSuite("layoutconst", tst_layoutconst);
+    failed += runSuite("agentconst", tst_agentconst);
+    failed += runSuite("compacttranscript", tst_compacttranscript);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

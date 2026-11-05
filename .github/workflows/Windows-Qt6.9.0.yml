@@ -148,6 +148,8 @@ jobs:
         # 下界 1600→1680 当时按 78 估，偏保守但安全——本批实增 98，下界仍低于满量。
         # 压缩转写回放：新增 tst_compacttranscript（本机实跑 40 条全绿，CompactTranscript.h 纯头，
         # 零夹具恒跑）。本机全量实跑 1903 + 40 = 1943，下界 1680→1720（1943×0.9≈1749，取整仍留余量）。
+        # 逐套拆分现值（本轮插桩实跑，带夹具 1943 / 不带夹具 988）：tst_settingscache 89 = 恒跑 35 + 夹具门控 54、
+        # tst_fluconfigstore 75 = 49 + 26、tst_fluconfigutils 47 = 4 + 43、tst_uiscale 68（零夹具）；上文历史批次条目按「不改历史只登记」保留原值。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
