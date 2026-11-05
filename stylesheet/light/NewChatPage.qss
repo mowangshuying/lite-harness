@@ -1,6 +1,7 @@
 NewChatPage {
     background-color: rgb(249, 249, 249);
-    border: 1px solid rgb(210, 210, 210);
+    border-top-left-radius: 8px;
+    border: 1px solid rgb(229, 229, 229);
 }
 
 /* 英雄页问候语：页面唯一大字（字号在 QSS 定义，QLabel 渲染无测量问题） */

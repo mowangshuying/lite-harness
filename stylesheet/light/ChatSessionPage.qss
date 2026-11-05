@@ -1,6 +1,7 @@
 ChatSessionPage {
     background-color: rgb(249, 249, 249);
-    border: 1px solid rgb(210, 210, 210);
+    border-top-left-radius: 8px;
+    border: 1px solid rgb(229, 229, 229);
 }
 
 MessageBubbleWidget {
@@ -62,7 +63,7 @@ ChatSessionPage QLabel#emptyHintLine {
    hover/pressed 逐档加深沿用 SendMsgButton 的 alpha 阶梯，保证两个圆形动作钮手感一致。 */
 ChatSessionPage QToolButton#jumpBottomBtn {
     background-color: rgb(249, 249, 249);
-    border: 1px solid rgb(210, 210, 210);
+    border: 1px solid rgb(229, 229, 229);
     border-radius: 16px;
 }
 

@@ -1,12 +1,15 @@
 /* light —— SessionSidebar 会话侧边栏 */
 
 #SessionSidebar {
-    /* 底色与左侧导航列对齐（LiteHarnessNavAlign.qss 基准） */
-    background: rgb(249, 249, 249);
+    /* 底色取 FluentUI 原生导航带色 rgb(243,243,243)（与 LiteHarnessNavAlign.qss 同源）。
+       注意本侧栏在页面内部**最右**（src/ChatSessionPage.cpp:172-176：左列 + 侧栏），
+       与左侧导航列同色但不相邻 ⇒ 形成「左导航带 243 / 中内容列 249 / 右侧栏 243」
+       的三道分层，分界靠色差而非线，故 s17.6 起删掉了原先的 border-left。 */
+    background: rgb(243, 243, 243);
     border: none;
-    /* 左/顶边框线与左侧导航列边框同源取色 */
-    border-left: 1px solid rgb(210, 210, 210);
-    border-top: 1px solid rgb(210, 210, 210);
+    /* 顶边描边取 light 描边基准 rgb(229,229,229)（FluentUI 原生控件描边色，
+       与卡片描边 / SendMsgButton / #jumpBottomBtn 同源） */
+    border-top: 1px solid rgb(229, 229, 229);
 }
 
 /* ---- 面板头部 ---- */
