@@ -518,7 +518,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    末行无换行符则 +1——按 `-split` 计数会因空尾元素每文件虚高 1，勿据此判漂移；本轮文档校验已按 HEAD 全量复核）：`ChatSessionPage.cpp` 1242、
    `TaskStore.cpp` 1201、`MemoryManager.cpp` 1117、`WorkflowRuntime.cpp` 1078（s16 Lane B 编排引擎，新晋）、
    `WorktreeManager.cpp` 917、`WorkflowManager.cpp` 879（s16 Lane A 引擎，新晋）、`MessageBubbleWidget.cpp` 873、
-    `QOpenAi.cpp` 855（s15 传输层扩展后）、`AgentTeamsManager.cpp` 853、`SettingsPage.cpp` 838（s17.2 权限审批开关 +36）、
+    `QOpenAi.cpp` 855（s15 传输层扩展后）、`AgentTeamsManager.cpp` 853、`SettingsPage.cpp` 838（s17.2 权限审批开关 +36；**卡片类拆分已明确不做，理由见 §9.11 ③**）、
      `SessionSidebar.cpp` 783（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节；s17 P1 再加「后台任务」/「当前目标」两节）、
      `CompactManager.cpp` 758（计量抽纯头后转发 + 两段循环改增量）、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `AgentLoopTeam.cpp` 692（s13 接线 + s15 异步 fail-closed + s17.2 审批开关放行 +11）、
@@ -560,6 +560,21 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 8. **lcc 线程模型 → 主线程状态机转译（总偏差）**：lcc 守护线程/文件锁 → QTimer 心跳/deferred 驱动/内存台账（D7/D9）；Gate③ 各 MINOR/NIT 的处置与本轮文档同步（NIT-4）见 `.slim/deepwork/port-s13-agent-teams.md` 台账与 `gate3-oracle-report.md`。
 9. **压缩计量：循环内 O(n2) 全量重估已消除（本轮改），残留降为每请求常数次 O(n)**：**已改**——`microCompact` 与 `fitToolResults` 原为「循环内每轮对整段历史重算 `estimateTokens`」（每条工具结果一次全量重算 = O(n2)，且跑在 GUI 线程，叠加零线程约定直接表现为流式输出期可感知卡顿），现改为循环前置一次总量、每次替换做 `total += 新项 - 旧项` 的增量维护。**等价性是可证的，不是「应该没问题」**：计量已抽成纯头 `CompactTokens.h`，其不变量①（逐条独立求和、项间零耦合）使增量值与此刻全量重算**逐值恒等**（数学恒等而非近似）；`tst_compacttokens` 把该恒等式钉成断言，含同款替换序列的逐步对表，改口径即转红。两处提前 `continue`（短结果豁免 / 落盘失败写错误串）与条件替换分支均按「未改写则 total 不动」处理；`processCount<=0` 与空 `indices` 的前置 return 保住原「零次估算」路径不劣化（勿改成无条件前置算一次）。阈值语义、比例、落盘时序、文案逐字未动。**残留（未改，量级已不同）**——`prepareAsync` 各段之间仍有 4 次全量重估（每段一次，O(n) 非 O(n2)），`AgentLoop::estimatedContextTokens` 的锚失效兜底路径与 `contextOverheadTokens` 每次发请求各算一遍全量；这些是每请求常数次 O(n)，不再是卡顿主因，要进一步压需先给 `estimatedContextTokens` 补可测切口（它困在带 moc 的 L4 TU，同 §9.5 阻塞点）。**验证手段**：`tst_compacttokens` + 清单篇「五、P1 异步链与压缩」组——「压缩后历史体量 ≤0.8×T′」即触发点未漂移的实测判据。
 10. **`AgentConst` 取值函数每次构造 QSettings（本轮改，走「缓存解析产物 + 文件身份惰性重载」）**：原状——`contextCharLimitValue()`/`maxToolIterationsValue()`/`maxRetriesValue()`/`textValue()`（`modelOptions`/`defaultModel`/`fallbackModelIdValue` 共用）每次调用都现构造一个 `QSettings`，而消费点已下沉到 per-tool 级（`ChatSessionPage` 每个工具结果读一次 `contextTokenBudget()`），头文件注释「调用频率为回合级/交互级，读盘成本可忽略」的断言不成立。现状——读侧一律经 `AppSettings::value()` → `SettingsCache::Reader`（`src/SettingsCache.h`，header-only 纯头，仿 `CompactTokens.h` 先例：`CompactManager` 那条「有非 QtCore 依赖的 TU 进不了测试清单」的阻塞点在这里同样存在，`AppSettings` 绑死 `applicationDirPath()` 使门面本身不可测，故把可测的部分抽成路径可注入的 Reader）。写侧收敛到 `AppSettings::setValue()`，全部 8 处写点（`SettingsPage` 6 + `ChatSessionPage` 1 + `I18n` 1）与全部读点（含 `QOpenAi::initFromSettings`、`NewChatPage`）一并迁移，**不留混用**：混用会让「一处写、另一处读到旧值」成为常态 bug。`AppSettings::ini()` 随之**摘除**——留着它等于保留「每次现构造」的复发通道，需要 QSettings 全量能力时应给 Reader 加方法并配测试。**两条当初被否决的方案，否决理由要记下来**：①「缓存 `QSettings` 实例并按值返回」不可行——Qt 6.9 的 `QSettings` 继承 QObject 且 `Q_DISABLE_COPY`（`qsettings.h:183`），既不可拷贝也不可移动，现有 `ini()` 能按值返回纯靠 C++17 保证复制消除，返回一个已存在的缓存实例就需要真拷贝、直接编译不过；故缓存的只能是**解析产物**。②「简单 static 缓存」是行为回归——README「运行时配置」节明确支持「其余手改配置文件即可」，永不失效的缓存让手改值永不生效。**时效权衡（用户已接受）**：失效判据 = 文件身份三元组 `(exists, mtime_ms, size_bytes)`，与 Qt 自身 `syncConfFile()` 的只读短路判据（size + lastModified，`qsettings.cpp:1346`）同族，故本缓存**不引入 Qt 之外的新 staleness 类别**；盲区是「同一毫秒内的等长改写」——文件系统时间精度到毫秒，若手改恰好等长且同毫秒则判不出变更。该盲区由写侧显式 `invalidate()` 覆盖本进程自己的写（`setValue` = 写 + `sync()` + 失效，顺序不可颠倒：先失效会让中间那次重解析读到磁盘旧内容并把旧值再缓存一轮），剩给「外部编辑器恰好同毫秒等长改写」这一格，实际不可达。**口径纠正（读 Qt 源码所得，勿再沿用旧说法）**：原登记说每次读「open + parse 整个 ini」**不准确**——Qt 有进程级 `ConfFileCache`（`qcache` + `QConfFile::fromName`）且只读时 size/mtime 未变即短路，不重读磁盘。故本修复省掉的是每次调用的对象生命周期与簿记：`new QSettings`（QObject + d 指针）+ 全局锁 `settingsGlobalMutex` + 缓存探测 + `QFileInfo` stat + `QSettingsKey` 大小写折叠查表 + 析构里的 `sync()`/ref 回插。收益真实但不大，别按「消除了重复磁盘解析」宣称。唯一净增益格是「文件缺失或为空」：Qt 的短路要求 `size > 0`，缺失/空文件它每次构造都走读盘分支，本缓存把该态也缓存住（`tst_settingscache` 组 1b 钉死）。**另两条实测事实进了不变量**：①键折叠口径必须与所用后端**成对**——ini 后端的 `IniCaseSensitivity == Qt::CaseInsensitive`（`qsettings_p.h:54`）下 Reader 存取两侧 `toLower()` 归一，否则「手改时大小写打错」这种以前能用的写法会突然失效；而合流后的 json 后端在 `FluConfigStore::jsonFormat()` 里注册为 **`Qt::CaseSensitive`**（vendor 自己的语义，宿主不得为迁就缓存去改它），此时缓存就得**逐字**查——口径配错不会报错，只会给出「缓存 hit、直取 miss」两个不同答案，故 `AppSettings::keyCaseSensitivity()` 与 `fileFormat()` 成对交出，`Reader` 的缺省仍取 ini 那一对（只走 ini 的调用点零改动）。②`iniEscapedString`（`qsettings.cpp:592`）见 `,`/`;`/`=` 就加引号，故「裸逗号串被解析成 `QStringList`」只在**人手编辑**时发生，程序写侧产出的是带引号 QString——`textValue` 的归一化分支据此在 `tst_settingscache` 组 4b 用裸文件复现并锁 ini 侧形态。**合流到 json 后新增的第二形态（本批实测回归）**：自定义格式的 `flatten()` 走 `QJsonValue::toVariant()`，数组落成 `QVariantList`（Qt 6.9 实测 typeId=9）而**不是** `QStringList`，旧写法只判 `QStringList` 就会对它 `toString()` 得空串、把用户手写的 `"modelOptions":["a","b"]` 静默判成「未配置」并回退内置清单；故 `normalizedText()` 两个判据并列，json 侧形态由 `tst_configmerge` 组 C 用 `metaType()!=QStringList` + `toString().isEmpty()` 两条现场取证钉住。**验证手段**：`tst_settingscache`（十四套件之一，实跑 75 条 = 恒跑组 18 + 夹具门控组 57）——身份判据穷举、缺失态、200 次热读只装载一次（`loadCount()` 观测口，把「命中零构造」从口头承诺变成可断言事实）、四类外部手改（等长/变长/新增/删除）立即生效、缓存与现取逐键一致（含类型与大小写变体）、裸逗号串 QStringList 形态不被抹平、写侧落盘与失效成对。**残留**：Reader 无锁，依赖全仓零线程约定（不变量⑤）；若将来引入工作线程读配置，须先给 Reader 加锁，而不是把缓存挪到线程局部。`AgentConst` 各取值函数的「范围校验/回退默认」语义逐字未动，本改动只换「值从哪来」。
+11. **UI 侧「明确不做」清单（已评估并裁决，勿下轮重复提议）**：原 `docs/ui-review-p2p3.md`（UI 评审
+    P2/P3 执行清单）已按 §1.3 第 4 条「零散笔记不在 `docs/` 落地」收回本文并删除——P2 五套件与 P3 六项
+    均已落地，其明细与断言口径以 **AGENTS.md 测试节为单源**（覆盖面轮廓见 §9.5），勾选状态以提交信息为准，
+    清单本身不再单独落盘。只有下面五条「评估过、决定不做」的判断需要长期留档，理由逐条随附：
+    ① **QSS 三主题去重**：三份 `stylesheet/<theme>/` 是 FluentUI 换肤契约的一部分，合并成「公共 + 覆盖」
+       会让改一处颜色需要读两层规则，调试成本高于重复成本（重复面本身见 `AGENTS.md` 主题节的逐条对表）。
+    ② **`tr()` 重复字符串合并**：同一文案在不同上下文里可能独立翻译（如「取消」在设置页与审批卡语气不同），
+       合并会锁死这种自由度，收益仅字数。
+    ③ **设置页卡片类拆分**：`SettingsPage.cpp` 体量确实偏长（见 §9.4 候选清单），但拆分类会新增 6 个文件
+       与跨文件成员访问，收益是「读起来短一点」，不改变任何行为——不满足「改动即收益」的门槛。
+    ④ **流式文本批量合并**（`MessageBubbleWidget::appendText` 每 delta 一次文档插入）：收益是插入次数降
+       5–20 倍，但要在「切段 / 收尾 / 读全文」三处补 flush，漏一处就丢字——风险与收益不成比例。
+    ⑤ **历史回放虚拟化**（长会话 N 个气泡 widget 各自持有 `QTextBrowser` + `QTextDocument`）：这是内存占用
+       最大的一块，但虚拟化会重写回放与滚动跟随的既有契约（气泡高度按需测量、滚动锚点、时间线顺序，
+       见交互篇 §12），属结构性改动，须单独设计后再动。
 
 ---
 
