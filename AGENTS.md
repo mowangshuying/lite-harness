@@ -7,7 +7,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **工具链:** Qt 6.9.0 + MSVC 2022 + CMake 3.20+，C++17，仅 Windows
 - **Prefix:** `CMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64`
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
-- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 17.6`；展示/运行时/打包名统一带 `s` 前缀 = `s17.6`，阶段名仍是 `s17`、补丁位 `.6` 见「发布」节）
+- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 17.7`；展示/运行时/打包名统一带 `s` 前缀 = `s17.7`，阶段名仍是 `s17`、补丁位 `.7` 见「发布」节）
 - **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
 - **单元测试:** `tests/` + ctest，见下独立节「测试（tests/ + ctest）」；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
@@ -15,7 +15,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **手工回归:** 历轮验收场景沉淀为冒烟清单 `docs/doc.md` 第三部分「手工冒烟回归清单」（锚点 `#checklist`；P0/P1/P2 按改动面选组，提交前跑对应组）
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）；`3rdparty/sqlite`（vendored sqlite3，约 11MB）与 `cmake/FindSQLite3.cmake` 已同批 `git rm`——自摘除子构建起全仓零引用，属纯死码，勿再 vendored 回来。
-- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s17.6-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
+- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s17.7-win64.zip`（约 54MB/75 条目：顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`）。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
 
@@ -42,7 +42,10 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **二十三个套件**——`tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
+- **覆盖现状:** **三十个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
+  `tst_navkeys` / `tst_layoutconst` / `tst_agentconst` 六件此前只进了 `tests/main.cpp` 与 CI 注释，
+  本条枚举与计数漏登记，现补——计数以 `tests/main.cpp` 的 `failed += tst_*()` 调用行为准）——
+  `tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
   路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
   名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环）/ `tst_mcpmanager`（MCP 命名净化、
   拼名上限、装配碰撞与快照原子性门）/ `tst_agentrecovery`（s15 契约串逐字 + 分类器判据矩阵 + 恢复常量门，
@@ -70,7 +73,13 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     `tst_pathguard`（沙箱围栏多根判定 `AgentPathGuard.h::isWithinSandboxRoots`：单根语义逐字保持改造前 `safePathIn` 行为（含「根本身放行」）/ **分隔符边界**（`work-evil` 这类共享名字前缀的兄弟目录必拒，纯 `startsWith` 会放行——改造前就有这条护栏，统一锚后不能丢）/ 第二根即会话数据根（`.temp` 与队友 `.worktrees` 统一锚到 `config/` 后不再是 workDir 子树，单根口径会把模型自己的临时目录判成越狱）/ **兄弟会话不可互达**（加的是自己那一个会话根、不是整个 sessions 根）/ 大小写不敏感（Windows 文件系统语义，放宽不越过分隔符边界）/ **fail-closed**（空根集合拒一切、空根串不得恒真、混在集合里的空根被跳过而非接管判定）/ 根入参自行 `cleanPath` 归一（反斜杠根与尾斜杠根照常命中，否则「能读到的根」与「判得出的根」分叉），21 条零夹具恒跑），
     `tst_configmerge`（配置合流不变量（P2）——**只有本套件同时握两侧入口**，因而也只有它能证明两个 owner 真在动同一个文件：① 静态对表（`LitePaths::configFilePathFor` 与 vendor `FluConfigStore::resolveFilePath` 逐字相同、宿主格式取 vendor 注册口同一枚举值、宿主键一律挂 `app/` 组）/ ② 动态合写不互覆（宿主写 `app/apiToken` 不抹掉 FluentUI 的 `config/navWidth`，反向亦然——**证否**改造规划里「两个 QSettings 实例写同一文件会互相覆盖」的错误前提，`QConfFile` 缓存键只有 absPath、`syncConfFile` 先 refresh 再 merge，单 owner 是多余约束）/ 盘上真相直读 JSON：两个子对象四把键都在、宿主键不漏顶层 / ③ **大小写口径与格式成对**（json 后端注册为 `CaseSensitive`，换大小写两侧同 miss；反证组：沿用 `Reader` 的 ini 缺省 `CaseInsensitive` 去读敏感后端会**缓存 hit 而直取 miss**——比①②更阴，错了读得到值、只是两侧给出不同答案，故 `AppSettings::keyCaseSensitivity()` 必须与 `fileFormat()` 一起交出）/ ④ **清单键的「列表形态」归一化在两种后端下都成立**（ini 裸逗号串→`QStringList`、json 数组→`QVariantList`，`AgentConst::normalizedText()` 两个判据并列；本批合流时旧写法只判 `QStringList` 会让手写 `"modelOptions":["a","b"]` 静默判未配置、回退内置清单，组 C 用 `metaType()!=QStringList` + `toString().isEmpty()` 两条现场取证钉住它为什么必须判两种），35 条 = 恒跑组 14 + 夹具门控组 21），
     `tst_sessionstore`（会话索引并入 config.json 键 `app/sessions`：① 键名口径（裸键 `sessions`、经 `scopedKey` 收成 `app/sessions`、顶层不得漏出裸 sessions）/ ② **读写换轨**——空配置读空表、首条登记字段齐全且 `createdMs` 为毫秒整数、**新条目不再含 `lastActiveMs`**、同 dataId 再登记是就地更新不追加且空 model/workDir 不覆盖既有值、`createdMs` 不被刷新、空 dataId 卫兵不写盘 / ③ **盘上真相**：`app/sessions` 必须是**数组**（不是被 flatten 成 `app/sessions/0/…`）、中文标题与 qint64 时间戳逐字往返 / ④ **核心红线：索引整表回写不得抹掉别人的键**——宿主写 `app/apiToken`、FluentUI 写 `config/navWidth`，再连写两次索引，直读盘上 JSON 三把键都必须在（裸 `QSaveFile` 重写在这里必红），另开 Reader 跨实例也看得见 / ⑤ 删光会话后键**仍是空数组**（不是消失也不是 `@Invalid`）——迁移判据「目标已是列表」正靠这个形态成立，否则残留旧文件会把用户删光的会话又搬回来 / ⑥ **坏形态降级**：手改 `sessions` 成对象 → 读成空索引、不崩不猜不写回，改回数组条目原样回来（`history.json` 从未被这次读取碰过）/ ⑦ **旧 `index.json` 一次性迁移四分支**：无旧文件返 0；正常迁移两条保真 + `lastActiveMs` 不搬 + 旧文件删除 + 幂等；**目标已是列表时只删残留绝不回写**（回写等于覆盖掉迁移后新增的会话，且只在第二次启动才暴露），空表也算已迁移、「幽灵」搬不回来；旧文件不是数组/坏 JSON → 返 -1 + 保留原文件 + 不写空表；`createdMs` 缺失或为 0 → 补当前时刻（否则恢复排序随机）；数组里混非对象元素 → 跳过该条不整体失败，101 条 = 恒跑组 4 + 夹具门控组 97），
-    全量实跑 1798 条断言（会话索引并入 config.json 这批后本机实跑，含 1 条 junction 夹具 skip；上一轮登记的 1697 已过期——差值 101 恰为新增 `tst_sessionstore` 的实跑条数、与实跑逐条对账一致）。被测生产
+    `tst_uiux`（命中区下限 / app/ 组前缀只拼一次 / min<default<max 区间自洽 / 只读文件写失败返回 false；静态点 16）/
+    `tst_tooltagkind`（工具名→标签类别映射，26）/ `tst_toolnames`（7）/ `tst_navkeys`（导航/堆叠页键常量，14）/
+    `tst_layoutconst`（kSidebarWidth==kNavWidth 等，23）/ `tst_agentconst`（数值域，12）——后五件为 s17.6 P2 批新增、
+    当时只进了 `tests/main.cpp` 与本条计数，枚举漏登记至今补齐（**括号内为静态 `check(` 调用点数，非实跑数**；
+    实跑数须当轮跑完取，见下条「断言数口径」）。
+    全量实跑 1943 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 1798 已过期——其后 s17.6 批与压缩回放批
+    各新增套件，增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
     **FluentUI 侧 `FluConfigUtils.cpp`**（它无 `Q_OBJECT`，依赖的 `FluThemeUtils.h` 虽带该宏但只取其中的 `FluTheme` 枚举、从不实例化，故既不需 QtGui/QtWidgets 也不需额外 moc）），
@@ -188,7 +197,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **新增带 QSS 的组件:** 放置 `src/*.cpp/.h` 与三主题目录下同名 `.qss`，构造尾 bind 即可 — GLOB 自动拾取，**不改 CMakeLists.txt**。
 - **界面字号缩放（`uiFontScale`）有三个生效面，第三个易漏**（UI 优化 P1-11 立前两面、P2-A3 补第三面）：① **应用字体面** = `QApplication` 字体，只在启动时设一次（`App.cpp`，须在 `QApplication` 构造后），管气泡正文/输入框这些 QSS 不写死字号处；② **本仓 QSS 面** = `ThemeAware::bind` 里 `UiScale::scaleQssFontSizes` 改写 `font-size: Npx` 字面量，每次主题切换重放；③ **代码设定字号面** = 凡在 C++ 里 `setFont`/`setPixelSize` 的组件**不经过②的收口点**，必须自己接上——`WorkDirPathBar.cpp` 的匿名 ns `secondaryPixelSize()` 即此法。**③必须读 `UiScale::runtimeFontScalePercent()` 启动快照、禁现取 `fontScalePercent()`**：否则①②钉在启动值而③跟着 ini 实时变，改倍率后出现「正文与卡片已放大、路径条没变」的半生效。三面的基准值一律是 **px**（`QFont::setPixelSize` 与 QSS `px` 同量纲；刻意不用 `setPointSize`，pt 与 px 换算含 DPI 因子，会让 elide 的 `QFontMetrics` 量纲与实际字体脱钩）。**刻意不拦 FluentUI 自有 QSS**（第三方样式表，`3rdparty/` 惯例不改），故导航项、FluentUI 按钮等保留 FluentUI 原字号——这是接受的边界而非遗漏。
 - **浮在内容之上的浮钮禁用 `rgba` 半透明底**（UI 优化 P2-A1 实证教训）：`#jumpBottomBtn` 这类叠在消息气泡上的钮，hover/pressed 若写 `rgba(0,0,0,13)`，气泡文字会从钮体**透出**（嵌在实心工具条里的 `#sidebarRestoreBtn` 则无此问题，故两者口径不同）。正确做法是**合成实色**：按 `ThinkingBlock.qss` 既有口径把 alpha 折进底色（light 页底 249：hover `249−13=236`、pressed `249−26=223`；dark 页底 40：`40+15=55`、`40+25=65`；atomOneDark 页底 40,44,52 逐通道 +15/+25）。alpha 阶梯取 `SendMsgButton` 同档，保三主题手感一致。
-- **覆盖 FluentUI 自带取色** 不改第三方源码的做法：**窗口级复合选择器无效**（像素实证——FluentUI 各控件把主题 QSS `setStyleSheet` 挂自身，Qt 级联近表优先，特异性再高压不过）。正确机制是**往控件自身样式表幂等追加覆盖规则**：`LiteHarness.cpp` 的 `appendOwnSheetOverride`（marker 注释截旧再追加防增长）+ `applyNavAlignOverrides()`（经 FluStyleSheetUtils 同源路径读本仓每主题 `LiteHarnessNavAlign.qss` / `LiteHarnessScrollBarAlign.qss`，后者用 `qproperty-trunkBackgroundColor` 改 FluScrollBar 滚动条槽色——其 paintEvent 直读该属性）；接线在 `ThemeAware::bind` 的 extraRefresh：首刷同步一次保首帧 + `singleShot(0)` 重放一次（FluThemeUtils::setTheme 把 themeChanged 与代理批处理重写控件表打包进同一 queued lambda，须排其后抵消）。导航列/内容页底色即此法（内容页基准三主题：light 249,249,249 / dark 40,40,40 / atomOneDark 40,44,52；**s17.6 起三主题导航列一律取各自 FluentUI 原生导航带色 243 / 32,32,32 / 33,37,43，恒比内容页暗一档，侧栏同色，滚动条 trunk 必须跟着归一到导航带色**，且三主题都不再画导航顶边线——见 `docs/doc.md` P1 主题节）。标题栏 StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置其背景透明透出窗口本体色。
+- **覆盖 FluentUI 自带取色** 不改第三方源码的做法：**窗口级复合选择器无效**（像素实证——FluentUI 各控件把主题 QSS `setStyleSheet` 挂自身，Qt 级联近表优先，特异性再高压不过）。正确机制是**往控件自身样式表幂等追加覆盖规则**：`LiteHarness.cpp` 的 `appendOwnSheetOverride`（marker 注释截旧再追加防增长）+ `applyNavAlignOverrides()`（经 FluStyleSheetUtils 同源路径读本仓每主题 `LiteHarnessNavAlign.qss` / `LiteHarnessScrollBarAlign.qss`，后者用 `qproperty-trunkBackgroundColor` 改 FluScrollBar 滚动条槽色——其 paintEvent 直读该属性）；接线在 `ThemeAware::bind` 的 extraRefresh：首刷同步一次保首帧 + `singleShot(0)` 重放一次（FluThemeUtils::setTheme 把 themeChanged 与代理批处理重写控件表打包进同一 queued lambda，须排其后抵消）。导航列/内容页底色即此法（内容页基准三主题：light 249,249,249 / dark 40,40,40 / atomOneDark 40,44,52；**s17.7 起三主题导航列一律取各自 FluentUI 原生导航带色 243 / 32,32,32 / 33,37,43，恒比内容页暗一档，侧栏同色，滚动条 trunk 必须跟着归一到导航带色**，且三主题都不再画导航顶边线——见 `docs/doc.md` P1 主题节）。标题栏 StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置其背景透明透出窗口本体色。
 
 ## 国际化（i18n）
 
@@ -197,7 +206,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **切换=重启生效:** FluentUI 控件无运行中重译能力（无 languageChanged 信号）。仅跨切换常驻的组件经 `changeEvent(QEvent::LanguageChange)` 重译（LiteHarness 导航三项 / SettingsPage / NewChatPage / WorkDirPathBar / TodoCard 标题）；弹出即重建的菜单/对话框/卡片天然取当次语言。已渲染历史气泡滞留旧语言（接受）。
 - **新增/修改 UI 字符串:** 照常写中文 `tr()`；**勿跑 `lite-harness_lupdate` 目标**（实证会把 FluentUI 子工程源码扫入、灌入上千外部串），改手动 `lupdate -recursive src -no-obsolete -source-language zh_CN -target-language zh_CN -ts i18n/lite-harness_zh_CN.ts` 与 `-ts i18n/lite-harness_en_US.ts` 各刷一次，补英文译文再构建；漏译条目运行时回退中文源。成对手刷已固化为 `scripts/update-i18n.ps1`（仓库根执行即可，两条 `-ts` 命令的权威单源）。
 - **禁翻区:** 发往 LLM 的 C 类串（system prompt、压缩摘要指令、`AgentLoop` 落盘进历史的合成文本如 `(恢复：工具结果不可用)`——已改 `QStringLiteral` 硬隔离，禁再包 `tr()`）不进翻译、不入 .ts。品牌名/版本号豁免口径：代码中 `tr("lite-harness")`/`tr("AtomOneDark")` 等品牌专名与版本标签**保留 tr 包裹**（版本号经 LITE_VERSION 宏注入串天然不在 ts），在 .ts 内以译文=源文恒等登记，保证 Linguist 审计面完整。
-- **版本号单源:** CMake `project VERSION`（数字段，如 17.6）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s17.6`）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。**版本名与 lcc 阶段名是两回事**：阶段名到 `s17` 为止（`3rdparty/lcc` 子模块 tag 即 `s17`），版本名可带补丁位（`s13.1`/`s16.1`/`s17.1`，先例已成串）；故文档里「与阶段 tag 同名」的旧表述在带补丁位时**不成立**，已改为「阶段名仍 s17」。看到 `s17` 要先分辨语境：指移植阶段=历史台账（不改），指当前版本=示例（随 bump 改）。
+- **版本号单源:** CMake `project VERSION`（数字段，如 17.7）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s17.7`）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。**版本名与 lcc 阶段名是两回事**：阶段名到 `s17` 为止（`3rdparty/lcc` 子模块 tag 即 `s17`），版本名可带补丁位（`s13.1`/`s16.1`/`s17.1`，先例已成串）；故文档里「与阶段 tag 同名」的旧表述在带补丁位时**不成立**，已改为「阶段名仍 s17」。看到 `s17` 要先分辨语境：指移植阶段=历史台账（不改），指当前版本=示例（随 bump 改）。
 
 ## 关键约定
 
@@ -215,7 +224,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **升版本：行为只改一行，文档必须 grep 同步。** 行为单源是 CMake
   `project(lite-harness VERSION <数字段>)`——`LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME`
-  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s17.6`），
+  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s17.7`），
   代码里**不得**再硬编码版本号（口径详见「国际化」节末「版本号单源」条）。
   `project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
   **但「只改一行」只对行为成立**：README / AGENTS / `docs/doc.md`（结构篇与清单篇）与若干

@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-    （`s17.6`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+    （`s17.7`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
     **但 `s17` 在本仓有两个语境**：lcc 移植阶段名（`3rdparty/lcc` 子模块 tag 即 `s17`，属历史台账、
     永不随版本 bump 改）与当前版本示例（随 bump 改）。s17.1 起二者不再同名，grep 到 `s17` 须先判语境。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
@@ -483,7 +483,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 17.6）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s17.6；lcc 阶段名仍是 s17，补丁位见 AGENTS「发布」节）|
+| 版本号 | CMake `project VERSION`（数字段 17.7）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s17.7；lcc 阶段名仍是 s17，补丁位见 AGENTS「发布」节）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token，基准 `kCharsPerTokenBudget`）+ `AgentConst::contextTokenBudget`（= `contextCharLimitValue() / 4`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条 + 条下精确数字行，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算） |
@@ -522,7 +522,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `SessionSidebar.cpp` 783（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节；s17 P1 再加「后台任务」/「当前目标」两节）、
      `CompactManager.cpp` 758（计量抽纯头后转发 + 两段循环改增量）、`TeammateRuntime.cpp` 729（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `AgentLoopTeam.cpp` 692（s13 接线 + s15 异步 fail-closed + s17.2 审批开关放行 +11）、
-     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 31258 行，本轮 HEAD 实测；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.6 各批净增，现值以本轮实测为准）。
+     `ChatStatusStrip.cpp` 286（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 31777 行，本轮 HEAD 实测，口径 = `ReadAllLines` 含空行；上一轮登记的 31258 已过期——s17.6..HEAD 净增 205 行（`CompactTranscript.h` 186 + `AgentLoopHistory.cpp` 12 + `AgentLoop.h` 5 + `ChatSessionPage.cpp` +3/-1），余量差系该值登记时的 HEAD 早于 s17.6 末批；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.7 各批净增，现值以本轮实测为准）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 716、
      `LiteHarness.cpp` 698、`ToolBlock.cpp` 565（s17.1 摘除「查看完整输出」入口与其对话框后回落）未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
@@ -681,9 +681,9 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ### 六、P1 主题与导航样式
 
 - [ ] 设置页轮换三主题 light / dark / atomOneDark → 全窗重绘、无旧主题残色
-- [ ] 底色基准取色 → **内容页/标题栏透色区**：light `rgb(249,249,249)`、dark `rgb(40,40,40)`、atomOneDark `rgb(40,44,52)`；**导航列与会话侧栏**自 s17.6 起三主题一律取 FluentUI 原生导航带色（`3rdparty/FluentUI/stylesheet/<theme>/FluVNavigationView.qss:3`）：light `rgb(243,243,243)`、dark `rgb(32,32,32)`、atomOneDark `rgb(33,37,43)` ⇒ 导航带恒比内容页**暗一档**，靠色差分层而非线做分界
-- [ ] 导航顶边 border-top → **三主题自 s17.6 起一律不再画这条线**（原 dark `70,70,70` / atomOneDark `72,78,88` 与 light 的 `210,210,210` 同批移除），分界交给上一条的色阶。描边基准 = 各主题 FluentUI 原生控件描边色：light `rgb(229,229,229)`、dark `rgb(69,69,69)`、atomOneDark `rgb(71,74,79)`，卡片描边 / 侧栏顶边 / `#jumpBottomBtn` / `SendMsgButton` 四处同源。**dark 刻意不取示例页卡片边框 `55,55,55`**——它与 `#jumpBottomBtn:hover` 的合成实色（40+15=55）同值，会让描边在 hover 时消失；`69,69,69` 与旧值 `70,70,70` 仅差 1，观感不变而保住四档层次 40/55/65/69
-- [ ] 内容页圆角 → **左上角 8px、其余角直角**（三主题一致，s17.6 用户裁决；8px 取 FluentUI 卡片规格 `FluVCard/FluHCard: border-radius: 8px`）。注意缺口透出的是父级窗口本体色（light 249 / dark 40 / aod 40,44,52），不是导航带色
+- [ ] 底色基准取色 → **内容页/标题栏透色区**：light `rgb(249,249,249)`、dark `rgb(40,40,40)`、atomOneDark `rgb(40,44,52)`；**导航列与会话侧栏**自 s17.7 起三主题一律取 FluentUI 原生导航带色（`3rdparty/FluentUI/stylesheet/<theme>/FluVNavigationView.qss:3`）：light `rgb(243,243,243)`、dark `rgb(32,32,32)`、atomOneDark `rgb(33,37,43)` ⇒ 导航带恒比内容页**暗一档**，靠色差分层而非线做分界
+- [ ] 导航顶边 border-top → **三主题自 s17.7 起一律不再画这条线**（原 dark `70,70,70` / atomOneDark `72,78,88` 与 light 的 `210,210,210` 同批移除），分界交给上一条的色阶。描边基准 = 各主题 FluentUI 原生控件描边色：light `rgb(229,229,229)`、dark `rgb(69,69,69)`、atomOneDark `rgb(71,74,79)`，卡片描边 / 侧栏顶边 / `#jumpBottomBtn` / `SendMsgButton` 四处同源。**dark 刻意不取示例页卡片边框 `55,55,55`**——它与 `#jumpBottomBtn:hover` 的合成实色（40+15=55）同值，会让描边在 hover 时消失；`69,69,69` 与旧值 `70,70,70` 仅差 1，观感不变而保住四档层次 40/55/65/69
+- [ ] 内容页圆角 → **左上角 8px、其余角直角**（三主题一致，s17.7 用户裁决；8px 取 FluentUI 卡片规格 `FluVCard/FluHCard: border-radius: 8px`）。注意缺口透出的是父级窗口本体色（light 249 / dark 40 / aod 40,44,52），不是导航带色
 - [ ] 滚动条槽色随主题（`LiteHarnessScrollBarAlign.qss` 经 `qproperty-trunkBackgroundColor`）→ 三主题 trunk 一律归一到**导航带色**（light 243 / dark 32,32,32 / aod 33,37,43）：FluentUI 原生槽分别是 249 / 44,44,44 / 40,44,52，都比新导航带亮，不覆盖会在导航带里露出一条亮槽
 - [ ] 标题栏底色 → StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置背景透明透出窗口本体色；light 前景黑、其余白，高度 32px
 - [ ] 覆盖机制读码警示 → 覆盖 FluentUI 取色只准 `appendOwnSheetOverride` 往**控件自身样式表**幂等追加（marker `/*lh-nav-align*/` 截旧防增长）；若出现窗口级复合选择器写法即回归（像素实证无效）；`ThemeAware::bind` extraRefresh 的「首刷同步 + `singleShot(0)` 重放」双保险仍在（抵消 FluentUI 批处理重写）
@@ -701,7 +701,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17.6）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17.6`；lcc 阶段名仍是 `s17`，`.6` 是补丁位、先例 `s13.1`/`s16.1`/`s17.1`/`s17.2`；补丁位不要求连号，`s17.4` 已按用户裁决跳过且后续不再启用），全仓无散落硬编码；侧栏页脚 `lite-harness s17.6` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17.7）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17.7`；lcc 阶段名仍是 `s17`，`.7` 是补丁位、先例 `s13.1`/`s16.1`/`s17.1`/`s17.2`；补丁位不要求连号，`s17.4` 已按用户裁决跳过且后续不再启用），全仓无散落硬编码；侧栏页脚 `lite-harness s17.7` 不带多余 `v`
 
 ### 八、P2 记忆与子代理
 

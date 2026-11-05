@@ -11,7 +11,7 @@ FluVNavigationView {
 
 /* widget1/widget2/widget3 = 导航顶部容器/中部滚动区/底部容器（FluVNavigationView.cpp 内部 objectName），
    原生底色与本表本体同值，一并钉住。
-   s17.6 起 atomOneDark 与 light/dark 同口径：导航带底色不再归一到内容页
+   s17.7 起 atomOneDark 与 light/dark 同口径：导航带底色不再归一到内容页
    rgb(40,44,52)，而是取 FluentUI 原生导航带色 rgb(33,37,43)
    （3rdparty/FluentUI/stylesheet/atomOneDark/FluVNavigationView.qss:3 与 :14）
    ⇒ 本块从「覆盖」退化为「钉住原生色防上游漂移」的声明，删掉不影响观感，

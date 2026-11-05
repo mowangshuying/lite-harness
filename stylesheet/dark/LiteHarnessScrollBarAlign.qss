@@ -2,7 +2,7 @@
 /* 追加到导航列内浮动滚动条 FluScrollBar「自身表」尾部的槽底色对齐块：
    FluScrollBarTrunk::paintEvent 直接读 trunkBackgroundColor 属性 fillRect，
    该 qproperty 规则同样住在控件自身表里，窗口级 qproperty 覆盖不到（同 nav 的近表优先）。
-   dark 基准（s17.6 起）：导航带底色 = FluentUI 原生 rgb(32,32,32)（见
+   dark 基准（s17.7 起）：导航带底色 = FluentUI 原生 rgb(32,32,32)（见
    LiteHarnessNavAlign.qss），而 FluentUI 原生 trunk 是 rgb(44,44,44)，不覆盖会在
    32 的导航带里露出一条亮槽 ⇒ 本块把 trunk 归一到导航带底色
    （仅覆盖 trunk，handle 悬停色保留原生）。 */
