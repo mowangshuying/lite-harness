@@ -681,11 +681,10 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ### 六、P1 主题与导航样式
 
 - [ ] 设置页轮换三主题 light / dark / atomOneDark → 全窗重绘、无旧主题残色
-- [ ] 底色基准取色 → 内容页/标题栏透色区：light `rgb(249,249,249)`、dark `rgb(40,40,40)`、atomOneDark `rgb(40,44,52)`；**导航列与会话侧栏**自 s17.6 起 light 改取 FluentUI 原生导航带色 `rgb(243,243,243)`（`3rdparty/FluentUI/stylesheet/light/FluVNavigationView.qss:3`）与内容页分层，dark / atomOneDark 待同步（现仍归一到各自内容页基准）
-- [ ] 导航顶边 border-top → dark `rgb(70,70,70)`、atomOneDark `rgb(72,78,88)`（与各自内容页边框同色基准，交界处无断色）；**light 自 s17.6 起不再画这条线**，改由 243 导航带与 249 内容页的色差分层承担分界。light 描边基准 = FluentUI 原生控件描边色 `rgb(229,229,229)`，卡片描边 / 侧栏顶边 / `#jumpBottomBtn` / `SendMsgButton` 四处同源（深色侧同理：dark 三处同 `70,70,70`、atomOneDark 三处同 `72,78,88`）
-- [ ] 内容页圆角 → **左上角 8px、其余角直角**（light，s17.6 用户裁决；8px 取 FluentUI 卡片规格 `FluVCard/FluHCard: border-radius: 8px`）。注意缺口透出的是父级窗口本体色（249），不是导航带 243
-- [ ] 三主题对称待办（s17.6 本轮只改 light）→ 导航带/侧栏 243、描边 229、左上角 8px 圆角、删导航顶边线与侧栏左边线这五项，dark / atomOneDark 尚未跟改；轮换到这两个主题验收时按上三条逐项对齐后再勾销
-- [ ] 滚动条槽色随主题（`LiteHarnessScrollBarAlign.qss` 经 `qproperty-trunkBackgroundColor`）→ light trunk 归一到导航带 `rgb(243,243,243)`（FluentUI light 原生槽是 `249,249,249`，不覆盖会在 243 的导航带里露出一条亮槽）；深色主题下 FluScrollBar 槽不再是 FluentUI 默认色
+- [ ] 底色基准取色 → **内容页/标题栏透色区**：light `rgb(249,249,249)`、dark `rgb(40,40,40)`、atomOneDark `rgb(40,44,52)`；**导航列与会话侧栏**自 s17.6 起三主题一律取 FluentUI 原生导航带色（`3rdparty/FluentUI/stylesheet/<theme>/FluVNavigationView.qss:3`）：light `rgb(243,243,243)`、dark `rgb(32,32,32)`、atomOneDark `rgb(33,37,43)` ⇒ 导航带恒比内容页**暗一档**，靠色差分层而非线做分界
+- [ ] 导航顶边 border-top → **三主题自 s17.6 起一律不再画这条线**（原 dark `70,70,70` / atomOneDark `72,78,88` 与 light 的 `210,210,210` 同批移除），分界交给上一条的色阶。描边基准 = 各主题 FluentUI 原生控件描边色：light `rgb(229,229,229)`、dark `rgb(69,69,69)`、atomOneDark `rgb(71,74,79)`，卡片描边 / 侧栏顶边 / `#jumpBottomBtn` / `SendMsgButton` 四处同源。**dark 刻意不取示例页卡片边框 `55,55,55`**——它与 `#jumpBottomBtn:hover` 的合成实色（40+15=55）同值，会让描边在 hover 时消失；`69,69,69` 与旧值 `70,70,70` 仅差 1，观感不变而保住四档层次 40/55/65/69
+- [ ] 内容页圆角 → **左上角 8px、其余角直角**（三主题一致，s17.6 用户裁决；8px 取 FluentUI 卡片规格 `FluVCard/FluHCard: border-radius: 8px`）。注意缺口透出的是父级窗口本体色（light 249 / dark 40 / aod 40,44,52），不是导航带色
+- [ ] 滚动条槽色随主题（`LiteHarnessScrollBarAlign.qss` 经 `qproperty-trunkBackgroundColor`）→ 三主题 trunk 一律归一到**导航带色**（light 243 / dark 32,32,32 / aod 33,37,43）：FluentUI 原生槽分别是 249 / 44,44,44 / 40,44,52，都比新导航带亮，不覆盖会在导航带里露出一条亮槽
 - [ ] 标题栏底色 → StandardTitleBar 为 paintEvent 手绘不吃 QSS，靠置背景透明透出窗口本体色；light 前景黑、其余白，高度 32px
 - [ ] 覆盖机制读码警示 → 覆盖 FluentUI 取色只准 `appendOwnSheetOverride` 往**控件自身样式表**幂等追加（marker `/*lh-nav-align*/` 截旧防增长）；若出现窗口级复合选择器写法即回归（像素实证无效）；`ThemeAware::bind` extraRefresh 的「首刷同步 + `singleShot(0)` 重放」双保险仍在（抵消 FluentUI 批处理重写）
 - [ ] 会话侧栏 → 标题/模型/工作目录/上下文占用条/状态灯/待办清单/团队名册/页脚版本随回合实时刷新（全部由 `ChatSessionPage` 调 setter 推入，`SessionSidebar` 自身不订阅 `AgentLoop`）；「上下文」节是**条 + 条下精确数字行**（数字原在输入框下方的 `ChatStatusStrip`，按用户裁决迁入面板；收起侧栏时条与数字一并不可见，这是明示取舍），「状态」三态灯整盏留在侧栏（s16.1 曾下移、随后按用户要求搬回）；收起后右上角**浮动展开钮**出现且随窗口 resize 对位（页面直接子件、手动几何 + `raise()`），展开钮与侧栏互斥不同时可见；显隐偏好落 config.json 键 `sidebarVisible`，重启后按上次状态恢复首帧（读值放在布局收尾，令首帧即按最终态钳宽）；三主题下 `SessionSidebar.qss` 与 `ChatStatusStrip.qss` 各自生效、无残色

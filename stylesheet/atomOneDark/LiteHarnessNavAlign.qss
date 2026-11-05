@@ -1,26 +1,28 @@
 /*lh-nav-align*/
-/* 追加到 FluVNavigationView「控件自身样式表」尾部的底色对齐块。
+/* 追加到 FluVNavigationView「控件自身样式表」尾部的底色钉值块。
    机制：FluentUI 把本控件主题 QSS 经 setStyleSheet 挂在控件自身，Qt 级联中
    离控件越近的表越优先、且优先于祖先（窗口）级表——9e7fcf2 的窗口级复合
    选择器已被实测证明压不过（导航带仍为 FluentUI 原色 33,37,43）。
    故改走自身表追加：与本表 FluentUI 原生规则同表同特异性、位置在后 ⇒ 必胜。
    追加时机由 LiteHarness::applyNavAlignOverrides 在代理重写之后重放（见其注释）。 */
 FluVNavigationView {
-    background-color: rgb(40, 44, 52);
+    background-color: rgb(33, 37, 43);
 }
 
 /* widget1/widget2/widget3 = 导航顶部容器/中部滚动区/底部容器（FluVNavigationView.cpp 内部 objectName），
-   原生底色与本表本体同值，一并归一到内容页基准 */
+   原生底色与本表本体同值，一并钉住。
+   s17.6 起 atomOneDark 与 light/dark 同口径：导航带底色不再归一到内容页
+   rgb(40,44,52)，而是取 FluentUI 原生导航带色 rgb(33,37,43)
+   （3rdparty/FluentUI/stylesheet/atomOneDark/FluVNavigationView.qss:3 与 :14）
+   ⇒ 本块从「覆盖」退化为「钉住原生色防上游漂移」的声明，删掉不影响观感，
+   留着是为了本主题导航带/侧栏/滚动条槽三处取色有单一出处。
+   同批移除原 FluVNavigationView 的 border-top 分界线：33,37,43 导航带与 40,44,52
+   内容页自带色差分层，不再需要线（滚动条槽须跟着归一，见 ScrollBarAlign）。
+   订正：原注释称「Qt 样式表 box model 会把 contentsRect 下移 1px」是错的——Qt 6.9
+   实测 QSS border 不改 contentsRect（QStyleSheetStyle::polish 从不写 contentsMargins），
+   导航首块 y=4 由 FluVNavigationView.cpp:12-38 的 4px 布局边距决定，删线不产生位移。 */
 #widget1,
 #widget2,
 #widget3 {
-    background-color: rgb(40, 44, 52);
-}
-
-/* 导航列顶边 1px 实线：与内容页卡片边框（BasePage.qss 同主题 border 色）对齐，
-   使导航/内容区在标题栏下方形成清晰分界。挂在 nav 本体（PE_Widget 走样式表
-   绘制通道，border 与 background 同受控件自身表规则控制）；Qt 样式表 box model
-   会把 contentsRect 下移 1px，#widget1 等子容器不会盖住这条线。 */
-FluVNavigationView {
-    border-top: 1px solid rgb(72, 78, 88);
+    background-color: rgb(33, 37, 43);
 }
