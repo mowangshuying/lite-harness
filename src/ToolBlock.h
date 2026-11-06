@@ -48,7 +48,7 @@ public:
 
     // 常规工具进行态：身份可见形态照终态卡（bash 显 $、其余显等宽工具名标签 +
     // 类别着色），标题「执行中」圆点轮播，关键参数位即 summary；保持默认折叠
-    // 一行头部（不自动展开——区别 task 卡，长命令高频执行时防内容区闪跳）
+    // 一行头部（不自动展开——与 task 卡同纪律，长命令高频执行时防内容区闪跳）
     void startToolLive(const QString &toolName, const QString &summary);
 
     // 中断终局（stop/error 收口时该工具不再经 toolOutputReady 回流）：停轮播、
@@ -59,7 +59,8 @@ public:
     // ("task") → setToolExecution 收口；stop/error 终局 → finishTaskLiveAborted 兜底）----
 
     // task 进行态：保留工具名标签（task，delegate 类别着色）+「子代理执行中」轮播标题，
-    // 自动展开供进度行逐条可见（ThinkingBlock 流式展开同款；用户手动折叠后不再跟高）
+    // 建卡保持默认折叠（与思考块/队友卡同纪律：live 期间不自动张开，免「块张开＝一直在输出」
+    // 的误读）；进展经头部关键参数位同步为最新一行，要看逐条进度点击头部手动展开
     void startTaskLive();
 
     // 追加一条子代理内部活动行「第 N 轮 · 工具名  关键参数」：内容区整体重组（60 行

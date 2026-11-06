@@ -12,7 +12,7 @@
 
 ThinkingBlock::ThinkingBlock(QWidget *parent) : CollapsibleBlock(parent)
 {
-    // 常规展开限高；进行态单行压缩见 expandedHeightCap 覆写
+    // 常规展开限高：进行态恒折叠不可见，故无压缩分支（见 expandedHeightCap 覆写）
     m_maxExpandedHeight = kMaxThinkingHeight;
 
     // ---- 标题栏：图标 + 耗时文案 + 折叠箭头 ----

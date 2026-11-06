@@ -315,7 +315,7 @@ void CollapsibleBlock::measureContent()
     }
 
     // 展开高度上限：超过后内容区内部滚动（配置滚动条出现与否在动画前确定）；
-    // 具体策略（如 ThinkingBlock 进行态压缩为单行）由子类 expandedHeightCap 决定
+    // 具体限高由子类 expandedHeightCap 决定（默认 m_maxExpandedHeight）
     const int maxExpandedHeight = expandedHeightCap();
 
     QTextDocument *doc = m_content->document();

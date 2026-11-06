@@ -309,7 +309,7 @@ void MessageBubbleWidget::appendThinkingText(const QString &delta)
         else
             m_timeline->addWidget(block);
         m_liveThinking = block;
-        m_liveThinking->startLive();   // 头部切「思考中」并自动展开，增量在下拉区滚动可见
+        m_liveThinking->startLive();   // 头部切「思考中」，块保持折叠，增量走头部预览行
     }
 
     m_liveThinking->appendLiveText(delta);
@@ -746,7 +746,7 @@ void MessageBubbleWidget::stopThinkingInterval()
     m_thinkingRunning = false;
 
     // 本轮思考区间结束（首个正文增量 / 工具到达 / 流收尾三种判定时机）：
-    // 本轮思考块标题切「思考了 N 秒」（N 为本轮耗时），未被打扰则自动折叠
+    // 本轮思考块标题切「思考了 N 秒」（N 为本轮耗时），块保持折叠，全文待用户展开
     if (m_liveThinking)
         m_liveThinking->stopLive(elapsedMs / 1000);
 }

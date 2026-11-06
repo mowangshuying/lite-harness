@@ -25,7 +25,7 @@ class QResizeEvent;
 // （直到 window 或滚动区 viewport 为止）；measureContent 将内容区尺寸固定为
 // min(自然高度, 上限)，动画期间仅平移不重排。
 // 子类差异经虚钩子保留：refreshIcons（主题图标）、liveText（进行态文案）、
-// expandedHeightCap（限高策略）、toggleExpanded（是否记忆用户意愿）、
+// expandedHeightCap（限高策略）、toggleExpanded（是否拒绝切换）、
 // onGeometryApplied（块宽变化后的副效应）、measureContent/scheduleMeasure
 // （内容结构与更新节奏不同时覆写）。
 // 主题装配为子类构造尾部的显式 initTheme() 调用（委托 ThemeAware::bind 完成首刷+订阅）：
@@ -84,10 +84,10 @@ protected:
     // 默认空实现 —— 预览刷新必须挂在既有轮播上，否则每 delta 刷一次标签会让头部
     // 每秒重排几十次（思考块曾经正是这么做的反面教材）
     virtual void onLiveTick() {}
-    // 展开高度上限：默认 m_maxExpandedHeight（ThinkingBlock 进行态压缩为单行）
+    // 展开高度上限：默认 m_maxExpandedHeight（子类覆写可做差异化限高策略）
     virtual int expandedHeightCap() const;
     // 头部点击路径（程序化切换走 setExpanded 不经过此）：
-    // ThinkingBlock 覆写以记住用户意愿
+    // ThinkingBlock 覆写以在进行态拒绝展开（终态才允许手动展开看全文）
     virtual void toggleExpanded();
     // resizeEvent 中头部/内容几何随块宽定位后的钩子（ToolBlock 重排省略号）
     virtual void onGeometryApplied() {}

@@ -890,6 +890,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 - `task` 工具执行时先挂 `startTaskLive()`（标题「子代理执行中」），子代理每完成一轮经 `subagentProgress` → `appendSubagentProgress(turnNo, toolName, summary)` 追加一行。
 - **滑窗丢最旧**：行数上限 `AgentConst::kSubagentProgressMaxLines = 60`，超限丢头部并在日志顶部常驻一条「…更早 %1 条进度已省略」——提示行只有一条、永不重复（整体重组写法）。
+- **建卡保持默认折叠**（用户裁决——与思考块/队友卡同纪律：live 期间不自动张开，免「块张开＝一直在输出」的误读）；要看逐条进度点击头部手动展开，收口时按惯例折回（`setToolExecution` 收口路径与 `finishTaskLiveAborted()` 各折一次）。
 - 折叠态也可见进展：头部关键参数位同步为最新一行（tooltip 全文，按块宽中部省略）。
 - **终态仍由 `toolOutputReady("task")` 唯一收口**：进度行只是过程留痕，绝不替代结果卡；取消/停止走 `finishTaskLiveAborted()` → `applyOutcome("stopped", ■)`（灰方块＝无结果终态，与常规卡同纪律）。
 

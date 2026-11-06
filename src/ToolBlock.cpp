@@ -264,9 +264,9 @@ void ToolBlock::startTaskLive()
     m_outcomeLabel->hide();
     m_titleLabel->setText(liveText());
 
+    // 建卡保持默认折叠（用户裁决——与思考块/队友卡同纪律：live 期间不自动张开，
+    // 免「块张开＝一直在输出」的误读）；进展走头部摘要行，要看逐条进度点击头部手动展开
     startLiveTimer();
-    setExpanded(true);   // 自动展开露出进度区（ThinkingBlock 流式先例；空内容测得≈行距高，
-                         // 首行到达经 contentsChanged→scheduleMeasure 跟高跳变）
 }
 
 void ToolBlock::appendSubagentProgress(int turnNo, const QString &toolName, const QString &summary)
@@ -287,7 +287,7 @@ void ToolBlock::appendSubagentProgress(int turnNo, const QString &toolName, cons
 
     renderSubagentLog();
 
-    // 展开态钉底跟随最新行（ThinkingBlock::appendLiveText 同款范式：延一帧等测高后取最大）
+    // 展开态钉底跟随最新行（延一帧等测高后取最大值；折叠态内容不可见，零副作用）
     if (m_expanded)
     {
         QTimer::singleShot(0, this, [this]() {
@@ -466,7 +466,7 @@ void ToolBlock::startToolLive(const QString &toolName, const QString &summary)
     refreshSummaryLabel();
 
     // 圆点轮播骨架（400ms 相位 0..3 循环）已下沉基类；保持 initCollapsed 折叠形态，
-    // 不自动展开（区别 task 卡）——高频工具执行时防内容区闪跳
+    // 不自动展开（与 task 卡同纪律）——高频工具执行时防内容区闪跳
     startLiveTimer();
 }
 
