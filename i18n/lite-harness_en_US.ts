@@ -418,19 +418,24 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContributionHeatmap</name>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="177"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="167"/>
+        <source>会话活动</source>
+        <translation>Session activity</translation>
+    </message>
+    <message>
+        <location filename="../src/ContributionHeatmap.cpp" line="200"/>
         <source>%1月</source>
         <translation>%1</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="193"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="216"/>
         <source>
 （口径：仅主循环与队友回合，不含压缩/记忆/workflow）</source>
         <translation>
 (Scope: main loop and teammate turns only; excludes compact/memory/workflow)</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="197"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="220"/>
         <source>%1
 输入 %2 · 输出 %3
 缓存命中 %4 · 思考 %5
@@ -441,7 +446,7 @@ Cache hit %4 · Reasoning %5
 %6 usage reads</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="203"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="226"/>
         <source>%1
 无消耗记录</source>
         <translation>%1
@@ -649,12 +654,18 @@ No consumption recorded</translation>
     <name>NewChatPage</name>
     <message>
         <location filename="../src/NewChatPage.cpp" line="53"/>
-        <location filename="../src/NewChatPage.cpp" line="133"/>
+        <location filename="../src/NewChatPage.cpp" line="139"/>
         <source>开始新对话</source>
         <translation>Start a new chat</translation>
     </message>
     <message>
-        <location filename="../src/NewChatPage.cpp" line="81"/>
+        <location filename="../src/NewChatPage.cpp" line="57"/>
+        <location filename="../src/NewChatPage.cpp" line="141"/>
+        <source>选择一个工作目录，开始与 lite-harness 对话</source>
+        <translation>Select a working directory to start chatting with lite-harness</translation>
+    </message>
+    <message>
+        <location filename="../src/NewChatPage.cpp" line="84"/>
         <source>选择工作目录</source>
         <translation>Select Working Directory</translation>
     </message>

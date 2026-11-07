@@ -418,19 +418,24 @@
 <context>
     <name>ContributionHeatmap</name>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="177"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="167"/>
+        <source>会话活动</source>
+        <translation>会话活动</translation>
+    </message>
+    <message>
+        <location filename="../src/ContributionHeatmap.cpp" line="200"/>
         <source>%1月</source>
         <translation>%1月</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="193"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="216"/>
         <source>
 （口径：仅主循环与队友回合，不含压缩/记忆/workflow）</source>
         <translation>
 （口径：仅主循环与队友回合，不含压缩/记忆/workflow）</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="197"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="220"/>
         <source>%1
 输入 %2 · 输出 %3
 缓存命中 %4 · 思考 %5
@@ -441,7 +446,7 @@
 回读 %6 次</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="203"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="226"/>
         <source>%1
 无消耗记录</source>
         <translation>%1
@@ -649,12 +654,18 @@
     <name>NewChatPage</name>
     <message>
         <location filename="../src/NewChatPage.cpp" line="53"/>
-        <location filename="../src/NewChatPage.cpp" line="133"/>
+        <location filename="../src/NewChatPage.cpp" line="139"/>
         <source>开始新对话</source>
         <translation>开始新对话</translation>
     </message>
     <message>
-        <location filename="../src/NewChatPage.cpp" line="81"/>
+        <location filename="../src/NewChatPage.cpp" line="57"/>
+        <location filename="../src/NewChatPage.cpp" line="141"/>
+        <source>选择一个工作目录，开始与 lite-harness 对话</source>
+        <translation>选择一个工作目录，开始与 lite-harness 对话</translation>
+    </message>
+    <message>
+        <location filename="../src/NewChatPage.cpp" line="84"/>
         <source>选择工作目录</source>
         <translation>选择工作目录</translation>
     </message>
