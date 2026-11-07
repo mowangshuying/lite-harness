@@ -2,8 +2,14 @@
 
 #include "BasePage.h"
 
+#include <QDate>
+#include <QHash>
+
+#include "ActivityLedger.h" // 热力图数据形态：QHash<QDate, DayTotal>
+
 class ChatMsgEdit;
 class WorkDirPathBar;
+class ContributionHeatmap;
 class QLabel;
 class QEvent;
 class QShowEvent;
@@ -21,6 +27,10 @@ public:
     // 输入区当前选中的工作目录（宿主创建会话时读取，注入新会话）；
     // 初值取设置页默认目录（存在且为目录时），否则进程当前目录
     QString currentWorkDir() const;
+
+    // 会话活动日账（合并跨会话后）push 入口——宿主 LiteHarness 在启动扫描/回合增量/删除
+    // 会话三处调用。本页面从不直读磁盘、从不订阅 AgentLoop（承 SessionSidebar setter-push 纪律）。
+    void setActivityData(const QHash<QDate, ActivityLedger::DayTotal> &dayMap);
 
 signals:
     void newChatRequested(const QString &text);
@@ -50,4 +60,6 @@ private:
     WorkDirPathBar *m_workDirBar = nullptr; // 只读路径展示 + 浏览入口（省略/配色细节见组件注释）
     QLabel *m_welcomeLabel = nullptr;     // 英雄区问候语（重译面）
     bool m_workDirTouched = false;        // 用户经浏览钮临时改选后不再被外部配置覆盖本页面会话
+    // 会话活动热力图（跨会话合并后由宿主 push 数据）；本页面只创建/布局，从不读写磁盘
+    ContributionHeatmap *m_heatmap = nullptr;
 };

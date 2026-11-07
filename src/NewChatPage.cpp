@@ -11,6 +11,7 @@
 #include <QShowEvent>
 #include "AppSettings.h"
 #include "ChatMsgEdit.h"
+#include "ContributionHeatmap.h"
 #include "LayoutConstants.h"
 #include "ThemeAware.h"
 #include "WorkDirPathBar.h"
@@ -86,12 +87,19 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     connect(m_chatMsgEdit, &ChatMsgEdit::sendMessage, this, &NewChatPage::newChatRequested);
 
-    // 纵向构图：图标 + 问候语 + 输入栏（路径条在上）整组垂直居中，
+    // 纵向构图：图标 + 问候语 + 热力图 + 输入栏（路径条在上）整组垂直居中，
     // 上下留白比例 9 : 10（组心略低于页心，与初版居中观感一致）；
-    // 标题与输入栏之间用固定 36px 间距成组，拉伸窗口时组内不飘散，只整体平移
+    // 标题与热力图、热力图与输入栏各留 24 间距成组，拉伸窗口时组内不飘散，只整体平移
     vMainLayout->addStretch(9);
     vMainLayout->addLayout(heroLayout);
-    vMainLayout->addSpacing(36);
+    vMainLayout->addSpacing(24);
+
+    // 会话活动热力图：跨会话合并后由宿主 push（本页面不直读磁盘）。尺寸走 sizeHint 定宽
+    // 定高、直接 AlignHCenter，不占用居中行容器（那是给会随栏宽伸缩的输入 dock 用的）
+    m_heatmap = new ContributionHeatmap(this);
+    vMainLayout->addWidget(m_heatmap, 0, Qt::AlignHCenter);
+    vMainLayout->addSpacing(24);
+
     vMainLayout->addWidget(makeCenteringRow(m_inputDock, this, &m_dockRowLayout), 0);
     vMainLayout->addStretch(10);
 
@@ -155,4 +163,13 @@ QString NewChatPage::currentWorkDir() const
 {
     // 初值来自设置页默认目录或进程当前目录，用户可经「浏览」临时改选（不落盘）
     return m_workDirBar->path();
+}
+
+void NewChatPage::setActivityData(const QHash<QDate, ActivityLedger::DayTotal> &dayMap)
+{
+    // 宿主 push 入口：本页面从不直读磁盘、不订阅 AgentLoop（承 SessionSidebar 的 setter-push 纪律）。
+    // heatmap 空指针卫兵兜住「构造尚未完成即被调用」——启动扫描发生在主窗口构造里，
+    // 早于本方法第一次可能到达；理论上到得了这里 heatmap 已就位，防御只是保守。
+    if (m_heatmap)
+        m_heatmap->setData(dayMap);
 }

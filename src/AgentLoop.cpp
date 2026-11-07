@@ -538,7 +538,11 @@ void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
     // 消耗累计先走：它与「锚能不能落」是两件事——锚还要求发送点快照自洽（见下方
     // estimatedContextTokens 的锚有效性判据），而消耗是既成事实，只要 usage 本身有效就该记账。
     // 判据单源 UsageTokens::fromUsage（prompt_tokens>0），与本函数第一道门同一条。
-    m_usageTotals.add(UsageTokens::fromUsage(usage));
+    const UsageTokens::Snapshot snapshot = UsageTokens::fromUsage(usage);
+    m_usageTotals.add(snapshot);
+    // 会话每日 token 消耗落账（新会话页热力图数据源）：与 Totals 同一份 snapshot，
+    // 同判据（invalid 不落地）；卫兵与 persistHistory 对齐（无 dataId 不落账）。
+    appendActivityLedger(snapshot);
 
     const qint64 promptTokens = qint64(usage.value(QStringLiteral("prompt_tokens")).toDouble());
     if (promptTokens <= 0)

@@ -150,11 +150,17 @@ jobs:
         # 零夹具恒跑）。本机全量实跑 1903 + 40 = 1943，下界 1680→1720（1943×0.9≈1749，取整仍留余量）。
         # 逐套拆分现值（本轮插桩实跑，带夹具 1943 / 不带夹具 988）：tst_settingscache 89 = 恒跑 35 + 夹具门控 54、
         # tst_fluconfigstore 75 = 49 + 26、tst_fluconfigutils 47 = 4 + 43、tst_uiscale 68（零夹具）；上文历史批次条目按「不改历史只登记」保留原值。
+        # 会话活动热力图（s17.8 未定版本号）：新增 tst_activityledger（本机实跑 58 条 = 恒跑组 42 +
+        # 夹具门控组 16，ActivityLedger.h 纯头：五档阈值边界 / 日期键严格 ISO 往返（斜杠写法必须拒）/
+        # accumulateSnapshot 无效快照丢弃 / totalProcessed / aggregate 跨会话合并 / windowFilter 闭区间 /
+        # 文件读写往返 / 脏 JSON 降级到空表）；本机全量实跑 2001（含 1 条 junction 夹具 skip，同为下浮基准；
+        与上一批登记值 1943 + 58 = 2001 逐条对账）。下界 1720→1800（2001×0.9≈1801，取整仍留余量——
+        58 条里 16 条挂在 LITE_TEST_TMPROOT 夹具门上，缺该变量残 42 条，故不逼到满量附近）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1720'
+          $env:LITE_TEST_MIN_PASS = '1800'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

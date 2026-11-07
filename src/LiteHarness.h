@@ -3,7 +3,11 @@
 #include <FLuFrameLessWidget.h>
 #include <FluStackedLayout.h>
 #include <FluVNavigationView.h>
+#include <QDate>
+#include <QHash>
 #include "SessionRegistry.h"
+
+#include "ActivityLedger.h" // 会话每日 token 消耗账本缓存（新会话页热力图数据源）
 
 class NewChatPage;
 class NavItem;
@@ -25,6 +29,12 @@ public:
 
 /// slots;
     void onThemeChanged();
+
+signals:
+    // 会话活动缓存变更（新会话页热力图数据源）：每次扫描/增量/删除后 push 到 NewChatPage。
+    // 本信号仅内部路由，无外部订阅者（保留为将来侧栏/统计面板同源复用留口）。
+    void activityCacheChanged();
+
 private:
     void createSession(const QString &text);
     // 启动恢复：先把旧 <config>/index.json 一次性搬进 config.json 键 app/sessions，再从该键读取
@@ -57,6 +67,15 @@ private:
     void hookContextMenu(QWidget *childItem);
     // 沿 parentWidget 链向上解析首个登记在册的会话子项本体；未命中返回 nullptr
     FluVNavigationIconTextItem *resolveSessionItem(QWidget *w) const;
+
+    // —— 会话活动账本缓存（新会话页热力图数据源） ——
+    // 启动一次性扫过全部会话的 <会话根>/.activity/daily.json 灌进缓存，之后仅在
+    // 回合结束（activitySessionChanged 转发）/ 会话删除时增量刷新。视图（NewChatPage）
+    // 从不直读磁盘、也从不订阅 AgentLoop：数据经本类 push 过去（承 SessionSidebar 的
+    // setter-push 纪律）。
+    void scanActivityLedgers();
+    void refreshActivityForDataId(const QString &dataId);
+    void pushActivityToNewChat();
 
 protected:
     // 拦截 Sessions 分组子项的右键：按下即弹菜单并吞掉，释放一并吞掉，
@@ -96,4 +115,8 @@ protected:
     // 会话映射数据（key↔页面/数据ID、导航子项、右键受控控件）全部收进注册表；
     // 主窗口不再直持任何会话表，所有权与删除时序不变（注册表只持观察指针）
     SessionRegistry m_registry;
+
+    // 会话活动缓存：dataId → 该会话的每日 token 消耗。回合结束/启动扫描/删除会话三处维护；
+    // 视图（NewChatPage 热力图）每次拿到的是本表按 QDate 聚合后的合并视图。
+    QHash<QString, QHash<QDate, ActivityLedger::DayTotal>> m_activityCache;
 };

@@ -66,6 +66,10 @@ public:
 signals:
     // 导航徽章联动（评审 B3）：回合运行态广播给宿主，用于会话子项标题前缀 ●/✓
     void navRunningChanged(bool running);
+    // 会话每日 token 消耗账本变更（新会话页热力图数据源，见 ActivityLedger.h）：
+    // 转发 AgentLoop::activitySessionChanged 给宿主 LiteHarness，宿主据此重读本会话
+    // daily.json 更新缓存并推给 NewChatPage 的 ContributionHeatmap。
+    void activitySessionChanged(const QString &dataId);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

@@ -41,6 +41,7 @@ int tst_navkeys();            // P2：导航键前缀一致性（NavKeys.h），
 int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h），零夹具恒跑
 int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
+int tst_activityledger();     // 会话每日 token 消耗账本（ActivityLedger.h）：阈值/日期键/累加/求和/截断恒跑 + 读写往返/脏数据降级夹具门控
 
 static int runSuite(const char *name, int (*fn)())
 {
@@ -83,6 +84,7 @@ int main()
     failed += runSuite("layoutconst", tst_layoutconst);
     failed += runSuite("agentconst", tst_agentconst);
     failed += runSuite("compacttranscript", tst_compacttranscript);
+    failed += runSuite("activityledger", tst_activityledger);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

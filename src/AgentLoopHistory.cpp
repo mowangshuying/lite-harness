@@ -6,6 +6,7 @@
 
 #include "AgentLoopInternal.h"
 #include "CompactTranscript.h"
+#include "LitePaths.h" // activityDailyPathFor 锚点单源（会话每日消耗账本落点）
 
 #include <QJsonDocument>
 #include <QDir>
@@ -185,4 +186,38 @@ QVector<QJsonObject> AgentLoop::replayHistoryMessages() const
     if (m_messages.isEmpty())
         return QVector<QJsonObject>();
     return CompactTranscript::expand(m_messages.mid(1), sessionDataRoot());
+}
+
+// 会话每日 token 消耗落账（新会话页热力图数据源，见 ActivityLedger.h）：
+// 承 adoptUsageAnchor 的 usage 快照，读改写 <会话根>/.activity/daily.json，成功即 emit
+// activitySessionChanged(m_sessionDataId)。卫兵与 persistHistory 同——无 dataId 不落账
+// （未隔离会话不污染全局 .lite-harness 目录）。invalid 快照由 accumulateSnapshot 内部
+// 忽略，与 Totals::add 同判据；本函数不重复判据，只走 IO。
+//
+// 落盘失败仅 LOG_WARN、不打断回合、不 emit——消耗账本是观测面而非承重数据，一次失败
+// 至多让热力图少一格读数，不影响 history.json 与会话恢复。半写文件下次读会走
+// ActivityLedger::readDaily 的「坏 JSON → 空表」降级路径，不污染聚合。
+void AgentLoop::appendActivityLedger(const UsageTokens::Snapshot &snapshot)
+{
+    if (m_sessionDataId.isEmpty())
+        return;
+
+    const QString path = LitePaths::activityDailyPathFor(sessionDataRoot());
+    QDir().mkpath(QFileInfo(path).absolutePath()); // 目录首用自愈（仿 AgentConstants 惯例）
+
+    auto data = ActivityLedger::readDaily(path);
+    const QDate today = QDate::currentDate();
+    ActivityLedger::DayTotal &day = data[today];
+    ActivityLedger::accumulateSnapshot(day, snapshot);
+    // 无效快照：accumulateSnapshot 不动 day，但 data[today] 已插入默认值 DayTotal{}。
+    // 若不回滚，daily.json 会多出「零值日」条目、下次读回聚合出「有账但全 0」的假形态。
+    // 判据：calls==0 即从未累加过，直接删除该键。
+    if (day.calls == 0 && day.prompt == 0 && day.completion == 0)
+        data.remove(today);
+
+    if (!ActivityLedger::writeDaily(path, data)) {
+        LOG_WARN << QStringLiteral("[activity] daily.json 落账失败 %1").arg(path);
+        return;
+    }
+    emit activitySessionChanged(m_sessionDataId);
 }

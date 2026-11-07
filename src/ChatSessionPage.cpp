@@ -625,6 +625,12 @@ void ChatSessionPage::wireAgent()
     connect(m_agentLoop, &AgentLoop::goalStateChanged, m_sidebar,
             &SessionSidebar::setGoalState);
 
+    // 会话每日 token 消耗账本变更 → 转发宿主（新会话页热力图数据源，见 ActivityLedger.h）：
+    // 侧栏不吃这个信号（热力图不在侧栏），LiteHarness 订阅后重读本会话 daily.json、
+    // 更新全局缓存、推给 NewChatPage 的 ContributionHeatmap。context=this 保页面析构自动断连。
+    connect(m_agentLoop, &AgentLoop::activitySessionChanged, this,
+            &ChatSessionPage::activitySessionChanged);
+
     // 定时任务送达（lcc s12）：后端空闲 tick 交付——展示走带前缀文本，活跃请求走无原文本
     //（lcc deliver 双形态）；复用用户发消息的既有两步链路。首行 isRunning 防御分支
     // 同栈直连下理论不可达（tryDeliverCron 已查 m_running），保留作后端契约变动的保险

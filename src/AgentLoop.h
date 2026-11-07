@@ -26,6 +26,8 @@
 #include "AgentTeamsManager.h"
 #include "TeammateRuntime.h" // m_teammateRuntimes 值类型 + 宿主回合驱动
 #include "UsageTokens.h"     // 会话用量累计器值成员需完整类型（纯头，QtCore-only）
+#include "ActivityLedger.h"  // 会话每日 token 消耗账本（新会话页热力图数据侧，纯头 QtCore-only；
+                             // activitySessionChanged 信号触发 LiteHarness 侧重读本会话 daily.json）
 #include "StreamRate.h"      // 输出速度账值成员需完整类型（纯头，QtCore-only；窗口判据单源）
 // s14 MCP（机制层 + 空注册表，Lead 独占）：按值成员需完整类型
 #include "McpManager.h"
@@ -209,6 +211,11 @@ signals:
     // goal 常驻态快照（GoalManager 读侧组装，见 AgentLoopGoal.cpp::goalStateSnapshot）；
     // 空对象 = 无 active goal（侧栏整节隐藏）。字段只随引擎活动变化，静息期签名恒定
     void goalStateChanged(const QJsonObject &state);
+    // 会话每日 token 消耗账本变更（新会话页热力图数据源，见 ActivityLedger.h）：
+    // 每次 usage 回读落账后 emit，载荷即本会话 dataId。LiteHarness 侧订阅、重读本会话
+    // daily.json 更新缓存、emit activityCacheChanged 通知 NewChatPage 增量刷新。
+    // 卫兵与 persistHistory 同：m_sessionDataId 空则不 emit（未隔离会话不落账）。
+    void activitySessionChanged(const QString &dataId);
     // 记忆沉淀阶段开始（仅自然结束分支，异步化 P2）：finished 同栈随后发射，提取/合并链
     // 已改为 QOpenAi::AsyncRequest 异步执行（startMemoryChain，不再阻塞事件循环），
     // UI 据此定稿 markdown 并在时间线挂记忆进度 live 卡、保留气泡引用供结果卡就地切换
@@ -484,6 +491,10 @@ private:
     // 采纳 ChatStream::usageReceived 回传的 usage.prompt_tokens 为锚（<=0 忽略；同时以发送点
     // 快照 m_lastSendHistoryCount/m_lastSendInjectionTokens 落锚、清历史改写标记）
     void adoptUsageAnchor(const QJsonObject &usage);
+    // 会话每日 token 消耗落账（承 adoptUsageAnchor 的 usage 快照）：读改写
+    // <会话根>/.activity/daily.json（QSaveFile 原子）+ emit activitySessionChanged。
+    // 定义落 AgentLoopHistory.cpp（同 TU 已持 LiteLog.h，落盘失败留痕与本 TU 惯例同源）。
+    void appendActivityLedger(const UsageTokens::Snapshot &snapshot);
     // ---- 输出速度定窗（判据单源 StreamRate.h；本处只做时刻观测）----
     // 起表 = 流建立（doStartChatRequest）；标点 = 本轮首个增量（thinking/text delta）；
     // 收窗 = usage 末帧到达（契约 C-2，恒先于 messageFinished）。三个时刻都在请求回合内，

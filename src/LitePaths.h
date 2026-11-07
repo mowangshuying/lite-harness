@@ -112,6 +112,18 @@ public:
         return joined(sessionsRootFor(root), dataId);
     }
 
+    // ---- 会话每日 token 消耗账本（新会话页热力图数据源，见 ActivityLedger.h）----
+    // 落点 `<会话根>/.activity/daily.json`，对齐 sessions/<id>/ 下 .task/.memory/.transcripts
+    // 的既有分片惯例——删会话即连带清账本，无跨会话聚合文件、无清理策略。
+    static QString activityDirFor(const QString &sessionRoot)
+    {
+        return joined(sessionRoot, QStringLiteral(".activity"));
+    }
+    static QString activityDailyPathFor(const QString &sessionRoot)
+    {
+        return joined(activityDirFor(sessionRoot), QStringLiteral("daily.json"));
+    }
+
     // ---- 无参便捷口（生产调用点用这一组）----
     static QString configFilePath() { return configFilePathFor(configRoot()); }
     static QString legacyIndexFilePath() { return legacyIndexFilePathFor(configRoot()); }

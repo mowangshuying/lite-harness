@@ -69,6 +69,9 @@ LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
     setupConnections();
     // 导航骨架就绪后、事件循环前恢复历史会话（不切换当前页，仍停留在 NewChatPage）
     restoreSessions();
+    // 会话活动账本一次性扫描（新会话页热力图数据源）：早于首帧 show，页面切到 NewChatPage
+    // 时缓存已就位。此后靠 activitySessionChanged 增量刷新。
+    scanActivityLedgers();
     // 窗口尺寸/位置恢复（P1-11）：须在 show 之前——App.cpp 的 liteharness.show() 在
     // 本构造函数返回之后，故这里就是最后一个合法时机点。
     restoreWindowGeometry();
@@ -244,6 +247,10 @@ void LiteHarness::createSession(const QString &text)
     // 运行态徽标订阅（搜索候选刷新已随搜索项撤除——原此还调 refreshSearchKeys 喂 jump
     // box 候选表，本体 hide 后那是白跑一遍全等候选重建，见 initNavView 三件套注释）
     hookNavBadge(key, sessionPage);
+    // 会话活动增量刷新：AgentLoop 落账 → ChatSessionPage 转发 → 本类现读该会话
+    // daily.json 灌缓存 → push 到 NewChatPage 热力图。sender 为页面：页面销毁自动断连。
+    connect(sessionPage, &ChatSessionPage::activitySessionChanged, this,
+            [this, sessionDataId](const QString &) { refreshActivityForDataId(sessionDataId); });
 
     // 子项构造默认宽 180，addItem 不会继承父宽；借 setItemWidth 的递归语义将全部子项对齐到父项当前宽
     // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
@@ -327,6 +334,9 @@ void LiteHarness::restoreSessions()
         m_registry.mapChildItem(key, childItem);
         // 恢复的会话同样要接运行态徽标：否则重启后首轮对话的导航态恒为静默
         hookNavBadge(key, page);
+        // 恢复会话也接活动增量：与 createSession 同法，页面销毁自动断连
+        connect(page, &ChatSessionPage::activitySessionChanged, this,
+                [this, dataId](const QString &) { refreshActivityForDataId(dataId); });
         // 同 createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
         sessionsItem->setItemWidth(sessionsItem->width());
         // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
@@ -549,6 +559,12 @@ void LiteHarness::deleteSession(const QString &key)
     {
         LOG_WARN << "session data dir not under sessions root, refuse to delete: " << dataRoot;
     }
+
+    // 活动缓存剔除：磁盘目录已随上面递归删除清掉，缓存若无此步则该会话的历史日仍会留在
+    // 热力图上（本进程内），直到下次重启扫描才归位。push 让 NewChatPage 立刻见到合并视图变化。
+    // QHash::remove 返 bool（有无命中），非条目数——命中即 push，未命中说明该会话从未落账
+    if (m_activityCache.remove(dataId))
+        pushActivityToNewChat();
 }
 
 void LiteHarness::hookNavBadge(const QString &key, ChatSessionPage *page)
@@ -559,6 +575,52 @@ void LiteHarness::hookNavBadge(const QString &key, ChatSessionPage *page)
     // 捕获 key 而非 childItem：子项可能被删除重建，每次按 key 现查注册表。
     connect(page, &ChatSessionPage::navRunningChanged, this,
             [this, key](bool running) { applyNavBadge(key, running); });
+}
+
+void LiteHarness::scanActivityLedgers()
+{
+    m_activityCache.clear();
+    // 只遍历已登记的会话（未登记=当前进程不知其存在；旧磁盘残留目录不清理也不进热力图，
+    // 与 config.json 索引口径同源）
+    const QStringList keys = m_registry.keys();
+    for (const QString &key : keys)
+    {
+        const QString dataId = m_registry.dataId(key);
+        if (dataId.isEmpty())
+            continue;
+        refreshActivityForDataId(dataId);
+    }
+    // push 由每个 refresh 各自完成——无变化时也不空白：首帧 NewChatPage 拿到的即是最终合并视图
+}
+
+void LiteHarness::refreshActivityForDataId(const QString &dataId)
+{
+    if (dataId.isEmpty())
+        return;
+    const QString path = LitePaths::activityDailyPathFor(LitePaths::sessionDataRoot(dataId));
+    m_activityCache.insert(dataId, ActivityLedger::readDaily(path));
+    pushActivityToNewChat();
+}
+
+void LiteHarness::pushActivityToNewChat()
+{
+    // 跨会话合并（同一天多会话相加）——Aggregate 语义见 ActivityLedger.h
+    QHash<QDate, ActivityLedger::DayTotal> merged;
+    for (auto it = m_activityCache.constBegin(); it != m_activityCache.constEnd(); ++it)
+    {
+        for (auto d = it.value().constBegin(); d != it.value().constEnd(); ++d)
+        {
+            ActivityLedger::DayTotal &slot = merged[d.key()];
+            slot.prompt += d.value().prompt;
+            slot.completion += d.value().completion;
+            slot.cached += d.value().cached;
+            slot.reasoning += d.value().reasoning;
+            slot.calls += d.value().calls;
+        }
+    }
+    if (m_newChatPage)
+        m_newChatPage->setActivityData(merged);
+    emit activityCacheChanged();
 }
 
 void LiteHarness::applyNavBadge(const QString &key, bool running)
