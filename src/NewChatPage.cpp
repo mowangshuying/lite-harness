@@ -71,10 +71,12 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     // 工作目录路径条（与 ChatSessionPage 共用 WorkDirPathBar）：
     // 「工作目录  <中间省略路径>          浏览」，12px 次要灰字 + 透明扁平按钮，
-    // 弱化不抢焦点；参考图把它放在输入框正下方，作为输入区的一行附属元信息
+    // 弱化不抢焦点；用户裁决置于输入框正上方（选目录是发起前的前置动作，先于输入读取）。
+    // insertWidget(0, …) 而非 addWidget：m_workDirBar 在 chatMsgEdit 之后才构造，
+    // 但布局上须排在它前面，故插到索引 0 把输入框顶到下方。
     m_workDirBar = new WorkDirPathBar(m_inputDock);
     m_workDirBar->enableBrowse();
-    dockLayout->addWidget(m_workDirBar);
+    dockLayout->insertWidget(0, m_workDirBar);
 
     // 初值：设置页默认工作目录（存在且为目录时）优先，否则进程当前目录
     applyStoredWorkDir();
