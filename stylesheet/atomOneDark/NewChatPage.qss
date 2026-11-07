@@ -11,6 +11,13 @@ NewChatPage QLabel#welcomeLabel {
     font-weight: 600;
 }
 
+/* 英雄页副标题：问候语下方一行次要说明，比问候语低一档（15px，亮于工作目录 150
+   = 更强），整体仍强于工作目录行——它离问候语近，读作问候语的一部分 */
+NewChatPage QLabel#subtitleLabel {
+    color: rgb(158, 166, 180);
+    font-size: 15px;
+}
+
 /* 工作目录行：12px 次要信息，题头比路径更浅一档，整体弱于输入框（灰阶取 Atom 前景/注释之间） */
 NewChatPage QLabel#workDirCaption {
     color: rgb(148, 157, 174);

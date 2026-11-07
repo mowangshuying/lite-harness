@@ -48,5 +48,8 @@ private:
     static constexpr int kCellSize = 12;
     static constexpr int kCellGap = 3;
     static constexpr int kMonthLabelHeight = 16;
+    // 卡片页眉带高度：网格上方留一行标题「会话活动」（对齐参考图卡片顶部的页签行；
+    // 本仓只有 token 消耗一个口径，故只画单个标题，不造假的第二页签）
+    static constexpr int kHeaderHeight = 30;
     static constexpr int kPadding = 10;
 };

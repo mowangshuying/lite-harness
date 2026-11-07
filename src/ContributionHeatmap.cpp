@@ -89,8 +89,10 @@ void ContributionHeatmap::setData(const QHash<QDate, ActivityLedger::DayTotal> &
 QSize ContributionHeatmap::sizeHint() const
 {
     const int w = kPadding * 2 + kWeeks * (kCellSize + kCellGap) - kCellGap;
-    const int h = kPadding * 2 + kDaysPerWeek * (kCellSize + kCellGap) - kCellGap
-                  + kMonthLabelHeight;
+    // 顶部多留一行页眉带（kHeaderHeight）放「会话活动」标题，与参考图卡片顶部页签行对齐；
+    // 底部仍留月份标签带高度。
+    const int h = kHeaderHeight + kPadding + kDaysPerWeek * (kCellSize + kCellGap) - kCellGap
+                  + kMonthLabelHeight + kPadding;
     return QSize(w, h);
 }
 
@@ -101,7 +103,8 @@ QSize ContributionHeatmap::minimumSizeHint() const
 
 QRect ContributionHeatmap::gridRect() const
 {
-    return QRect(kPadding, kPadding,
+    // 顶部下移 kHeaderHeight 让出页眉带；网格高度不变，故 sizeHint 相应增长。
+    return QRect(kPadding, kPadding + kHeaderHeight,
                  kWeeks * (kCellSize + kCellGap) - kCellGap,
                  kDaysPerWeek * (kCellSize + kCellGap) - kCellGap);
 }
@@ -151,6 +154,17 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
     p.setPen(palette.cardBorder);
     p.setBrush(palette.cardBg);
     p.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 8, 8);
+
+    // 页眉带标题「会话活动」：本网格唯一口径（token 消耗），故单个左对齐标题，
+    // 不复制参考图「会话 / Credits」双页签——本仓没有第二个数据源，造假页签更糟。
+    // 用 monthText 中性灰（非强调绿），字号 13 半粗，基线落在 header 带垂直居中。
+    p.setPen(palette.monthText);
+    QFont titleFont = p.font();
+    titleFont.setPixelSize(13);
+    titleFont.setWeight(QFont::DemiBold);
+    p.setFont(titleFont);
+    p.drawText(QRect(kPadding, 0, width() - 2 * kPadding, kHeaderHeight),
+               Qt::AlignLeft | Qt::AlignVCenter, tr("会话活动"));
 
     // 网格：列 = 周（0..52），行 = 周内日（0=Sun..6=Sat）
     p.setPen(Qt::NoPen);

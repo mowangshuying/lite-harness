@@ -59,6 +59,7 @@ private:
     QWidget *m_inputDock = nullptr;       // 工作目录路径条 + 输入框的同栏容器（英雄页视觉中心）
     WorkDirPathBar *m_workDirBar = nullptr; // 只读路径展示 + 浏览入口（省略/配色细节见组件注释）
     QLabel *m_welcomeLabel = nullptr;     // 英雄区问候语（重译面）
+    QLabel *m_subtitleLabel = nullptr;    // 英雄区副标题（问候语下方一行次要灰字，参考图两行构图）
     bool m_workDirTouched = false;        // 用户经浏览钮临时改选后不再被外部配置覆盖本页面会话
     // 会话活动热力图（跨会话合并后由宿主 push 数据）；本页面只创建/布局，从不读写磁盘
     ContributionHeatmap *m_heatmap = nullptr;

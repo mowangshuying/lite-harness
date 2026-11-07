@@ -40,9 +40,9 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
                                     LayoutConst::kSideMargin, LayoutConst::kHeroVMargin);
     vMainLayout->setSpacing(0);
 
-    // —— 英雄区：图标 + 问候语，页面唯一的大字，与输入栏成组整体垂直居中 ——
+    // —— 英雄区：图标 + 问候语 + 灰色副标题（参考图两行大字构图），整组顶部锚定 ——
     auto heroLayout = new QVBoxLayout();
-    heroLayout->setSpacing(10);
+    heroLayout->setSpacing(6);
 
     auto iconLabel = new QLabel(this);
     iconLabel->setFixedSize(LayoutConst::kNewChatIconSize, LayoutConst::kNewChatIconSize);
@@ -54,24 +54,27 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
     m_welcomeLabel->setObjectName("welcomeLabel"); // 颜色/字号见 stylesheet/<theme>/NewChatPage.qss
     heroLayout->addWidget(m_welcomeLabel, 0, Qt::AlignHCenter);
 
-    // —— 输入区（视觉中心，略低于页心）：工作目录路径条在上、ChatMsgEdit 在下，同栏同宽 ——
+    m_subtitleLabel = new QLabel(tr("选择一个工作目录，开始与 lite-harness 对话"), this);
+    m_subtitleLabel->setObjectName("subtitleLabel"); // 比问候语低一档的次要灰字
+    heroLayout->addWidget(m_subtitleLabel, 0, Qt::AlignHCenter);
+
+    // —— 输入区（贴底）：ChatMsgEdit 在上、工作目录路径条在下，同栏同宽 ——
     // 栏宽由 resizeEvent 钳 maximumWidth(min(800, 可用宽))，经居中行容器手动留白
     // （修窗口收缩棘轮）；栏内子控件铺满栏宽，无需再单独居中
     m_inputDock = new QWidget(this);
     auto dockLayout = new QVBoxLayout(m_inputDock);
     dockLayout->setContentsMargins(0, 0, 0, 0);
-    dockLayout->setSpacing(8); // 路径条与输入框间距略收紧，两者读作同一组件
-
-    // 工作目录路径条（与 ChatSessionPage 共用 WorkDirPathBar）：
-    // 「工作目录  <中间省略路径>          浏览」，12px 次要灰字 + 透明扁平按钮，
-    // 弱化不抢焦点；左侧缩进 4 与下方输入框内文字起点同列（圆角视觉对齐）等
-    // 构图细节已随组件收敛，配色仍由本页 QSS 的 workDir* 后代选择器命中
-    m_workDirBar = new WorkDirPathBar(m_inputDock);
-    m_workDirBar->enableBrowse();
-    dockLayout->addWidget(m_workDirBar);
+    dockLayout->setSpacing(8); // 输入框与路径条间距略收紧，两者读作同一组件
 
     m_chatMsgEdit = new ChatMsgEdit(m_inputDock);
     dockLayout->addWidget(m_chatMsgEdit);
+
+    // 工作目录路径条（与 ChatSessionPage 共用 WorkDirPathBar）：
+    // 「工作目录  <中间省略路径>          浏览」，12px 次要灰字 + 透明扁平按钮，
+    // 弱化不抢焦点；参考图把它放在输入框正下方，作为输入区的一行附属元信息
+    m_workDirBar = new WorkDirPathBar(m_inputDock);
+    m_workDirBar->enableBrowse();
+    dockLayout->addWidget(m_workDirBar);
 
     // 初值：设置页默认工作目录（存在且为目录时）优先，否则进程当前目录
     applyStoredWorkDir();
@@ -87,21 +90,23 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     connect(m_chatMsgEdit, &ChatMsgEdit::sendMessage, this, &NewChatPage::newChatRequested);
 
-    // 纵向构图：图标 + 问候语 + 热力图 + 输入栏（路径条在上）整组垂直居中，
-    // 上下留白比例 9 : 10（组心略低于页心，与初版居中观感一致）；
-    // 标题与热力图、热力图与输入栏各留 24 间距成组，拉伸窗口时组内不飘散，只整体平移
-    vMainLayout->addStretch(9);
+    // 纵向构图（对齐参考图）：英雄区 + 热力图整组居中于「输入框之上」的可视空间，
+    // 输入 dock 贴底。上下各挂一份等权 stretch，组心落在这段空间的中点（读作页面中部）；
+    // 窗口拉高时两组仍居中+贴底，不飘散。底部再留 24 固定间隙，输入框不紧贴视口下沿。
+    vMainLayout->addStretch(1);
     vMainLayout->addLayout(heroLayout);
-    vMainLayout->addSpacing(24);
+    vMainLayout->addSpacing(28);
 
     // 会话活动热力图：跨会话合并后由宿主 push（本页面不直读磁盘）。尺寸走 sizeHint 定宽
     // 定高、直接 AlignHCenter，不占用居中行容器（那是给会随栏宽伸缩的输入 dock 用的）
     m_heatmap = new ContributionHeatmap(this);
     vMainLayout->addWidget(m_heatmap, 0, Qt::AlignHCenter);
-    vMainLayout->addSpacing(24);
+
+    // 下方弹性空白与上方等权：共同把英雄+热力图这一组钳在输入框之上空间的中部
+    vMainLayout->addStretch(1);
 
     vMainLayout->addWidget(makeCenteringRow(m_inputDock, this, &m_dockRowLayout), 0);
-    vMainLayout->addStretch(10);
+    vMainLayout->addSpacing(24);
 
     // 页面级 QSS：bind 完成首载与 themeChanged 联动（BasePage 构造期不再虚调用，
     // 见其注释；旧「构造尾 onThemeChanged() + 派生链调 BasePage」由这一行等价取代）
@@ -129,8 +134,12 @@ void NewChatPage::changeEvent(QEvent *event)
 {
     // i18n 第八轮：欢迎语为常驻文案，LanguageChange（applyLanguage 重装 translator
     // 触发广播）时重取 tr()；当前链路启动前已装载，本钩子兜底同进程演进场景
-    if (event->type() == QEvent::LanguageChange && m_welcomeLabel)
-        m_welcomeLabel->setText(tr("开始新对话"));
+    if (event->type() == QEvent::LanguageChange) {
+        if (m_welcomeLabel)
+            m_welcomeLabel->setText(tr("开始新对话"));
+        if (m_subtitleLabel)
+            m_subtitleLabel->setText(tr("选择一个工作目录，开始与 lite-harness 对话"));
+    }
     BasePage::changeEvent(event);
 }
 
