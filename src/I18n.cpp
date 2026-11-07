@@ -78,7 +78,7 @@ void applyLanguage(const QString &lang)
         // 新源文本身（中文），与装载前行为一致，绝不会把界面锁在陈旧中文上。
         installTranslator(QStringLiteral(":/i18n/lite-harness_zh_CN.qm"));
         // 不再内嵌 qtbase 中文 qm（裁决：免 136KB 二进制入库）——Qt 标准对话框
-        // （QFileDialog/QMessageBox 等）按钮回退英文，属已知取舍；
+        // （现仅剩 QFileDialog，确认框已全部 FluentUI 化）按钮回退英文，属已知取舍；
         // Controls.zh-CN.qm 由 FluentUI 静态库自带资源提供（:/i18n/ 同路径），
         // 直接复用官方中文，FluentUI 控件中文不受影响。
         installTranslator(QStringLiteral(":/i18n/Controls.zh-CN.qm"));

@@ -483,19 +483,19 @@
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="144"/>
-        <location filename="../src/LiteHarness.cpp" line="773"/>
+        <location filename="../src/LiteHarness.cpp" line="785"/>
         <source>新建对话</source>
         <translation>新建对话</translation>
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="151"/>
-        <location filename="../src/LiteHarness.cpp" line="775"/>
+        <location filename="../src/LiteHarness.cpp" line="787"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="154"/>
-        <location filename="../src/LiteHarness.cpp" line="777"/>
+        <location filename="../src/LiteHarness.cpp" line="789"/>
         <source>设置</source>
         <translation>设置</translation>
     </message>
@@ -531,12 +531,12 @@
         <translation>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="718"/>
+        <location filename="../src/LiteHarness.cpp" line="729"/>
         <source>退出确认</source>
         <translation>退出确认</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="719"/>
+        <location filename="../src/LiteHarness.cpp" line="730"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>任务仍在运行，退出将丢失未完成回合。确定退出吗？</translation>
     </message>
@@ -654,18 +654,18 @@
     <name>NewChatPage</name>
     <message>
         <location filename="../src/NewChatPage.cpp" line="53"/>
-        <location filename="../src/NewChatPage.cpp" line="139"/>
+        <location filename="../src/NewChatPage.cpp" line="141"/>
         <source>开始新对话</source>
         <translation>开始新对话</translation>
     </message>
     <message>
         <location filename="../src/NewChatPage.cpp" line="57"/>
-        <location filename="../src/NewChatPage.cpp" line="141"/>
+        <location filename="../src/NewChatPage.cpp" line="143"/>
         <source>选择一个工作目录，开始与 lite-harness 对话</source>
         <translation>选择一个工作目录，开始与 lite-harness 对话</translation>
     </message>
     <message>
-        <location filename="../src/NewChatPage.cpp" line="84"/>
+        <location filename="../src/NewChatPage.cpp" line="86"/>
         <source>选择工作目录</source>
         <translation>选择工作目录</translation>
     </message>

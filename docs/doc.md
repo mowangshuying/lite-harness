@@ -634,7 +634,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 键盘上下文菜单：选中会话子项后按 Shift+F10 或菜单键 → 同样弹「重命名 / 删除会话」；鼠标右键与键盘**各弹一次**（鼠标路径走 press/release 延拍、键盘走 ContextMenu，两条路不得双弹）
 - [ ] 重命名：输入新名确认 → 导航与索引标题同步（索引不再刷 `lastActiveMs`，该字段已删）；取消/空/未变 → 保持原值
 - [ ] 删除：弹「此操作不可撤销」确认 → 确认后页面销毁、索引条目移除、`sessions/<id>/` 整目录递归清理；删的若是当前页则切回新对话页；运行中会话先 `stop()` 再删；数据清理失败仅 qWarning、UI 状态照常收清
-- [ ] 有会话运行中点窗口关闭 → 弹「任务仍在运行，退出将丢失未完成回合。确定退出吗？」且默认焦点「否」；选「否」→ 不退出、任务继续；选「是」→ 逐页 `stop()` 后退出
+- [ ] 有会话运行中点窗口关闭 → 弹「任务仍在运行，退出将丢失未完成回合。确定退出吗？」，**默认键钉在「取消」**（`FluMessageBox` 无 Yes/No 形态，只有确定/取消；不钉则实测回车与空格都命中排首位的「确定」＝直接丢未完成回合，属数据丢失级回归）；点「取消」/按 Esc → 不退出、任务继续；点「确定」→ 逐页 `stop()` 后退出
 
 ### 三、P0 Agent 主循环与权限门
 
@@ -721,7 +721,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 设置页语言切「English」→ 弹「语言切换将在重启后生效。是否立即重启?」；允许 → `exit(931)` + `startDetached` 自重启，重启后**有且仅有一个**实例（main 对 rc==931 只透传，严禁二次拉起=双启缺陷回归点）
 - [ ] 重启确认框点取消 → 不重启（close 复用退出守卫）；语言已落 `config.json`，下次启动生效
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
-- [ ] Qt 标准对话框（QFileDialog/QMessageBox 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译
+- [ ] Qt 标准对话框（仅剩 QFileDialog 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译；确认框已全量 FluentUI 化（`FluMessageBox` 的「确定/取消」中文由 FluentUI 自带 `Controls.zh-CN.qm` 提供，不走 qtbase）
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
 - [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（17.7）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s17.7`；lcc 阶段名仍是 `s17`，`.7` 是补丁位、先例 `s13.1`/`s16.1`/`s17.1`/`s17.2`；补丁位不要求连号，`s17.4` 已按用户裁决跳过且后续不再启用），全仓无散落硬编码；侧栏页脚 `lite-harness s17.7` 不带多余 `v`
 

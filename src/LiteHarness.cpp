@@ -16,6 +16,7 @@
 #include <FluRoundMenu.h>
 #include <FluAction.h>
 #include <FluMessageBox.h>
+#include <FluPushButton.h>    // 退出确认取「取消」键钉默认键（closeEvent 用，勿删）
 #include "NavItem.h"          // NavItem / NavKey（本文件导航装配段依赖，勿删）
 #include "LayoutConstants.h"  // LayoutConst::kWindowMinWidth/Height（P0-2 最小窗尺寸）
 #include "AppSettings.h"      // P1-11 窗口几何持久化读写单点
@@ -35,7 +36,6 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QCloseEvent>
-#include <QMessageBox>
 #include "FluentInputDialog.h"
 #include "ThemeAware.h"
 #include <FluScrollBar.h>        // 导航列内浮动滚动条（底色对齐追加块的目标控件）
@@ -714,11 +714,23 @@ void LiteHarness::closeEvent(QCloseEvent *event)
 
     if (!running.isEmpty())
     {
-        const auto ret = QMessageBox::question(
-            this, tr("退出确认"),
-            tr("任务仍在运行，退出将丢失未完成回合。确定退出吗？"),
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-        if (ret != QMessageBox::Yes)
+        // FluMessageBox 只有「确定/取消」两键、无 Yes/No 形态，故原 Yes/No 在此映射为
+        // 确定＝退出、取消＝不退出。**默认键必须钉在「取消」**：原 QMessageBox::question
+        // 显式传 defaultButton=No，回车＝不退出；而 FluMessageBox 不给按钮设默认键，实测
+        // （等价控件树 + 真实 exec() 事件循环）裸用时回车与空格都命中排首位的「确定」＝
+        // 直接退出——那是丢未完成回合的数据丢失级回归，不是观感问题。
+        // 杠杆只有 QPushButton::setDefault：Qt 6.9 的 QDialog 没有 setDefaultButton/
+        // defaultButton 公开 API（探针编译实证 C2039），而 setDefault(true) 实测同时把
+        // 焦点也带过去（回车/空格/Esc 三条路全部收敛到「不退出」），无需再 setFocus。
+        // 取按钮只能按类型 findChild：FluMessageBox 的按钮是 protected 且无 getter，而其内
+        // 唯一的 FluPushButton 就是取消键（「确定」是 FluStyleButton，二者均直接继承
+        // QPushButton、互不为父子类，故按类型取不会串到确定键）。取不到就退回裸行为——
+        // 宁可少一层保护，也不要崩在退出路径上。
+        FluMessageBox box(tr("退出确认"),
+                          tr("任务仍在运行，退出将丢失未完成回合。确定退出吗？"), this);
+        if (auto *cancel = box.findChild<FluPushButton *>())
+            cancel->setDefault(true);
+        if (box.exec() != QDialog::Accepted)
         {
             event->ignore();
             return;
