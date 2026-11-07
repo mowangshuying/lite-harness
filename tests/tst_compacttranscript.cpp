@@ -26,7 +26,7 @@ namespace {
 
 using TestHarness::check;
 
-const QString kRoot = QStringLiteral("D:/lite-harness-s17.7-win64/config/.lite-harness/sessions/0123abcd");
+const QString kRoot = QStringLiteral("D:/lite-harness-s17.8-win64/config/.lite-harness/sessions/0123abcd");
 const QString kTranscripts = kRoot + QStringLiteral("/.transcripts");
 
 QJsonObject userMessage(const QString &content)
