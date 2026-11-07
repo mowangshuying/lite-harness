@@ -1,6 +1,7 @@
 #include "ContributionHeatmap.h"
 
 #include "ThemeAware.h"
+#include "UsageTokens.h" // 紧凑读数单源 formatCompact（热力图 tooltip 的四个 token 字段）
 
 #include <FluThemeUtils.h>
 
@@ -217,10 +218,15 @@ void ContributionHeatmap::mouseMoveEvent(QMouseEvent *event)
     QString tip;
     if (m_data.contains(date)) {
         const ActivityLedger::DayTotal &day = m_data.value(date);
+        // 四个 token 字段走紧凑口径：热力图没有行内读数，tooltip 就是唯一的展示面，
+        // 长数字在这里同样刺眼（跨会话合并后的单日 prompt 可达七位）。calls 是次数
+        // 不是 token，量级小且用户会拿它对账「今天回读了几次」，保持精确整数。
         tip = tr("%1\n输入 %2 · 输出 %3\n缓存命中 %4 · 思考 %5\n回读 %6 次")
-                  .arg(date.toString(QStringLiteral("yyyy-MM-dd")))
-                  .arg(day.prompt).arg(day.completion)
-                  .arg(day.cached).arg(day.reasoning)
+                  .arg(date.toString(QStringLiteral("yyyy-MM-dd")),
+                       UsageTokens::formatCompact(day.prompt),
+                       UsageTokens::formatCompact(day.completion),
+                       UsageTokens::formatCompact(day.cached),
+                       UsageTokens::formatCompact(day.reasoning))
                   .arg(day.calls);
     } else {
         tip = tr("%1\n无消耗记录").arg(date.toString(QStringLiteral("yyyy-MM-dd")));

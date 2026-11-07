@@ -625,8 +625,11 @@ void SessionSidebar::setGoalState(const QJsonObject& state) {
     QStringList parts;
     parts << tr("轮次 %1").arg(iterations);
     parts << tr("拦阻 %1/%2").arg(blocks).arg(cap);
+    // 消耗同样走紧凑口径（与状态条消耗段、上面「上下文」数字行同一单源）：goal 可以
+    // 连跑几十回合，全量数字在这里必然把摘要行挤掉。本行没有 tooltip 承载精确值——
+    // 摘要是三段拼一行，精确账在评估器侧的 GoalManager::status() 全文回显里仍可查。
     if (tokensUsed > 0)
-        parts << tr("消耗≈%1 tok").arg(tokensUsed);
+        parts << tr("消耗≈%1 tok").arg(UsageTokens::formatCompact(tokensUsed));
     m_goalSection->setSummary(parts.join(QStringLiteral(" · ")));
     // 单行常驻：不授折叠资格（条件再长也是一行）
     m_goalSection->setCollapsible(false);
@@ -745,15 +748,19 @@ void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens
     m_contextMeter->setRatio(ratio);
 
     const QLocale loc(QLocale::c());
-    // 数字行（精确读数，自 ChatStatusStrip 迁入本节节尾）：首个读数到达即显，空账期隐藏。
+    // 数字行（自 ChatStatusStrip 迁入本节节尾）：首个读数到达即显，空账期隐藏。
+    // 行内走紧凑口径（K/M）——占用与消耗都是「位数会随会话变长」的读数，写死全量数字
+    // 在 225px 侧栏里必然被省略号截断；**精确值不丢**，逐字落在下面的 tooltip 里。
     m_contextNumbers->setText(tr("≈%1 / %2 token · %3%")
-                                  .arg(loc.toString(usedTokens),
-                                       loc.toString(limitTokens),
+                                  .arg(UsageTokens::formatCompact(usedTokens),
+                                       UsageTokens::formatCompact(limitTokens),
                                        QString::number(ratio * 100.0, 'f', 1)));
     m_contextNumbers->setVisible(true);
     // tooltip 写口径边界：读数只说「多大」，不说分母是 config.json 字符串上限的派生值（/4），
     // 也不说估算与压缩触发同源、会被后续回读覆盖——这两句决定读数能不能用来判断会不会被
     // 压缩改写。条与数字同节同口径共用一份 tooltip；数字已在条下，不再指向状态条。
+    // 本行是**千分位精确值**（行内是紧凑口径），所以这里的数字位数比行内长是可接受的：
+    // tooltip 不参与布局压缩，长就长。
     const QString tip = tr("上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。")
                             .arg(loc.toString(usedTokens), loc.toString(limitTokens));
     m_contextNumbers->setToolTip(tip);

@@ -2,7 +2,9 @@
 
 // 服务端 usage 用量计量纯头（header-only，零 CMake 改动即入 ctest，仿 CompactTokens.h 先例）：
 // `fromUsage` 把 ChatStream::usageReceived 回传的 usage 对象解析成快照，`Totals` 做会话级累加
-// 与缓存命中率派生。纯函数、无状态、无 IO、无翻译——格式化与 tr() 全在消费方（SessionSidebar）。
+// 与缓存命中率派生。纯函数、无状态、无 IO、无翻译——**词条与句子组装（tr()）全在消费方**
+// （ChatStatusStrip / SessionSidebar / ContributionHeatmap）。**唯一的例外是 `formatCompact`**：
+// 它是数字口径不是文案，见其定义处的理由说明。
 //
 // 为什么单独成头（而非塞进 AgentLoop.cpp）：解析与累加是**算术**，与「谁在计量」无关；
 // AgentLoop / TeammateRuntime 两条链都要用，而 AgentLoop TU 链 QOpenAi/FluentUI，按
@@ -23,6 +25,8 @@
 // DashScope 兼容模式两项都回，而部分兼容端点一项都不回）→ 取不到即 0，不视为解析失败。
 
 #include <QJsonObject>
+#include <QLatin1Char>
+#include <QString>
 
 namespace UsageTokens {
 
@@ -41,6 +45,61 @@ inline qint64 numberOrZero(const QJsonObject &object, const QString &key)
 {
     const qint64 value = qint64(object.value(key).toDouble());
     return value > 0 ? value : 0;
+}
+
+// 紧凑读数（K / M）：行内与摘要位用它——状态条消耗段、侧栏「上下文」数字行、侧栏 goal
+// 消耗、热力图 tooltip。精确读数不走这里，仍由消费方经 QLocale::c().toString() 出千分位，
+// 且只出现在 tooltip 里：紧凑与精确分处两个视图，同一时刻用户能从「1.2K」跳回
+// 「1,234 输入 / 567 产出」，不会因为紧凑而丢可核对的原值。
+//
+// 口径（四条都是决策，不是疏漏）：
+//  · <1000 原样整数（"847"）——小数字带小数点反而更难读，也不产生「1.0K」这种假精度；
+//  · <1e6 折 K、>=1e6 折 M，一位小数四舍五入，整十位省掉 ".0"（2000→"2K"、2500→"2.5K"）；
+//  · K 档四舍五入进位到 1000 时升一档成 M，绝不出 "1000K"；
+//  · **刻意只到 M，不设 G/B**：token 计数现实里到不了十亿，真到了显示 "1234.6M" 仍远短于
+//    千分位全量，而多一种单位会让本头的口径与 tooltip 的口径分叉（用户要在两处认两种缩写）。
+//
+// 文案里刻意不再加「≈」：K/M 后缀本身就是「已四舍五入」的信号，再加 ≈ 会新增一批 tr()
+// 词条、让状态条与侧栏两套措辞分叉，而精确值本来就在 tooltip 里可查。
+//
+// 全程整数运算，不走 double：double 在 2^53 以上丢精度，而这里只是整型除法 + 四舍五入。
+// 舍入一律「先除后取整」——`round(magnitude/1000*10)` 恒等于 `round(magnitude/100)`，
+// 写成 (magnitude + 50) / 100 而不是 (magnitude * 10 + 500) / 1000，是为了让被乘数
+// 永远不超过入参本身：qint64 在 9.2e18 量级，*10 会溢出（长会话累计 + 未来更大端点
+// 并非不可能），而加法版最多溢出 50 的量、且实际只在 magnitude 接近上限时才可能。
+inline QString formatCompact(qint64 value)
+{
+    const bool negative = value < 0;
+    // 绝对值用 unsigned 域取：qint64 最小负数取反是 UB（-9.2e18 超出正范围 1），
+    // 本函数唯一的负值入口就是这条防御性透传。
+    const quint64 magnitude = negative ? quint64(-(value + 1)) + 1ULL : quint64(value);
+
+    QString digits;
+    if (magnitude < 1000ULL) {
+        digits = QString::number(magnitude);
+    } else {
+        // K 档：tenths = 一位小数的整十位表示 = round(magnitude / 100)
+        const quint64 kTenths = (magnitude + 50ULL) / 100ULL;
+        if (kTenths < 10000ULL) {       // < 1000.0K：留在 K 档
+            digits = QString::number(kTenths / 10ULL);
+            if (const quint64 frac = kTenths % 10ULL) {   // 整十位省掉 ".0"
+                digits += QLatin1Char('.');
+                digits += QString::number(frac);
+            }
+            digits += QLatin1Char('K');
+        } else {                        // 进位到 1000K 及以上：走 M 档
+            const quint64 mTenths = (magnitude + 50000ULL) / 100000ULL;
+            digits = QString::number(mTenths / 10ULL);
+            if (const quint64 frac = mTenths % 10ULL) {
+                digits += QLatin1Char('.');
+                digits += QString::number(frac);
+            }
+            digits += QLatin1Char('M');
+        }
+    }
+    if (negative)
+        digits.prepend(QLatin1Char('-'));
+    return digits;
 }
 
 // 上下文占用率：used / limit。limit<=0 返回 0，上界钳到 1.0（与 hitRatio 同一条钳法）。

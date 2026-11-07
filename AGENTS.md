@@ -59,7 +59,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    穷举 / 缺失文件态 / 200 次热读只装载一次 / 四类外部手改（等长·变长·新增·删除）立即生效 / 缓存与
    现取逐键一致（含类型与大小写变体）/ 裸逗号串 QStringList 形态不被抹平 / 写侧落盘与失效成对，
    实跑 89 条 = 恒跑组 35 + 夹具门控组 54）/ `tst_usagetokens`（用量计量纯头 `UsageTokens.h`：有效性门 /
-   只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 details 缺失即 0，49 条，零夹具）/
+   只增累加 / `hitRatio` 钳界与 `uncachedPrompt` 钳非负 / 嵌套 details 缺失即 0 / **`formatCompact` 的 K/M 档位边界（999·1000、999949·999950 进位升档、1e6）与 8 字符宽度上界，82 条，零夹具）/
    `tst_streamrate`（输出速度纯头 `StreamRate.h`：空账不除零 / 无效窗口不进分母也不改写 last /
    定窗判据（生成窗口不含 TTFT）/ **Σtokens ÷ ΣgenerationMs 而非各轮速率的算术平均**（同一批窗口两口径
    差 5 倍）/ 纯 tool_calls 回合无增量起点即窗口作废 / 聚合与到达顺序无关而 last 顺序敏感 /
@@ -83,7 +83,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     `2026/11/07` 宽松接受，故判据必须自己拆到字符层）/ `accumulateSnapshot` 无效快照丢弃不进账 /
     `totalProcessed` 只算 prompt+completion / `aggregate` 跨会话合并同一天字段相加 / `windowFilter` 闭区间边界 /
     文件读写往返（QSaveFile 原子）/ 脏 JSON 与非日期键降级到空表，实跑 58 条 = 恒跑组 42 + 夹具门控组 16）——
-    全量实跑 2001 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 1943 已过期——本批新增 `tst_activityledger` 58 条，
+    全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
@@ -121,9 +121,10 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `1800`**（会话活动热力图批 1720→1800，按本机实跑 2001×0.9≈1801 取整仍留余量——本批新增
-   `tst_activityledger` 58 条 = 恒跑组 42 + 夹具门控组 16，缺 `LITE_TEST_TMPROOT` 时残 42 条，故下界不得逼到满量附近）；
-   上一批现值 `1720`（压缩转写回放批 1680→1720，按当时实跑 1943×0.9≈1749 取整）；同条里的静态断言点
+   **现值 `1830`**（token 紧凑读数批 1800→1830，按本机实跑 2034×0.9≈1830 等量上移——本批新增的 33 条全
+   部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`，故可等量上调）；上一批现值 `1800`（会话活动热力图批 1720→1800，
+   该批新增 `tst_activityledger` 58 条 = 恒跑组 42 + 夹具门控组 16，缺该变量时残 42 条，故下界不得逼到满量附近）；
+   再上一批现值 `1720`（压缩转写回放批 1680→1720，按当时实跑 1943×0.9≈1749 取整）；同条里的静态断言点
    `1543` 也已过期——本轮 HEAD 复核为 **1868**，口径勘误（任何单一口径都不是全量，勿再单独引用）：行首调用点
    = 限定名 `TestHarness::check` **1354** + `using TestHarness::check` 引入后的裸 `check(` **331**
    （新增套件一律走裸调用，只数限定名会少 331）+ 本地 `CHECK(cond)` 宏调用 **183**（`tst_configmerge` 35 /

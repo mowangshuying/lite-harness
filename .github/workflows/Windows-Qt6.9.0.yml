@@ -154,13 +154,17 @@ jobs:
         # 夹具门控组 16，ActivityLedger.h 纯头：五档阈值边界 / 日期键严格 ISO 往返（斜杠写法必须拒）/
         # accumulateSnapshot 无效快照丢弃 / totalProcessed / aggregate 跨会话合并 / windowFilter 闭区间 /
         # 文件读写往返 / 脏 JSON 降级到空表）；本机全量实跑 2001（含 1 条 junction 夹具 skip，同为下浮基准；
-        与上一批登记值 1943 + 58 = 2001 逐条对账）。下界 1720→1800（2001×0.9≈1801，取整仍留余量——
-        58 条里 16 条挂在 LITE_TEST_TMPROOT 夹具门上，缺该变量残 42 条，故不逼到满量附近）。
+        # 与上一批登记值 1943 + 58 = 2001 逐条对账）。下界 1720→1800（2001×0.9≈1801，取整仍留余量——
+        # 58 条里 16 条挂在 LITE_TEST_TMPROOT 夹具门上，缺该变量残 42 条，故不逼到满量附近）。
+        # token 紧凑读数口径：tst_usagetokens 49→82（UsageTokens.h 新增 formatCompact 单源：999/1000 档位入口、
+        # 999949→999.9K 与 999950→1M 的进位升档、1e6 折 M、整十位省 .0、负号透传、LLONG_MIN 不 UB、现实量级内
+        # 读数不超 8 字符）；33 条全部挂在恒跑组、不依赖 LITE_TEST_TMPROOT，故下界 1800→1830 按本机实跑 2034
+        # ×0.9≈1830 等量上移（同批顺带修 84b69c8 引入的注释缺 # 前缀——157/158 两行被 pwsh 当命令、YAML 亦不可解析）。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1800'
+          $env:LITE_TEST_MIN_PASS = '1830'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

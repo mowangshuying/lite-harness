@@ -185,8 +185,8 @@ void ChatStatusStrip::setTokenUsage(const UsageTokens::Totals &totals) {
         return;
     }
     const QString text = tr("已用 %1 / 产出 %2 · 缓存命中 %3%")
-                             .arg(loc.toString(totals.prompt),
-                                  loc.toString(totals.completion),
+                             .arg(UsageTokens::formatCompact(totals.prompt),
+                                  UsageTokens::formatCompact(totals.completion),
                                   QString::number(totals.hitRatio() * 100.0, 'f', 1));
     // tooltip 逐条摊开明细 + 口径边界。边界必须写：本累计只覆盖带 include_usage 的
     // ChatStream 路径（主循环 + 队友回合），压缩摘要/记忆链/workflow runner 走

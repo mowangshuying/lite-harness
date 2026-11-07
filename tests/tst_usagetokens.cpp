@@ -22,9 +22,12 @@
 
 #include "UsageTokens.h"
 
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+
+#include <limits>   // formatCompact 的 LLONG_MIN 探针（绝对值走 unsigned 域，取反不 UB）
 
 namespace {
 
@@ -249,6 +252,85 @@ void testRealWorldPayload()
     TestHarness::check(s.prompt + s.completion == 2365, "real: 与 total_tokens 自洽");
 }
 
+// ---- 8. formatCompact：K/M 紧凑读数（UI 行内与热力图 tooltip 的唯一数字口径） ----
+//
+// 这组断言钉的是「显示给用户的那串字符」，不是内部算法：状态条消耗段、侧栏占用数字行、
+// 侧栏 goal 消耗、热力图 tooltip 四个视图共用这一个函数，它一旦给出「1000K」「1.0K」
+// 这种读数，四处同时难看；一旦在某档溢出，炸的是 UI 而不是账本。
+
+void testFormatCompactSmallValues()
+{
+    // <1000 原样整数：小数字带小数点更难读，也不产生「1.0K」这种假精度
+    TestHarness::check(UsageTokens::formatCompact(0) == QStringLiteral("0"), "compact: 0 原样");
+    TestHarness::check(UsageTokens::formatCompact(7) == QStringLiteral("7"), "compact: 个位数原样");
+    TestHarness::check(UsageTokens::formatCompact(847) == QStringLiteral("847"), "compact: 三位数原样");
+    TestHarness::check(UsageTokens::formatCompact(999) == QStringLiteral("999"), "compact: 999 不进 K 档");
+    // 真实形态：一次短回合的产出量级，必须还是精确整数
+    TestHarness::check(UsageTokens::formatCompact(54) == QStringLiteral("54"), "compact: 54 原样");
+}
+
+void testFormatCompactKilo()
+{
+    // 档位入口：1000 → "1K"（整十位省掉 ".0"，不写 "1.0K"）
+    TestHarness::check(UsageTokens::formatCompact(1000) == QStringLiteral("1K"), "compact: 1000→1K");
+    TestHarness::check(UsageTokens::formatCompact(2000) == QStringLiteral("2K"), "compact: 2000→2K 省 .0");
+    // 一位小数四舍五入：1234→1.2K、1250→1.3K（进位）、1249→1.2K（舍去）
+    TestHarness::check(UsageTokens::formatCompact(1234) == QStringLiteral("1.2K"), "compact: 1234→1.2K");
+    TestHarness::check(UsageTokens::formatCompact(1250) == QStringLiteral("1.3K"), "compact: 1250→1.3K 半值进位");
+    TestHarness::check(UsageTokens::formatCompact(1249) == QStringLiteral("1.2K"), "compact: 1249→1.2K");
+    // 实测形态：DashScope 同前缀第二次请求的 prompt_tokens=2311 → 2.3K
+    TestHarness::check(UsageTokens::formatCompact(2311) == QStringLiteral("2.3K"), "compact: 真实 prompt 2311→2.3K");
+    TestHarness::check(UsageTokens::formatCompact(9999) == QStringLiteral("10K"), "compact: 9999→10K 省 .0");
+    TestHarness::check(UsageTokens::formatCompact(99949) == QStringLiteral("99.9K"), "compact: 99949→99.9K");
+    TestHarness::check(UsageTokens::formatCompact(99950) == QStringLiteral("100K"), "compact: 99950→100K");
+}
+
+void testFormatCompactCarryToMega()
+{
+    // 承重一条：K 档四舍五入进位到 1000 时**必须升档**，绝不出 "1000K"。
+    // 999_949 是 K 档能显示的最大值，999_950 起进 M 档——这条边界一旦漂，
+    // 状态条就会出现「已用 1000K」这种既难读又显得像 bug 的读数。
+    TestHarness::check(UsageTokens::formatCompact(999949) == QStringLiteral("999.9K"),
+                       "compact: 999949 仍是 K 档上界");
+    TestHarness::check(UsageTokens::formatCompact(999950) == QStringLiteral("1M"),
+                       "compact: 999950 进位升档成 1M（不是 1000K）");
+    TestHarness::check(!UsageTokens::formatCompact(999999).contains(QStringLiteral("K")),
+                       "compact: 一百万以内最大数不再带 K");
+
+    TestHarness::check(UsageTokens::formatCompact(1000000) == QStringLiteral("1M"), "compact: 1e6→1M");
+    TestHarness::check(UsageTokens::formatCompact(1234567) == QStringLiteral("1.2M"), "compact: 1234567→1.2M");
+    TestHarness::check(UsageTokens::formatCompact(1500000) == QStringLiteral("1.5M"), "compact: 1500000→1.5M");
+    TestHarness::check(UsageTokens::formatCompact(2500000) == QStringLiteral("2.5M"), "compact: 2500000→2.5M");
+    TestHarness::check(UsageTokens::formatCompact(99999999) == QStringLiteral("100M"), "compact: 99999999→100M");
+    // 刻意不设 G/B（见头注释）：十亿级仍走 M 档，读数变长但不新增单位
+    TestHarness::check(UsageTokens::formatCompact(1234567890) == QStringLiteral("1234.6M"),
+                       "compact: 1234567890→1234.6M（无 G 档）");
+}
+
+void testFormatCompactSignAndWidth()
+{
+    // 负值是防御性透传（Totals 各字段在解析期已钳非负）：符号必须保住，不能显示成绝对值
+    TestHarness::check(UsageTokens::formatCompact(-1234) == QStringLiteral("-1.2K"), "compact: 负值带符号");
+    TestHarness::check(UsageTokens::formatCompact(-7) == QStringLiteral("-7"), "compact: 小负值原样");
+
+    // qint64 最小负数：绝对值走 unsigned 域，取反不 UB（这条是「先除后取整」写法的存在理由）
+    const QString widest = UsageTokens::formatCompact(std::numeric_limits<qint64>::min());
+    TestHarness::check(widest.startsWith(QLatin1Char('-')), "compact: LLONG_MIN 保负号不崩");
+    TestHarness::check(widest.endsWith(QLatin1Char('M')), "compact: LLONG_MIN 落 M 档");
+
+    // 宽度上界：现实量级（<=1e12，即万亿 token）内读数不超过 8 字符——本改动的目的就是把
+    // 「已用 1,234,567」压成「已用 1.2M」，这条不成立就说明改动白做。
+    // check() 只收 const char*（TestHarness.h），故逐条取 toUtf8() 的临时串；
+    // 探针数量固定且小，循环里每条都要留自己的数字，否则失败现场无从定位。
+    const qint64 probes[] = {1000, 999999, 1000000, 999999999, 1000000000, 999999999999LL};
+    for (const qint64 probe : probes) {
+        const QString text = UsageTokens::formatCompact(probe);
+        const QByteArray label = QStringLiteral("compact: %1 读数不超过 8 字符（实得 %2）")
+                                     .arg(probe).arg(text).toUtf8();
+        TestHarness::check(text.size() <= 8, label.constData());
+    }
+}
+
 } // namespace
 
 int tst_usagetokens()
@@ -261,5 +343,9 @@ int tst_usagetokens()
     testAccumulation();
     testLargeValues();
     testRealWorldPayload();
+    testFormatCompactSmallValues();
+    testFormatCompactKilo();
+    testFormatCompactCarryToMega();
+    testFormatCompactSignAndWidth();
     return TestHarness::failCount() - before;
 }
