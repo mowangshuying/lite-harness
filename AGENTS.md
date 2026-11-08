@@ -42,9 +42,11 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **三十个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
+- **覆盖现状:** **三十一个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
   `tst_navkeys` / `tst_layoutconst` / `tst_agentconst` 六件此前只进了 `tests/main.cpp` 与 CI 注释，
-  本条枚举与计数漏登记，现补——计数以 `tests/main.cpp` 的 `failed += tst_*()` 调用行为准）——
+  本条枚举与计数漏登记，现补——计数以 `tests/main.cpp` 的 `failed += runSuite("<名>", tst_*())` 调用行为准，
+  该注册形态自 `388c610` 起取代了早先的 `failed += tst_*()` 裸调用（本条那句旧口径写于 `ac08745`，
+  改注册形态的那轮没回写它，按旧串匹配会数得 0）——
   `tst_lineending`（`LineEnding.h` 行尾口径）/ `tst_messagebus`（邮箱三重
   路径门 + M8 删除失败）/ `tst_taskstore_lease`（租约六门与双回合释放）/ `tst_worktree`（工作树十门、
   名册与大小写盘符）/ `tst_agentteams`（11/8/4 协议门与队友回合环）/ `tst_mcpmanager`（MCP 命名净化、
@@ -125,13 +127,16 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`，故可等量上调）；上一批现值 `1800`（会话活动热力图批 1720→1800，
    该批新增 `tst_activityledger` 58 条 = 恒跑组 42 + 夹具门控组 16，缺该变量时残 42 条，故下界不得逼到满量附近）；
    再上一批现值 `1720`（压缩转写回放批 1680→1720，按当时实跑 1943×0.9≈1749 取整）；同条里的静态断言点
-   `1543` 也已过期——本轮 HEAD 复核为 **1868**，口径勘误（任何单一口径都不是全量，勿再单独引用）：行首调用点
-   = 限定名 `TestHarness::check` **1354** + `using TestHarness::check` 引入后的裸 `check(` **331**
+   `1543` 也已过期——`388c610` 轮 HEAD 复核为 **1868**、s17.8 紧凑读数批 HEAD 复核为 **1954**
+   （= 1868 + 热力图批 58 + 本批 28，两批增量均由逐修订复算得，非推算），口径勘误（任何单一口径都不是全量，勿再单独引用）：行首调用点
+   = 限定名 `TestHarness::check` **1440**（`388c610` 轮 1354 → 热力图批 1412 → 本批 1440）
+   + `using TestHarness::check` 引入后的裸 `check(` **331**
    （新增套件一律走裸调用，只数限定名会少 331）+ 本地 `CHECK(cond)` 宏调用 **183**（`tst_configmerge` 35 /
    `tst_fluconfigutils` 47 / `tst_sessionstore` 101，宏体展开为 `TestHarness::check`，故只数前两样会少 183）。
    宏定义本身不计入：那 3 个套件各有一段 `#define CHECK(cond) \` + 续体 `TestHarness::check(...)`（共 6 行），
-   若把续体当调用点会重复计数（1357 即为此虚高值）；注释里的 `CHECK` 字样同样不计。静态点 **低于** 实跑数
-   （1868 vs 1943）不矛盾：循环/别名展开会让一个调用点跑多条（`tst_goalmanager` 195→209、`tst_settingscache`
+   若把续体当调用点会重复计数（虚高值随轮次变：`388c610` 轮 1357、本轮 1443，均比净限定名多那 3 行）；
+   注释里的 `CHECK` 字样同样不计。静态点 **低于** 实跑数
+   （本轮 1954 vs 2034；`388c610` 轮为 1868 vs 1943）不矛盾：循环/别名展开会让一个调用点跑多条（`tst_goalmanager` 195→209、`tst_settingscache`
    76→89），个别套件反向（条件分支未走到）也正常，实跑数以当轮输出为准。计数须用大小写敏感匹配（PowerShell `-match`
    默认不敏感，会把 `CHECK(` 混进裸 `check(` 得出 514 这类虚高值；`git grep` 对含高位字节的测试文件会漏行，
    以逐行读取为准）。
