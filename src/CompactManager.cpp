@@ -522,8 +522,10 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
     }
 }
 
-// lcc summary_input：整体 JSON；超摘要输入上限（1.6S）时保头 1/4 + 尾 3/4，中间省略标记
-// （lcc 定值 20000/60000 即该比例的 80000 基准特例，随上限等比缩放）
+// lcc summary_input：整体 JSON；超摘要输入上限时保头 1/4 + 尾 3/4，中间省略标记。
+// 上限自 s17.9 起是**独立字符域常量** `kSummaryInputCharLimit`（320000，见本文件顶部），
+// 不再从上下文窗口派生、也不随窗口缩放——旧写法「1.6S 随上限等比缩放」已废。
+// （lcc 定值 20000/60000 是该比例在 80000 字符基准下的特例，仅作出处对照）
 QString CompactManager::summaryInput(const QVector<QJsonObject> &conversation) const
 {
     QJsonArray array;

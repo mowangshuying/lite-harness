@@ -19,7 +19,7 @@ void ThemeAware::bind(const QString &qssFileName, QWidget *widget,
         // 经 initTheme 汇入 = 16 处），故缩放只在这一处做——比在每处 bind 传参、或把
         // 87 条 font-size 抽成变量都更单源。
         // 另有三处刻意不走本收口点：BasePage.cpp:17（setQssByFileName）、
-        // LiteHarness.cpp:591/598（NavAlign/ScrollBarAlign 追加块，须拼到 FluentUI 自身
+        // `LiteHarness::applyNavAlignOverrides`（NavAlign/ScrollBarAlign 追加块，须拼到 FluentUI 自身
         // 样式表尾部，语义与「整份替换」不同）。**这三份 QSS 实测零条字号声明**
         // （grep font-size|font: 均为 0），故绕开缩放不产生「部分文字不放大」的半生效，
         // 无需为此扩收口点；但若将来有人往这三个文件加字号，就必须同步接进来。

@@ -130,9 +130,9 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     // m_storeDir 恒空 → reserveRunId / WfJournal::open 两道 lite-only 守卫恒拒
     // "workflow store dir is not configured" → workflow 工具在生产 GUI 路径整体不可用，
     // 而单测因直接 mgr.setStoreDir(...) 绕过本注入面而全绿（见 docs/doc.md 冒烟清单）。
-    // 此处只存路径不建目录（Lane A setStoreDir 为 push 形，目录自愈在 ensureStoreDirs
+    // 此处只存路径不建目录（Lane A setStoreDir 为 push 形，目录自愈在引擎写/读入口的内联 mkpath
     // 写/读入口），m_workDir/m_sessionDataId/m_workflow 均先于构造体完成 init（声明序
-    // 424/425/522），故此刻 sessionDataRoot() 已是最终会话根。
+    // AgentLoop.h:557/558/673），故此刻 sessionDataRoot() 已是最终会话根。
     m_workflow.setStoreDir(QDir(sessionDataRoot()).filePath(AgentConst::kWorkflowDirName));
 
     // s13 Agent Teams 引擎装配（P3）：六注入一次性完成，先于任何回合/心跳/工具执行
@@ -166,11 +166,12 @@ void AgentLoop::setWorkDir(const QString &dir)
     rebuildSystemPromptMessage();
 
     // s16：会话数据根变更点推 workflow 台账目录（lcc s16 env _ensure_store 语义）。
-    // Lane A setStoreDir 为 push 形且只存路径不建目录（WorkflowManager.cpp:152-168 实证，
-    // 目录自愈在 ensureStoreDirs 写/读入口）——宿主无需 mkdir；换目录后 journal 指向新会话根。
+    // Lane A setStoreDir 为 push 形且只存路径不建目录（`WorkflowManager::setStoreDir`
+    // （WorkflowManager.cpp:241）实证，
+    // 目录自愈在引擎写/读入口的内联 mkpath）——宿主无需 mkdir；换目录后 journal 指向新会话根。
     // 【注释纠正】原此处登记「构造体首调本函数即完成首推，故不在构造体另加行」——前提已失效：
     // s12 起 workDir/会话 ID 走构造注入（init-list 定值），本函数在生产路径零调用方
-    // （ChatSessionPage.cpp:150 的 m_sidebar->setWorkDir 是 SessionSidebar 同名方法，非本函数）。
+    // （ChatSessionPage.cpp:267 的 m_sidebar->setWorkDir 是 SessionSidebar 同名方法，非本函数）。
     // 首推改由构造体承担（见 AgentLoop.cpp 构造体内 s16 接线补漏注释），本行只负责「换目录重推」。
     m_workflow.setStoreDir(QDir(sessionDataRoot()).filePath(AgentConst::kWorkflowDirName));
 }

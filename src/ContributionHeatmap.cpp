@@ -13,7 +13,8 @@
 namespace {
 
 // 三主题色板（档 0 空色 + 档 1-5 强调色 alpha 阶梯 + 卡片背景/边框）。
-// 与 LiteHarness.cpp:590 同法用 isLightTheme/isDarkTheme/isAtomOneDarkTheme 分支取色——
+// 与 `LiteHarness::onThemeChanged`（取色点见该函数内 `FluThemeUtils::isLightTheme()` 分支）
+// 同法用 FluThemeUtils 主题谓词判主题——
 // 本仓 FluentUI fork 无 getFluentColor/FluThemeColorType API（全库 grep 零命中），
 // 色阶只能在此硬编码；主题切换由 ThemeAware::bind 的 extraRefresh 触发 update() 重绘。
 struct Palette {

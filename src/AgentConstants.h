@@ -252,18 +252,23 @@ constexpr qint64 kEndingProbeBytes = 65536;
 constexpr int kStreamTotalTimeoutMs = 1800000;
 
 // ---- 上下文窗口上限（第九轮：改为可设置项；s17.9：语义定为 token 域） ----
-// 原 CompactManager 文件级常量 kContextCharLimit=50000 现为本默认值；用户可在设置页
+// 原 CompactManager 文件级常量（旧值 50000 字符）在第九轮收为本键的可设置面，默认值其后
+// 经用户裁决定为 200000（即本常量，勿读成「50000 是本默认值」）；用户可在设置页
 // 调整，落 config.json 配置文件（键 contextCharLimit）。压缩阈值按会话体预算等比派生
-// （batch=4×T'、large=0.6×T'、压缩目标=0.8×T'——比例与原 lcc 常量在 50000
-// 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）；
+// （batch=4×T'、large=0.6×T'、压缩目标=0.8×T'——比例与原 lcc 常量在旧 50000 字符
+// 基准下逐一对应；派生表达式写死在 CompactManager.cpp 消费点的**内联**算式里
+// （`toolResultBudget` 的 `*4` / `*6/10`、`prepareAsync` 的 `*8/10`），不经 helper——
+// 原 `contextCharLimit()` helper 已随 s17.9 删除，防比例漂移靠的是「只此一处」而非函数封装）；
 // 唯摘要输入裁剪自 s17.9 起是独立字符域常量、不再从本上限派生（见 CompactManager.cpp）。
 constexpr qsizetype kContextCharLimitDefault = 200000; // 未设置时的主上限（用户裁决值）
 constexpr qsizetype kContextCharLimitMin = 10000;      // 校验下界
 constexpr qsizetype kContextCharLimitMax = 5000000;    // 校验上界
 inline const QString kContextCharLimitKey = QStringLiteral("contextCharLimit");
 
-// 主上限单点取值：config.json 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）与
-// CompactManager（管线消费）共用同一实现，避免多处读盘/校验口径分叉；缺失、
+// 主上限单点取值：config.json 配置文件读取 + 范围校验 + 默认回退。设置页（展示/校验回写）
+// 直接调本函数；压缩管线**不直接调它**，而是经下面的 `contextTokenBudget()` 取值
+// （s17.9 起该函数是恒等转发，故两侧仍是同一个数、口径不分叉——管线侧只认预算这一个入口，
+// 将来若预算口径要变，只改 `contextTokenBudgetFrom` 一处即可）；缺失、
 // 非整数、越界（含手工篡改配置文件）一律回退默认值。存储单源见 AppSettings.h
 // （存储根下唯一的 config.json）；取值经 AppSettings::value() 读缓存——本函数被
 // contextTokenBudget 复用，而后者已下沉到 per-tool 级消费点（ChatSessionPage 侧栏刷新），
@@ -346,7 +351,7 @@ inline const QString kToolResultsDirName =
 inline const QString kMemoryDirName = QStringLiteral(".memory"); // 记忆存储（MEMORY.md 索引 + slug 记录）
 inline const QString kMailboxesDirName = QStringLiteral(".mailboxes"); // 团队消息总线邮箱（一人一个 JSONL，lcc s13）
 inline const QString kWorktreesDirName = QStringLiteral(".worktrees"); // git worktree 隔离目录（一任务一 checkout，lcc s13）
-inline const QString kWorkflowDirName = QStringLiteral(".workflows"); // workflow 台账目录（lcc s16 env _ensure_store：首用时建、构造不 mkdir——目录创建自愈在 Lane A ensureStoreDirs，宿主只推路径）
+inline const QString kWorkflowDirName = QStringLiteral(".workflows"); // workflow 台账目录（lcc s16 env _ensure_store：首用时建、构造不 mkdir——目录创建自愈在引擎写/读入口各自内联的 mkpath（`reserveRunId`/`writeJsonAtomic`/`saveLastRun`/`WfJournal::open`），宿主只推路径；引擎里**没有** ensureStoreDirs 这个函数，勿按该名去找）
 
 // ---- 队友保留名单源（lcc message_bus.py:17 RESERVED_TEAMMATE_NAMES={"lead","agent"}，
 // 原注释「供 Lane B/C/D 复用」——gate① M7 收口进本头，casefold 比较）----

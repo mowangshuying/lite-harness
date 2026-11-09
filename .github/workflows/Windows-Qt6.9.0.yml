@@ -160,6 +160,9 @@ jobs:
         # 999949→999.9K 与 999950→1M 的进位升档、1e6 折 M、整十位省 .0、负号透传、LLONG_MIN 不 UB、现实量级内
         # 读数不超 8 字符）；33 条全部挂在恒跑组、不依赖 LITE_TEST_TMPROOT，故下界 1800→1830 按本机实跑 2034
         # ×0.9≈1830 等量上移（同批顺带修 84b69c8 引入的注释缺 # 前缀——157/158 两行被 pwsh 当命令、YAML 亦不可解析）。
+        # s17.9 上下文预算恒等批：tst_agentconst 12→16（新增四条 contextTokenBudgetFrom identity 断言，
+        # 钉死「预算 = 声明值本身、不再 ÷4」，改回任何系数即编译失败 + 测试转红）；4 条全挂恒跑组、
+        # 不依赖 LITE_TEST_TMPROOT，故下界 1830→1834 按本机实跑 2038×0.9≈1834 等量上移。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |

@@ -666,7 +666,7 @@ private:
     McpManager m_mcp;
     // s16 Workflow 编排引擎（lcc s16 workflow.py 移植，Lane A 纯引擎、值成员接线，仿 m_mcp）：
     // 注册表 / journal 台账 / 宿主策略表；storeDir 由宿主推入（push 形，目录创建自愈在 Lane A
-    // ensureStoreDirs——宿主不 mkdir）。推入点有两类且**缺一不可**：① 构造体内首推（workDir/
+    // 引擎写/读入口的内联 mkpath——宿主不 mkdir；引擎无 ensureStoreDirs 函数）。推入点有两类且**缺一不可**：① 构造体内首推（workDir/
     // 会话 ID 走 init-list 注入，构造体不调 setWorkDir，只靠 setter 会恒空——s16 曾踩此坑致
     // workflow 工具生产路径整体不可用，详见 AgentLoop.cpp 构造体注释）；② setWorkDir/
     // setSessionDataId 内重推（换根后 journal 跟随）。Lead 独占——SubAgent 不经此工具。

@@ -66,7 +66,7 @@ private:
     FluPushButton* m_clearButton = nullptr;
 };
 
-// 上下文上限设置卡（第九轮）：说明位「超过即自动压缩：200,000 字符（≈50,000 token）」，
+// 上下文上限设置卡（第九轮；s17.9 起单位定为 token）：说明位「超限自动压缩：200,000 token」，
 // 右侧只留「修改」，弹 FluentInputDialog 输入，校验 [kContextCharLimitMin,
 // kContextCharLimitMax] 拒绝非法值，写 config.json 后立即回显。
 // 生效语义：CompactManager 每次管线现取设置值，下一回合生效，无需重启。

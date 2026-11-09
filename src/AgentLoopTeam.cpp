@@ -321,7 +321,7 @@ void AgentLoop::tryDeliverTeamEvents()
     if (m_teamWakeSuppressed)
         return;
     // 门铃（lcc :342 peek("lead") 非破坏偷看同型）：收件名以现盘对账——
-    // AgentTeamsManager.cpp:23 kLeadName=QStringLiteral("lead")、consumeLeadInbox
+    // AgentTeamsManager.cpp:24 kLeadName=QStringLiteral("lead")、consumeLeadInbox
     // 经 :238 m_bus->drain(kLeadName) 收「lead」；oracle 报告处写 hasPending("agent")
     // 系把 TaskStore owner 键（kLeadOwnerKey="agent"）误当邮箱名，采「lead」。
     // 引擎常量未导出而引擎只读→宿主此处字面量 duplication，两处口径以注释互钉。
@@ -336,8 +336,8 @@ void AgentLoop::tryDeliverTeamEvents()
     const QString text = AgentTeamsManager::formatTeamEvents(events);
     if (text.isEmpty()) // 偏G 同源卫兵：空渲染不开回合
         return;
-    // 同栈直连宿主=与 tryDeliverCron（AgentLoopCron.cpp:44-63）完全同款路径，
-    // GUI 侧零改动：ChatSessionPage 既有槽（:408-414）addMessage(display)+
+    // 同栈直连宿主=与 tryDeliverCron（AgentLoopCron.cpp:35 起）完全同款路径，
+    // GUI 侧零改动：ChatSessionPage 既有槽（:637-649）addMessage(display)+
     // startAssistantStream(request)→run() 同步置位 m_running（本拍随后的
     // tryDeliverCron 因 priority inbox→cron 被卫兵跳过，见 AgentLoop.cpp tick 注）。
     // displayText=activeRequestText=渲染块文本——lcc inject_team_events(text)+
@@ -531,9 +531,9 @@ void AgentLoop::settleTeamOnExit()
     const QStringList names = m_teammateRuntimes.keys();
     for (const QString &name : names) {
         // 析构期红线：本函数内**禁止 emit 任何信号**。AgentLoop 恒为 ChatSessionPage 的
-        // 子对象（唯一构造点 ChatSessionPage.cpp:135 传 this），Qt 析构时序是「派生类
+        // 子对象（唯一构造点 ChatSessionPage.cpp:252 传 this），Qt 析构时序是「派生类
         // ChatSessionPage 的成员先析构 → ~QObject 才断开连接并 deleteChildren」，故此刻
-        // 到方的 lambda 仍挂在连接上，而它触碰的 m_liveTeammateCards（ChatSessionPage.h:115
+        // 到方的 lambda 仍挂在连接上，而它触碰的 m_liveTeammateCards（ChatSessionPage.h:163
         // 的 QHash 成员）已成悬空对象——直连槽执行即未定义行为。
         // 旧实现在此 emit teammateSettled("settled") 正是踩这条线（原注释以「卡将永转
         // 执行中」为由，但那个前提不成立：本函数只在页面自身析构时到达，队友卡是页面

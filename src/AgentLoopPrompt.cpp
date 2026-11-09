@@ -702,7 +702,8 @@ QJsonArray AgentLoop::createToolsDefinition()
     // 名字/描述/参数 schema 单源，免手工二次书写漂移（connect_mcp 当年手工构造是为保「无 enum」偏差，
     // 此处 toolInfo() 与需求逐字节一致可全量复用，无手工段）。选形登记：toolInfo 为成员非静态→
     // cached lambda 内临时构造原型对象取值；WorkflowManager 构造纯内存注册表、不建目录不触盘
-    // （Lane A ensureStoreDirs 自愈在写/读入口，见 WorkflowManager.cpp:152-168），主线程零线程原则
+    // （Lane A 目录自愈在写/读入口的内联 mkpath，见 WorkflowManager.cpp:560/594/642
+    //  与 WfJournal::open :796；引擎无 ensureStoreDirs 函数），主线程零线程原则
     // 下 cached 一次性初始化无并发风险；toolInfo() 不含任何 per-实例可变态，产物恒定。
     {
         const WorkflowManager wfPrototype;

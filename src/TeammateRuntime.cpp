@@ -25,7 +25,7 @@ namespace {
 // P8 观测面 ok 判定：镜像 AgentLoop::isToolFailure 的折叠失败文案族前缀（单源在
 // GUI 层 TU，本 TU 层律禁 include AgentLoop.h/AgentLoopInternal.h——镜像副本登记
 // 偏差；改动文案族时两处同步）。仅供 teammateToolActivity 的 ok 诊断位，UI 不着色。
-// 与 AgentLoop::isToolFailure 单源同步（lcc s15 af26862，见 AgentLoopTools.cpp :300-303）：
+// 与 AgentLoop::isToolFailure 单源同步（lcc s15 af26862，定义见 AgentLoopTools.cpp:306）：
 // ① "Permission denied" 相等改前缀判定——异步回合定值长拒串（单源
 //   RecoveryRules::asyncApprovalDenied()，"Permission denied: interactive…"）必须判
 //   失败，短拒串由前缀天然覆盖；② 删 "[Background task start error]" 整行——bg 起进程
