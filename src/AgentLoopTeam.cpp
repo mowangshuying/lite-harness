@@ -445,11 +445,20 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
     // 消耗账记在**宿主**、不记在 runtime：队友 runtime 随清算消亡（settleTeamOnExit /
     // cancel→deleteLater），记在它身上等于账本跟着尸体进土——已花掉的 token 会从累计里消失。
     // guard 只守锚（runtime 没了就不需要锚），账无条件走：这正是 QPointer 守卫与本行的分工。
+    //
+    // 活动账（新会话页热力图数据源）与 Totals 同源同一份 snapshot，逐字照抄主循环
+    // `adoptUsageAnchor` 的「取一份 → add → appendActivityLedger」范式：队友回合是本会话
+    // 真实花掉的 token，不落账就会漏统计（热力图 tooltip 承诺「含队友回合」此前只兑现了一半）。
+    // 判据不在此处重复：invalid 快照由 accumulateSnapshot 内部忽略、零值日回滚删除；
+    // 无 dataId（未隔离会话）由 appendActivityLedger 卫兵早退，不污染全局 .lite-harness。
+    // 队友流与主循环同在主线程（零线程纪律），daily.json 的读改写不与其他落账竞争。
     connect(stream, &QOpenAi::ChatStream::usageReceived, this,
             [this, guard, countAtSend](const QJsonObject &usage) {
         if (guard)
             guard->adoptUsageAnchor(usage, countAtSend);
-        m_usageTotals.add(UsageTokens::fromUsage(usage));
+        const UsageTokens::Snapshot snapshot = UsageTokens::fromUsage(usage);
+        m_usageTotals.add(snapshot);
+        appendActivityLedger(snapshot);
     });
     connect(stream, &QOpenAi::ChatStream::messageFinished, this,
             [this, name, stream, guard](const QJsonObject &fullMsg, const QString & /*finishReason*/) {
