@@ -57,18 +57,16 @@ QColor levelColor(const Palette &p, int level)
     return c;
 }
 
-// 周内日索引：Qt dayOfWeek 1=Mon..7=Sun → 0=Sun..6=Sat（GitHub 惯例，周日为列首）。
-int dayOfWeekIndex(const QDate &d)
-{
-    return d.dayOfWeek() % 7;
-}
-
-QDate weekStart(const QDate &d)
-{
-    return d.addDays(-dayOfWeekIndex(d));
-}
-
 } // namespace
+
+// 滚动窗口首日：网格恒为 kWeeks 列 × kDaysPerWeek 行 = 371 格，末格（52,6）恒为 today，
+// 故首日 = today - 370。列 = 连续 7 天块（不再按周日对齐），行 = 块内日序——每行仍是固定的
+// 星期几（只是列首随 today 滚动），换来「网格永远是满矩形 + 最后一列满列 + 最后一格是今天」。
+// 旧口径 gridStart = weekStart(today) - 52*7 在非周六时尾列只有部分格，矩形右下有破口。
+QDate ContributionHeatmap::gridStart(const QDate &today)
+{
+    return today.addDays(-(kWeeks * kDaysPerWeek - 1));
+}
 
 ContributionHeatmap::ContributionHeatmap(QWidget *parent)
     : QWidget(parent)
@@ -112,12 +110,10 @@ QRect ContributionHeatmap::gridRect() const
 
 QPair<int, int> ContributionHeatmap::cellPosition(const QDate &date, const QDate &today) const
 {
-    const QDate todayWeek = weekStart(today);
-    const QDate gridStart = todayWeek.addDays(-(kWeeks - 1) * 7);
-    const QDate dateWeek = weekStart(date);
-    const int col = gridStart.daysTo(dateWeek) / 7;
-    const int row = dayOfWeekIndex(date);
-    return {col, row};
+    const int offset = gridStart(today).daysTo(date);
+    if (offset < 0 || offset >= kWeeks * kDaysPerWeek)
+        return {-1, -1}; // 窗口外（早于首日或晚于今天）无坐标
+    return {offset / kDaysPerWeek, offset % kDaysPerWeek};
 }
 
 QDate ContributionHeatmap::cellDateAt(const QPoint &point) const
@@ -135,10 +131,7 @@ QDate ContributionHeatmap::cellDateAt(const QPoint &point) const
     const int colInCell = (point.x() - grid.left()) - col * step;
     if (rowInCell >= kCellSize || colInCell >= kCellSize)
         return QDate();
-    const QDate today = QDate::currentDate();
-    const QDate todayWeek = weekStart(today);
-    const QDate gridStart = todayWeek.addDays(-(kWeeks - 1) * 7);
-    return gridStart.addDays(col * 7 + row);
+    return gridStart(QDate::currentDate()).addDays(col * kDaysPerWeek + row);
 }
 
 void ContributionHeatmap::paintEvent(QPaintEvent *)
@@ -167,14 +160,14 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
     p.drawText(QRect(kPadding, 0, width() - 2 * kPadding, kHeaderHeight),
                Qt::AlignLeft | Qt::AlignVCenter, tr("会话活动"));
 
-    // 网格：列 = 周（0..52），行 = 周内日（0=Sun..6=Sat）
+    // 网格：列 = 连续 7 天块（0..52），行 = 块内日序（0..6）。整幅 53×7 恒满格——
+    // 窗口首日 = today - 370，故最后一格（52,6）就是今天，不再有「未来日期留空」的破口。
+    const QDate windowStart = gridStart(today);
     p.setPen(Qt::NoPen);
     for (int col = 0; col < kWeeks; ++col) {
-        const QDate colWeekStart = weekStart(today).addDays(-(kWeeks - 1 - col) * 7);
+        const QDate colStart = windowStart.addDays(col * kDaysPerWeek);
         for (int row = 0; row < kDaysPerWeek; ++row) {
-            const QDate date = colWeekStart.addDays(row);
-            if (date > today)
-                continue; // 未来日期不画（GitHub 同法，本周未过部分留空）
+            const QDate date = colStart.addDays(row);
             const int level = m_data.contains(date)
                                   ? ActivityLedger::levelForTokens(m_data[date].totalProcessed())
                                   : 0;
@@ -186,21 +179,30 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
         }
     }
 
-    // 月份标签（底部）：只在月份首列画，避免同月多列重复
+    // 月份标签（底部）：标签贴在「含该月 1 号的那一列」——列首不再对齐周日，
+    // 月界常落在列中段，只看列首月份会让标签晚 1-6 天。首列不含 1 号时补它自己的月份，
+    // 否则左端空白。月长 ≥28 天 = 4 列，标签间距天然 ≥3 列，不会互叠。
     p.setPen(palette.monthText);
     QFont monthFont = p.font();
     monthFont.setPixelSize(11);
     p.setFont(monthFont);
-    int lastMonth = -1;
     const int labelY = grid.bottom() + kMonthLabelHeight - 2;
     for (int col = 0; col < kWeeks; ++col) {
-        const QDate colWeekStart = weekStart(today).addDays(-(kWeeks - 1 - col) * 7);
-        const int m = colWeekStart.month();
-        if (m != lastMonth) {
-            const int x = grid.left() + col * step;
-            p.drawText(x, labelY, tr("%1月").arg(m));
-            lastMonth = m;
+        const QDate colStart = windowStart.addDays(col * kDaysPerWeek);
+        int labelMonth = -1;
+        for (int row = 0; row < kDaysPerWeek; ++row) {
+            const QDate date = colStart.addDays(row);
+            if (date.day() == 1)
+                labelMonth = date.month();
         }
+        if (labelMonth < 0 && col > 0)
+            continue;
+        if (labelMonth < 0)
+            labelMonth = colStart.month(); // 首列：窗口起点所在月（可能是该月的残余几天）
+        // 末列标签按列左缘起画会溢出卡片右缘，按文本宽度回推
+        const int textW = p.fontMetrics().horizontalAdvance(tr("%1月").arg(labelMonth));
+        const int x = qMin(grid.left() + col * step, grid.right() - textW + 1);
+        p.drawText(x, labelY, tr("%1月").arg(labelMonth));
     }
 }
 

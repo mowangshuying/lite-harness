@@ -195,7 +195,8 @@ inline QHash<QDate, DayTotal> aggregate(const QList<QHash<QDate, DayTotal>> &per
 }
 
 // ---- 窗口截断 ----
-// 保留 [from, to] 闭区间内的日期。热力图渲染只关心最近 53 周，读侧一次性截断，
+// 保留 [from, to] 闭区间内的日期。热力图渲染只关心最近 371 天（53 列 × 7 行满矩形，
+// 末格恒为今天），读侧一次性截断，
 // 免得 paintEvent 每格判一次。
 inline QHash<QDate, DayTotal> windowFilter(const QHash<QDate, DayTotal> &data,
                                             const QDate &from, const QDate &to)

@@ -11,7 +11,10 @@
 class QMouseEvent;
 class QPaintEvent;
 
-// 新会话页每日 token 消耗热力图（53 周 × 7 天网格，仿 GitHub contribution graph）。
+// 新会话页每日 token 消耗热力图（53 列 × 7 行 = 371 天滚动窗口，仿 GitHub contribution graph）。
+// 网格按「列 = 连续 7 天块」顺序铺满：gridStart = today - 370，末列末格恒为今天——
+// 因此网格永远是完整矩形、最后一列永远是满列（旧版按周日对齐，尾列在非周六时留空，破矩形）。
+// 每行仍是固定的星期几（gridStart 的星期 + 行号），只是列首不再固定为周日。
 // 数据侧见 ActivityLedger.h；本类只做渲染与命中检测。
 //
 // 覆盖边界（承 UsageTokens.h / ActivityLedger.h 同一条纪律）：账本只统计主循环与队友
@@ -38,8 +41,10 @@ private:
     QRect gridRect() const;
     // 命中检测：point 落在哪一格；不在网格内或落在间隙返回无效 QDate
     QDate cellDateAt(const QPoint &point) const;
-    // 日期 → 网格坐标（列 = 周序号 0..52，行 = 周内日 0=Sun..6=Sat）
+    // 日期 → 网格坐标（列 = 7 天块序号 0..52，行 = 块内日序 0..6）；窗口外返回 {-1, -1}
     QPair<int, int> cellPosition(const QDate &date, const QDate &today) const;
+    // 滚动窗口首日：末格（52,6）恒为 today，故窗口首日 = today - (53*7 - 1)
+    static QDate gridStart(const QDate &today);
 
     QHash<QDate, ActivityLedger::DayTotal> m_data;
 
