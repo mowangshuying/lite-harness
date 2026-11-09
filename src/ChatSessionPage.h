@@ -107,7 +107,8 @@ private:
     // 重算并钳制消息列/输入组宽（min(800, 可用宽 − 侧栏可见时的占位)），resizeEvent 与侧栏切换共用
     void applyColumnWidth();
     // 上下文占用快照 → 底部状态条（AgentLoop::estimatedContextTokens 的 ≈token 锚定估算，
-    // 预算 = contextCharLimit/4 派生，见规格修4）
+    // 分母 = AgentConst::contextTokenBudget()，即设置页声明的上下文上限本身
+    // ——s17.9 起不再 ÷4，见规格修4 与 AgentConstants.h）
     void refreshContextUsage();
     // s13 观测面：队友活卡按名收口（置终态 + 从活卡表除名，幂等——重复 settle no-op）
     void settleTeammateCard(const QString &teammateName, const QString &outcome);

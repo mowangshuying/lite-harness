@@ -237,14 +237,16 @@ void WorkDirSettingCard::updateValue()
     setInfoValue(QString(), workDirDisplayText(stored), stored);
 }
 
-// 上下文上限设置卡（第九轮）：说明位「超限自动压缩：200,000 字符（≈50,000 token）」，
+// 上下文上限设置卡（第九轮；s17.9 起单位定为 token）：说明位「超限自动压缩：200,000 token」，
 // 右侧只留「修改」。展示/回写均经 AgentConst::contextCharLimitValue() 单点取值
 // （未设置/非法自动回退默认 200000），与 CompactManager 消费侧同源不分叉；
 // 写 config.json 后 CompactManager 下一回合管线现取即生效，无需重启。
+// 单位是 token 且**声明值即生效窗口**（不再有 ÷4 的二次换算，也没有「≈N token」派生括号），
+// 所以这里显示的数 == 侧栏占用分母 == 压缩门槛基准，三处同一个数。
 ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
     : InfoSlotSettingCard(parent)
 {
-    setTitleInfo(tr("上下文上限（字符）"), QString()); // 说明位归值管
+    setTitleInfo(tr("上下文上限（token）"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Trim); // 裁减语义
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
@@ -264,7 +266,7 @@ ContextLimitSettingCard::ContextLimitSettingCard(QWidget *parent)
 
 void ContextLimitSettingCard::retranslate()
 {
-    setTitleInfo(tr("上下文上限（字符）"), QString());
+    setTitleInfo(tr("上下文上限（token）"), QString());
     m_modifyButton->setText(tr("修改"));
     updateValue();
 }
@@ -272,19 +274,19 @@ void ContextLimitSettingCard::retranslate()
 void ContextLimitSettingCard::updateValue()
 {
     // 千分位展示（c-locale 固定逗号分组，不随界面语言变）；编辑预填用裸数字防解析歧义。
-    // 键语义保持字符域（规格修4：config.json 零新键零迁移）；括号内 token 仅为
-    // 展示层派生提示 = contextCharLimit/4（计量预算口径，与侧栏/触发同源），不参与校验回写。
+    // s17.9（丁-3）：单位是 token，且**声明值即生效窗口**——不再有 ÷4 的二次换算，也删掉了
+    // 原先「≈N token」派生括号（那个括号就是 ÷4 的化身，留着它等于在文案里给一个已经不
+    // 存在的换算背书）。这里显示的数 == 侧栏占用分母 == 压缩门槛基准，三处同一个数。
     const QLocale loc(QLocale::c());
     setInfoValue(tr("超限自动压缩"),
-                 tr("%1 字符（≈%2 token）")
-                     .arg(loc.toString(AgentConst::contextCharLimitValue()),
-                          loc.toString(AgentConst::contextTokenBudget())));
+                 tr("%1 token")
+                     .arg(loc.toString(AgentConst::contextCharLimitValue())));
 }
 
 void ContextLimitSettingCard::promptEdit()
 {
     const QString rangeHint =
-        tr("范围 %1 ~ %2（字符）。")
+        tr("范围 %1 ~ %2（token）。")
             .arg(AgentConst::kContextCharLimitMin)
             .arg(AgentConst::kContextCharLimitMax);
     // FluentInputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值（裸数字）

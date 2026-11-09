@@ -1236,7 +1236,7 @@ void ChatSessionPage::applyColumnWidth()
 //   ③ 回合终局（finished / error）；④ 会话首建重放历史后（restoreFromDisk）。
 // 口径（规格修4）：≈token 估算与压缩触发同源——服务端 usage.prompt_tokens 锚 + 本地增量估算，
 // 锚失效时兜底全量本地估算（含 system + tools schema + 注入块，即 B4 修复）；
-// 预算为 config.json 字符上限的纯派生值（/4），键语义不变。
+// 预算即 config.json 声明的上下文上限（s17.9 起为 token 域、不再 ÷4），键名沿用不改。
 void ChatSessionPage::refreshContextUsage()
 {
     if (!m_agentLoop || !m_statusStrip)

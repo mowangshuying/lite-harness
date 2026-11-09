@@ -22,7 +22,7 @@
 // 2 个非 CJK 码元参与 4:1 折算，与 Python len(json.dumps(...)) 在码点/码元上有 ±1 量级差
 // （登记偏差，同源）。
 
-#include "AgentConstants.h" // estimateTokens 字符→token 折算单源（kCharsPerTokenBudget 基准）
+#include "AgentConstants.h" // estimateTokens 字符→token 折算单源（CJK 1:1 / 其余 4:1）
 
 #include <QJsonDocument>
 #include <QJsonObject>

@@ -33,6 +33,24 @@ int tst_agentconst()
     check(AgentConst::kContextCharLimitMin < AgentConst::kContextCharLimitDefault
               && AgentConst::kContextCharLimitDefault < AgentConst::kContextCharLimitMax,
           "agentconst: contextCharLimit min < default < max");
+
+    // ---- ①' 预算派生：声明值即窗口，**不得再有任何二次换算**（s17.9 丁-3 裁决）----
+    // 为什么钉这条：旧实现把用户声明的上限 ÷4 当 token 预算，那个 4 假设「内容全是英文」，
+    // 而分子 estimateTokens 对中文按 1:1 计（实测 qwen3.8-flash 中文 ≈1.00 字符/token）——
+    // 于是声明 1,024,000 的窗口实际只生效 256,000，中文会话提前 4 倍被压缩。端点既无
+    // /tokenize（实测 404）也不在 /models 报窗口元数据，窗口问不到、只能由用户声明，
+    // 那声明值就该是权威值。这三条断言把「恒等」钉死：谁改回 ÷4（或任何系数）即当场转红。
+    // 取几个跨量级的探针值逐一对账，顺带兜住「恒等函数被写成某个区间才成立」的写法漂移。
+    check(AgentConst::contextTokenBudgetFrom(10000) == 10000,
+          "budget identity: lower bound passes through unchanged (no /4)");
+    check(AgentConst::contextTokenBudgetFrom(1024000) == 1024000,
+          "budget identity: declared window is the budget verbatim (no /4)");
+    check(AgentConst::contextTokenBudgetFrom(5000000) == 5000000,
+          "budget identity: upper bound passes through unchanged (no /4)");
+    // 与头文件 static_assert 同判据：编译期已拦一道，这里是行为级复核（防有人只删断言不改函数）
+    check(AgentConst::contextTokenBudgetFrom(AgentConst::kContextCharLimitDefault)
+              == AgentConst::kContextCharLimitDefault,
+          "budget identity: default value passes through unchanged");
     check(AgentConst::kMaxToolIterationsMin < AgentConst::kMaxToolIterationsDefault
               && AgentConst::kMaxToolIterationsDefault < AgentConst::kMaxToolIterationsMax,
           "agentconst: maxToolIterations min < default < max");

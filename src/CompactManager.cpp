@@ -20,15 +20,19 @@
 // lcc s08 compact_manager.py 的常量（逐字对齐取值）
 namespace {
 
-// 第九轮：阈值经「可设置主上限 S + 等比派生」——S 单点取值走
-// AgentConst::contextCharLimitValue()（config.json + 校验 + 默认回退，与设置页共用
+// 第九轮：阈值经「可设置窗口上限 + 等比派生」——窗口单点取值走
+// AgentConst::contextTokenBudget()（config.json + 校验 + 默认回退，与设置页共用
 // 实现防口径分叉；每次消费点现取，改设置后下一回合即生效）。
-// 修4（token 口径迁移，D8/D11）：batch=4S / large=0.6S / 压缩目标=0.8S 的判定对象
-// 由字符改 token，且基准从 S 改为会话体预算 T'（prepareAsync 现算：全局 token 预算
-// − overhead，钳位 [T/4,T]），比例原样保留（4×T' / 0.6×T' / 0.8×T'），派生表达式
-// 写死在消费点防漂移。summary 输入裁剪仍是字符域 1.6S（D11：内容级启发不随迁）。
-inline qsizetype contextCharLimit() { return AgentConst::contextCharLimitValue(); }
-inline qsizetype summaryInputCharLimit() { return contextCharLimit() * 16 / 10; }
+// 修4（token 口径迁移，D8/D11）：batch / large / 压缩目标的判定对象由字符改 token，
+// 基准从 S 改为会话体预算 T'（prepareAsync 现算：全局 token 预算 − overhead，钳位
+// [T/4,T]），比例原样保留（4×T' / 0.6×T' / 0.8×T'），派生表达式写死在消费点防漂移。
+// s17.9（丁-3）：summary 输入裁剪**不再从窗口派生**。窗口语义自 s17.9 起已是 token 域，
+// 再拿 1.6×窗口当**字符**上限就是混单位（同一个数在两侧量纲不同）。改为独立字符域常量，
+// 与窗口彻底解耦。取 320000 = 旧默认窗口 200000 × 1.6 的逐字数值，默认口径零行为变更。
+// 代价登记（勿当疏漏）：声明窗口远大于默认值的会话，摘要输入会比旧的 1.6×窗口**更早**
+// 截断，摘要覆盖的历史随之变短；要放宽只改下面这一个常量，别去恢复 1.6×窗口。
+constexpr qsizetype kSummaryInputCharLimit = 320000; // 字符域独立基准，与窗口解耦
+inline qsizetype summaryInputCharLimit() { return kSummaryInputCharLimit; }
 
 constexpr qsizetype kKeepRecentResults = 3;          // KEEP_RECENT_RESULTS
 constexpr qsizetype kKeepRecentMessages = 5;         // KEEP_RECENT_MESSAGES（reactive 尾段）
@@ -155,6 +159,7 @@ qsizetype CompactManager::estimateChars(const QVector<QJsonObject> &conversation
 // 修4：会话 token 估算（计量口径主函数）。逐条 Compact 序列化 → UTF-16 解码 →
 // AgentConst::estimateTokens 求和。与 estimateChars 同族近似（登记偏差同源），
 // 但换算目标从「字符总量 ÷ 字符上限」升级为「token 估算 ÷ token 预算」。
+// （s17.9：分母的 token 预算自此等于设置页声明的上限本身，不再 ÷4——见 AgentConstants.h。）
 // 复杂度与 estimateChars 相当（每条一次序列化）；仅换调用方，不新增劣化（B3 纪律）。
 // 函数体已逐字搬进 CompactTokens::conversationTokens（纯头，可进 ctest——见该头注释），
 // 本静态方法退化为转发：外部调用方（AgentLoop / TeammateRuntime）口径零变更，
@@ -706,7 +711,9 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
 
 // lcc prepare：预算 → 截断归档 →（仍超预算）micro →（仍超）fit →（仍超）全量压缩。
 // 修4（D8/D10/D11）：门槛整体切 token 域——全局预算 T = AgentConst::contextTokenBudget()
-// （= contextCharLimit ÷ 每token均字符数，现取一次保管线内口径一致，沿用第九轮纪律）；
+// （s17.9 丁-3 起 T = 设置页声明的上限本身，不再 ÷ 每token均字符数；现取一次保管线内
+// 口径一致，沿用第九轮纪律——那个 ÷4 假设内容是英文，而分子对中文按 1:1 计，
+// 声明 1,024,000 只生效 256,000，故删除换算）；
 // 会话体预算 T' = T − overhead（system+tools+注入段，宿主估算注入），钳位 [T/4, T]
 // 防 overhead 估大把 T' 压到 0。入口门槛用宿主锚定的 conversationTokens（D9：
 // usage.prompt_tokens 校准 − overhead，首轮回落纯估算）；段内退出用 estimateTokens 启发。

@@ -251,11 +251,12 @@ constexpr qint64 kEndingProbeBytes = 65536;
 // <=0 表示不设总时限。
 constexpr int kStreamTotalTimeoutMs = 1800000;
 
-// ---- 上下文压缩主上限（第九轮：改为可设置项） ----
+// ---- 上下文窗口上限（第九轮：改为可设置项；s17.9：语义定为 token 域） ----
 // 原 CompactManager 文件级常量 kContextCharLimit=50000 现为本默认值；用户可在设置页
-// 调整，落 config.json 配置文件（键 contextCharLimit）。其余三个压缩阈值按主上限等比派生
-// （batch=4S、large=0.6S、summary=1.6S、压缩目标=0.8S——比例与原 lcc 常量在 50000
-// 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）。
+// 调整，落 config.json 配置文件（键 contextCharLimit）。压缩阈值按会话体预算等比派生
+// （batch=4×T'、large=0.6×T'、压缩目标=0.8×T'——比例与原 lcc 常量在 50000
+// 基准下逐一对应，派生表达式见 CompactManager.cpp 消费点 helper，防比例漂移）；
+// 唯摘要输入裁剪自 s17.9 起是独立字符域常量、不再从本上限派生（见 CompactManager.cpp）。
 constexpr qsizetype kContextCharLimitDefault = 200000; // 未设置时的主上限（用户裁决值）
 constexpr qsizetype kContextCharLimitMin = 10000;      // 校验下界
 constexpr qsizetype kContextCharLimitMax = 5000000;    // 校验上界
@@ -276,13 +277,18 @@ inline qsizetype contextCharLimitValue()
     return static_cast<qsizetype>(stored);
 }
 
-// ---- token 估算与预算派生（修4：计量口径 token 化） ----
+// ---- token 估算与预算派生（修4：计量口径 token 化；s17.9：窗口即声明值） ----
 // 触发与 UI 从「UTF-16 字符数」切换到 token 估算：CJK 码点 1 字符 ≈ 1 token，
-// 其余 4 字符 ≈ 1 token（向上取整）。预算换算单点：contextCharLimit（键名沿用不改——它是
-// 用户手改面，改名会让既有配置文件里的值静默失联；语义自此为「预算派生基准」）÷ 每 token 均字符数。
-// 不新增设置键（裁决）。锚点校准（usage.prompt_tokens 回填）在宿主侧与本估算组合，
-// 本头只提供纯函数估算，零 JSON 依赖。
-constexpr qsizetype kCharsPerTokenBudget = 4; // contextCharLimit(字符) → token 预算的换算基准
+// 其余 4 字符 ≈ 1 token（向上取整）。这个折算率是实测出来的（qwen3.8-flash 上中文
+// 三个独立测点 1.0025~1.010 字符/token），所以分子这把尺是准的，别去动它。
+// s17.9 裁决（丁-3）：**预算不再 ÷4**。旧写法 `contextCharLimitValue() / 4` 是给分母
+// 硬造一个 token 数——那个 4 假设「内容全是英文」（4 字符/token），而分子对中文按 1:1 计，
+// 于是用户声明 1,024,000 的窗口，实际生效只有 256,000。端点既无 /tokenize（实测 404）
+// 也不在 /models 里报窗口元数据（实测只有 id/created/owned_by/object），窗口问不到，
+// 只能由用户声明——那声明值就该是权威值，不该再被二次换算。
+// contextCharLimit 键名沿用不改（它是用户手改面，改名会让既有配置文件里的值静默失联）；
+// 语义自此为「上下文窗口上限（token）」。不新增设置键（裁决）。
+// 锚点校准（usage.prompt_tokens 回填）在宿主侧与本估算组合，本头只提供纯函数估算，零 JSON 依赖。
 
 // CJK 区段判定（估算用粗分类，非严格字族学）：假名/汉字/日韩谚文/兼容汉字/全角半角。
 // 落在 U+2E80–U+9FFF、U+AC00–U+D7AF、U+F900–U+FAFF、U+FF00–U+FFEF 之外的一律按 4:1 折算。
@@ -305,10 +311,22 @@ inline qsizetype estimateTokens(const QString &text)
     return cjk + (other + 3) / 4;
 }
 
+// 预算派生单点（入参纯函数，零配置依赖）：s17.9 起声明值即窗口，恒等返回。
+// 之所以抽一个「看起来多余」的恒等函数，是给「不再 ÷4」这条留一个能进 ctest 的接缝——
+// contextTokenBudget() 要读 config.json（经 AppSettings::value 走 reader()，要求
+// QCoreApplication 实例），测试里调不动；本函数 constexpr、可被 static_assert 与
+// tst_agentconst 双重钉死。改回任何换算（÷4 之类）会当场编译失败 + 测试转红。
+constexpr qsizetype contextTokenBudgetFrom(qsizetype declaredLimit)
+{
+    return declaredLimit;
+}
+static_assert(contextTokenBudgetFrom(1024000) == 1024000,
+              "context budget must stay identical to the declared window (s17.9: no /4)");
+
 // 全局 token 预算单点取值：现取现用（与 contextCharLimitValue 同纪律，改设置下一回合生效）。
 inline qsizetype contextTokenBudget()
 {
-    return contextCharLimitValue() / kCharsPerTokenBudget;
+    return contextTokenBudgetFrom(contextCharLimitValue());
 }
 
 // usage 尾 chunk 宽限毫秒（修3）：流 finished 后等待末个 SSE chunk 携带 usage 落地的

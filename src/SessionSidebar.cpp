@@ -756,12 +756,12 @@ void SessionSidebar::setContextUsage(qsizetype usedTokens, qsizetype limitTokens
                                        UsageTokens::formatCompact(limitTokens),
                                        QString::number(ratio * 100.0, 'f', 1)));
     m_contextNumbers->setVisible(true);
-    // tooltip 写口径边界：读数只说「多大」，不说分母是 config.json 字符串上限的派生值（/4），
+    // tooltip 写口径边界：读数只说「多大」，不说分母就是设置页声明的上下文上限（token 域），
     // 也不说估算与压缩触发同源、会被后续回读覆盖——这两句决定读数能不能用来判断会不会被
     // 压缩改写。条与数字同节同口径共用一份 tooltip；数字已在条下，不再指向状态条。
     // 本行是**千分位精确值**（行内是紧凑口径），所以这里的数字位数比行内长是可接受的：
     // tooltip 不参与布局压缩，长就长。
-    const QString tip = tr("上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算是配置文件字符串上限的派生值 /4，与压缩触发同源，会被后续回读覆盖）。")
+    const QString tip = tr("上下文占用：≈%1 token 估算 ÷ %2 token 预算（预算即设置页声明的上下文上限，与压缩触发同源，会被后续回读覆盖）。")
                             .arg(loc.toString(usedTokens), loc.toString(limitTokens));
     m_contextNumbers->setToolTip(tip);
     m_contextMeter->setToolTip(tip);
