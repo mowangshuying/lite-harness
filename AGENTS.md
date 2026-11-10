@@ -90,6 +90,17 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     today / 每列满 7 格且无未来日期 / `cellOf`↔`dateOfCell` 逐格互逆 / 窗口外返 {-1,-1} 不钳位不回绕 / 跨年与
     闰日边界，实跑 27 条，零夹具恒跑）——这套算术此前**零直测**（宿主 TU 是 QWidget 进不了 ctest），而它恰好
     出过一次用户可见故障（尾列留空破矩形），off-by-one 只能靠断言钉、肉眼看不全。
+    `tst_memoryrules`（记忆纯判据抽头 `MemoryRules.h`：`parseFrontmatter` 五条回落路径且失败时 body 必须
+    保留全文 / `memorySlug` 空串与全非词字符回落 `memory`、CJK 走 unicode `\w` 不被整体打码 /
+    `collapseWhitespace` 折叠全角空格 / `role==tool` 不入记忆语料 / `extractJsonArray` 手写括号状态机
+    （串内 `]` 不提前闭合、`\"` 不出串、嵌套深度、首候选非法回退下一候选、未闭合返空）/
+    `validateMemoryRecord` 必填四要素与 scope 白名单、空白视为缺失 / `shouldStoreMemory` 非 persistent
+    一律拒 + 16 条临时标记（中英各验）+ slug/描述/正文三重去重 / `memoryDocument`↔`parseFrontmatter`
+    写读往返含冒号与换行，实跑 76 条，零夹具恒跑）——这批判据此前**整族零直测**（宿主 TU include
+    QOpenAi.h 链 Qt6::Network，按「仅 QtCore-only 引擎进测试清单」硬纪律进不了 ctest），而它错了不报错
+    只让记忆静默变少或变脏：括号配对一漂整批丢条目、slug 一撞后写静默覆盖前一条、去重键一失效重复
+    无限增长。**实测偏差登记**：源码注释原称非法 JSON 转义「≈ PyYAML 报错回落」，Qt 实际宽容接受
+    `["a\q"]` 并静默吞掉反斜杠得到 `aq`（**不**回落），断言按实测行为钉、注释同步改正（见本头该条注释）。
     全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
@@ -128,7 +139,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `1867`**（s17.9 热力图算术抽头批 1843→1867，按本机实跑 2075×0.9≈1867 等量上移——本批新增整套
+   **现值 `1935`**（s17.9 记忆判据抽头批 1867→1935，按本机实跑 2151×0.9≈1935 等量上移——本批新增整套
+   `tst_memoryrules` 76 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1867`
+   （s17.9 热力图算术抽头批 1843→1867，按本机实跑 2075×0.9≈1867 等量上移——本批新增整套
    `tst_heatmapgrid` 27 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；
    上一批现值 `1843`（s17.9 工具判据抽头批 1834→1843，按本机实跑 2048×0.9≈1843 等量上移——本批新增 10 条
    `RecoveryRules::isToolFailureText` 断言全挂在恒跑组 `tst_agentrecovery`（该套件 24→34）、不依赖
@@ -208,6 +221,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **AgentPathGuard.h::isWithinSandboxRoots(path, roots)** — 沙箱围栏**多根**包含判定（纯 QtCore 静态口，从 `AgentLoop::safePathIn` 外提以便直测；`AgentLoop` 带 `Q_OBJECT`、其 TU 依赖 moc + QOpenAi + FluentUI，测试目标只链 `Qt6::Core`，留在类内即 L4 零覆盖区）。判据三条，缺一即被绕过：① **分隔符边界**——只认 `root + '/'` 前缀或 `path == root`，纯 `startsWith(root)` 会放行 `work-evil` 这类共享名字前缀的兄弟目录；② **大小写不敏感**——Windows 文件系统语义，但放宽不得越过分隔符；③ **fail-closed**——空根集合拒一切，集合里的空串跳过而非接管判定（`startsWith("")` 恒真 = 围栏全开）。根入参自行 `cleanPath` 归一，否则「能读到的根」与「判得出的根」分叉。调用方经 `AgentLoop::sandboxRoots(toolCwd)` 单源构造 = `{toolCwd, sessionDataRoot()}`——**第二根是会话数据根**，存储锚统一到 `config/` 后 `.temp`/`.worktrees` 不再是 workDir 子树，单根口径会把模型自己的临时目录判成越狱（主循环每次写临时文件弹审批卡、队友无交互通道直接折成硬拒文本）。加的是**自己那一个**会话根而非整个 sessions 根，兄弟会话互不可达。
 
 - **ActivityLedger.h** — 会话每日 token 消耗账本纯头（`ActivityLedger` 命名空间，header-only **不占测试目标 TU 清单**，`tst_activityledger` 直接 include 生产头）：`DayTotal{prompt, completion, cached, reasoning, calls}` + `totalProcessed() = prompt + completion`（对齐 GitHub contribution graph 单值语义）；`levelForTokens(qint64)` 五档阈值 0/<5k/<20k/<50k/<100k/≥100k（固定值、不落配置——阈值随模型单价漂移不是本视图责任）；`dateKey(QDate)`/`dateFromKey(QString)` **严格 ISO 口径**（10 字符、破折号在第 4/7 位、其余全数字、`QDate(y,m,d).isValid()`）——Qt `QDate::fromString(..., Qt::ISODate)` 对 `2026/11/07` 这类斜杠写法**宽松接受**，若判据不自己拆字符层等于把手改配置文件里的非法日期键静默读进来；`accumulateSnapshot(DayTotal&, UsageTokens::Snapshot&)` 无效快照丢弃不进账（`prompt<=0` 即整窗作废，与 `UsageTokens::fromUsage` 同源）；`readDaily(path)` 缺失/坏 JSON/非对象/非日期键/非对象值一律降级到空表（**不抛不崩不猜**，脏文件不影响其它会话）、负数字段回 0；`writeDaily` 走 `QSaveFile` 原子（同 `SessionStore` 纪律）。`aggregate(QList<QHash<QDate, DayTotal>>)` 跨会话合并同一天字段相加、`windowFilter(data, from, to)` 闭区间。落盘点唯一：`AgentLoop::appendActivityLedger` 在 `adoptUsageAnchor` 里紧随 `m_usageTotals.add` 之后（同一份 `UsageTokens::Snapshot`，两路账本一源），零 GUI 依赖可 ctest 直测。
+
+- **MemoryRules.h** — 记忆子系统纯判据单源（`MemoryRules` 命名空间，header-only **不占测试目标 TU 清单**，`tst_memoryrules` 直接 include 生产头）：`parseFrontmatter` / `memorySlug` / `normalizedMemoryText` / `messageText` / `extractJsonArray` / `validateMemoryRecord` / `shouldStoreMemory` / `memoryDocument` 八个判据，连同私用的 `memoryTypes()`（四类白名单）、`temporaryMemoryMarkers()`（16 条临时标记）、`collapseWhitespace` / `slugCollapse` / `trimDashes` / `yamlScalar` / `whitespaceRun` 一并搬进**具名 namespace 且逐个 `inline`**。helper 不放匿名 ns 是硬要求：`memoryTypes()` 与 `collapseWhitespace()` 还被本头之外的 `MemoryManager` 代码调用，匿名 ns 会让它们够不着；而 header-only 里的匿名 ns 还会让每个 TU 各持一份、函数内 `static` 身份分裂。抽头动机：这些判据此前全在 `MemoryManager.cpp`，该 TU include `QOpenAi.h`（链 `Qt6::Network`），按「仅允许 QtCore-only 引擎进测试清单」的硬纪律进不了 ctest，于是**整套记忆判据零直测**；而它们错了不报错、只让记忆静默变少或变脏（括号配对一漂整批丢条目、slug 一撞后写覆盖前一条、去重键一失效重复无限增长）。`MemoryManager` 侧保留同名 static 成员做**一行转发**，调用点与 `MemoryManager.h` 签名均不变；`shouldStoreMemory` 既有入参是嵌套类型 `MemoryManager::MemoryRecord`，纯头不能反向依赖那个链 QOpenAi 的 TU，故改吃轻量 `ExistingMemory{name, description, body}`，映射在转发处一次完成。
 
 ### UI 层
 

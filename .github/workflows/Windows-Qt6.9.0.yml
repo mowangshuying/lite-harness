@@ -174,11 +174,17 @@ jobs:
         # ——这正是 s17.9 初版那个「尾列留空破矩形」故障的不变量；ContributionHeatmap 三处改转调、不留
         # 第二份算术。同批加门禁③ LITE_TEST_MAX_SKIP=1（CI 侧 skip 上界，本机不设不判）：全测试目标有
         # 42 处 skip 通道，此前「夹具被改坏」是绿着降级。下界 1843→1867 按实跑 2075×0.9≈1867 上调。
+        # s17.9 记忆判据抽头批：新增纯头 MemoryRules.h + 套件 tst_memoryrules（76 条，零夹具恒跑），把
+        # frontmatter 回落/slug 撞名/括号配对状态机/三重去重/写读往返，从「链 Qt6::Network 因而进不了
+        # ctest 的 MemoryManager.cpp」里抽出来直测——这批判据此前整族零覆盖，错了不报错，只让记忆静默
+        # 变少（整批丢条目）或变脏（撞名覆盖）。同批实测登记一条偏差：源码注释原称非法 JSON 转义
+        # 「≈ PyYAML 报错回落」，Qt 实际宽容接受 [\"a\\q\"] 并静默吞掉反斜杠得到 aq（不回落），
+        # 注释与断言均已按实测改正。下界 1867→1935 按本机实跑 2151×0.9≈1935 等量上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1867'
+          $env:LITE_TEST_MIN_PASS = '1935'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure

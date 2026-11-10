@@ -58,9 +58,10 @@ int tst_agentconst();         // P2：智能体数值域与键名契约（AgentC
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 int tst_activityledger();     // 会话每日 token 消耗账本（ActivityLedger.h）：阈值/日期键/累加/求和/截断恒跑 + 读写往返/脏数据降级夹具门控
 int tst_heatmapgrid();        // 热力图网格算术（HeatmapGrid.h）：371 满矩形 / 末格恒为 today / cellOf↔dateOfCell 互逆 / 窗口外，零夹具恒跑
+int tst_memoryrules();      // 记忆纯判据（MemoryRules.h）：frontmatter 回落/slug 撞名/括号配对状态机/去重门槛/写读往返，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1099，与本机无夹具全量实跑 pass=1099 逐条对上（带夹具为 2075）。
+// 全表求和 = 1175，与本机无夹具全量实跑 pass=1099 逐条对上（带夹具为 2075）。
 struct SuiteFloor {
     const char *name;
     int floor;
@@ -77,6 +78,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"tooltagkind", 26},        {"toolnames", 7},           {"navkeys", 14},
     {"layoutconst", 23},        {"agentconst", 16},         {"compacttranscript", 40},
     {"activityledger", 37},        {"heatmapgrid", 27},
+    {"memoryrules", 76},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -150,6 +152,7 @@ int main()
     failed += runSuite("compacttranscript", tst_compacttranscript);
     failed += runSuite("activityledger", tst_activityledger);
     failed += runSuite("heatmapgrid", tst_heatmapgrid);
+    failed += runSuite("memoryrules", tst_memoryrules);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
