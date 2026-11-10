@@ -163,12 +163,13 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
 
     // 网格：列 = 连续 7 天块（0..52），行 = 块内日序（0..6）。整幅 53×7 恒满格——
     // 窗口首日 = today - 370，故最后一格（52,6）就是今天，不再有「未来日期留空」的破口。
-    const QDate windowStart = gridStart(today);
+    // (col,row)→日期一律走 HeatmapGrid::dateOfCell：绘制路径不重述窗口起点与列跨度。
+    // 此前这里自算 windowStart.addDays(col*7+row)，纯头一改（窗口长度、列序）绘制与命中
+    // 判定会静默分叉，而 `tst_heatmapgrid` 27 条全绿、破的却是 UI——单源纪律的漏点。
     p.setPen(Qt::NoPen);
     for (int col = 0; col < kWeeks; ++col) {
-        const QDate colStart = windowStart.addDays(col * kDaysPerWeek);
         for (int row = 0; row < kDaysPerWeek; ++row) {
-            const QDate date = colStart.addDays(row);
+            const QDate date = HeatmapGrid::dateOfCell(col, row, today);
             const int level = m_data.contains(date)
                                   ? ActivityLedger::levelForTokens(m_data[date].totalProcessed())
                                   : 0;
@@ -189,17 +190,19 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
     p.setFont(monthFont);
     const int labelY = grid.bottom() + kMonthLabelHeight - 2;
     for (int col = 0; col < kWeeks; ++col) {
-        const QDate colStart = windowStart.addDays(col * kDaysPerWeek);
         int labelMonth = -1;
         for (int row = 0; row < kDaysPerWeek; ++row) {
-            const QDate date = colStart.addDays(row);
+            // 同一口径：列内日期只由 HeatmapGrid::dateOfCell 给出，与上方绘制循环、
+            // cellDateAt 命中判定三者同源（月界判错会让标签晚 1-6 天）
+            const QDate date = HeatmapGrid::dateOfCell(col, row, today);
             if (date.day() == 1)
                 labelMonth = date.month();
         }
         if (labelMonth < 0 && col > 0)
             continue;
         if (labelMonth < 0)
-            labelMonth = colStart.month(); // 首列：窗口起点所在月（可能是该月的残余几天）
+            labelMonth = HeatmapGrid::dateOfCell(col, 0, today)
+                             .month(); // 首列：窗口起点所在月（可能是该月的残余几天）
         // 末列标签按列左缘起画会溢出卡片右缘，按文本宽度回推
         const int textW = p.fontMetrics().horizontalAdvance(tr("%1月").arg(labelMonth));
         const int x = qMin(grid.left() + col * step, grid.right() - textW + 1);

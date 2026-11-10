@@ -42,7 +42,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **三十二个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
+- **覆盖现状:** **三十五个套件**（s17.9 三批抽头新增 `tst_memoryrules` / `tst_toolschema` / `tst_sessionkeys` 三件；计数三口径互校一致——`tests/main.cpp` 的 `failed += runSuite(...)` 调用行 35、`kSuiteFloors` 表项 35、`tests/tst_*.cpp` 文件 35。上一登记值「三十二个套件」为 s17.9 热力图批现值，其下历史句原样保留）（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
   `tst_navkeys` / `tst_layoutconst` / `tst_agentconst` 六件此前只进了 `tests/main.cpp` 与 CI 注释，
   本条枚举与计数漏登记，现补——计数以 `tests/main.cpp` 的 `failed += runSuite("<名>", tst_*())` 调用行为准，
   该注册形态自 `388c610` 起取代了早先的 `failed += tst_*()` 裸调用（本条那句旧口径写于 `ac08745`，
