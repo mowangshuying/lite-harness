@@ -186,11 +186,18 @@ jobs:
         # 就是工具恒 no-op，而本地编译与既有测试全绿。同批把 AgentLoop::createToolsDefinition() 退化为
         # 一行转发（纯头绝不 include AgentLoop.h，否则拖进 moc + Qt6::Network）。下界 1935→1985 按本机
         # 实跑 2206×0.9≈1985 等量上调。
+        # s17.9 会话键算术抽头批：新增纯头 SessionKeys.h + 套件 tst_sessionkeys（45 条，零夹具恒跑），把
+        # 两族会话键的拼装/归属/撞车条件从「SessionRegistry.cpp 硬绑 Qt6::Widgets + FluentUI 因而进不了
+        # ctest」里抽出来直测——键撞车后果不可逆：insert 用 QHash::operator[] 就地覆盖，删兄弟会话时会连带
+        # 把另一会话的 sessions/<dataId> 整目录递归抹掉。同批**证伪一条注释不变量**：原写「hex 永不等于
+        # 十进制自增」的理由不成立（数字串是 hex 子集），真正兜住的是长度屏障（seq 到 10^7 前不足 8 位），
+        # 短 dataId 可直接撞车而 createSession 侧无 contains 卫兵；本批只算键不改行为，加不加卫兵待裁决。
+        # 下界 1985→2025 按本机实跑 2251×0.9≈2025 等量上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1985'
+          $env:LITE_TEST_MIN_PASS = '2025'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure

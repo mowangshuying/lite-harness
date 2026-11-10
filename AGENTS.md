@@ -119,7 +119,22 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     **已知未覆盖面诚实登记**：`todos.status` 的 enum 与执行侧三值白名单的交叉断言做不了——执行侧白名单是
     `AgentLoopTodo.cpp` 里的硬编码字面量、不在纯头内，链它就要求 moc + QOpenAi；本套件只钉 schema 侧取值，
     执行侧漂移仍需人工对照。
-    全量实跑 2206 条断言（s17.9 工具 schema 抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_toolschema` 55 条、零夹具恒跑，2151+55=2206；上一批登记 2151，再上一批 2075；历史句保留：全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
+    `tst_sessionkeys`（会话键算术纯头 `SessionKeys.h`：新建键逐字形态与 1..500 两两不同 / 恢复键必须
+    **原文拼接**（不改大小写、不吞空白、空 dataId 退化为裸前缀——键与磁盘 `sessions/<dataId>` 目录名同源，
+    清洗一次就会删错目录）/ 两族键共用前缀而三个非会话页键不得命中 / `seqFromKey` 只认自己产出的形态
+    （无前导零）故 `Session_00000001` 判回 dataId 族 / 生成 dataId 形状恰为 8 位小写 hex（全数字仍算）/
+    两族键不相交的**真实**理由是长度而非字母表（`10000000` 既是合法 8 位 hex 也是合法十进制 seq，屏障在
+    seq=10^7 处失效）/ 撞车谓词钉住两个反例（短 dataId `"1"` 与 `Session_1` 撞、8 位纯数字与同值 seq 撞），
+    实跑 45 条，零夹具恒跑）——键分配此前**零直测**（宿主 TU `SessionRegistry.cpp` include `<QWidget>` 与
+    `ChatSessionPage.h`，硬绑 Qt6::Widgets + FluentUI 进不了 ctest），而键撞车的后果不可逆：`insert()` 用
+    `QHash::operator[]` 就地覆盖，两条会话共用一个 key 后 `dataId(key)` 只指向存活那条，右键删除兄弟会话会
+    连带把**另一个会话的 `sessions/<dataId>` 整目录**（历史/任务/记忆）递归抹掉。**本批证伪一条注释不变量**：
+    `SessionRegistry.h` 与 `LiteHarness.cpp` 原写「hex 永不等于十进制自增，避免键冲突」，该**理由是错的**
+    （数字串是 hex 子集），真正兜住的是数量级巧合（自增号到 10^7 前不足 8 位）；手改 config.json 或旧
+    index.json 迁移进来的短 dataId 可直接撞车，而 `createSession` 路径上**没有** `contains()` 卫兵
+    （只有 `restoreSessions` 有）。本头只算键、不改行为，加不加卫兵待用户裁决。**未覆盖面诚实登记**：
+    `insert` 覆盖与 `unregister` 按值全表扫荡这两条后果侧逻辑仍不可直测（QHash 行为绑在链 Widgets 的 TU 上）。
+    全量实跑 2251 条断言（s17.9 会话键算术抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_sessionkeys` 45 条、零夹具恒跑，2206+45=2251；上一批 2206，再上一批 2151；历史句保留：全量实跑 2206 条断言（s17.9 工具 schema 抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_toolschema` 55 条、零夹具恒跑，2151+55=2206；上一批登记 2151，再上一批 2075；历史句保留：全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
@@ -157,7 +172,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `1985`**（s17.9 工具 schema 抽头批 1935→1985，按本机实跑 2206×0.9≈1985 等量上移——本批新增整套
+   **现值 `2025`**（s17.9 会话键算术抽头批 1985→2025，按本机实跑 2251×0.9≈2025 等量上移——本批新增整套
+   `tst_sessionkeys` 45 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1985`
+   （s17.9 工具 schema 抽头批 1935→1985，按本机实跑 2206×0.9≈1985 等量上移——本批新增整套
    `tst_toolschema` 55 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1935`
    （s17.9 记忆判据抽头批 1867→1935，按本机实跑 2151×0.9≈1935 等量上移——本批新增整套
    `tst_memoryrules` 76 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1867`
@@ -245,6 +262,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **MemoryRules.h** — 记忆子系统纯判据单源（`MemoryRules` 命名空间，header-only **不占测试目标 TU 清单**，`tst_memoryrules` 直接 include 生产头）：`parseFrontmatter` / `memorySlug` / `normalizedMemoryText` / `messageText` / `extractJsonArray` / `validateMemoryRecord` / `shouldStoreMemory` / `memoryDocument` 八个判据，连同私用的 `memoryTypes()`（四类白名单）、`temporaryMemoryMarkers()`（16 条临时标记）、`collapseWhitespace` / `slugCollapse` / `trimDashes` / `yamlScalar` / `whitespaceRun` 一并搬进**具名 namespace 且逐个 `inline`**。helper 不放匿名 ns 是硬要求：`memoryTypes()` 与 `collapseWhitespace()` 还被本头之外的 `MemoryManager` 代码调用，匿名 ns 会让它们够不着；而 header-only 里的匿名 ns 还会让每个 TU 各持一份、函数内 `static` 身份分裂。抽头动机：这些判据此前全在 `MemoryManager.cpp`，该 TU include `QOpenAi.h`（链 `Qt6::Network`），按「仅允许 QtCore-only 引擎进测试清单」的硬纪律进不了 ctest，于是**整套记忆判据零直测**；而它们错了不报错、只让记忆静默变少或变脏（括号配对一漂整批丢条目、slug 一撞后写覆盖前一条、去重键一失效重复无限增长）。`MemoryManager` 侧保留同名 static 成员做**一行转发**，调用点与 `MemoryManager.h` 签名均不变；`shouldStoreMemory` 既有入参是嵌套类型 `MemoryManager::MemoryRecord`，纯头不能反向依赖那个链 QOpenAi 的 TU，故改吃轻量 `ExistingMemory{name, description, body}`，映射在转发处一次完成。
 
 - **ToolSchema.h** — 工具 schema 单源（`ToolSchema` 命名空间，header-only **不占测试目标 TU 清单**，`tst_toolschema` 直接 include 生产头）：`createToolsDefinition()` 逐工具构造发给服务端的 OpenAI function 定义，共 27 个（26 个来自 `ToolNames` 常量 + workflow 信封委托 `WorkflowManager::toolInfo()`）。函数体内 `static const QJsonArray cached` 的惰性缓存在 inline 函数里仍是跨 TU 单实例，缓存语义不变；`makeTool` lambda 只支持平铺参数并**恒写 `required`**，嵌套 array 与「无参数」两类必须手工构造（勿"顺手补齐" required）。抽头动机与硬约束：本体此前长在 `AgentLoopPrompt.cpp`，该 TU 经 `AgentLoop.h` 传递 include `QOpenAi.h`（链 `Qt6::Network`）因而进不了 ctest，整套 schema 零直测；`AgentLoop::createToolsDefinition()` 退化为**一行转发**，调用点与 `AgentLoop.h` 签名均不变；**本头绝不 include `AgentLoop.h`**（同 `AgentPathGuard.h` 登记的坑：那会把 moc + QOpenAi 依赖拖进只链 `Qt6::Core` 的测试目标）。
+
+- **SessionKeys.h** — 会话键算术单源（`SessionKeys` 命名空间，header-only **不占测试目标 TU 清单**，`tst_sessionkeys` 直接 include 生产头）：`keyForSeq(int)` / `keyForDataId(QString)` 两族键拼装（键常量沿用 `NavKey::SessionKeyFmt` / `SessionPrefix` 单源，禁止另造字面量）、`isSessionKey` 归属判定、`seqFromKey` 反解（只认无前导零的自增产物）、`isGeneratedDataId` 形状判定（8 位小写 hex）、`collidesWithSeqKey` 撞车谓词。抽头动机：`SessionRegistry.cpp` include `<QWidget>` 与 `ChatSessionPage.h`（硬绑 Qt6::Widgets + FluentUI）因而键分配进不了 ctest，而键撞车后果不可逆（`insert` 就地覆盖 → 删兄弟会话时连带把另一会话的 `sessions/<dataId>` 整目录递归抹掉）。`SessionRegistry::nextSessionKey()` 与 `::keyForDataId()` 退化为**一行转调**，签名与调用点不变；本头**只算键、不改行为**（撞车卫兵要不要加属行为变更，待裁决）。
 
 ### UI 层
 

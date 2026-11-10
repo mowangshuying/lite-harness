@@ -3,18 +3,19 @@
 #include <QWidget>       // QPointer<QWidget> 赋值/data() 需完整类型
 #include <iterator>      // std::next（受控控件表按值摘除循环）
 #include "ChatSessionPage.h" // QPointer<ChatSessionPage> 赋值需完整类型（T*→QObject* 转换）
-#include "NavItem.h"         // NavKey::SessionKeyFmt / SessionPrefix 键常量单源，禁止在此另造字面量
+#include "SessionKeys.h"   // 会话键算术单源（纯头、可 ctest 直测）；键常量沿用 NavKey 单源，禁止在此另造字面量
 
 QString SessionRegistry::nextSessionKey()
 {
-    // 自增语义与原 LiteHarness::createSession 的 ++m_sessionCount 逐句等价，
-    // 仅把计数与键拼装从主窗口挪进来（键格式串复用 NavKey 单源常量）
-    return QString(NavKey::SessionKeyFmt).arg(++m_sessionSeq);
+    // 自增语义与原 LiteHarness::createSession 的 ++m_sessionCount 逐句等价；键拼装本体在
+    // SessionKeys.h（纯头、可 ctest 直测），本处只留「持号 + 转调」
+    return SessionKeys::keyForSeq(++m_sessionSeq);
 }
 
 QString SessionRegistry::keyForDataId(const QString &dataId)
 {
-    return QString(NavKey::SessionPrefix) + dataId;
+    // 本体在 SessionKeys.h；此处必须保持「原文拼接」语义，不做任何清洗（见该头注释）
+    return SessionKeys::keyForDataId(dataId);
 }
 
 void SessionRegistry::insert(const QString &key, ChatSessionPage *page, const QString &dataId)
