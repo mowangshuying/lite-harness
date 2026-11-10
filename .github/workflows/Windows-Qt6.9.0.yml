@@ -180,11 +180,17 @@ jobs:
         # 变少（整批丢条目）或变脏（撞名覆盖）。同批实测登记一条偏差：源码注释原称非法 JSON 转义
         # 「≈ PyYAML 报错回落」，Qt 实际宽容接受 [\"a\\q\"] 并静默吞掉反斜杠得到 aq（不回落），
         # 注释与断言均已按实测改正。下界 1867→1935 按本机实跑 2151×0.9≈1935 等量上调。
+        # s17.9 工具 schema 抽头批：新增纯头 ToolSchema.h + 套件 tst_toolschema（55 条，零夹具恒跑），把
+        # 27 个工具的 schema 一致性从「AgentLoopPrompt.cpp 经 AgentLoop.h 传递 include QOpenAi.h、因而
+        # 进不了 ctest」里抽出来直测——required 多写一个键就是会话第一个请求 400、name 与 ToolNames 漂移
+        # 就是工具恒 no-op，而本地编译与既有测试全绿。同批把 AgentLoop::createToolsDefinition() 退化为
+        # 一行转发（纯头绝不 include AgentLoop.h，否则拖进 moc + Qt6::Network）。下界 1935→1985 按本机
+        # 实跑 2206×0.9≈1985 等量上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1935'
+          $env:LITE_TEST_MIN_PASS = '1985'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure

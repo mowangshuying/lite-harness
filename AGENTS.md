@@ -101,7 +101,25 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     只让记忆静默变少或变脏：括号配对一漂整批丢条目、slug 一撞后写静默覆盖前一条、去重键一失效重复
     无限增长。**实测偏差登记**：源码注释原称非法 JSON 转义「≈ PyYAML 报错回落」，Qt 实际宽容接受
     `["a\q"]` 并静默吞掉反斜杠得到 `aq`（**不**回落），断言按实测行为钉、注释同步改正（见本头该条注释）。
-    全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
+    `tst_toolschema`（工具 schema 单源纯头 `ToolSchema.h`：信封 `type` 恒 function 且 name 非空唯一 /
+    名单与 `ToolNames` 常量 + workflow 恰好 27 项完全重合（多一个是发给模型一个不存在的工具，少一个是
+    执行器有工具却不让模型调）/ `required` 每项都在 `properties` 内（服务端 400 主因）/ `parameters.type`
+    恒 object / compact·list_tasks·list_teammates 三块**不写** `required` 键而 `list_crons` 写空数组
+    （两种形态不可合并）/ 数组专属 `items`·`minItems`·`maxItems` 只挂 `array` 且 `array` 必配 `items`、
+    字符串专属 `enum`·`pattern`·`minLength`·`maxLength` 只挂 `string` / `todos.maxItems` 取
+    `AgentConst::kTodoMaxItems` 而非硬编码 / `status` enum 恰为 pending·in_progress·completed / items
+    **刻意不写 required**（缺 status 由执行侧兜默认，钉住以免被「顺手补齐」成服务端 400）/ 全参数无
+    `default` 键 / `additionalProperties:false` 仅 create_task·update_task·create_worktree·workflow
+    四把锁 / workflow 信封逐字段等于 `WorkflowManager::toolInfo()`（防手工二次书写漂移）/
+    `create_worktree.name` 的 pattern `{0,63}`+首字符与 `maxLength` 64 同界 / `spawn_teammate` 的
+    `task_id`·`require_plan` 不在 required、`bash` 的 required 恰为 `[command]`（SubAgent 侧剥参的前提）/
+    SubAgent 白名单五工具全在 schema 内 / 惰性缓存两次取值逐字段一致，实跑 55 条，零夹具恒跑）——这套
+    schema 此前**整族零直测**（宿主 TU 经 `AgentLoop.h` 传递 include `QOpenAi.h` 链 Qt6::Network），而它是
+    「本地全绿、线上炸」的典型：`required` 多写一个键就整个会话第一个请求 400，而编译与既有测试全绿。
+    **已知未覆盖面诚实登记**：`todos.status` 的 enum 与执行侧三值白名单的交叉断言做不了——执行侧白名单是
+    `AgentLoopTodo.cpp` 里的硬编码字面量、不在纯头内，链它就要求 moc + QOpenAi；本套件只钉 schema 侧取值，
+    执行侧漂移仍需人工对照。
+    全量实跑 2206 条断言（s17.9 工具 schema 抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_toolschema` 55 条、零夹具恒跑，2151+55=2206；上一批登记 2151，再上一批 2075；历史句保留：全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
@@ -139,7 +157,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `1935`**（s17.9 记忆判据抽头批 1867→1935，按本机实跑 2151×0.9≈1935 等量上移——本批新增整套
+   **现值 `1985`**（s17.9 工具 schema 抽头批 1935→1985，按本机实跑 2206×0.9≈1985 等量上移——本批新增整套
+   `tst_toolschema` 55 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1935`
+   （s17.9 记忆判据抽头批 1867→1935，按本机实跑 2151×0.9≈1935 等量上移——本批新增整套
    `tst_memoryrules` 76 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；上一批现值 `1867`
    （s17.9 热力图算术抽头批 1843→1867，按本机实跑 2075×0.9≈1867 等量上移——本批新增整套
    `tst_heatmapgrid` 27 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；
@@ -223,6 +243,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **ActivityLedger.h** — 会话每日 token 消耗账本纯头（`ActivityLedger` 命名空间，header-only **不占测试目标 TU 清单**，`tst_activityledger` 直接 include 生产头）：`DayTotal{prompt, completion, cached, reasoning, calls}` + `totalProcessed() = prompt + completion`（对齐 GitHub contribution graph 单值语义）；`levelForTokens(qint64)` 五档阈值 0/<5k/<20k/<50k/<100k/≥100k（固定值、不落配置——阈值随模型单价漂移不是本视图责任）；`dateKey(QDate)`/`dateFromKey(QString)` **严格 ISO 口径**（10 字符、破折号在第 4/7 位、其余全数字、`QDate(y,m,d).isValid()`）——Qt `QDate::fromString(..., Qt::ISODate)` 对 `2026/11/07` 这类斜杠写法**宽松接受**，若判据不自己拆字符层等于把手改配置文件里的非法日期键静默读进来；`accumulateSnapshot(DayTotal&, UsageTokens::Snapshot&)` 无效快照丢弃不进账（`prompt<=0` 即整窗作废，与 `UsageTokens::fromUsage` 同源）；`readDaily(path)` 缺失/坏 JSON/非对象/非日期键/非对象值一律降级到空表（**不抛不崩不猜**，脏文件不影响其它会话）、负数字段回 0；`writeDaily` 走 `QSaveFile` 原子（同 `SessionStore` 纪律）。`aggregate(QList<QHash<QDate, DayTotal>>)` 跨会话合并同一天字段相加、`windowFilter(data, from, to)` 闭区间。落盘点唯一：`AgentLoop::appendActivityLedger` 在 `adoptUsageAnchor` 里紧随 `m_usageTotals.add` 之后（同一份 `UsageTokens::Snapshot`，两路账本一源），零 GUI 依赖可 ctest 直测。
 
 - **MemoryRules.h** — 记忆子系统纯判据单源（`MemoryRules` 命名空间，header-only **不占测试目标 TU 清单**，`tst_memoryrules` 直接 include 生产头）：`parseFrontmatter` / `memorySlug` / `normalizedMemoryText` / `messageText` / `extractJsonArray` / `validateMemoryRecord` / `shouldStoreMemory` / `memoryDocument` 八个判据，连同私用的 `memoryTypes()`（四类白名单）、`temporaryMemoryMarkers()`（16 条临时标记）、`collapseWhitespace` / `slugCollapse` / `trimDashes` / `yamlScalar` / `whitespaceRun` 一并搬进**具名 namespace 且逐个 `inline`**。helper 不放匿名 ns 是硬要求：`memoryTypes()` 与 `collapseWhitespace()` 还被本头之外的 `MemoryManager` 代码调用，匿名 ns 会让它们够不着；而 header-only 里的匿名 ns 还会让每个 TU 各持一份、函数内 `static` 身份分裂。抽头动机：这些判据此前全在 `MemoryManager.cpp`，该 TU include `QOpenAi.h`（链 `Qt6::Network`），按「仅允许 QtCore-only 引擎进测试清单」的硬纪律进不了 ctest，于是**整套记忆判据零直测**；而它们错了不报错、只让记忆静默变少或变脏（括号配对一漂整批丢条目、slug 一撞后写覆盖前一条、去重键一失效重复无限增长）。`MemoryManager` 侧保留同名 static 成员做**一行转发**，调用点与 `MemoryManager.h` 签名均不变；`shouldStoreMemory` 既有入参是嵌套类型 `MemoryManager::MemoryRecord`，纯头不能反向依赖那个链 QOpenAi 的 TU，故改吃轻量 `ExistingMemory{name, description, body}`，映射在转发处一次完成。
+
+- **ToolSchema.h** — 工具 schema 单源（`ToolSchema` 命名空间，header-only **不占测试目标 TU 清单**，`tst_toolschema` 直接 include 生产头）：`createToolsDefinition()` 逐工具构造发给服务端的 OpenAI function 定义，共 27 个（26 个来自 `ToolNames` 常量 + workflow 信封委托 `WorkflowManager::toolInfo()`）。函数体内 `static const QJsonArray cached` 的惰性缓存在 inline 函数里仍是跨 TU 单实例，缓存语义不变；`makeTool` lambda 只支持平铺参数并**恒写 `required`**，嵌套 array 与「无参数」两类必须手工构造（勿"顺手补齐" required）。抽头动机与硬约束：本体此前长在 `AgentLoopPrompt.cpp`，该 TU 经 `AgentLoop.h` 传递 include `QOpenAi.h`（链 `Qt6::Network`）因而进不了 ctest，整套 schema 零直测；`AgentLoop::createToolsDefinition()` 退化为**一行转发**，调用点与 `AgentLoop.h` 签名均不变；**本头绝不 include `AgentLoop.h`**（同 `AgentPathGuard.h` 登记的坑：那会把 moc + QOpenAi 依赖拖进只链 `Qt6::Core` 的测试目标）。
 
 ### UI 层
 
