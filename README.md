@@ -57,7 +57,7 @@ cmake -B build -S . -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64
 cmake --build build --config Release
 ```
 
-输出：`build/bin/lite-harness.exe`（版本 s17.9）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
+输出：`build/bin/lite-harness.exe`（版本 s17.10）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
 
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目的 install 规则在 configure 期即注册进全树安装清单，单目标构建缺 `Gallery.exe`/`cmark.exe` 会让后续 cpack 硬错误中止。
 
@@ -71,7 +71,7 @@ $env:LITE_TEST_TMPROOT = "$PWD\build\tmp-test"   # 必须以 tmp-test 结尾，�
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**（`file(GLOB test_src CONFIGURE_DEPENDS)` 自动收录）。当前覆盖三十二个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据 / `UiScale` 字号倍率与 DPI 策略名与几何编解码判据 / `CronManager` s12 cron 引擎报错族与 Vixie 双限定语义 / `LitePaths` 运行时路径锚点单源 / `PathGuard` 沙箱围栏多根判定 / `FluConfigStore` FluentUI 配置三段定位 / `FluConfigUtils` 配置门面注入与后端重建往返 / `ConfigMerge` 宿主与 FluentUI 配置合流不变量 / `SessionStore` 会话索引并入 `app/sessions` 的读写与迁移 / `UiUX` P1 UI 判据 / `ToolTagKind` 工具名→标签类别映射 / `ToolNames` 工具名常量表契约 / `NavKeys` 导航键与堆叠页键同源 / `LayoutConst` 布局常量自洽 / `AgentConst` 数值域与键名契约（含 s17.9 的四条预算 identity 断言）/ `CompactTranscript` 压缩转写回溯 / `ActivityLedger` s17.8 会话活动账本 / `HeatmapGrid` 热力图网格算术（371 满矩形、末格恒为 today、`cellOf`↔`dateOfCell` 互逆、窗口外返 {-1,-1}），全量实跑 2075 条断言（fail=0 skip=1；静态断言点 1989，口径 = 仓库净口径 PCRE 行首三合一（限定名 `TestHarness::check` 扣除 3 行 `#define CHECK` 续体 + 裸 `check(` + 宏 `CHECK(`）= 1471+335+183；复算须大小写敏感、行首锚定并**逐文件求和交叉核对**（本批曾单遍管道计数得 179 与逐文件求和 183 不一致，误把它归因为「`git grep -E` 的 `\s` 不可靠」——该归因不可复现，`-E` 与 `-P` 实测同值，已删去）。
+需 Qt bin 在 PATH（供 `Qt6Core.dll`）。新增套件：写 `tests/tst_<模块>.cpp` 暴露 `int tst_<模块>()`，在 `tests/main.cpp` 加一行调用即可，**无需改 CMakeLists**（`file(GLOB test_src CONFIGURE_DEPENDS)` 自动收录）。当前覆盖三十五个套件（`LineEnding` 行尾口径 / `MessageBus` 邮箱门 / `TaskStore` 租约 / `WorktreeManager` 工作树 / `AgentTeamsManager` 团队协议 / `McpManager` 命名净化与装配门 / `AgentRecovery` s15 契约串与判据矩阵 / `BackgroundTasksManager` 台账与唤醒判据 / `WorkflowManager` s16 引擎纯函数与 journal/schema 门 / `WorkflowRuntime` s16 编排原语与 review-changes 端到端 / `CompactTokens` 会话 token 计量与增量恒等式 / `SettingsCache` 设置读缓存与文件身份失效判据 / `UsageTokens` token 消耗累计与锚定恒等式 / `StreamRate` 生成窗口、聚合口径与本轮归属 / `GoalManager` s17 goal 引擎六门解析与七决策记账判据 / `UiScale` 字号倍率与 DPI 策略名与几何编解码判据 / `CronManager` s12 cron 引擎报错族与 Vixie 双限定语义 / `LitePaths` 运行时路径锚点单源 / `PathGuard` 沙箱围栏多根判定 / `FluConfigStore` FluentUI 配置三段定位 / `FluConfigUtils` 配置门面注入与后端重建往返 / `ConfigMerge` 宿主与 FluentUI 配置合流不变量 / `SessionStore` 会话索引并入 `app/sessions` 的读写与迁移 / `UiUX` P1 UI 判据 / `ToolTagKind` 工具名→标签类别映射 / `ToolNames` 工具名常量表契约 / `NavKeys` 导航键与堆叠页键同源 / `LayoutConst` 布局常量自洽 / `AgentConst` 数值域与键名契约（含 s17.9 的四条预算 identity 断言）/ `CompactTranscript` 压缩转写回溯 / `ActivityLedger` s17.8 会话活动账本 / `HeatmapGrid` 热力图网格算术（371 满矩形、末格恒为 today、`cellOf`↔`dateOfCell` 互逆、窗口外返 {-1,-1}），全量实跑 2251 条断言（fail=0 skip=1；静态断言点 2148，上一登记值 2075/1989 为 s17.9 热力图批现值、历史保留，口径 = 仓库净口径 PCRE 行首三合一（限定名 `TestHarness::check` 扣除 3 行 `#define CHECK` 续体 + 裸 `check(` + 宏 `CHECK(`）= 1471+335+183；复算须大小写敏感、行首锚定并**逐文件求和交叉核对**（本批曾单遍管道计数得 179 与逐文件求和 183 不一致，误把它归因为「`git grep -E` 的 `\s` 不可靠」——该归因不可复现，`-E` 与 `-P` 实测同值，已删去）。
 
 **本地跑必须先设 `LITE_TEST_TMPROOT`**（见上，值必须以 `tmp-test` 结尾）：十三个套件依赖 `ScopedTempRoot` 夹具（`MessageBus` / `TaskStore` 租约 / `Worktree` / `AgentTeams` / `SettingsCache` / `WorkflowManager` / `WorkflowRuntime` / `FluConfigStore` / `FluConfigUtils` / `ConfigMerge` / `SessionStore` / `UiUX` / `ActivityLedger`），变量缺失或未以 `tmp-test` 结尾时按各套件口径走 SKIP 通道（`MessageBus` / `Worktree` / `WorkflowRuntime` / `FluConfigStore` 等整组 SKIP；`WorkflowManager` 一类刻意「纯在前、文件在后」，只跳文件组、纯组断言照常计数），而 **SKIP 不计失败、进程仍返回 0**——`ctest` 看起来是绿的，实际只跑了非 SKIP 的组。CI 由 workflow 注入该变量，并额外用 `LITE_TEST_MIN_PASS` 断言下界把「跑到了多少断言」变成硬门禁。覆盖面与下一批切口见 [AGENTS.md](AGENTS.md)「测试（tests/ + ctest）」节。
 
@@ -87,7 +87,7 @@ ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s17.9-win64.zip`（约 54MB），解压后运行 `lite-harness-s17.9-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s17.10-win64.zip`（约 54MB），解压后运行 `lite-harness-s17.10-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
@@ -117,7 +117,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 ## 发布
 
-版本单源 = CMake `project VERSION`（数字段 `17.9`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17.9`）自动同名。补丁位 `.9` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例：lcc 移植阶段仍是 `s17`，`s17.9` 是该阶段内的第八个补丁版。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
+版本单源 = CMake `project VERSION`（数字段 `17.10`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17.10`）自动同名。补丁位 `.10` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例：lcc 移植阶段仍是 `s17`，`s17.10` 是该阶段内的第九个补丁版。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
 
 ## 致谢
 
