@@ -1182,10 +1182,17 @@ bool TaskStore::scanUnclaimedTasks(QVector<TaskSnapshot> *tasks, QString *error)
     // 纯侦察只读——pending 且无主且依赖就绪且 cwd 可解 → 候选快照清单。不改任何状态，
     // 认领是下一步的事（届时走 claimTask 六门复验）。lcc 的 can_start(task.id) 逐条重载在
     // lite 用已读 task 直接算 incompleteDependencies（口径等价——canStart 体内即此调用）。
-    tasks->clear();
     QVector<Task> all;
     if (!listTasks(&all, error))
         return false;
+    collectUnclaimedFrom(all, tasks);
+    return true;
+}
+
+void TaskStore::collectUnclaimedFrom(const QVector<Task> &all,
+                                     QVector<TaskSnapshot> *tasks) const
+{
+    tasks->clear();
     for (const Task &task : all) {
         if (task.status != QStringLiteral("pending") || task.owned)
             continue;
@@ -1197,5 +1204,22 @@ bool TaskStore::scanUnclaimedTasks(QVector<TaskSnapshot> *tasks, QString *error)
             continue; // lcc `if not error` 同款：worktree 破损任务不进候选（侦察静默跳过，不报错）
         tasks->append(makeSnapshot(task));
     }
+}
+
+bool TaskStore::listSnapshotsAndUnclaimed(QVector<TaskSnapshot> *snapshots,
+                                         QVector<TaskSnapshot> *unclaimed,
+                                         QString *error) const
+{
+    // 一次 listTasks 同时产出两份结果（见头文件注释：消 claimNextTask 的双扫）。两份的口径
+    // 各自沿用既有实现——快照导出走 makeSnapshot 逐字透传（含损坏文件上抛的 fail-closed 语义），
+    // 候选走共用的 collectUnclaimedFrom。
+    QVector<Task> all;
+    if (!listTasks(&all, error))
+        return false;
+    snapshots->clear();
+    snapshots->reserve(all.size());
+    for (const Task &task : all)
+        snapshots->append(makeSnapshot(task));
+    collectUnclaimedFrom(all, unclaimed);
     return true;
 }

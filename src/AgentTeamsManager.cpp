@@ -511,19 +511,19 @@ std::optional<TaskStore::TaskSnapshot> AgentTeamsManager::claimNextTask(const QS
     if (m_taskStore->leaseFor(owner).has_value()) {
         return std::nullopt;
     }
+    // 一次读盘同时拿「全量快照」与「候选清单」（s17.9 去双扫：原先 listTaskSnapshots 与
+    // scanUnclaimedTasks 各调一次 listTasks，同一任务目录被枚举两遍、每个 task_*.json 读两遍，
+    // 而本函数在队友空闲心跳里每 2s 跑一次）。两份结果的口径未变，见 TaskStore 侧共用 helper 的说明。
     QVector<TaskStore::TaskSnapshot> all;
+    QVector<TaskStore::TaskSnapshot> candidates;
     QString err;
-    if (!m_taskStore->listTaskSnapshots(&all, &err)) {
+    if (!m_taskStore->listSnapshotsAndUnclaimed(&all, &candidates, &err)) {
         return std::nullopt; // 台账不可读 fail-closed（D7）
     }
     for (const TaskStore::TaskSnapshot &t : all) {
         if (t.status == QStringLiteral("in_progress") && t.owner == owner) {
             return std::nullopt; // 偏D：lcc _owner_in_progress 私有查询的结构化等价
         }
-    }
-    QVector<TaskStore::TaskSnapshot> candidates;
-    if (!m_taskStore->scanUnclaimedTasks(&candidates, &err)) {
-        return std::nullopt;
     }
     for (const TaskStore::TaskSnapshot &c : candidates) {
         QJsonObject args;

@@ -519,13 +519,13 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
    生效语义见 `SettingsPage.h` 注释。
 4. **仍偏大的文件**（下一批可读性优化的候选，按体量排序，实测行数；**行数口径**=文件换行符数，
    末行无换行符则 +1——按 `-split` 计数会因空尾元素每文件虚高 1，勿据此判漂移；本轮文档校验已按 HEAD 全量复核，本批含注释改动的文件取**工作树值**（提交后即 HEAD））：`ChatSessionPage.cpp` 1291、
-   `TaskStore.cpp` 1201、`MemoryManager.cpp` 1117、`WorkflowRuntime.cpp` 1078（s16 Lane B 编排引擎，新晋）、
+   `TaskStore.cpp` 1225、`MemoryManager.cpp` 1117、`WorkflowRuntime.cpp` 1078（s16 Lane B 编排引擎，新晋）、
    `WorktreeManager.cpp` 917、`WorkflowManager.cpp` 879（s16 Lane A 引擎，新晋）、`MessageBubbleWidget.cpp` 887、
     `QOpenAi.cpp` 855（s15 传输层扩展后）、`AgentTeamsManager.cpp` 853、`SettingsPage.cpp` 858（s17.2 权限审批开关 +36；**卡片类拆分已明确不做，理由见 §9.11 ③**）、
      `SessionSidebar.cpp` 807（s16.1 腾出两节后，状态灯整盏搬回侧栏「状态」节；s17 P1 再加「后台任务」/「当前目标」两节）、
      `CompactManager.cpp` 767（计量抽纯头后转发 + 两段循环改增量；s17.9 summary 解耦与本轮注释审计再净 +9）、`TeammateRuntime.cpp` 728（s13 队友预算 +147 行后新晋；s15 镜像判据同步后回落）、
      `AgentLoopTeam.cpp` 701（s13 接线 + s15 异步 fail-closed + s17.2 审批开关放行 +11 + s17.9 队友落活动账 +9）、
-     `ChatStatusStrip.cpp` 290（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 32678 行，本轮**工作树**实测（HEAD `578d617` 为 32619，差 +59 = 本批「优化落地」的注释与代码净增），口径 = `ReadAllLines` 含空行；上一轮登记的 31777 已过期——**差值 833 是跨多批次的累计，不得归因于最近两批**：`git diff --numstat a6e6441..HEAD -- src/` 实测仅 +36（逐修订单批实测：`50d3e56` 热力图批 **+8**、`9664287` 预算恒等批 **+28**、`ce579f9` bump 批 0），本轮注释/文档审计批再 +10，其余 787 行属 31777 登记点之后、`a6e6441` 之前的各批；**归因一律用 `git diff --numstat <rev>~..<rev> -- src/` 逐修订实测，勿拿两个登记值相减当单批增量**（本轮就犯过一次：把 833 全记到最近两批头上）；上一轮登记的 31258 已过期——s17.6..HEAD 净增 205 行（`CompactTranscript.h` 186 + `AgentLoopHistory.cpp` 12 + `AgentLoop.h` 5 + `ChatSessionPage.cpp` +3/-1），余量差系该值登记时的 HEAD 早于 s17.6 末批；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.7 各批净增，现值以本轮实测为准）。
+     `ChatStatusStrip.cpp` 290（s16.1 新晋，承接消耗/速度两段文字；占用数字与状态灯随后按用户裁决搬回侧栏「上下文」/「状态」节；s17.1 加轮步段成三段）（`src/` 合计 32719 行，本轮**工作树**实测（HEAD `c0e2337` 为 32678，差 +41 = 本批「任务台账去双扫」净增：`TaskStore.h` +17、`TaskStore.cpp` +24、`AgentTeamsManager.cpp` 净 0），口径 = `ReadAllLines` 含空行；上一轮登记的 31777 已过期——**差值 833 是跨多批次的累计，不得归因于最近两批**：`git diff --numstat a6e6441..HEAD -- src/` 实测仅 +36（逐修订单批实测：`50d3e56` 热力图批 **+8**、`9664287` 预算恒等批 **+28**、`ce579f9` bump 批 0），本轮注释/文档审计批再 +10，其余 787 行属 31777 登记点之后、`a6e6441` 之前的各批；**归因一律用 `git diff --numstat <rev>~..<rev> -- src/` 逐修订实测，勿拿两个登记值相减当单批增量**（本轮就犯过一次：把 833 全记到最近两批头上）；上一轮登记的 31258 已过期——s17.6..HEAD 净增 205 行（`CompactTranscript.h` 186 + `AgentLoopHistory.cpp` 12 + `AgentLoop.h` 5 + `ChatSessionPage.cpp` +3/-1），余量差系该值登记时的 HEAD 早于 s17.6 末批；s17 新增四件 `GoalRules.h` 410 / `GoalManager.h` 156 / `GoalManager.cpp` 348 / `AgentLoopGoal.cpp` 230；s17.1 摘除「查看完整输出」入口后曾由 31017 回落 320 行——`ToolOutputDialog.{h,cpp}` 257 + `ToolBlock` 63；此后 s17.2–s17.7 各批净增，现值以本轮实测为准）。
      **清单边界说明**：本表只收「拆了能提升可读性」的文件，非严格体量前 N。`AgentLoopPrompt.cpp` 717、
      `LiteHarness.cpp` 800、`ToolBlock.cpp` 565（s17.1 摘除「查看完整输出」入口与其对话框后回落）未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者

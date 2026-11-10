@@ -175,6 +175,16 @@ public:
     // lcc `if not error` 同款），产出快照列表。不改任何状态；认领是下一步的事（走 claimTask 六门）。
     bool scanUnclaimedTasks(QVector<TaskSnapshot> *tasks, QString *error) const;
 
+    // 单次读盘的「全量快照 + 候选清单」组合口（s17.9 去双扫）：`claimNextTask` 原先先调
+    // listTaskSnapshots、再调 scanUnclaimedTasks，而两者内部各调一次 listTasks——同一个任务
+    // 目录被枚举两遍、每个 task_*.json 被读两遍（队友空闲心跳每 2s 触发一次，队友数 × 任务数
+    // 线性放大）。本口一次读盘同时产出两份结果，筛选口径与 scanUnclaimedTasks **共用同一私有
+    // helper**，故不存在「两份判据各自漂移」的新风险。错误语义同 listTaskSnapshots：
+    // 台账不可读 → *error + false（调用方 fail-closed）。
+    bool listSnapshotsAndUnclaimed(QVector<TaskSnapshot> *snapshots,
+                                   QVector<TaskSnapshot> *unclaimed,
+                                   QString *error) const;
+
     // ── s13 Lane A：可注入回调（P3 宿主接线；默认空 = 透传放行 / cwd 回落）──
     // 完成前置否决门（lcc plan_gate_check）：返回 false = 否决，reason 原样作为业务文本回传
     // （可为空串=静默否决，lcc 空串拒口径同款）。偏差⑥（M5 改形）：按 (owner, taskId) 双值判定。
@@ -237,6 +247,13 @@ private:
     bool updateTaskDependencies(const QString &taskId, const QJsonArray &addBlockedBy,
                                 Task *updated, QString *error) const;
     bool listTasks(QVector<Task> *tasks, QString *error) const;
+    // 候选筛选的**唯一实现**（s17.9 去双扫）：从已读盘的 Task 列表挑 pending+无主+依赖就绪+cwd 可解。
+    // scanUnclaimedTasks 与 listSnapshotsAndUnclaimed 共用它——去重若靠复制一份筛选逻辑，就等于给
+    // 同一判据造出第三个漂移源，那比省下的那次目录枚举贵得多。口径逐字沿用原 scanUnclaimedTasks：
+    // resolveTaskCwd 出错（worktree 破损）不计入候选、不报错（lcc `if not error`）。
+    // 声明位置必须在 `struct Task` 之后（嵌套类型先声明后使用），故落在 private 段 listTasks 旁；
+    // 两个公开口都在 struct Task 之前声明，只碰 TaskSnapshot，不受此约束。
+    void collectUnclaimedFrom(const QVector<Task> &all, QVector<TaskSnapshot> *tasks) const;
     QStringList incompleteDependencies(const Task &task) const;
     bool canStart(const QString &taskId, bool *startable, QString *error) const;
     // 状态机：业务性失败（状态不符/被阻塞）按 lcc 以文本形式经 result 返回（非 *error）；
