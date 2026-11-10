@@ -169,11 +169,17 @@ jobs:
         # 同批另加「逐套件下界表」（tests/main.cpp kSuiteFloors）：全局下界挡不住「单个套件静默消失」
         # ——31 套件里 30 个的条数都小于全局余量，删掉任意一行 runSuite 调用 CI 仍全绿；现表内每个名字
         # 都必须被跑到且不低于自身下界，漏跑/改名/删断言组一律硬失败。
+        # s17.9 热力图算术抽头批：新增纯头 HeatmapGrid.h + 套件 tst_heatmapgrid（27 条，零夹具恒跑），
+        # 把「371 满矩形 / 末格恒为 today / cellOf↔dateOfCell 互逆」从只能肉眼看的 QWidget 里抽出来直测
+        # ——这正是 s17.9 初版那个「尾列留空破矩形」故障的不变量；ContributionHeatmap 三处改转调、不留
+        # 第二份算术。同批加门禁③ LITE_TEST_MAX_SKIP=1（CI 侧 skip 上界，本机不设不判）：全测试目标有
+        # 42 处 skip 通道，此前「夹具被改坏」是绿着降级。下界 1843→1867 按实跑 2075×0.9≈1867 上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1843'
+          $env:LITE_TEST_MIN_PASS = '1867'
+          $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

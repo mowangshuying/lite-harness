@@ -42,7 +42,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **骨架取舍:** 刻意不引 `Qt6::Test`/moc——可单测对象全是纯函数，无信号槽、无数据驱动表需求，少一个
   组件依赖与一份 DLL 负担，本地 cl 与 CI 都能直接起来（完整理由见 `tests/TestHarness.h` 顶部）。
   `check` 失败不中断，一次跑完看全貌；计数用 C++17 inline 函数内 static，跨 TU 唯一实例、无需定义文件。
-- **覆盖现状:** **三十一个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
+- **覆盖现状:** **三十二个套件**（s17.6 批新增的 `tst_uiux` / `tst_tooltagkind` / `tst_toolnames` /
   `tst_navkeys` / `tst_layoutconst` / `tst_agentconst` 六件此前只进了 `tests/main.cpp` 与 CI 注释，
   本条枚举与计数漏登记，现补——计数以 `tests/main.cpp` 的 `failed += runSuite("<名>", tst_*())` 调用行为准，
   该注册形态自 `388c610` 起取代了早先的 `failed += tst_*()` 裸调用（本条那句旧口径写于 `ac08745`，
@@ -85,14 +85,18 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     日期键严格 ISO 往返（斜杠写法、月日补零错位、非法月日全拒——Qt `QDate::fromString` 在 `Qt::ISODate` 下对
     `2026/11/07` 宽松接受，故判据必须自己拆到字符层）/ `accumulateSnapshot` 无效快照丢弃不进账 /
     `totalProcessed` 只算 prompt+completion / `aggregate` 跨会话合并同一天字段相加 / `windowFilter` 闭区间边界 /
-    文件读写往返（QSaveFile 原子）/ 脏 JSON 与非日期键降级到空表，实跑 58 条 = 恒跑组 42 + 夹具门控组 16）——
+    文件读写往返（QSaveFile 原子）/ 脏 JSON 与非日期键降级到空表，实跑 58 条 = 恒跑组 42 + 夹具门控组 16）/
+    `tst_heatmapgrid`（热力图网格算术纯头 `HeatmapGrid.h`：371 格满矩形 / 首日 = today−370 / 末格 (52,6) 恒为
+    today / 每列满 7 格且无未来日期 / `cellOf`↔`dateOfCell` 逐格互逆 / 窗口外返 {-1,-1} 不钳位不回绕 / 跨年与
+    闰日边界，实跑 27 条，零夹具恒跑）——这套算术此前**零直测**（宿主 TU 是 QWidget 进不了 ctest），而它恰好
+    出过一次用户可见故障（尾列留空破矩形），off-by-one 只能靠断言钉、肉眼看不全。
     全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
     **FluentUI 侧 `FluConfigUtils.cpp`**（它无 `Q_OBJECT`，依赖的 `FluThemeUtils.h` 虽带该宏但只取其中的 `FluTheme` 枚举、从不实例化，故既不需 QtGui/QtWidgets 也不需额外 moc）），
     **仅允许 QtCore-only 的引擎入表**。header-only 纯头（`LineEnding.h` / `AgentRecovery.h` /
-    `CompactTokens.h` / `SettingsCache.h` / `UsageTokens.h` / `StreamRate.h` / `GoalRules.h` / `ActivityLedger.h`）**不占此清单**——测试直接 include 生产头即可，零 CMake 改动；带非 QtCore 依赖的
+    `CompactTokens.h` / `SettingsCache.h` / `UsageTokens.h` / `StreamRate.h` / `GoalRules.h` / `ActivityLedger.h` / `HeatmapGrid.h`）**不占此清单**——测试直接 include 生产头即可，零 CMake 改动；带非 QtCore 依赖的
    TU（如 `CompactManager.cpp` 依赖 `QOpenAi::AsyncRequest`）**不得**为凑覆盖率塞进测试目标，
    要直测它先把纯函数抽成头。
     **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 16 TU、`SubAgent`、`TeammateRuntime`）
@@ -124,7 +128,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `1843`**（s17.9 工具判据抽头批 1834→1843，按本机实跑 2048×0.9≈1843 等量上移——本批新增 10 条
+   **现值 `1867`**（s17.9 热力图算术抽头批 1843→1867，按本机实跑 2075×0.9≈1867 等量上移——本批新增整套
+   `tst_heatmapgrid` 27 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足）；
+   上一批现值 `1843`（s17.9 工具判据抽头批 1834→1843，按本机实跑 2048×0.9≈1843 等量上移——本批新增 10 条
    `RecoveryRules::isToolFailureText` 断言全挂在恒跑组 `tst_agentrecovery`（该套件 24→34）、不依赖
    `LITE_TEST_TMPROOT`，故可等量上调）；上一批现值 `1834`（s17.9 上下文预算恒等批 1830→1834，按本机实跑
    2038×0.9≈1834 等量上移——该批新增的 4 条 `contextTokenBudgetFrom` identity 断言全挂在恒跑组
@@ -208,7 +214,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **LiteHarness** — 主窗口（FluFrameLessWidget）：FluVNavigationView + FluStackedLayout，会话新建/恢复（按索引升序）/重命名/删除，关闭时运行守卫。**会话活动缓存** `m_activityCache`（dataId → 该会话 `QHash<QDate, DayTotal>`）：构造末尾 `scanActivityLedgers()` 一次性扫过全部会话 `.activity/daily.json` 灌进内存、`createSession`/`restoreSessions` 里连每页 `activitySessionChanged` → `refreshActivityForDataId` 增量刷新、`deleteSession` 里 `m_activityCache.remove(dataId)` 剔除；三处更新过后 `pushActivityToNewChat()` 跨会话合并（同一天字段相加）后 setter-push 到 `NewChatPage::setActivityData`。**导航搜索项按用户裁决关闭（s17.1）**，此处历史上**反复过两次**（`bde1630` 曾 `hideSearchItem()`、`a78722d` 的 P0-5 又刻意接回），机制记清以免第三次踩：FluentUI 的导航搜索不是过滤器而是 **jump box**——`FluVNavigationView` 拿输入文本对每个子项 label 做**全等**比对，命中才 `onItemClickedDirect` + `emit searchKeyChanged`；故「可用」需**三件套齐备**：本体可见 + `updateSearchKeys` 喂候选（该方法在 FluentUI 内部**无任何调用点**，候选恒空即恒不命中，必须宿主自建喂入通路）+ 宿主接 `searchKeyChanged` 切页，三者缺一即是个点不到的死输入框。**增删本项一律三件同进同出**，只改一处必然留下白跑的候选重建或永不执行的接线。关闭走 `hideSearchItem()` 而非删控件：`expandView`/`collapseView` 对 Search 类型只 `setFixedWidth` + `hideSearchButton()`（框内按钮，非本体），全程不 `show()` 本体，故折叠导航不会把它打回可见；唯一能复活它的 `setOnlyCollapseView(false)` 本仓从未调用。
 - **ChatSessionPage** — 每会话一页：AgentLoop + 滚动消息流 + 输入框 + 只读路径条；历史回放与就地刷新。
 - **NewChatPage / SettingsPage / BasePage** — 发起页（进入时重读 config.json 默认目录 + **会话活动热力图**，数据由宿主 LiteHarness push、本页面从不直读磁盘也从不订阅 AgentLoop——承 SessionSidebar 的 setter-push 纪律）、设置页（config.json `defaultWorkDir`、`contextCharLimit`、`apiBaseUrl`/`apiToken` 模型服务卡）、页面基类。
-- **ContributionHeatmap** — 会话活动热力图（**53 列 × 7 行 = 371 天滚动满矩形**，仿 GitHub contribution graph 但**不按日历周对齐**）。纯视图 QWidget，`setData(QHash<QDate, DayTotal>)` 由宿主灌入；paintEvent 手绘卡片背景 + 圆角色块 + 底部月份标签，tooltip 显示当日五字段（prompt/completion/cached/reasoning/calls）+ **覆盖边界免责**（「仅主循环与队友回合，不含压缩/记忆/workflow」——见 ActivityLedger.h 条目）。三主题色板硬编码在本 cpp（FluentUI fork 无 `FluThemeColorType`/`getFluentColor`，与 `LiteHarness::onThemeChanged` 同款决策）：light 40,167,69 / dark 52,216,113 / atomOneDark 152,195,121，档位 alpha 阶梯 `{0, 77, 140, 191, 230, 255}`。日期→网格：`gridStart(today) = today.addDays(-(kWeeks*kDaysPerWeek - 1))`（即 today−370），`cellPosition()` 按 `offset/kDaysPerWeek` 取列、`offset%kDaysPerWeek` 取行，越界返 `{-1,-1}`；`cellDateAt()` 是其逆运算。**列 = 连续 7 天块（序号 0..52），行 = 块内日序（0..6）**，故末格 (52,6) 恒为今天、每列恒满 7 格；旧口径「列=按周日对齐的日历周 + 绘制时 `date > today` 跳过」在非周六会留尾列破口，已在 s17.9 废除，**绘制循环不得再跳过未来日期**（`dayOfWeekIndex` 这个符号已不存在，勿再引用）。`ThemeAware::bind("ContributionHeatmap.qss", this, [this]{ update(); })` 订主题切换重刷。
+- **ContributionHeatmap** — 会话活动热力图（**53 列 × 7 行 = 371 天滚动满矩形**，仿 GitHub contribution graph 但**不按日历周对齐**）。纯视图 QWidget，`setData(QHash<QDate, DayTotal>)` 由宿主灌入；paintEvent 手绘卡片背景 + 圆角色块 + 底部月份标签，tooltip 显示当日五字段（prompt/completion/cached/reasoning/calls）+ **覆盖边界免责**（「仅主循环与队友回合，不含压缩/记忆/workflow」——见 ActivityLedger.h 条目）。三主题色板硬编码在本 cpp（FluentUI fork 无 `FluThemeColorType`/`getFluentColor`，与 `LiteHarness::onThemeChanged` 同款决策）：light 40,167,69 / dark 52,216,113 / atomOneDark 152,195,121，档位 alpha 阶梯 `{0, 77, 140, 191, 230, 255}`。**网格算术不在本类**：`gridStart` / `cellPosition` / `cellDateAt` 的日期↔坐标映射转调纯头 `HeatmapGrid.h`（`windowStart` / `cellOf` / `dateOfCell`），本类只留像素几何与绘制；`kWeeks`/`kDaysPerWeek` 是 `HeatmapGrid` 常量的别名，勿在此重写 53/7（第二个真值源）。不变量：末格 (52,6) 恒为今天、每列恒满 7 格；旧口径「列=按周日对齐的日历周 + 绘制时 `date > today` 跳过」在非周六会留尾列破口，已在 s17.9 废除，**绘制循环不得再跳过未来日期**（`dayOfWeekIndex` 这个符号已不存在，勿再引用）。`ThemeAware::bind("ContributionHeatmap.qss", this, [this]{ update(); })` 订主题切换重刷。
 - **MessageBubbleWidget** — 气泡流式渲染（打字机），首次工具/思考事件后重建为时间线。
 - **CollapsibleBlock** — 折叠动画基类（32px 头部 + 300ms OutCubic contentHeight 动画），子类 ThinkingBlock / ToolBlock / TodoCard。基类构造禁调虚函数，子类构造尾再 bind 主题。
 - **ThemeAware** — 「加载 QSS + 订阅 themeChanged + 重载」样板单源（约 12 处旧复制已收敛）。

@@ -66,7 +66,8 @@ QColor levelColor(const Palette &p, int level)
 // 旧口径 gridStart = weekStart(today) - 52*7 在非周六时尾列只有部分格，矩形右下有破口。
 QDate ContributionHeatmap::gridStart(const QDate &today)
 {
-    return today.addDays(-(kWeeks * kDaysPerWeek - 1));
+    // 算术单源在 HeatmapGrid.h（纯 QDate、可进 ctest 直测）；本处只转发，不留第二份实现。
+    return HeatmapGrid::windowStart(today);
 }
 
 ContributionHeatmap::ContributionHeatmap(QWidget *parent)
@@ -111,10 +112,8 @@ QRect ContributionHeatmap::gridRect() const
 
 QPair<int, int> ContributionHeatmap::cellPosition(const QDate &date, const QDate &today) const
 {
-    const int offset = gridStart(today).daysTo(date);
-    if (offset < 0 || offset >= kWeeks * kDaysPerWeek)
-        return {-1, -1}; // 窗口外（早于首日或晚于今天）无坐标
-    return {offset / kDaysPerWeek, offset % kDaysPerWeek};
+    // 转调 HeatmapGrid::cellOf（含窗口外判 {-1,-1}），算术不在本类里重述一遍
+    return HeatmapGrid::cellOf(date, today);
 }
 
 QDate ContributionHeatmap::cellDateAt(const QPoint &point) const
@@ -132,7 +131,8 @@ QDate ContributionHeatmap::cellDateAt(const QPoint &point) const
     const int colInCell = (point.x() - grid.left()) - col * step;
     if (rowInCell >= kCellSize || colInCell >= kCellSize)
         return QDate();
-    return gridStart(QDate::currentDate()).addDays(col * kDaysPerWeek + row);
+    // 像素→(col,row) 归本类，(col,row)→日期归 HeatmapGrid::dateOfCell（cellOf 的逆运算，直测覆盖）
+    return HeatmapGrid::dateOfCell(col, row, QDate::currentDate());
 }
 
 void ContributionHeatmap::paintEvent(QPaintEvent *)

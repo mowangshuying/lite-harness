@@ -7,6 +7,7 @@
 #include <QWidget>
 
 #include "ActivityLedger.h"
+#include "HeatmapGrid.h" // 网格算术单源（窗口长度、日期↔坐标互逆），本类只做像素映射与绘制
 
 class QMouseEvent;
 class QPaintEvent;
@@ -52,8 +53,10 @@ private:
 
     QHash<QDate, ActivityLedger::DayTotal> m_data;
 
-    static constexpr int kWeeks = 53;
-    static constexpr int kDaysPerWeek = 7;
+    // 网格尺寸取自 HeatmapGrid 单源（此处只是别名，让下方像素几何代码读起来不变）——
+    // 若在此另写一遍 53/7，就有了第二个真值源，正是本仓反复在消的双写形态。
+    static constexpr int kWeeks = HeatmapGrid::kWeeks;
+    static constexpr int kDaysPerWeek = HeatmapGrid::kDaysPerWeek;
     static constexpr int kCellSize = 12;
     static constexpr int kCellGap = 3;
     static constexpr int kMonthLabelHeight = 16;

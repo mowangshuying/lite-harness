@@ -119,6 +119,9 @@ int groupReadWrite(const QString &dir)
     int failed = 0;
     const QString configPath = LitePaths::configFilePathFor(dir);
     const SettingsCache::Reader reader = makeReader(configPath);
+    // t0 = 本次写入前的时钟读数；下方用它把 createdMs 夹在 [t0, now] 内，
+    // 不用「距现在 ±60 秒」那种窗口——机器休眠或 NTP 校时会把它变成假红。
+    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
 
     // ① 空配置：读索引得空表，而不是报错或凭空造一个键
     CHECK(SessionStore::loadIndex(reader).isEmpty());
@@ -138,7 +141,10 @@ int groupReadWrite(const QString &dir)
     CHECK(first.value(QStringLiteral("workDir")).toString() == QStringLiteral("D:/work/one"));
     const qint64 created = first.value(QStringLiteral("createdMs")).toLongLong();
     CHECK(created > 0);
-    CHECK(qAbs(created - QDateTime::currentMSecsSinceEpoch()) < 60LL * 1000 * 1000);
+    // 用「本次调用自己的时间窗」夹住，而不是「距现在 60 秒内」：后者在机器休眠、NTP 校时或
+    // CI 抢不到 CPU 时会假红（且它把「字段等于当前时刻」误钉成了契约——真正要防的是
+    // createdMs 写成 0 /  epoch / 随机垃圾值，那由 t0 ≤ created ≤ now 完全覆盖）。
+    CHECK(created >= t0 && created <= QDateTime::currentMSecsSinceEpoch());
     // lastActiveMs 已随本次合并删除：新写的条目里**不得**再有这个键（留着等于留着续活链接口）
     CHECK(!first.contains(QStringLiteral("lastActiveMs")));
 

@@ -7,7 +7,7 @@
 //
 // 两道门禁各挡一类失效：
 //   ① 全局 LITE_TEST_MIN_PASS（CI 注入）——挡「夹具变量整体缺失」这种一次性掉几百条的
-//      塌方（本机实测：带夹具 2048 / 不带 1072，差 976，远大于余量）。
+//      塌方（本机实测：带夹具 2075 / 不带 1099，差 976，远大于余量）。
 //   ② 下面的 kSuiteFloors 逐套件下界——挡「某个套件静默消失」。全局下界挡不住这条：
 //      31 个套件里 30 个的实跑条数都小于全局余量（204），删掉 main 里任意一行 runSuite
 //      调用（除 agentteams 263 条）CI 仍然全绿。逐套件表把「每个套件至少跑到多少条」
@@ -57,9 +57,10 @@ int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h）�
 int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 int tst_activityledger();     // 会话每日 token 消耗账本（ActivityLedger.h）：阈值/日期键/累加/求和/截断恒跑 + 读写往返/脏数据降级夹具门控
+int tst_heatmapgrid();        // 热力图网格算术（HeatmapGrid.h）：371 满矩形 / 末格恒为 today / cellOf↔dateOfCell 互逆 / 窗口外，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1072，与本机无夹具全量实跑 pass=1072 逐条对上（带夹具为 2048）。
+// 全表求和 = 1099，与本机无夹具全量实跑 pass=1099 逐条对上（带夹具为 2075）。
 struct SuiteFloor {
     const char *name;
     int floor;
@@ -75,7 +76,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"configmerge", 14},        {"sessionstore", 4},        {"uiux", 11},
     {"tooltagkind", 26},        {"toolnames", 7},           {"navkeys", 14},
     {"layoutconst", 23},        {"agentconst", 16},         {"compacttranscript", 40},
-    {"activityledger", 37},
+    {"activityledger", 37},        {"heatmapgrid", 27},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -148,6 +149,7 @@ int main()
     failed += runSuite("agentconst", tst_agentconst);
     failed += runSuite("compacttranscript", tst_compacttranscript);
     failed += runSuite("activityledger", tst_activityledger);
+    failed += runSuite("heatmapgrid", tst_heatmapgrid);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
@@ -187,6 +189,20 @@ int main()
                     "check LITE_TEST_TMPROOT)\n",
                     passed, minPass);
         return 2;
+    }
+
+    // 门禁③：skip 上界（CI 注入 LITE_TEST_MAX_SKIP；本机不设则不判）。
+    // 为什么需要：TestHarness::skip 既不计失败也不产生断言，全测试目标有 42 处 skip 点，
+    // 「夹具形态被改坏」会让整组静默降级而进程仍返回 0——下界①②只能兜住「掉了很多断言」，
+    // 兜不住「掉的那部分恰好都以 skip 形式消失」。CI 现值 1（唯一诚实 skip 是 junction 夹具，
+    // 见 tst_messagebus），超出即说明有第二处开始跳过，必须人看。
+    if (qEnvironmentVariableIsSet("LITE_TEST_MAX_SKIP")) {
+        const int maxSkip = qEnvironmentVariableIntValue("LITE_TEST_MAX_SKIP");
+        if (maxSkip >= 0 && skipped > maxSkip) {
+            std::printf("GATE FAIL: skip=%d > LITE_TEST_MAX_SKIP=%d（有套件静默降级？）\n",
+                        skipped, maxSkip);
+            return 3;
+        }
     }
     return 0;
 }
