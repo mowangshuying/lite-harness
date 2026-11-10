@@ -1134,8 +1134,18 @@ void ChatSessionPage::resizeEvent(QResizeEvent *event)
                            LayoutConst::kSidebarRestoreTop);
     }
     applyColumnWidth();
-    // 延帧重钳：布局结算后气泡按新列宽重排（「回到底部」钮摆位已并入 applyColumnWidth）
-    QTimer::singleShot(0, this, [this]() { applyColumnWidth(); });
+    // 延帧重钳：布局结算后气泡按新列宽重排（「回到底部」钮摆位已并入 applyColumnWidth）。
+    // **这次延帧不能被「列宽未变」的早退吃掉**——同步那次跑在布局结算前，延帧那次才是终态，
+    // 二者是「先猜后校」的配对，不是冗余。但拖窗口时 resizeEvent 可达 30-60 次/秒，每次都
+    // 排一发 singleShot 就是同样数量的全列气泡重排；这里只把同一轮事件循环内的多次请求
+    // 合并成一次（终态等价，重复调用本就幂等），量级从 N 次/拖动降到 1 次/事件循环。
+    if (!m_columnClampPending) {
+        m_columnClampPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            m_columnClampPending = false;
+            applyColumnWidth();
+        });
+    }
 }
 
 QString ChatSessionPage::sessionDataId() const

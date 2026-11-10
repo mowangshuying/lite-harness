@@ -7,8 +7,10 @@
 // 它是数字口径不是文案，见其定义处的理由说明。
 //
 // 为什么单独成头（而非塞进 AgentLoop.cpp）：解析与累加是**算术**，与「谁在计量」无关；
-// AgentLoop / TeammateRuntime 两条链都要用，而 AgentLoop TU 链 QOpenAi/FluentUI，按
-// CMakeLists.txt:128「仅允许 QtCore-only 引擎进测试清单」的硬纪律进不了 ctest。抽成纯头后
+// AgentLoop / TeammateRuntime 两条链都要用，而 AgentLoop 的 TU 进不了测试目标：类带
+// Q_OBJECT 需 moc、又链 QOpenAi（Qt6::Network），按 CMakeLists.txt「仅允许 QtCore-only 引擎
+// 进测试清单」的硬纪律被挡在外。（注意**不是** FluentUI：LiteLog.h 在测试目标经
+// LITE_NO_FLU_LOG 退化成裸 qDebug 族、并不把 FluentUI::Utils 拉进测试链接。）抽成纯头后
 // tst_usagetokens 直接 include 即测真实编译产物（同 CompactTokens.h 的「抽纯头」路线，结构篇 §9.5）。
 //
 // **覆盖面边界（务必如实理解，勿高估这个数字）**：只有携带

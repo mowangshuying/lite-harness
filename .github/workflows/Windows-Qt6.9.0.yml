@@ -163,11 +163,17 @@ jobs:
         # s17.9 上下文预算恒等批：tst_agentconst 12→16（新增四条 contextTokenBudgetFrom identity 断言，
         # 钉死「预算 = 声明值本身、不再 ÷4」，改回任何系数即编译失败 + 测试转红）；4 条全挂恒跑组、
         # 不依赖 LITE_TEST_TMPROOT，故下界 1830→1834 按本机实跑 2038×0.9≈1834 等量上移。
+        # s17.9 工具判据抽头批：tst_agentrecovery 24→34（新增 10 条 RecoveryRules::isToolFailureText
+        # 断言，把「asyncApprovalDenied() 定值串必须判失败」从注释约定升级成断言）；10 条全挂恒跑组，
+        # 故下界 1834→1843 按本机实跑 2048×0.9≈1843 等量上移。
+        # 同批另加「逐套件下界表」（tests/main.cpp kSuiteFloors）：全局下界挡不住「单个套件静默消失」
+        # ——31 套件里 30 个的条数都小于全局余量，删掉任意一行 runSuite 调用 CI 仍全绿；现表内每个名字
+        # 都必须被跑到且不低于自身下界，漏跑/改名/删断言组一律硬失败。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '1834'
+          $env:LITE_TEST_MIN_PASS = '1843'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
 

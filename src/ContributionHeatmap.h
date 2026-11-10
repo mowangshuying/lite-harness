@@ -28,6 +28,12 @@ public:
 
     void setData(const QHash<QDate, ActivityLedger::DayTotal> &dayMap);
 
+    // 滚动窗口首日：末格（52,6）恒为 today，故窗口首日 = today - (53*7 - 1)。
+    // **public static 的理由**：这是纯日期算术、无实例状态，而宿主侧（LiteHarness 的活动缓存
+    // 截断）必须用同一个窗口值——放在 private 里宿主就只能另写一个 371，那是第二个真值源。
+    // 窗口长度（kWeeks×kDaysPerWeek）仍只此一处定义。
+    static QDate gridStart(const QDate &today);
+
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
@@ -43,8 +49,6 @@ private:
     QDate cellDateAt(const QPoint &point) const;
     // 日期 → 网格坐标（列 = 7 天块序号 0..52，行 = 块内日序 0..6）；窗口外返回 {-1, -1}
     QPair<int, int> cellPosition(const QDate &date, const QDate &today) const;
-    // 滚动窗口首日：末格（52,6）恒为 today，故窗口首日 = today - (53*7 - 1)
-    static QDate gridStart(const QDate &today);
 
     QHash<QDate, ActivityLedger::DayTotal> m_data;
 

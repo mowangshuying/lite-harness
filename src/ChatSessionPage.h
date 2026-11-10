@@ -140,6 +140,11 @@ private:
     // 所有权随本页（QTimer parent=this），零所有权语义同其余子件
     QTimer *m_scrollCoalesceTimer = nullptr;
     // 消息列/输入组各自的居中行容器布局：列宽靠 maximumWidth 钳制，两侧留白由
+    // 延帧重钳合并旗标：拖窗口时 resizeEvent 可达 30-60 次/秒，每发都排一次全列气泡重排；
+    // 本旗标把同一轮事件循环内的多次请求并成一次（终态等价，applyColumnWidth 幂等）。
+    // 注意它**不能**被改成「列宽未变就整个跳过」——同步调用跑在布局结算前、延帧那次才是终态，
+    // 二者是「先猜后校」的配对，不是冗余。
+    bool m_columnClampPending = false;
     // applyColumnWidth 手动写入边距（水平 Ignored 行容器，断开窗口收缩棘轮）
     QHBoxLayout *m_scrollRowLayout = nullptr;
     QHBoxLayout *m_inputRowLayout = nullptr;

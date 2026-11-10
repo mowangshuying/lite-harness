@@ -120,6 +120,51 @@ void testRecoveryConstants()
                        "kMaxRecoveryRetries=2（恢复级重试预算，后续 lane 消费）");
 }
 
+// 工具成败判据（RecoveryRules::isToolFailureText）——全仓唯一真值源。
+// 为什么必须钉死：这条判据决定一次工具调用是「成功回灌」还是「失败回灌」，历史上它在
+// AgentLoop::isToolFailure 与队友侧 teamToolOutputLooksFailed 各有一份逐字副本、且**零直测**；
+// 任一侧漏改即「主循环判失败、队友判成功」静默分叉，而队友侧 UI 不着色、漂移看不见。
+// 现两侧都转发本口，这里把判据本身钉住。
+void testToolFailureClassifier()
+{
+    // 四族前缀各自命中（约定：handler/钩子/BashRunner/TaskStore 的失败输出必以其一开头）
+    TestHarness::check(RecoveryRules::isToolFailureText(
+                           QStringLiteral("Error: something broke")),
+                       "Error: 前缀判失败");
+    TestHarness::check(RecoveryRules::isToolFailureText(
+                           QStringLiteral("Permission denied")),
+                       "Permission denied 裸相等判失败（短拒串形态）");
+    TestHarness::check(RecoveryRules::isToolFailureText(
+                           QStringLiteral("Blocked: rm -rf /")),
+                       "Blocked: 前缀判失败");
+    TestHarness::check(RecoveryRules::isToolFailureText(
+                           QStringLiteral("Unknown tool: frobnicate")),
+                       "Unknown tool: 前缀判失败");
+
+    // 跨模块契约：异步回合的定值长拒串**必须**判失败。这条把 AGENTS.md 里「asyncApprovalDenied
+    // 必须判失败」的注释约定升级成断言——它一旦退化成相等判定，异步拒绝就会被当成功回灌。
+    TestHarness::check(RecoveryRules::isToolFailureText(RecoveryRules::asyncApprovalDenied()),
+                       "asyncApprovalDenied() 定值串必须判失败（前缀覆盖而非相等）");
+
+    // 反向：成功形态不得误判
+    TestHarness::check(!RecoveryRules::isToolFailureText(QString()),
+                       "空串不判失败");
+    TestHarness::check(!RecoveryRules::isToolFailureText(
+                           QStringLiteral("File written successfully.")),
+                       "正常成功输出不判失败");
+
+    // 大小写敏感是刻意的：正文内嵌小写 error: 不该把一次成功调用判成失败
+    TestHarness::check(!RecoveryRules::isToolFailureText(QStringLiteral("error: lowercase")),
+                       "小写 error: 不判失败（判据大小写敏感）");
+    TestHarness::check(!RecoveryRules::isToolFailureText(
+                           QStringLiteral("log line: error: boom")),
+                       "内嵌 error: 不在行首，不判失败");
+
+    // "Errors:" 与 "Error:" 只差一个字母，是最容易被写坏的边界
+    TestHarness::check(!RecoveryRules::isToolFailureText(QStringLiteral("Errors were found")),
+                       "\"Errors were…\" 不判失败（Error: 需带冒号）");
+}
+
 } // namespace
 
 int tst_agentrecovery()
@@ -129,5 +174,6 @@ int tst_agentrecovery()
     testRateLimitClassifier();   // 10
     testOverloadedClassifier();  // 8
     testRecoveryConstants();     // 3
+    testToolFailureClassifier(); // 10
     return TestHarness::failCount() - before;
 }

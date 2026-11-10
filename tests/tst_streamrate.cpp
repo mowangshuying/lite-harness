@@ -12,7 +12,7 @@
 //
 // 覆盖面边界（勿高估）：本套件测的是**定窗与折算算术**。它不证明 AgentLoop 真的按定义观测了
 // t0/t1/t2——那是接线（AgentLoopRequest.cpp 的起表/标点/收窗），验证手段是编译期等价 + 冒烟运行。
-// 宿主 TU 链 QOpenAi/FluentUI，按 CMakeLists.txt「仅允许 QtCore-only 引擎进测试清单」的硬纪律
+// 宿主 TU 需 moc 且链 QOpenAi（Qt6::Network），按 CMakeLists.txt「仅允许 QtCore-only 引擎进测试清单」的硬纪律
 // 进不了 ctest，故本头按 UsageTokens.h / CompactTokens.h 先例抽出，测真实编译产物而非复刻品。
 //
 // 零夹具依赖（不读 LITE_TEST_TMPROOT），任何环境全量执行。

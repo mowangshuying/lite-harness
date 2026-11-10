@@ -7,6 +7,7 @@
 #include "SubAgent.h"
 #include "ToolNames.h"
 #include "BashRunner.h"
+#include "AgentRecovery.h" // 工具成败判据单源（纯 QtCore；isToolFailure 转调）
 
 #include <QJsonDocument>
 
@@ -305,17 +306,11 @@ void AgentLoop::executeTool(const QJsonObject &toolCall,
 
 bool AgentLoop::isToolFailure(const QString &output)
 {
-    // 成败判定单源（见头文件注释）：文案族为全仓既成约定——各 handler/钩子/BashRunner/
-    // TaskStore（本任务起统一补 "Error: " 前缀）的失败输出必居其一；stop 链的
-    // "(stopped)"/"(cancelled)" 直写历史不经本判定（不发 toolOutputReady）。
-    // lcc s15 af26862：① Permission denied 改前缀判定——异步回合定值长拒串（"Permission denied:
-    // interactive…"，单源 RecoveryRules::asyncApprovalDenied()）必须判失败，resolvePermission/
-    // SubAgent 的逐字短拒串由前缀天然覆盖（不动回填文本）；② 删 "[Background task start error]"
-    // 整行——bg 起进程失败文案已改 "Error: Failed to start background task: "，Error: 前缀覆盖
-    return output.startsWith(QStringLiteral("Error:"))
-        || output.startsWith(QStringLiteral("Permission denied"))
-        || output.startsWith(QStringLiteral("Blocked:"))
-        || output.startsWith(QStringLiteral("Unknown tool:"));
+    // 判据单源在 RecoveryRules::isToolFailureText（纯头、可直测；四前缀约定与 lcc s15
+    // af26862 两处改动的理由都记在该头定义处）。本函数只是类内薄转发，调用点写法不变。
+    // 队友侧 teamToolOutputLooksFailed 转发同一口——历史上两处各写一份逐字判据且零直测，
+    // 漏改一侧即「主循环判失败、队友判成功」静默分叉，现该分叉面归零。
+    return RecoveryRules::isToolFailureText(output);
 }
 
 QHash<QString, AgentLoop::ToolHandler> AgentLoop::baseFileToolHandlers(const QString &workDir)

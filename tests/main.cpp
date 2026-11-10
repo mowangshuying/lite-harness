@@ -1,15 +1,30 @@
 ﻿// 测试入口：逐个调用套件，汇总计数，失败以非零退出码交给 ctest 判定。
 // 新增套件只需在此加一行调用（套件实现见 tests/tst_<模块>.cpp）。
 //
-// 假绿门禁（本轮新增）：套件的诚实跳过通道是 TestHarness::skip + return 0——它既不计
-// 失败也不产生断言。于是「环境变量没配」的环境（曾经的 CI）里 4/5 套件整组 SKIP，
-// 进程仍返回 0，ctest 判通过：门禁形同虚设。修法是把「实际执行了多少断言」变成硬条件，
-// 由 CI 注入 LITE_TEST_MIN_PASS 承担；本机不设该变量时行为不变（无夹具照常绿行）。
+// 假绿门禁（s17.6 引入全局下界，s17.9 补逐套件下界）：套件的诚实跳过通道是
+// TestHarness::skip + return 0——它既不计失败也不产生断言。于是「环境变量没配」的环境
+// （曾经的 CI）里 4/5 套件整组 SKIP，进程仍返回 0，ctest 判通过：门禁形同虚设。
+//
+// 两道门禁各挡一类失效：
+//   ① 全局 LITE_TEST_MIN_PASS（CI 注入）——挡「夹具变量整体缺失」这种一次性掉几百条的
+//      塌方（本机实测：带夹具 2048 / 不带 1072，差 976，远大于余量）。
+//   ② 下面的 kSuiteFloors 逐套件下界——挡「某个套件静默消失」。全局下界挡不住这条：
+//      31 个套件里 30 个的实跑条数都小于全局余量（204），删掉 main 里任意一行 runSuite
+//      调用（除 agentteams 263 条）CI 仍然全绿。逐套件表把「每个套件至少跑到多少条」
+//      变成硬条件，并且**表里有的名字必须被跑到**——套件被取消注册或改名同样判失败。
+//
+// 下界取值口径（重要，别照抄带夹具的数）：一律取该套件**不设 LITE_TEST_TMPROOT** 时的
+// 实跑条数，即「最坏情况也成立」的下限，故本地无夹具跑与 CI 带夹具跑都恒满足；
+// 后续给套件**加**断言无需改表（下界只朝下约束），只有「套件消失」或「断言被删到低于
+// 下限」才触发。四个纯夹具套件（messagebus / taskstore_lease / worktree / agentteams）
+// 无夹具时本就 0 条，下界记 0——它们靠「必须被跑到」那条兜住，不靠条数。
+// 本机不设 LITE_TEST_MIN_PASS 时行为不变（②始终生效，与夹具无关）。
 
 #include "TestHarness.h"
 
 #include <QtGlobal>
 #include <cstdio>
+#include <cstring>
 
 int tst_lineending();
 int tst_messagebus();
@@ -43,16 +58,64 @@ int tst_agentconst();         // P2：智能体数值域与键名契约（AgentC
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 int tst_activityledger();     // 会话每日 token 消耗账本（ActivityLedger.h）：阈值/日期键/累加/求和/截断恒跑 + 读写往返/脏数据降级夹具门控
 
+// 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
+// 全表求和 = 1072，与本机无夹具全量实跑 pass=1072 逐条对上（带夹具为 2048）。
+struct SuiteFloor {
+    const char *name;
+    int floor;
+};
+static const SuiteFloor kSuiteFloors[] = {
+    {"lineending", 36},         {"messagebus", 0},          {"taskstore_lease", 0},
+    {"worktree", 0},            {"agentteams", 0},          {"mcpmanager", 45},
+    {"agentrecovery", 34},      {"backgroundtasks", 43},    {"workflowmanager", 118},
+    {"workflowruntime", 3},     {"compacttokens", 48},      {"settingscache", 35},
+    {"usagetokens", 82},        {"streamrate", 30},         {"goalmanager", 209},
+    {"cronmanager", 26},        {"uiscale", 68},            {"fluconfigstore", 49},
+    {"fluconfigutils", 4},      {"litepaths", 29},          {"pathguard", 21},
+    {"configmerge", 14},        {"sessionstore", 4},        {"uiux", 11},
+    {"tooltagkind", 26},        {"toolnames", 7},           {"navkeys", 14},
+    {"layoutconst", 23},        {"agentconst", 16},         {"compacttranscript", 40},
+    {"activityledger", 37},
+};
+static constexpr int kSuiteFloorCount =
+    static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
+
+// 每个表项的实跑 pass 数；-1 = 本轮没跑到（套件被取消注册/改名 → 下面判硬失败）。
+static int g_suitePass[kSuiteFloorCount];
+
+static int suiteFloorIndexOf(const char *name)
+{
+    for (int i = 0; i < kSuiteFloorCount; ++i) {
+        if (std::strcmp(kSuiteFloors[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
 static int runSuite(const char *name, int (*fn)())
 {
     const int before = TestHarness::passCount();
     const int f = fn();
-    std::printf("SUITE %s pass=%d fail=%d\n", name, TestHarness::passCount() - before, f);
+    const int passed = TestHarness::passCount() - before;
+    std::printf("SUITE %s pass=%d fail=%d\n", name, passed, f);
+
+    const int idx = suiteFloorIndexOf(name);
+    if (idx < 0) {
+        // 表里没有这个套件：新套件忘了登记，或表项被改名——两者都会让下界形同虚设，硬失败。
+        std::printf("GATE FAIL: suite '%s' 不在 kSuiteFloors 表内（新增套件须登记下界）\n", name);
+        return f + 1;
+    }
+    g_suitePass[idx] = passed;
     return f;
 }
 
 int main()
 {
+    // -1 = 本轮未跑到。必须显式初始化：静态数组零初始化会让「套件被删/改名」与
+    // 「跑到了一次、产出 0 条」不可区分，而前者正是本门禁要抓的失效。
+    for (int i = 0; i < kSuiteFloorCount; ++i)
+        g_suitePass[i] = -1;
+
     int failed = 0;
     failed += runSuite("lineending", tst_lineending);
     failed += runSuite("messagebus", tst_messagebus);
@@ -93,6 +156,23 @@ int main()
     // failed 与 failCount() 应一致；不一致说明有套件漏返回失败数，一并视为不通过
     if (failed != 0 || failedTotal != 0)
         return 1;
+
+    // 门禁②：逐套件下界（无条件生效，与 LITE_TEST_MIN_PASS 无关）。
+    // 表里每个名字都必须被跑到、且实跑条数不低于下界——这两条一起把「套件静默消失」
+    // 从「靠全局余量兜」变成硬失败。下界取无夹具实跑值，故本机不带 LITE_TEST_TMPROOT
+    // 跑也恒满足，不会假红。
+    for (int i = 0; i < kSuiteFloorCount; ++i) {
+        if (g_suitePass[i] < 0) {
+            std::printf("GATE FAIL: suite '%s' 未被执行（注册行被删或改名？）\n",
+                        kSuiteFloors[i].name);
+            return 2;
+        }
+        if (g_suitePass[i] < kSuiteFloors[i].floor) {
+            std::printf("GATE FAIL: suite '%s' pass=%d < 下界 %d（断言组被跳过/注释掉？）\n",
+                        kSuiteFloors[i].name, g_suitePass[i], kSuiteFloors[i].floor);
+            return 2;
+        }
+    }
 
     // 断言下界：低于该量级即说明有套件没跑到（夹具缺失/环境变量未注入），判不通过。
     // 阈值取全量套件实测量级的下浮值，留个别环境夹具（junction / git）偶发不可用的余量；

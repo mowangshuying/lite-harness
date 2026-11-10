@@ -9,6 +9,7 @@
 #include "LiteLog.h"
 
 #include "AgentConstants.h"
+#include "AgentRecovery.h" // 工具成败判据单源（纯 QtCore，不破坏本 TU 的 GUI 依赖纪律）
 #include "AgentTeamsManager.h"
 #include "CompactManager.h"
 #include "MessageBus.h"
@@ -25,17 +26,15 @@ namespace {
 // P8 观测面 ok 判定：镜像 AgentLoop::isToolFailure 的折叠失败文案族前缀（单源在
 // GUI 层 TU，本 TU 层律禁 include AgentLoop.h/AgentLoopInternal.h——镜像副本登记
 // 偏差；改动文案族时两处同步）。仅供 teammateToolActivity 的 ok 诊断位，UI 不着色。
-// 与 AgentLoop::isToolFailure 单源同步（lcc s15 af26862，定义见 AgentLoopTools.cpp:306）：
-// ① "Permission denied" 相等改前缀判定——异步回合定值长拒串（单源
-//   RecoveryRules::asyncApprovalDenied()，"Permission denied: interactive…"）必须判
-//   失败，短拒串由前缀天然覆盖；② 删 "[Background task start error]" 整行——bg 起进程
-//   失败文案已改 "Error: …" 前缀族，由首条判据覆盖（与主循环同因）。
+// 判据单源在 RecoveryRules::isToolFailureText（纯头，口径与 lcc s15 af26862 的两处改动理由
+// 见其定义处注释）。本函数**不再是逐字镜像副本**——历史上它与 AgentLoop::isToolFailure 各写
+// 一份、两处零直测，任一侧漏改即「主循环判失败、队友判成功」静默分叉，且队友侧 UI 不着色、
+// 漂移不可见；现两侧都转发同一口，分叉面归零。
+// 本 TU 禁 include AgentLoop.h（GUI 层依赖纪律），而 AgentRecovery.h 是纯 QtCore 头，
+// 转调它不破坏分层——这正是把判据抽到该头的理由。
 bool teamToolOutputLooksFailed(const QString &output)
 {
-    return output.startsWith(QStringLiteral("Error:"))
-        || output.startsWith(QStringLiteral("Permission denied"))
-        || output.startsWith(QStringLiteral("Blocked:"))
-        || output.startsWith(QStringLiteral("Unknown tool:"));
+    return RecoveryRules::isToolFailureText(output);
 }
 } // namespace
 

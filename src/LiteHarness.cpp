@@ -8,6 +8,7 @@
 #include <QIcon>
 #include "NewChatPage.h"
 #include "ChatSessionPage.h"
+#include "ContributionHeatmap.h" // 活动缓存截断窗口单源（gridStart），不在宿主侧重写 371
 #include "SettingsPage.h"
 #include <FluVNavigationSettingsItem.h>
 #include <FluVNavigationIconTextItem.h>
@@ -598,7 +599,16 @@ void LiteHarness::refreshActivityForDataId(const QString &dataId)
     if (dataId.isEmpty())
         return;
     const QString path = LitePaths::activityDailyPathFor(LitePaths::sessionDataRoot(dataId));
-    m_activityCache.insert(dataId, ActivityLedger::readDaily(path));
+    // 只缓存热力图窗口内的日期（371 天滚动满矩形，窗口单源取 ContributionHeatmap::gridStart，
+    // 不在这里另写一个 371）。ActivityLedger.h 的 windowFilter 早就声明了「读侧一次性截断」
+    // 却从未接线，于是账龄越久、每次落账的跨会话合并都要把全部历史日重算一遍——视图只用
+    // 最近 371 格，其余是纯浪费。显示口径不变：paintEvent 本就只看窗口内（cellPosition 对
+    // 窗口外返 {-1,-1}），文件侧仍全量保留、只追加不删。
+    const QDate today = QDate::currentDate();
+    m_activityCache.insert(dataId,
+                           ActivityLedger::windowFilter(ActivityLedger::readDaily(path),
+                                                        ContributionHeatmap::gridStart(today),
+                                                        today));
     pushActivityToNewChat();
 }
 

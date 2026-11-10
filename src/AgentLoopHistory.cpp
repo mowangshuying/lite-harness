@@ -191,8 +191,12 @@ QVector<QJsonObject> AgentLoop::replayHistoryMessages() const
 // 会话每日 token 消耗落账（新会话页热力图数据源，见 ActivityLedger.h）：
 // 承 adoptUsageAnchor 的 usage 快照，读改写 <会话根>/.activity/daily.json，成功即 emit
 // activitySessionChanged(m_sessionDataId)。卫兵与 persistHistory 同——无 dataId 不落账
-// （未隔离会话不污染全局 .lite-harness 目录）。invalid 快照由 accumulateSnapshot 内部
-// 忽略，与 Totals::add 同判据；本函数不重复判据，只走 IO。
+// （未隔离会话不污染全局 .lite-harness 目录）。invalid 快照**在本函数入口即早退**：
+// 判据仍单源在 UsageTokens::fromUsage（prompt>0），与 accumulateSnapshot / Totals::add 同一条，
+// 本函数不另立判据、只是把它前移到 IO 之前——账本内容逐字节不变（无效快照本就被
+// accumulateSnapshot 忽略、零值日又被回滚删除），省掉的纯粹是一次「读出原样、写回原样」
+// 的空转原子重写 + 一次全量合并广播 + 一次热力图重绘。对不吐 usage 的兼容端点，
+// 这是每个请求一次的主线程 IO，不是可忽略的常数。
 //
 // 落盘失败仅 LOG_WARN、不打断回合、不 emit——消耗账本是观测面而非承重数据，一次失败
 // 至多让热力图少一格读数，不影响 history.json 与会话恢复。半写文件下次读会走
@@ -200,6 +204,10 @@ QVector<QJsonObject> AgentLoop::replayHistoryMessages() const
 void AgentLoop::appendActivityLedger(const UsageTokens::Snapshot &snapshot)
 {
     if (m_sessionDataId.isEmpty())
+        return;
+    // invalid 快照早退（判据单源 UsageTokens::fromUsage，与 accumulateSnapshot 同一条）：
+    // 省下「读出原样、写回原样」的一次原子重写 + 全量合并广播 + 热力图重绘。
+    if (!snapshot.valid)
         return;
 
     const QString path = LitePaths::activityDailyPathFor(sessionDataRoot());

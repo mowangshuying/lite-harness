@@ -59,4 +59,24 @@ inline bool isOverloadedText(const QString &text)
         || lowered.contains(QStringLiteral("529"));
 }
 
+// 工具输出成败判据（**全仓唯一真值源**）：折叠后的失败文案族前缀判定。
+// 抽到本头的原因：这条判据原先在 `AgentLoop::isToolFailure`（AgentLoopTools.cpp）与队友侧
+// `teamToolOutputLooksFailed`（TeammateRuntime.cpp）各有一份逐字重复实现，两处都无直测——
+// 任一侧漏改即「主循环判失败、队友判成功」静默分叉，且队友侧 UI 不着色、漂移不可见。
+// 现两侧都转发本口，判据只此一份。
+// 约定：各 handler/钩子/BashRunner/TaskStore 的失败输出必以四前缀之一开头；stop 链的
+// "(stopped)"/"(cancelled)" 直写历史不经本判定（不发 toolOutputReady）。
+// lcc s15 af26862：① "Permission denied" 用**前缀**而非相等——异步回合定值长拒串
+//   （asyncApprovalDenied()，"Permission denied: interactive…"）必须判失败，
+//   resolvePermission/SubAgent 的逐字短拒串由同一前缀天然覆盖（不动回填文本）；
+// ② 无 "[Background task start error]" 判据——bg 起进程失败文案已改 "Error: …" 前缀族。
+// 大小写敏感是刻意的：正文里内嵌的 "error:"（如工具输出引用了一段日志）不该判成失败。
+inline bool isToolFailureText(const QString &output)
+{
+    return output.startsWith(QStringLiteral("Error:"))
+        || output.startsWith(QStringLiteral("Permission denied"))
+        || output.startsWith(QStringLiteral("Blocked:"))
+        || output.startsWith(QStringLiteral("Unknown tool:"));
+}
+
 } // namespace RecoveryRules

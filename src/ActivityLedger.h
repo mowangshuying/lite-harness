@@ -6,7 +6,8 @@
 // 为什么单独成头：本头是**新会话页热力图**（ContributionHeatmap）的数据侧，消费方是
 // LiteHarness（缓存）+ NewChatPage（渲染）。判据族——坏 JSON 降级 / 缺文件返空 / 日期键
 // 归一 / 跨会话求和 / 覆写往返 / valid=false 不落地 / 阈值分档边界——全是**算术与解析**，
-// 与「谁在读写」无关；而 AgentLoop TU 链 QOpenAi/FluentUI，按 CMakeLists.txt「仅允许
+// 与「谁在读写」无关；而 AgentLoop 的 TU 带 Q_OBJECT 需 moc、又链 QOpenAi（Qt6::Network），
+// 按 CMakeLists.txt「仅允许
 // QtCore-only 引擎进测试清单」的硬纪律进不了 ctest。抽成纯头后 tst_activityledger 直接
 // include 即测真实编译产物。
 //
@@ -16,9 +17,14 @@
 // 服务端回不回用量都不落地。故热力图是**部分口径**，不是真实总开销；UI 侧必须在 tooltip
 // 里写明这条边界（承 UsageTokens.h 同一条纪律）。
 //
-// 落盘时机与原子性：AgentLoop 每次 usage 回读即读改写本会话 daily.json（QSaveFile 原子），
-// 频率=每回合 1 次，IO 成本可忽略。会话级 JSON 覆写不存在膨胀问题（不同于 jsonl 追加），
-// 无需清理策略。改造前无账本，热力图上线首段全空——用户裁决接受空窗、不做历史回填。
+// 落盘时机与原子性：AgentLoop 每次 usage 回读即读改写本会话 daily.json（QSaveFile 原子）。
+// **频率不是「每回合 1 次」**：usage 帧恒先于 messageFinished、每个 API 请求回一帧，故一个带
+// 工具循环的回合会落账 N+1 次（N=工具批数，上限 kMaxToolIterationsDefault）；且调用点有两处
+// （主循环 adoptUsageAnchor 与队友 usageReceived 各一），团队会话里随队友数再乘 T+1 倍。
+// 每次落账都是「整文件读 + 改 + 原子重写」，**成本不可忽略**——这是主线程同步 IO，
+// 故 invalid 快照在调用点即早退（见 AgentLoop::appendActivityLedger），不空转重写同内容。
+// 文件侧仍是「会话级 JSON 覆写、只追加日期不删条目」，无 jsonl 那种无限增长问题；
+// 内存/视图侧的截断见 windowFilter。改造前无账本，热力图上线首段全空——用户裁决接受空窗、不做历史回填。
 //
 // 日期键口径：QDate 本地日（QDate::currentDate()），ISO 格式 yyyy-MM-dd。跨午夜归「usage
 // 到达那一刻」的日期，不做时区调整——简单、符合直觉、无 DST 边界问题。

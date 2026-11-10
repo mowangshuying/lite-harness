@@ -10,7 +10,8 @@
 // 两种都是「跑得通但结果不对」，冒烟运行看不全，只能靠断言钉死。
 //
 // 判定内核为什么在本头而不是 AgentLoop::safePathIn：AgentLoop 带 Q_OBJECT，其 TU 依赖
-// moc + QOpenAi + FluentUI，测试目标只链 Qt6::Core，留在类内就是 L4 零覆盖区。
+// moc + QOpenAi（Qt6::Network），测试目标只链 Qt6::Core，留在类内就是 L4 零覆盖区。
+// （不是 FluentUI——LiteLog.h 在本目标经 LITE_NO_FLU_LOG 退化，不拉 FluentUI::Utils 进来。）
 // 外提后本头可直测，类内只剩「取规范路径 + 转调本口」的薄壳。
 //
 // 覆盖边界（勿高估）：本套件测的是**词法包含判定**。它不证明 safePathIn 的

@@ -64,7 +64,7 @@ inline bool isWithinPathCanonical(const QString &child, const QString &parent)
 }
 
 // 沙箱围栏多根判定——`AgentLoop::safePathIn` 的判定内核，抽到本头是为了能进 ctest 直测
-// （AgentLoop 带 Q_OBJECT，其 TU 依赖 moc + QOpenAi + FluentUI，测试目标只链 Qt6::Core，
+// （AgentLoop 带 Q_OBJECT，其 TU 依赖 moc + QOpenAi（Qt6::Network），测试目标只链 Qt6::Core，
 // 原样留在类内就是 L4 零覆盖区；判定外提后类内只剩「取规范路径 + 转调本口」）。
 //
 // 为什么是**根集合**而不是单根：存储根统一到 exe 同级 config/ 后，会话数据根
