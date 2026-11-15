@@ -22,6 +22,7 @@
 #include <FluLabel.h>
 #include <FluSettingsVersionBox.h>
 #include <FluPushButton.h>
+#include <FluProgressRing.h> // s17.12：下载进度环（vendor 控件，取色见每主题 SettingsPage.qss）
 
 namespace {
 
@@ -749,6 +750,9 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     });
     scrollView->getMainLayout()->addWidget(m_permissionBox, 0, Qt::AlignTop);
 
+    //// add spacing（s17.2 引入「权限」组时漏了这条——页内其余六个组边界一律 20，此处曾是唯一断层）
+    scrollView->getMainLayout()->addSpacing(20);
+
     /// model service（LLM 服务地址 / API Key 可设置，取代原环境变量；写配置文件后即时覆盖全局配置）
     m_modelLabel = new FluLabel;
     m_modelLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -838,9 +842,32 @@ UpdateSettingCard::UpdateSettingCard(QWidget *parent)
     m_applyButton->setFixedSize(cardActionButtonSize());
     m_applyButton->setVisible(false); // 只在确认有新版本时出现：常态不占位、不诱导点击
 
+    // 下载进度环。**刻意不用 vendor 默认的 60×60**：那是独立控件页的尺寸，塞进这张
+    // 30 高操作行的卡里会把行高撑到 60，与同页其余六卡视觉不齐（本仓反复登记过的那类缺陷）。
+    // 尺寸走 LayoutConst::kCardProgressRingSize + UiScale::scaled，与同排按钮同步缩放。
+    // 常态隐藏不占位，与「下载并更新」钮同款口径：没在下载时不该有个转圈的东西占着。
+    m_progressRing = new FluProgressRing(this);
+    const int ringSide = UiScale::scaled(LayoutConst::kCardProgressRingSize);
+    m_progressRing->setFixedSize(ringSide, ringSide);
+    m_progressRing->setMinMaxValue(0, 100);
+    m_progressRing->setShowText(false); // 百分比唯一出口是说明位文案，环只画形状
+    // 必须显式关掉透明 track，这是本控件唯一一处「qss 管不到、只能在代码里修」的面：
+    // 构造里 m_isTransparentTrack 默认 true，而 paintEvent 是
+    // `pen.setColor(m_trackColor); if (m_isTransparentTrack) pen.setColor(Qt::transparent);`
+    // ——不关的话 vendor 三主题 qss 里的 qproperty-trackColor 全是死代码，0% 时整环
+    // 只剩一段弧、用户看不出「还剩多少」，进度指示的参照物没了。
+    // 该成员**没有 Q_PROPERTY**（头里只声明了 animValue/workAngle/三色 + trackColor），
+    // 所以 qproperty-transparentTrack 写进任何 qss 都不生效，只能代码里设。
+    // 取色本身不需要本仓插手：FluProgressRing.qss 三主题齐全，经 controls/CMakeLists.txt
+    // 的 qt_add_resources（**不是** ControlsQss.qrc——只 grep 后者会误判成没注册）进资源，
+    // 环构造期即自加载、并自订阅 themeChanged，暗色下拿的是 vendor 的 118,185,237 / 82,139,255。
+    m_progressRing->setTransparentTrack(false);
+    m_progressRing->setVisible(false);
+
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
+    row->addWidget(m_progressRing); // 环在钮左侧：进度在左、动作在右，与阅读顺序一致
     row->addWidget(m_checkButton);
     row->addWidget(m_applyButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），图标/标题布局不变
@@ -878,6 +905,11 @@ void UpdateSettingCard::startUpdateCheck(bool forced)
     m_checkStarted = true;
     m_stateToken = QStringLiteral("checking");
     m_progressText.clear();
+    // 样本必须一起清：只清文案不清 received/total，下一轮进入 downloading 时
+    // applyProgressRing() 会拿**上一轮**的旧分母先渲染出一个百分比（下完过一次就是 100%），
+    // 首个 downloadProgress 到来后它才纠正——这段时间环显示的是一个编出来的进度。
+    m_progressReceived = 0;
+    m_progressTotal = -1;
     m_applyButton->setVisible(false);
     applyStatus();
     m_updateManager->checkLatest();
@@ -953,6 +985,34 @@ void UpdateSettingCard::applyStatus()
     // 走基类说明位：前缀恒完整、值按剩余宽度中间省略、ToolTip 给全量——长错误串与
     // 进度文案正是这个形态要吃的东西（裸 FluLabel + wordWrap 会撑开行高、与同页六卡不齐）。
     setInfoValue(tr("状态"), statusText());
+    // 令牌只有一个消费出口：文案与进度环在这里一起落，不在各槽里分别调。
+    // 分开的写法迟早会出现「改了令牌忘了收环」，而那种分叉冒烟看不出来（环还在转，
+    // 文案已说成功），只会以「更新成功后环一直转」的形式被用户撞见。
+    applyProgressRing();
+}
+
+void UpdateSettingCard::applyProgressRing()
+{
+    const bool downloading = (m_stateToken == QLatin1String("downloading"));
+    if (!downloading) {
+        // 顺序是判据的一部分：**先停无限动画，再隐藏**。QPropertyAnimation 不看可见性，
+        // 只 setVisible(false) 的话那条 loopCount(-1) 的旋转动画会在后台一直跑到底，
+        // 白烧 CPU 且下次显示时相位随机。
+        m_progressRing->setWorking(false);
+        m_progressRing->setVisible(false);
+        return;
+    }
+
+    const int percent = UpdateRules::progressPercentOrUnknown(m_progressReceived, m_progressTotal);
+    if (percent < 0) {
+        // 分母未知（-1）：走不定态旋转，而不是拿 0 去除、也不是显示一个假百分比。
+        // 这正是 assetSizeOrUnknown 刻意把「未知」留成 -1 而不是 0 所要防的事。
+        m_progressRing->setWorking(true);
+    } else {
+        m_progressRing->setWorking(false);
+        m_progressRing->setCurValue(percent); // 200ms OutCubic 平滑推进，不逐包跳格
+    }
+    m_progressRing->setVisible(true);
 }
 
 void UpdateSettingCard::onCheckFinished(bool hasUpdate, const QString &remoteTag, const QString &error)
@@ -996,12 +1056,16 @@ void UpdateSettingCard::onStageChanged(UpdateManager::Stage stage, const QString
 
 void UpdateSettingCard::onProgressChanged(qint64 received, qint64 total)
 {
-    if (total > 0 && received >= 0)
-        m_progressText = QStringLiteral("%1%").arg(qint64(received * 100 / total));
+    m_progressReceived = received;
+    m_progressTotal = total;
+    // 文案与环读同一条判据，而不是两处各判一次「有没有分母」：各判一次迟早会分叉成
+    // 「说明位写着 47%、环却在空转」或反过来，而这两种分叉在冒烟里都只表现为「好像没事」。
+    // 分母为 0 不显示百分比的口径也在这里单源（assetSizeOrUnknown 刻意留 -1 而非 0）。
+    const int percent = UpdateRules::progressPercentOrUnknown(received, total);
+    if (percent >= 0)
+        m_progressText = QStringLiteral("%1%").arg(percent);
     else
         m_progressText = QStringLiteral("%1 MB").arg(received / (1024 * 1024));
-    // 分母为 0 不显示百分比：UpdateRules::assetSizeOrUnknown 刻意把「未知」留成 -1 而非 0，
-    // 就是为了不在这里渲染出一个恒 100% 的假进度。
     if (m_stateToken == QLatin1String("downloading"))
         applyStatus();
 }
@@ -1012,6 +1076,11 @@ void UpdateSettingCard::handleApplyClicked()
     // 唯一不可逆的换体留在 onStaged 里问。
     m_stateToken = QStringLiteral("downloading");
     m_progressText.clear();
+    // 这里也必须清样本，不能只靠 startUpdateCheck 那次：失败重试路径（onStaged 把按钮放回来
+    // 再点）不经过任何检查动作，样本还留着上一轮中断时的 received/total，环会直接从那个
+    // 数字起转，而不是从不定态重新开始。
+    m_progressReceived = 0;
+    m_progressTotal = -1;
     m_applyButton->setVisible(false); // 下载期收起按钮防重入，失败时由 onStaged 放回来
     applyStatus();
     m_updateManager->stageUpdate(m_updateManager->remoteAssetUrl(),

@@ -71,6 +71,13 @@ inline constexpr int kWindowMinHeight = 600;
 inline constexpr int kCardActionWidth = 64;
 inline constexpr int kCardActionHeight = 30;
 
+/// 版本更新卡右侧进度环的边长（s17.12）：实际值经 UiScale::scaled 放大，与同排按钮同步。
+/// **不复用 FluProgressRing 的默认 60×60**——那是独立控件页的尺寸，塞进设置卡操作行会把
+/// 卡片行高从 30 撑到 60，与同页其余六卡视觉不齐（正是本仓反复登记过的那类缺陷）。
+/// 取 20 而非 24：环内不写字（百分比唯一出口仍是说明位文案），空心的小环在 30 高的行里
+/// 与 64×30 的按钮并排不抢视觉。
+inline constexpr int kCardProgressRingSize = 20;
+
 /// 输入框右侧发送/停止钮的边长（P3-3）：从 SendMsgButton.cpp 的 setFixedSize(30, 30)
 /// 收敛而来。QSS 圆角取一半（15px）成正圆，改这个值必须同步 SendMsgButton.qss 的圆角。
 /// 与 kCardActionHeight 同值但语义不同（那是设置卡动作钮的高），不合并。

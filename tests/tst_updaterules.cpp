@@ -357,6 +357,60 @@ int tst_updaterules()
     check(UpdateRules::assetSizeOrUnknown(0) == -1 && UpdateRules::assetSizeOrUnknown(-5) == -1,
           "assetSizeOrUnknown: a missing size becomes -1, never 0 (0 would render a 100% instant progress)");
 
+    // ---- ⑩-b 进度分母判据（环与说明位文案共用，s17.12）----
+    // 这条判据出错时不抛异常、不返回失败，只是把一个还在下的包显示成「已下完」或反过来。
+    check(UpdateRules::progressPercentOrUnknown(50, 100) == 50,
+          "progressPercentOrUnknown: a known denominator yields the plain percentage");
+    check(UpdateRules::progressPercentOrUnknown(0, 100) == 0,
+          "progressPercentOrUnknown: zero bytes of a known total is a real 0%, not 'unknown'");
+    check(UpdateRules::progressPercentOrUnknown(100, 100) == 100,
+          "progressPercentOrUnknown: a finished download reads exactly 100");
+    // 未知分母必须走 -1 出口。这是 assetSizeOrUnknown 刻意留 -1 而不是 0 的全部理由：
+    // 拿 0 当分母要么除零、要么被钳成 100%，而 100% 会让用户以为已经下完。
+    check(UpdateRules::progressPercentOrUnknown(1024, -1) == -1,
+          "progressPercentOrUnknown: an unknown denominator (-1) is never a percentage");
+    check(UpdateRules::progressPercentOrUnknown(1024, 0) == -1,
+          "progressPercentOrUnknown: a zero denominator is refused, not divided by");
+    check(UpdateRules::progressPercentOrUnknown(-1, 100) == -1,
+          "progressPercentOrUnknown: a negative received is 'unknown', never a negative ring");
+    // received > total 在真实链路里会发生（Content-Length 中途变化、多算了头部字节），
+    // 137% 画在环上是几何无意义的（弧长溢出整圆）。
+    check(UpdateRules::progressPercentOrUnknown(137, 100) == 100,
+          "progressPercentOrUnknown: received beyond total clamps to 100, never an over-full arc");
+    check(UpdateRules::progressPercentOrUnknown(9223372036854775807LL, 9223372036854775807LL) == 100,
+          "progressPercentOrUnknown: INT64_MAX takes the clamp path, not the received * 100 overflow");
+    check(UpdateRules::progressPercentOrUnknown(9223372036854775807LL, 1) == 100,
+          "progressPercentOrUnknown: a huge received over a tiny total still clamps instead of wrapping");
+    // 上面两条都落在 `received >= total` 的钳位分支里，**碰不到**真正危险的那条路：
+    // `received < total` 且 received 超过 INT64_MAX/100 时，`received * 100` 是有符号溢出（UB）。
+    // 这三条钉住分路本身，而不是钉住一个恰好安全的输入组合。
+    check(UpdateRules::kPercentSafeMax == 9223372036854775807LL / 100,
+          "kPercentSafeMax: the integer-path ceiling is INT64_MAX/100, single-sourced with the function body");
+    check(UpdateRules::progressPercentOrUnknown(UpdateRules::kPercentSafeMax, 9223372036854775807LL) == 0,
+          "progressPercentOrUnknown: exactly at the ceiling still takes the exact integer path");
+    check(UpdateRules::progressPercentOrUnknown(UpdateRules::kPercentSafeMax + 1, 9223372036854775807LL) < 100,
+          "progressPercentOrUnknown: one past the ceiling switches paths and still never reports a finished download");
+    // 最该钉的一条：received = total-1（还差一个字节没下完）时，双精度舍入会把比值抬成整 100.0，
+    // 于是「还差一个字节」显示成「已下完」——正是这条判据存在的全部理由所要防的事。
+    // 浮点分支的再钳一次把这条路堵死：无论舍入往哪边，结果都必须是 99。
+    check(UpdateRules::progressPercentOrUnknown(9223372036854775806LL, 9223372036854775807LL) == 99,
+          "progressPercentOrUnknown: total-1 over total reads 99, never a rounding-made 100 (the fake 'done' state)");
+    check(UpdateRules::progressPercentOrUnknown(9223372036854775806LL, 9223372036854775807LL)
+              != UpdateRules::progressPercentOrUnknown(9223372036854775807LL, 9223372036854775807LL),
+          "progressPercentOrUnknown: an unfinished download is distinguishable from a finished one at the top end");
+    // 整数截断口径要钉死：渲染层若以为它是四舍五入，会在 99.6% 处显示 100% 而实际还在下。
+    check(UpdateRules::progressPercentOrUnknown(999, 1000) == 99,
+          "progressPercentOrUnknown: truncates toward zero, so a partial download never reads 100");
+    check(UpdateRules::progressPercentOrUnknown(1, 3) == 33 && UpdateRules::progressPercentOrUnknown(2, 3) == 66,
+          "progressPercentOrUnknown: thirds truncate consistently (no rounding drift between text and ring)");
+    // 真实包体尺寸：55,858,237 字节是本机实测 CI 资产大小，中途值必须落在 (0,100) 内。
+    check(UpdateRules::progressPercentOrUnknown(27929118, 55858237) == 49,
+          "progressPercentOrUnknown: a real asset size yields a plausible mid-download percentage");
+    // 环与文案同源的根据：同一个入参必须给出同一个数——两处各算一次迟早分叉。
+    check(UpdateRules::progressPercentOrUnknown(27929118, 55858237)
+              == UpdateRules::progressPercentOrUnknown(27929118, 55858237),
+          "progressPercentOrUnknown: pure and repeatable (the ring and the status text read one source)");
+
     // ---- ⑪ 待切换标记：内容来自磁盘，后果是删文件，必须最严 ----
     check(UpdateRules::backupSuffix() == QStringLiteral(".update-backup"),
           "backupSuffix: the literal is single-sourced (write side and cleanup side must agree)");

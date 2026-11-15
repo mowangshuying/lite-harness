@@ -208,11 +208,18 @@ jobs:
         # 即整批作废 / marker 一条不可删即整体 invalid / 残留清理的版本闸门（备份是旧版唯一副本）/
         # 开发态布局闸门」从「UpdateManager.cpp 链 Qt6::Network 因而进不了 ctest」里抽出来直测。
         # 下界 2070→2193 按本机实跑 2437×0.9≈2193 等量上调。
+        # s17.12 进度环分母判据批：`UpdateRules::progressPercentOrUnknown` + 18 条断言（套件 137→155）。
+        # 这条判据错时不抛异常、不报失败，只把一个还在下的包显示成「已下完」——`assetSizeOrUnknown`
+        # 刻意把未知留成 -1 而不是 0，全是为了这里不渲染出一个恒 100% 的假进度；同时钉住
+        # `received > total` 钳到 100（137% 画在环上是几何无意义的弧）与 INT64_MAX 走钳位分支
+        # 而非 `received * 100` 溢出（这条是补测时才发现的真缺陷：原两条 INT64_MAX 断言都恰好
+        # 走了钳位分支，碰不到 `received < total` 且 received 超 INT64_MAX/100 的有符号溢出）。
+        # 下界 2193→2209 按本机实跑 2455×0.9≈2209 等量上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '2193'
+          $env:LITE_TEST_MIN_PASS = '2209'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure

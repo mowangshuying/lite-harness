@@ -65,7 +65,7 @@ int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstr
 int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1461（s17.12 自更新判据批 +137 后），与本机无夹具全量实跑 pass=1461
+// 全表求和 = 1479（s17.12 自更新判据批 +137、进度环分母判据 +18 后），与本机无夹具全量实跑 pass=1479
 // 逐条对上（带夹具为 2300）。上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -88,7 +88,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"toolschema", 55},
     {"sessionkeys", 45},
     {"projectinstructions", 49},
-    {"updaterules", 137},
+    {"updaterules", 155},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));

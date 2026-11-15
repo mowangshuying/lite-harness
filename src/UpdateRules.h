@@ -431,6 +431,45 @@ inline qint64 assetSizeOrUnknown(qint64 declaredSize)
     return declaredSize > 0 ? declaredSize : -1;
 }
 
+// progressPercentOrUnknown 的整数路径安全上界：超过它 `received * 100` 就是有符号溢出。
+// 单源在这里而不是散在函数体里写裸数字——函数体与注释必须引用同一个数。
+constexpr qint64 kPercentSafeMax = 9223372036854775807LL / 100; // = INT64_MAX / 100
+
+// 下载进度的**分母判据**：返回 0~100 的百分比，未知分母返回 -1（形态同 assetSizeOrUnknown）。
+// 抽进本头而不是留在卡里，理由有三条，每条都是「写错不报错、只把 UI 骗了」：
+//   · 未知分母必须有一个诚实出口。上面那个函数刻意把「取不到大小」留成 -1 而不是 0，
+//     就是为了不在进度里渲染出一个看起来合理的假数字。若这里把 -1/0 当分母去除，
+//     要么除零、要么被钳成 100%——用户会据此判断「已经下完了」，而实际还在下。
+//   · 环与文案必须同源。说明位文案（`正在下载 %1… 47%`）与进度环吃的是同一个
+//     QNetworkReply::downloadProgress，两处各判一次「有没有分母」就会分叉：
+//     文案给百分比而环在空转，或反之。单源在这条判据上，不在渲染层。
+//   · `received > total` 要钳到 100 而不是照算。Content-Length 中途变化或多算字节时，
+//     137% 这种值画在环上是几何无意义的（弧长溢出整圆）。
+// 顺序是判据的一部分：先判 `received >= total` 再乘 100。反过来写会在
+// received 接近 INT64_MAX 时溢出，把一个正常完成的下载显示成一个奇怪的百分比。
+// 但「先钳位」只挡住了 `received >= total` 那一半：`received < total` 且
+// received > INT64_MAX/100（约 9.2e16 字节 = 92 PB）时，`received * 100` 仍是有符号
+// 溢出（UB）。这种包不存在，但**判据不该靠「调用方给不出这种数」来保证安全**——
+// 本头其余每条判据的立场都是「输入来自外部，畸形输入的后果由本头承担」，
+// 所以这里按量级分路，把溢出面彻底消掉，而不是只在注释里登记它。
+// 分路阈值取 INT64_MAX/100：低于它，整数路径精确；高于它，改用 double——
+// 此时包体已是 92 PB 量级，双精度 53 位尾数的相对误差（约 1e-16）远低于 1 个百分点，
+// 而换来的是「绝无未定义行为」。
+// double 分支必须再钳一次 99：received < total 在数学上保证结果 < 100，但浮点舍入
+// 可能把 `total-1 / total` 舍成 100.0，那正好是这条判据存在的理由所要防的事——
+// 一个「看起来已经下完」的假 100%。
+inline int progressPercentOrUnknown(qint64 received, qint64 total)
+{
+    if (total <= 0 || received < 0)
+        return -1;                  // 分母未知 / 无进账：交给不定态渲染，不编造百分比
+    if (received >= total)
+        return 100;                 // 下完了：钳到整圆，不画 137% 的溢出弧
+    if (received <= kPercentSafeMax)
+        return static_cast<int>(received * 100 / total); // 整数路径，逐位精确
+    const double percent = static_cast<double>(received) * 100.0 / static_cast<double>(total);
+    return percent >= 100.0 ? 99 : static_cast<int>(percent);
+}
+
 // ---- 可自更新性 ----
 
 // 布局判定入参：由 IO 侧探测后以值传入（本头不 stat 任何东西）。

@@ -9,6 +9,7 @@
 
 class FluLabel;
 class FluPushButton;
+class FluProgressRing; // s17.12：下载进度环，只在 UpdateSettingCard 里 new，头侧指针即可
 class FluSettingsVersionBox;
 class QEvent;
 class QShowEvent; // s17.12：showEvent 形参类型；BasePage 未覆写该钩子，此处只需前向声明
@@ -209,11 +210,22 @@ private:
     void onProgressChanged(qint64 received, qint64 total);
     void onStaged(bool ok, const QString& error);
     void applyStatus();      // 令牌 → 说明位（唯一出口，重译与槽都走它）
+    // 令牌的另一个消费面：进度环。与说明位同由 applyStatus() 驱动，**不在各槽里单独调**
+    // ——否则「改了令牌忘了收环」会和文案/环分叉，而这类分叉在冒烟里看不出来。
+    void applyProgressRing();
     QString statusText() const;
 
     UpdateManager* m_updateManager = nullptr;
     FluPushButton* m_checkButton = nullptr;
     FluPushButton* m_applyButton = nullptr;
+    // 下载进度环：**只在 downloading 阶段可见**，其余阶段既隐藏也已停掉无限动画。
+    // 环内不写字——百分比的唯一出口仍是说明位文案（`statusText()`），两处各写一遍
+    // 就会在语言切换时有一处滞留，且 20px 的环里塞数字本来也读不清。
+    FluProgressRing* m_progressRing = nullptr;
+    // 分母与分子原值：环与文案都从 `UpdateRules::progressPercentOrUnknown` 读它们，
+    // 判据单源在纯头，渲染层不再各自决定「这算不算知道分母」。
+    qint64 m_progressReceived = 0;
+    qint64 m_progressTotal = -1; // -1 = 未知（同 assetSizeOrUnknown 的口径），不是 0
 
     // 状态令牌：文案唯一来源。槽只改令牌、statusText() 只读令牌——两处各拼一套
     // 就会在语言切换时有一处滞留旧文案。
