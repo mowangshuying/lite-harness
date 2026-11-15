@@ -16,10 +16,10 @@ class QShowEvent;
 // FluentUI 风格的单行输入对话框：与 FluMessageBox 同款窗口骨架
 // （整窗半透明遮罩 + 居中圆角卡片 + 底部分隔线 + 灰底按钮行），
 // 内容区为 标题 + 可选提示 label + FluLineEdit（预填、打开即全选聚焦、回车=确定、Esc=取消）。
-// 主题跟随：本类配色走仓内 stylesheet/<theme>/FluentInputDialog.qss；
+// 主题跟随：本类配色走仓内 stylesheet/<theme>/InputDialog.qss；
 // 输入框与按钮为 FluentUI 控件自带 QSS，天然三主题变色。
 // 与 FluMessageBox 相同约定：parent 传主窗口（用于遮罩铺满与随父窗尺寸联动）；parent 为空时退化为无遮罩小窗。
-class FluentInputDialog : public QDialog
+class InputDialog : public QDialog
 {
     Q_OBJECT
 public:
@@ -31,7 +31,7 @@ public:
                                              const QString &text = QString(),
                                              QLineEdit::EchoMode echoMode = QLineEdit::Normal);
 
-    explicit FluentInputDialog(QWidget *parent = nullptr);
+    explicit InputDialog(QWidget *parent = nullptr);
 
     // 输入框回显模式：默认 Normal。密钥类输入传 QLineEdit::Password，避免明文上屏
     // （肩窥/截屏泄漏）。此前全仓 grep echoMode 零命中，与 SettingsPage 里

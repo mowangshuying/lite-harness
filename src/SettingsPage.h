@@ -67,7 +67,7 @@ private:
 };
 
 // 上下文上限设置卡（第九轮；s17.9 起单位定为 token）：说明位「超限自动压缩：200,000 token」，
-// 右侧只留「修改」，弹 FluentInputDialog 输入，校验 [kContextCharLimitMin,
+// 右侧只留「修改」，弹 InputDialog 输入，校验 [kContextCharLimitMin,
 // kContextCharLimitMax] 拒绝非法值，写 config.json 后立即回显。
 // 生效语义：CompactManager 每次管线现取设置值，下一回合生效，无需重启。
 // Q_OBJECT 理由同 WorkDirSettingCard（tr 上下文与 lupdate 提取词法类名对齐）。
@@ -87,7 +87,7 @@ private:
 };
 
 // 单轮最大调用次数设置卡（第十二轮）：与 ContextLimitSettingCard 同款结构——说明位
-// 「超限即终止循环：500」+「修改」弹 FluentInputDialog 输入，校验 [kMaxToolIterationsMin,
+// 「超限即终止循环：500」+「修改」弹 InputDialog 输入，校验 [kMaxToolIterationsMin,
 // kMaxToolIterationsMax] 拒绝非法值，写 config.json 后立即回显。
 // 生效语义：AgentLoop 每回合 run() 入口现取设置值，下一回合生效，无需重启。
 // 「终止循环」非拟测：撞上限走 AgentLoopRequest.cpp 的
@@ -109,7 +109,7 @@ private:
 };
 
 // 服务地址设置卡（模型服务组）：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
-// 编辑弹 FluentInputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
+// 编辑弹 InputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
 // 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
 // 生效语义：写 config.json 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
 // 明文展示（URL 非机密），ToolTip 回落全量 URL 供省略后读全文。
@@ -154,7 +154,7 @@ private:
 
 // 可选模型清单设置卡（模型服务组）：说明位「输入框下拉候选：<清单>」+「修改 + 清除」操作行。
 // 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
-// 编辑弹 FluentInputDialog 录入逗号分隔模型名（落盘前逐项 trim、丢空、保序去重）。
+// 编辑弹 InputDialog 录入逗号分隔模型名（落盘前逐项 trim、丢空、保序去重）。
 // 生效语义：写 config.json 键 modelOptions；输入框模型下拉在每次弹层展开前重读该键并原地
 // 刷新（ChatMsgEdit::reloadModelOptions），故改完配置无需重启即可选到新模型。
 // 说明位展示的是**生效清单**（清洗去重后），非原始录入串；原始串经 ToolTip 兜底（两者可能不同）。

@@ -1,29 +1,29 @@
-FluentInputDialog {
+InputDialog {
     background-color: transparent;
 }
 
-FluentInputDialog QWidget#windowMask {
+InputDialog QWidget#windowMask {
     background-color: rgba(74, 74, 74, 0.7);
 }
 
-FluentInputDialog QFrame#centerWidget {
+InputDialog QFrame#centerWidget {
     background-color: rgb(255, 255, 255);
     border-radius: 8px;
 }
 
-FluentInputDialog QLabel#titleLabel {
+InputDialog QLabel#titleLabel {
     font-size: 18px;
     font-weight: bold;
     background-color: transparent;
 }
 
-FluentInputDialog QLabel#infoLabel {
+InputDialog QLabel#infoLabel {
     font-size: 14px;
     color: rgb(91, 91, 91);
     background-color: transparent;
 }
 
-FluentInputDialog QWidget#btnWidget {
+InputDialog QWidget#btnWidget {
     background-color: rgb(243, 243, 243);
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;

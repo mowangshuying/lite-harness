@@ -284,7 +284,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **ChatStatusStrip** — 聊天输入框正下方的常驻状态条（**一行三段文字**：轮步段 + 消耗段 + 速度段），s16.1 从 SessionSidebar 拆出：侧栏可收起而这些计量/进行态读数必须常驻，故随输入框走。占用**条**（`#ctxTrack`/`#ctxFill`）、占用**数字**（`#ctxNumbers`）与「运行状态」三态灯**不在**本组件，三者归侧栏——数字曾住本行首段，按用户裁决迁入侧栏「上下文」节与条同节并置（比例算术单源 `UsageTokens::usageRatio`，一次计算喂条与数字两个视图，不会给出两个数），代价是收起侧栏时条与数字一并不可见，这是**明示取舍而非疏漏**；灯在侧栏再亮一份就是两个读数。同为**纯视图，不订阅 `AgentLoop`、也不读 config.json**，由 `ChatSessionPage` 调 setter 推入（`setTurnStep`/`setTokenUsage`/`setOutputRate`，**无** `setContextUsage`/`setRunning`/`setPermissionPending`）；作为输入组末位成员由 `applyColumnWidth` 钳宽、自身不设 `maximumWidth`；算术仍在 `UsageTokens.h`/`StreamRate.h` 纯头，空账整段隐藏纪律不变，**三段全空时整条隐藏**（`applyEmptiness`，输入框下不留空行）。
 
 轮步段（`#ctxTurnStep`，s17.1 新增，行形「第 N 轮 · 第 M 步」）的**术语口径必须与另两处「轮」区分**：本段的「轮」= **用户回合**（`AgentLoop::userTurnCount()`，`run()` 入口自增、`loadSavedHistory` 按历史 `role=user` 条数播种），而设置页「单轮最大调用次数」与引擎报错「工具调用轮次超过上限（%1 轮）」里的「轮」= **工具调用轮次**（`m_toolIterations`，本段把它显示成「步」），侧栏 goal 节「轮次 %1」又是 **goal 续跑计数**——三处不同义，故 tooltip 必须显式锚定（`ChatStatusStrip::setTurnStep` 的 tip 首条【术语提醒】）。两条判据差异：① 空账判据看「开过回合没有」（`turns<=0` 隐藏），**不像**消耗/速度段看「有没有回读数据」——`steps==0` 是合法读数（本回合一次工具没调就答完）照实显示，隐藏会让「第 3 轮」孤零零被读成「第 3 轮什么都没干」；② 到账时机不同批，轮步段随 `run()` 入口即到账、消耗/速度等首次 usage，故整条最先出现的常是轮步段（真实形态，非故障）。步数上限由**页面传入**（视图不读 ini），与 `contextTokenBudget()` 同批取值。已知偏差：历史被压缩改写后播种数偏小（只反映压缩窗口内存量），刻意不为该读数动 `history.json` schema。
-- **ChatMsgEdit / SendMsgButton / PermissionCard / WorkDirPathBar / FluentInputDialog** — 输入区、圆形 SVG 发送钮、内联审批卡（拒绝默认焦点、理由 EN→ZH）、工作目录条、通用单行输入对话框。
+- **ChatMsgEdit / SendMsgButton / PermissionCard / WorkDirPathBar / InputDialog** — 输入区、圆形 SVG 发送钮、内联审批卡（拒绝默认焦点、理由 EN→ZH）、工作目录条、通用单行输入对话框。
 
 ## 数据与路径
 

@@ -2,7 +2,7 @@
 #include "AgentConstants.h"
 #include "LayoutConstants.h" // P2-D2：页面留白与其余页同源（kSideMargin/kPageVMargin）
 #include "UiScale.h"         // P0 字号缩放：设置卡动作钮尺寸按启动倍率放大
-#include "FluentInputDialog.h"
+#include "InputDialog.h"
 #include "I18n.h"
 #include "QOpenAi.h" // 写入 ini 后即时覆盖全局配置（setUrl / setToken）
 #include "ThemeAware.h"
@@ -289,8 +289,8 @@ void ContextLimitSettingCard::promptEdit()
         tr("范围 %1 ~ %2（token）。")
             .arg(AgentConst::kContextCharLimitMin)
             .arg(AgentConst::kContextCharLimitMax);
-    // FluentInputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值（裸数字）
-    const auto [input, accepted] = FluentInputDialog::getInputText(
+    // InputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值（裸数字）
+    const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置上下文上限"), rangeHint,
         QString::number(AgentConst::contextCharLimitValue()));
     if (!accepted)
@@ -362,8 +362,8 @@ void MaxRoundsSettingCard::promptEdit()
         tr("范围 %1 ~ %2（轮）。")
             .arg(AgentConst::kMaxToolIterationsMin)
             .arg(AgentConst::kMaxToolIterationsMax);
-    // FluentInputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值
-    const auto [input, accepted] = FluentInputDialog::getInputText(
+    // InputDialog 约定 parent 传主窗口（遮罩铺满）；预填当前生效值
+    const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置最大轮次"), rangeHint,
         QString::number(AgentConst::maxToolIterationsValue()));
     if (!accepted)
@@ -389,7 +389,7 @@ void MaxRoundsSettingCard::promptEdit()
 }
 
 // 服务地址设置卡：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
-// 编辑走 FluentInputDialog 单行输入（parent 传主窗口保遮罩铺满），预填存量值；
+// 编辑走 InputDialog 单行输入（parent 传主窗口保遮罩铺满），预填存量值；
 // 校验不过弹 FluMessageBox 拒写，空串按清除处理。URL 非机密，明文展示、ToolTip 回落全量。
 ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
     : InfoSlotSettingCard(parent)
@@ -437,7 +437,7 @@ void ApiUrlSettingCard::updateValue()
 
 void ApiUrlSettingCard::promptEdit()
 {
-    const auto [input, accepted] = FluentInputDialog::getInputText(
+    const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置服务地址"), tr("以 /v1 等版本路径结尾，不含补全端点。"),
         readApiBaseUrl());
     if (!accepted)
@@ -515,7 +515,7 @@ void ApiTokenSettingCard::promptEdit()
     // 摊在截屏/肩窥里）。现改为不预填 + Password 回显。
     // 语义随之调整：空输入＝不修改。否则「不预填」会让「打开就直接点确定」变成误删 token；
     // 清除另有卡上的「清除」按钮（见构造函数 m_clearButton 的连接），职责不重叠。
-    const auto [input, accepted] = FluentInputDialog::getInputText(
+    const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置 API Key"),
         tr("输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。"),
         QString(), QLineEdit::EchoMode::Password);
@@ -588,7 +588,7 @@ void ModelListSettingCard::updateValue()
 
 void ModelListSettingCard::promptEdit()
 {
-    const auto [input, accepted] = FluentInputDialog::getInputText(
+    const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置可选模型"), tr("多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。"),
         readModelOptionsRaw());
     if (!accepted)

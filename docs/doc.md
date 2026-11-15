@@ -91,7 +91,7 @@ L2 页面          BasePage · NewChatPage · ChatSessionPage · SettingsPage
                         ↓
 L3 展示控件      MessageBubbleWidget · CollapsibleBlock(→ThinkingBlock/ToolBlock/TodoCard)
                  PermissionCard · SessionSidebar · ChatStatusStrip · ChatMsgEdit · SendMsgButton
-                 WorkDirPathBar · FluentInputDialog · NavItem
+                 WorkDirPathBar · InputDialog · NavItem
                         ↓
 L4 Agent 编排    AgentLoop（1 类 × 14 TU）· SubAgent
                          ↓
@@ -133,7 +133,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `BasePage` | 导航页基类；主题契约：基类构造不首刷，派生页构造尾 `ThemeAware::bind` | `ThemeAware` |
 | `NewChatPage` | 发起页（欢迎语 + **会话活动热力图** + 工作目录条 + 输入框），发 `newChatRequested(text)`；进入时重读 `config.json` 默认目录；热力图数据由宿主 LiteHarness push（`setActivityData`），本页面从不直读磁盘、不订阅 AgentLoop | `BasePage`、`ChatMsgEdit`、`WorkDirPathBar`、`ContributionHeatmap`、`AppSettings`、`LayoutConstants`、`ActivityLedger.h`（形参类型） |
 | `ChatSessionPage` | 每会话一页：布局 + **持有 `AgentLoop`** + `wireAgent()` 把全部后端信号接成 UI + 历史重放 + 侧栏与状态条接线 | `AgentLoop`、**`AgentLoopInternal.h`**（`ChatSessionPage.cpp:19`）、`MessageBubbleWidget`、`ToolBlock`、`PermissionCard`、`TodoCard`、`SessionSidebar`、`ChatStatusStrip`、`ChatMsgEdit`、`WorkDirPathBar` |
-| `SettingsPage` | 主题/语言/默认工作目录/模型服务 `apiBaseUrl`+`apiToken`/模型清单 `modelOptions`（下拉选项，逗号分隔）/上下文上限/轮次上限/权限审批开关 `permissionApproval` | `BasePage`、`QOpenAi`（直改运行时配置）、`AppSettings`、`AgentConstants`、`I18n`、`FluentInputDialog` |
+| `SettingsPage` | 主题/语言/默认工作目录/模型服务 `apiBaseUrl`+`apiToken`/模型清单 `modelOptions`（下拉选项，逗号分隔）/上下文上限/轮次上限/权限审批开关 `permissionApproval` | `BasePage`、`QOpenAi`（直改运行时配置）、`AppSettings`、`AgentConstants`、`I18n`、`InputDialog` |
 
 #### L3 展示控件
 
@@ -146,7 +146,7 @@ L6 单源与设施    AgentConstants.h · ToolNames.h · LayoutConstants.h · Ap
 | `SessionSidebar` | 会话右栏信息面板（标题/模型/工作目录/上下文占用条+数字行（`#ctxNumbers`，**行内 K/M 紧凑、tooltip 千分位精确**）/状态灯/任务清单/团队名册/当前目标/后台任务/定时任务/页脚版本；后三节为 s17 P1 观测面，空态整节隐藏）；**纯视图，不订阅 `AgentLoop`**，全部由 `ChatSessionPage` 调 setter 推入 | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`（形参类型 + `usageRatio` 比例算术 + `formatCompact` 紧凑读数） |
 | `ChatStatusStrip` | 输入框正下方的常驻状态条（**一行三段文字**：轮步段/消耗段/速度段）——s16.1 从侧栏拆出，作为输入组末位成员同栏宽；占用**条**与占用**数字**（数字按用户裁决自本行首段迁回侧栏「上下文」节，收起侧栏时随条一并不可见=明示代价）与「运行状态」三态灯归侧栏，本组件不复制一份灯；消耗段**行内走 K/M 紧凑读数、tooltip 给千分位精确值**；**纯视图，不订阅 `AgentLoop`、也不读 config.json**（轮步段的步数上限由页面传入） | `ThemeAware`、`LayoutConstants`、`UsageTokens.h`/`StreamRate.h`（形参类型 + `formatCompact` 紧凑读数，其余算术仍在纯头） |
 | `ChatMsgEdit` / `SendMsgButton` | 底部输入框（`sendMessage` / `stopRequested` / `modelChanged` + `setTurnBusy`）/ 圆形发送-停止两态钮 | `AgentConstants`、`LayoutConstants`、`ThemeAware` |
-| `WorkDirPathBar` / `FluentInputDialog` / `NavItem` | 只读路径条（中间省略 + tooltip 全路径）/ Fluent 风格单行模态框 / 导航项最小派生（补 `removeChildItem`）+ `NavKey` 常量 | 仅 Qt / FluentUI |
+| `WorkDirPathBar` / `InputDialog` / `NavItem` | 只读路径条（中间省略 + tooltip 全路径）/ Fluent 风格单行模态框 / 导航项最小派生（补 `removeChildItem`）+ `NavKey` 常量 | 仅 Qt / FluentUI |
 | `ContributionHeatmap` | 会话活动热力图（53 列 × 7 行 = 371 天滚动窗口，恒为满矩形、末格即今天，仿 GitHub contribution graph）；NewChatPage 英雄区下方。**纯视图 QWidget**，`setData(QHash<QDate, DayTotal>)` 由宿主 LiteHarness push（本页面从不直读磁盘、不订阅 AgentLoop——承 SessionSidebar 的 setter-push 纪律）；tooltip 显示当日五字段（**四个 token 字段走 K/M 紧凑读数，本视图无行内读数、tooltip 就是唯一展示面；`calls` 是次数不是 token，保持精确整数**）+ **覆盖边界免责**（「仅主循环与队友回合，不含压缩/记忆/workflow」）。**网格算术转调纯头 `HeatmapGrid.h`**（`windowStart`/`cellOf`/`dateOfCell`），本类只留像素几何与绘制，`kWeeks`/`kDaysPerWeek` 是该头常量的别名、不重写 53/7（避免第二个真值源）。三主题色板硬编码在本 cpp（FluentUI fork 无 `FluThemeColorType`），`ThemeAware::bind` 订主题切换重刷 | `ThemeAware`、**`HeatmapGrid.h`**（网格算术单源）、`ActivityLedger.h`（`DayTotal` 形参类型、阈值判据 `levelForTokens`）、`UsageTokens.h`（`formatCompact` 紧凑读数） |
 
 #### L4 Agent 编排

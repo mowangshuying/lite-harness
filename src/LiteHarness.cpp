@@ -37,7 +37,7 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QCloseEvent>
-#include "FluentInputDialog.h"
+#include "InputDialog.h"
 #include "ThemeAware.h"
 #include <FluScrollBar.h>        // 导航列内浮动滚动条（底色对齐追加块的目标控件）
 #include <FluStyleSheetUtils.h>  // getStyleSheetDir/getQssByFileName：按 dir/theme/文件名 读追加块原文
@@ -471,7 +471,7 @@ void LiteHarness::renameSession(const QString &key)
 
     const QString oldTitle = childItem->getLabel()->text();
     // FluentUI 风格输入框（与删除确认的 FluMessageBox 同款骨架），替代原生 QInputDialog
-    const auto [input, ok] = FluentInputDialog::getInputText(this, tr("重命名会话"), tr("名称"), oldTitle);
+    const auto [input, ok] = InputDialog::getInputText(this, tr("重命名会话"), tr("名称"), oldTitle);
     const QString text = input.simplified();
     if (!ok || text.isEmpty() || text == oldTitle)
         return;

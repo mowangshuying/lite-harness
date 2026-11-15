@@ -1,4 +1,4 @@
-#include "FluentInputDialog.h"
+#include "InputDialog.h"
 
 #include "UiScale.h" // P0 字号缩放：卡片尺寸与按钮行高按启动倍率放大
 
@@ -16,13 +16,13 @@
 #include <FluVSplitLine.h>
 
 // 静态便捷入口：栈上构造 + exec，语义对齐 QInputDialog::getText
-QPair<QString, bool> FluentInputDialog::getInputText(QWidget *parent,
+QPair<QString, bool> InputDialog::getInputText(QWidget *parent,
                                                      const QString &title,
                                                      const QString &label,
                                                      const QString &text,
                                                      QLineEdit::EchoMode echoMode)
 {
-    FluentInputDialog dialog(parent);
+    InputDialog dialog(parent);
     dialog.setTitle(title);
     dialog.setLabel(label);
     dialog.setText(text);
@@ -31,7 +31,7 @@ QPair<QString, bool> FluentInputDialog::getInputText(QWidget *parent,
     return {dialog.text(), accepted};
 }
 
-FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_parentWidget(parent)
+InputDialog::InputDialog(QWidget *parent) : QDialog(parent), m_parentWidget(parent)
 {
     // —— 窗口骨架：与 FluMessageBox 同款（遮罩 + 居中卡片），卡片稍高以容纳输入行 ——
     auto boxLayout = new QHBoxLayout(this);
@@ -45,7 +45,7 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
     // 了——横向布局里一个子件无法跨越另一个子件所占的那一格（实测 stretch 1 只得 597 宽）。
     // 勿「顺手」把这行加回来。
     m_windowMask = new QWidget(this);
-    m_windowMask->setObjectName("windowMask"); // 配色见 stylesheet/<theme>/FluentInputDialog.qss
+    m_windowMask->setObjectName("windowMask"); // 配色见 stylesheet/<theme>/InputDialog.qss
 
     m_card = new QFrame(this);
     m_card->setObjectName("centerWidget");
@@ -130,43 +130,43 @@ FluentInputDialog::FluentInputDialog(QWidget *parent) : QDialog(parent), m_paren
     }
 
     // QDialog 无 FluWidget 的主题自动联动，bind 即本对话框唯一的 QSS 首刷 + themeChanged 订阅
-    ThemeAware::bind("FluentInputDialog.qss", this);
+    ThemeAware::bind("InputDialog.qss", this);
 }
 
-void FluentInputDialog::setTitle(const QString &title)
+void InputDialog::setTitle(const QString &title)
 {
     m_titleLabel->setText(title);
 }
 
-void FluentInputDialog::setLabel(const QString &label)
+void InputDialog::setLabel(const QString &label)
 {
     m_infoLabel->setVisible(!label.isEmpty());
     m_infoLabel->setText(label);
 }
 
-void FluentInputDialog::setText(const QString &text)
+void InputDialog::setText(const QString &text)
 {
     m_lineEdit->setText(text);
 }
 
-void FluentInputDialog::setEchoMode(QLineEdit::EchoMode mode)
+void InputDialog::setEchoMode(QLineEdit::EchoMode mode)
 {
     m_lineEdit->setEchoMode(mode);
 }
 
-QString FluentInputDialog::text() const
+QString InputDialog::text() const
 {
     return m_lineEdit->text();
 }
 
-void FluentInputDialog::showEvent(QShowEvent *event)
+void InputDialog::showEvent(QShowEvent *event)
 {
     QDialog::showEvent(event);
     m_lineEdit->setFocus();  // 打开即聚焦，无需点击
     m_lineEdit->selectAll(); // 预填内容全选，直接输入即整体替换
 }
 
-void FluentInputDialog::resizeEvent(QResizeEvent *event)
+void InputDialog::resizeEvent(QResizeEvent *event)
 {
     QDialog::resizeEvent(event);
     if (m_parentWidget)
@@ -176,7 +176,7 @@ void FluentInputDialog::resizeEvent(QResizeEvent *event)
     }
 }
 
-bool FluentInputDialog::eventFilter(QObject *obj, QEvent *event)
+bool InputDialog::eventFilter(QObject *obj, QEvent *event)
 {
     // 父窗尺寸变化时同步遮罩与窗口（同 FluMessageBox），并让卡片保持居中
     if (obj == m_parentWidget && event->type() == QEvent::Resize)
