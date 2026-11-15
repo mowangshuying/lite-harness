@@ -53,45 +53,45 @@
 <context>
     <name>ApiTokenSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="467"/>
-        <location filename="../src/SettingsPage.cpp" line="495"/>
+        <location filename="../src/SettingsPage.cpp" line="468"/>
+        <location filename="../src/SettingsPage.cpp" line="496"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="471"/>
-        <location filename="../src/SettingsPage.cpp" line="496"/>
+        <location filename="../src/SettingsPage.cpp" line="472"/>
+        <location filename="../src/SettingsPage.cpp" line="497"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="473"/>
-        <location filename="../src/SettingsPage.cpp" line="497"/>
+        <location filename="../src/SettingsPage.cpp" line="474"/>
+        <location filename="../src/SettingsPage.cpp" line="498"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="507"/>
+        <location filename="../src/SettingsPage.cpp" line="508"/>
         <source>未设置</source>
         <translation>Not set</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="507"/>
+        <location filename="../src/SettingsPage.cpp" line="508"/>
         <source>Bearer 凭据</source>
         <translation>Bearer credential</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="508"/>
+        <location filename="../src/SettingsPage.cpp" line="509"/>
         <source>已保存</source>
         <translation>Saved</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="519"/>
+        <location filename="../src/SettingsPage.cpp" line="520"/>
         <source>设置 API Key</source>
         <translation>Set API Key</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="520"/>
+        <location filename="../src/SettingsPage.cpp" line="521"/>
         <source>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</source>
         <translation>Enter a new key and save; leave empty to keep the current one (use the Clear button to remove it).</translation>
     </message>
@@ -99,50 +99,50 @@
 <context>
     <name>ApiUrlSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="397"/>
-        <location filename="../src/SettingsPage.cpp" line="425"/>
+        <location filename="../src/SettingsPage.cpp" line="398"/>
+        <location filename="../src/SettingsPage.cpp" line="426"/>
         <source>服务地址</source>
         <translation>Base URL</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="401"/>
-        <location filename="../src/SettingsPage.cpp" line="426"/>
+        <location filename="../src/SettingsPage.cpp" line="402"/>
+        <location filename="../src/SettingsPage.cpp" line="427"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="403"/>
-        <location filename="../src/SettingsPage.cpp" line="427"/>
+        <location filename="../src/SettingsPage.cpp" line="404"/>
+        <location filename="../src/SettingsPage.cpp" line="428"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="435"/>
+        <location filename="../src/SettingsPage.cpp" line="436"/>
         <source>未设置</source>
         <translation>Not set</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="435"/>
+        <location filename="../src/SettingsPage.cpp" line="436"/>
         <source>OpenAI 兼容基址</source>
         <translation>OpenAI-compatible base URL</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="441"/>
+        <location filename="../src/SettingsPage.cpp" line="442"/>
         <source>设置服务地址</source>
         <translation>Set Base URL</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="441"/>
+        <location filename="../src/SettingsPage.cpp" line="442"/>
         <source>以 /v1 等版本路径结尾，不含补全端点。</source>
         <translation>End with a version path such as /v1; do not include the completion endpoint.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="449"/>
+        <location filename="../src/SettingsPage.cpp" line="450"/>
         <source>无效地址</source>
         <translation>Invalid Address</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="450"/>
+        <location filename="../src/SettingsPage.cpp" line="451"/>
         <source>请输入以 http:// 或 https:// 开头的完整地址。</source>
         <translation>Please enter a full address starting with http:// or https://.</translation>
     </message>
@@ -285,12 +285,12 @@ Output:
     <message>
         <location filename="../src/ChatSessionPage.cpp" line="845"/>
         <source>历史加载失败</source>
-        <translation type="unfinished"></translation>
+        <translation>Failed to Load History</translation>
     </message>
     <message>
         <location filename="../src/ChatSessionPage.cpp" line="846"/>
         <source>会话历史无法读取，已按空会话打开。原文件可能损坏或被占用。</source>
-        <translation type="unfinished"></translation>
+        <translation>Session history could not be read, so the session opened empty. The file may be corrupted or held by another program.</translation>
     </message>
     <message>
         <location filename="../src/ChatSessionPage.cpp" line="1287"/>
@@ -373,44 +373,44 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContextLimitSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="253"/>
-        <location filename="../src/SettingsPage.cpp" line="270"/>
+        <location filename="../src/SettingsPage.cpp" line="254"/>
+        <location filename="../src/SettingsPage.cpp" line="271"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="281"/>
+        <location filename="../src/SettingsPage.cpp" line="282"/>
         <source>超限自动压缩</source>
         <translation>Auto-compacts when exceeded</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="249"/>
-        <location filename="../src/SettingsPage.cpp" line="269"/>
+        <location filename="../src/SettingsPage.cpp" line="250"/>
+        <location filename="../src/SettingsPage.cpp" line="270"/>
         <source>上下文上限（token）</source>
         <translation>Context limit (tokens)</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="282"/>
+        <location filename="../src/SettingsPage.cpp" line="283"/>
         <source>%1 token</source>
         <translation>%1 tokens</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="289"/>
+        <location filename="../src/SettingsPage.cpp" line="290"/>
         <source>范围 %1 ~ %2（token）。</source>
         <translation>Range %1 ~ %2 (tokens).</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="294"/>
+        <location filename="../src/SettingsPage.cpp" line="295"/>
         <source>设置上下文上限</source>
         <translation>Set Context Limit</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="307"/>
+        <location filename="../src/SettingsPage.cpp" line="308"/>
         <source>无效数值</source>
         <translation>Invalid Value</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="308"/>
+        <location filename="../src/SettingsPage.cpp" line="309"/>
         <source>请输入 %1 ~ %2 之间的整数。</source>
         <translation>Please enter an integer between %1 and %2.</translation>
     </message>
@@ -457,7 +457,7 @@ No consumption recorded</translation>
 <context>
     <name>InfoSlotSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="155"/>
+        <location filename="../src/SettingsPage.cpp" line="156"/>
         <source>：</source>
         <translation>: </translation>
     </message>
@@ -480,7 +480,7 @@ No consumption recorded</translation>
     <message>
         <location filename="../src/LiteHarness.cpp" line="112"/>
         <source>切换主题</source>
-        <translation type="unfinished"></translation>
+        <translation>Switch Theme</translation>
     </message>
     <message>
         <location filename="../src/LiteHarness.cpp" line="145"/>
@@ -545,39 +545,39 @@ No consumption recorded</translation>
 <context>
     <name>MaxRoundsSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="328"/>
-        <location filename="../src/SettingsPage.cpp" line="348"/>
+        <location filename="../src/SettingsPage.cpp" line="329"/>
+        <location filename="../src/SettingsPage.cpp" line="349"/>
         <source>单轮最大调用次数</source>
         <translation>Max tool-call rounds per turn</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="332"/>
-        <location filename="../src/SettingsPage.cpp" line="349"/>
+        <location filename="../src/SettingsPage.cpp" line="333"/>
+        <location filename="../src/SettingsPage.cpp" line="350"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="355"/>
+        <location filename="../src/SettingsPage.cpp" line="356"/>
         <source>超限即终止循环</source>
         <translation>Ends the loop when exceeded</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="362"/>
+        <location filename="../src/SettingsPage.cpp" line="363"/>
         <source>范围 %1 ~ %2（轮）。</source>
         <translation>Range: %1 ~ %2 (rounds).</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="367"/>
+        <location filename="../src/SettingsPage.cpp" line="368"/>
         <source>设置最大轮次</source>
         <translation>Set Max Rounds</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="379"/>
+        <location filename="../src/SettingsPage.cpp" line="380"/>
         <source>无效数值</source>
         <translation>Invalid Value</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="380"/>
+        <location filename="../src/SettingsPage.cpp" line="381"/>
         <source>请输入 %1 ~ %2 之间的整数。</source>
         <translation>Please enter an integer between %1 and %2.</translation>
     </message>
@@ -603,50 +603,50 @@ No consumption recorded</translation>
 <context>
     <name>ModelListSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="541"/>
-        <location filename="../src/SettingsPage.cpp" line="568"/>
+        <location filename="../src/SettingsPage.cpp" line="542"/>
+        <location filename="../src/SettingsPage.cpp" line="569"/>
         <source>可选模型</source>
         <translation>Available Models</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="545"/>
-        <location filename="../src/SettingsPage.cpp" line="569"/>
+        <location filename="../src/SettingsPage.cpp" line="546"/>
+        <location filename="../src/SettingsPage.cpp" line="570"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="547"/>
-        <location filename="../src/SettingsPage.cpp" line="570"/>
+        <location filename="../src/SettingsPage.cpp" line="548"/>
+        <location filename="../src/SettingsPage.cpp" line="571"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="581"/>
+        <location filename="../src/SettingsPage.cpp" line="582"/>
         <source>内置默认候选</source>
         <translation>Built-in default candidates</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="582"/>
+        <location filename="../src/SettingsPage.cpp" line="583"/>
         <source>未配置 modelOptions 键，可用本卡「修改」填写。</source>
         <translation>modelOptions key is not set; use &quot;Change&quot; on this card to configure it.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="586"/>
+        <location filename="../src/SettingsPage.cpp" line="587"/>
         <source>config.json: %1</source>
         <translation>config.json: %1</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="586"/>
+        <location filename="../src/SettingsPage.cpp" line="587"/>
         <source>下拉候选</source>
         <translation>Dropdown candidates</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="592"/>
+        <location filename="../src/SettingsPage.cpp" line="593"/>
         <source>设置可选模型</source>
         <translation>Set Available Models</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="592"/>
+        <location filename="../src/SettingsPage.cpp" line="593"/>
         <source>多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。</source>
         <translation>Separate models with English commas, e.g. qwen3.8-flash,qwen3.8-max.</translation>
     </message>
@@ -768,17 +768,17 @@ No consumption recorded</translation>
         <translation>Memory consolidated: %1 → %2 entries</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="44"/>
-        <source>保存失败</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../src/SettingsPage.cpp" line="45"/>
-        <source>配置无法写入 config.json，本次修改不会保留。请检查文件是否只读或被其它程序占用。</source>
-        <translation type="unfinished"></translation>
+        <source>保存失败</source>
+        <translation>Save Failed</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="65"/>
+        <location filename="../src/SettingsPage.cpp" line="46"/>
+        <source>配置无法写入 config.json，本次修改不会保留。请检查文件是否只读或被其它程序占用。</source>
+        <translation>Settings could not be written to config.json, so this change will not persist. Check whether the file is read-only or held by another program.</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="66"/>
         <source>未设置（使用进程当前目录）</source>
         <translation>Not set (uses process working directory)</translation>
     </message>
@@ -837,13 +837,13 @@ No consumption recorded</translation>
         <location filename="../src/SendMsgButton.cpp" line="37"/>
         <location filename="../src/SendMsgButton.cpp" line="38"/>
         <source>发送</source>
-        <translation type="unfinished">Send</translation>
+        <translation>Send</translation>
     </message>
     <message>
         <location filename="../src/SendMsgButton.cpp" line="37"/>
         <location filename="../src/SendMsgButton.cpp" line="38"/>
         <source>停止</source>
-        <translation type="unfinished">Stop</translation>
+        <translation>Stop</translation>
     </message>
 </context>
 <context>
@@ -1069,143 +1069,149 @@ No consumption recorded</translation>
 <context>
     <name>SettingsPage</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="620"/>
-        <location filename="../src/SettingsPage.cpp" line="816"/>
+        <location filename="../src/SettingsPage.cpp" line="621"/>
+        <location filename="../src/SettingsPage.cpp" line="1084"/>
         <source>外观与行为</source>
         <translation>Appearance &amp; Behavior</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="626"/>
-        <location filename="../src/SettingsPage.cpp" line="818"/>
+        <location filename="../src/SettingsPage.cpp" line="627"/>
+        <location filename="../src/SettingsPage.cpp" line="1086"/>
         <source>应用主题</source>
         <translation>App theme</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="626"/>
-        <location filename="../src/SettingsPage.cpp" line="818"/>
+        <location filename="../src/SettingsPage.cpp" line="627"/>
+        <location filename="../src/SettingsPage.cpp" line="1086"/>
         <source>选择应用显示的主题。</source>
         <translation>Select which theme to display.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="628"/>
-        <location filename="../src/SettingsPage.cpp" line="819"/>
+        <location filename="../src/SettingsPage.cpp" line="629"/>
+        <location filename="../src/SettingsPage.cpp" line="1087"/>
         <source>浅色</source>
         <translation>Light</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="629"/>
-        <location filename="../src/SettingsPage.cpp" line="820"/>
+        <location filename="../src/SettingsPage.cpp" line="630"/>
+        <location filename="../src/SettingsPage.cpp" line="1088"/>
         <source>深色</source>
         <translation>Dark</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="630"/>
-        <location filename="../src/SettingsPage.cpp" line="821"/>
+        <location filename="../src/SettingsPage.cpp" line="631"/>
+        <location filename="../src/SettingsPage.cpp" line="1089"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="662"/>
-        <location filename="../src/SettingsPage.cpp" line="823"/>
+        <location filename="../src/SettingsPage.cpp" line="663"/>
+        <location filename="../src/SettingsPage.cpp" line="1091"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="662"/>
-        <location filename="../src/SettingsPage.cpp" line="823"/>
+        <location filename="../src/SettingsPage.cpp" line="663"/>
+        <location filename="../src/SettingsPage.cpp" line="1091"/>
         <source>选择界面显示的语言。</source>
         <translation>Select which language to display.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="677"/>
+        <location filename="../src/SettingsPage.cpp" line="678"/>
         <source>语言设置</source>
         <translation>Language Settings</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="677"/>
+        <location filename="../src/SettingsPage.cpp" line="678"/>
         <source>语言切换将在重启后生效。是否立即重启？</source>
         <translation>The language change takes effect after a restart. Restart now?</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="691"/>
-        <location filename="../src/SettingsPage.cpp" line="826"/>
+        <location filename="../src/SettingsPage.cpp" line="692"/>
+        <location filename="../src/SettingsPage.cpp" line="1094"/>
         <source>工作目录</source>
         <translation>Working Directory</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="704"/>
-        <location filename="../src/SettingsPage.cpp" line="830"/>
+        <location filename="../src/SettingsPage.cpp" line="705"/>
+        <location filename="../src/SettingsPage.cpp" line="1098"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="717"/>
-        <location filename="../src/SettingsPage.cpp" line="834"/>
+        <location filename="../src/SettingsPage.cpp" line="718"/>
+        <location filename="../src/SettingsPage.cpp" line="1102"/>
         <source>最大轮次</source>
         <translation>Max Rounds</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="731"/>
-        <location filename="../src/SettingsPage.cpp" line="838"/>
+        <location filename="../src/SettingsPage.cpp" line="732"/>
+        <location filename="../src/SettingsPage.cpp" line="1106"/>
         <source>权限</source>
         <translation>Permissions</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="735"/>
-        <location filename="../src/SettingsPage.cpp" line="839"/>
+        <location filename="../src/SettingsPage.cpp" line="736"/>
+        <location filename="../src/SettingsPage.cpp" line="1107"/>
         <source>工具执行权限审批</source>
         <translation>Tool Execution Approval</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="735"/>
-        <location filename="../src/SettingsPage.cpp" line="839"/>
+        <location filename="../src/SettingsPage.cpp" line="736"/>
+        <location filename="../src/SettingsPage.cpp" line="1107"/>
         <source>命中询问规则时是否需要你批准。</source>
         <translation>Whether a tool call that hits an ask rule needs your approval.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="737"/>
-        <location filename="../src/SettingsPage.cpp" line="840"/>
+        <location filename="../src/SettingsPage.cpp" line="738"/>
+        <location filename="../src/SettingsPage.cpp" line="1108"/>
         <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
         <translation>When off, tools run directly without an approval card. The bash deny list, workflow deny policies and workspace-escape checks are unaffected. Takes effect on the next tool call; no restart needed.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="739"/>
-        <location filename="../src/SettingsPage.cpp" line="842"/>
+        <location filename="../src/SettingsPage.cpp" line="740"/>
+        <location filename="../src/SettingsPage.cpp" line="1110"/>
         <source>需要审批</source>
         <translation>Requires approval</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="740"/>
-        <location filename="../src/SettingsPage.cpp" line="843"/>
+        <location filename="../src/SettingsPage.cpp" line="741"/>
+        <location filename="../src/SettingsPage.cpp" line="1111"/>
         <source>无需审批</source>
         <translation>No approval needed</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="754"/>
-        <location filename="../src/SettingsPage.cpp" line="845"/>
+        <location filename="../src/SettingsPage.cpp" line="755"/>
+        <location filename="../src/SettingsPage.cpp" line="1113"/>
         <source>模型服务</source>
         <translation>Model Service</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="774"/>
-        <location filename="../src/SettingsPage.cpp" line="853"/>
+        <location filename="../src/SettingsPage.cpp" line="779"/>
+        <location filename="../src/SettingsPage.cpp" line="1122"/>
+        <source>更新</source>
+        <translation>Update</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="791"/>
+        <location filename="../src/SettingsPage.cpp" line="1128"/>
         <source>关于</source>
         <translation>About</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="779"/>
+        <location filename="../src/SettingsPage.cpp" line="796"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="780"/>
-        <location filename="../src/SettingsPage.cpp" line="854"/>
+        <location filename="../src/SettingsPage.cpp" line="797"/>
+        <location filename="../src/SettingsPage.cpp" line="1129"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="793"/>
-        <location filename="../src/SettingsPage.cpp" line="856"/>
+        <location filename="../src/SettingsPage.cpp" line="810"/>
+        <location filename="../src/SettingsPage.cpp" line="1131"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness is a lightweight C++ coding-agent harness that fills the gap of harness implementations in the C++ ecosystem. As a hands-on learning project, it demonstrates step by step how to build a harness from scratch with Qt and modern C++.</translation>
     </message>
@@ -1605,6 +1611,177 @@ No consumption recorded</translation>
     </message>
 </context>
 <context>
+    <name>UpdateSettingCard</name>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="829"/>
+        <location filename="../src/SettingsPage.cpp" line="866"/>
+        <source>版本更新</source>
+        <translation>Version Update</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="835"/>
+        <location filename="../src/SettingsPage.cpp" line="867"/>
+        <source>检查更新</source>
+        <translation>Check for Updates</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="837"/>
+        <location filename="../src/SettingsPage.cpp" line="868"/>
+        <source>下载并更新</source>
+        <translation>Download &amp; Update</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="893"/>
+        <source>正在检查更新…</source>
+        <translation>Checking for updates…</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="895"/>
+        <source>已是最新版本（%1）</source>
+        <translation>Already up to date (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="897"/>
+        <source>发现新版本 %1（当前 %2）</source>
+        <translation>New version %1 found (current %2)</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="900"/>
+        <source>正在下载 %1…</source>
+        <translation>Downloading %1…</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="901"/>
+        <source>正在下载 %1… %2</source>
+        <translation>Downloading %1… %2</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="904"/>
+        <source>正在校验 SHA256…</source>
+        <translation>Verifying SHA256…</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="906"/>
+        <source>校验通过，正在解包…</source>
+        <translation>Verification passed, unpacking…</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="908"/>
+        <source>正在换体…</source>
+        <translation>Swapping files…</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="911"/>
+        <source>已更新到 %1，重启后生效</source>
+        <translation>Updated to %1; restart to apply</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="915"/>
+        <source>开发态构建，已禁用</source>
+        <translation>Disabled in a dev build</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="917"/>
+        <source>未找到数据根 config，已拒绝</source>
+        <translation>Rejected: data root config not found</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="919"/>
+        <source>安装目录不可写，无法更新</source>
+        <translation>Install directory is not writable; cannot update</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="921"/>
+        <source>更新源配置有误</source>
+        <translation>Update source misconfigured</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="923"/>
+        <source>%1 没有 win64 安装包</source>
+        <translation>%1 has no win64 installer</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="925"/>
+        <source>发布缺少 SHA256 校验和，已拒绝</source>
+        <translation>Rejected: release has no SHA256 checksum</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="927"/>
+        <source>校验和不匹配，已丢弃未换体</source>
+        <translation>Checksum mismatch; discarded, no swap</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="929"/>
+        <source>包内路径越界，已拒绝换体</source>
+        <translation>Rejected swap: a package path escapes the target directory</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="931"/>
+        <source>另一个实例正在换体，稍后再试</source>
+        <translation>Another instance is swapping; try again later</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="933"/>
+        <source>已暂存未换体，可重试</source>
+        <translation>Staged but not swapped; you can retry</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="935"/>
+        <source>检查失败：%1</source>
+        <translation>Check failed: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="937"/>
+        <source>下载中断：%1</source>
+        <translation>Download interrupted: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="939"/>
+        <source>暂存文件写入失败：%1</source>
+        <translation>Failed to write the staged file: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="941"/>
+        <source>换体失败已回滚（%1）</source>
+        <translation>Swap failed and was rolled back (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="943"/>
+        <source>解包失败（%1）未换体</source>
+        <translation>Extraction failed (%1); no swap</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="945"/>
+        <source>已取消</source>
+        <translation>Cancelled</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="947"/>
+        <source>尚未检查</source>
+        <translation>Not checked yet</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="948"/>
+        <source>更新未完成（%1）</source>
+        <translation>Update incomplete (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="955"/>
+        <source>状态</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="1035"/>
+        <source>更新已就绪</source>
+        <translation>Update Ready</translation>
+    </message>
+    <message>
+        <location filename="../src/SettingsPage.cpp" line="1036"/>
+        <source>%1 已下载并校验通过，换体后需重启生效，重启会中断未完成的回合。现在更新并重启？</source>
+        <translation>%1 has been downloaded and verified. The swap takes effect after a restart, which will interrupt any unfinished turn. Update and restart now?</translation>
+    </message>
+</context>
+<context>
     <name>WorkDirPathBar</name>
     <message>
         <location filename="../src/WorkDirPathBar.cpp" line="32"/>
@@ -1622,25 +1799,25 @@ No consumption recorded</translation>
 <context>
     <name>WorkDirSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="187"/>
-        <location filename="../src/SettingsPage.cpp" line="226"/>
+        <location filename="../src/SettingsPage.cpp" line="188"/>
+        <location filename="../src/SettingsPage.cpp" line="227"/>
         <source>默认工作目录</source>
         <translation>Default Working Directory</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="191"/>
-        <location filename="../src/SettingsPage.cpp" line="227"/>
+        <location filename="../src/SettingsPage.cpp" line="192"/>
+        <location filename="../src/SettingsPage.cpp" line="228"/>
         <source>修改</source>
         <translation>Change</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="193"/>
-        <location filename="../src/SettingsPage.cpp" line="228"/>
+        <location filename="../src/SettingsPage.cpp" line="194"/>
+        <location filename="../src/SettingsPage.cpp" line="229"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="211"/>
+        <location filename="../src/SettingsPage.cpp" line="212"/>
         <source>选择默认工作目录</source>
         <translation>Select Default Working Directory</translation>
     </message>
