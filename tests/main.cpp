@@ -62,9 +62,10 @@ int tst_memoryrules();      // 记忆纯判据（MemoryRules.h）：frontmatter 
 int tst_toolschema();       // 工具 schema 单源（ToolSchema.h）：信封骨架/required⊆properties/类型专属关键字配对/todo enum+maxItems 同源/无 default/additionalProperties 四把锁/workflow 委托同源，零夹具恒跑
 int tst_sessionkeys();      // 会话键算术纯头（SessionKeys.h）：两族键形态/归属反解/生成 dataId 形状/不相交的真实理由(长度非字母表)/撞车谓词与旧注释证伪，零夹具恒跑
 int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstructions.h）：两级候选顺序/命中即止的探测次数/空段省略/截断如实标注/'%'不展开/签名三字段任一变即换，零夹具恒跑
+int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1322（s17.11 项目指令文件批 +47 后为 1324），与本机无夹具全量实跑 pass=1324
+// 全表求和 = 1461（s17.12 自更新判据批 +137 后），与本机无夹具全量实跑 pass=1461
 // 逐条对上（带夹具为 2300）。上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -87,6 +88,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"toolschema", 55},
     {"sessionkeys", 45},
     {"projectinstructions", 49},
+    {"updaterules", 137},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -164,6 +166,7 @@ int main()
     failed += runSuite("toolschema", tst_toolschema);
     failed += runSuite("sessionkeys", tst_sessionkeys);
     failed += runSuite("projectinstructions", tst_projectinstructions);
+    failed += runSuite("updaterules", tst_updaterules);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

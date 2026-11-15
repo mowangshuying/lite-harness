@@ -131,6 +131,30 @@ public:
         return joined(sessionsRootFor(root), dataId);
     }
 
+    // ---- 自更新暂存区与待切换标记（s17.12，判据单源 UpdateRules.h）----
+    // 落点刻意选在数据根内 `<configRoot>/.lite-harness/.update`，两条理由都是硬的：
+    // ① 与安装根同卷——换体的改名步骤必须是同卷重命名，跨卷会退化成「复制再删」，
+    //    既慢又失去原子性（失败时留下半新半死的安装树）；
+    // ② 数据根不在发布 zip 里（实测 zip 只含 bin/plugins/translations），换体永不触碰本
+    //    目录，marker 因此能活过换体、被下一个实例读到。
+    // 本头仍只做字符串派生：mkpath 与读写时机一律归 UpdateManager 消费点。
+    static QString updateDirFor(const QString &root)
+    {
+        return joined(storeRootFor(root), QStringLiteral(".update"));
+    }
+    static QString updateStagingDirFor(const QString &root)
+    {
+        return joined(updateDirFor(root), QStringLiteral("staging"));
+    }
+    static QString updateArchivePathFor(const QString &root)
+    {
+        return joined(updateDirFor(root), QStringLiteral("incoming.zip"));
+    }
+    static QString updateMarkerPathFor(const QString &root)
+    {
+        return joined(updateDirFor(root), QStringLiteral("pending-swap.json"));
+    }
+
     // ---- 会话每日 token 消耗账本（新会话页热力图数据源，见 ActivityLedger.h）----
     // 落点 `<会话根>/.activity/daily.json`，对齐 sessions/<id>/ 下 .task/.memory/.transcripts
     // 的既有分片惯例——删会话即连带清账本，无跨会话聚合文件、无清理策略。

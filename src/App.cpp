@@ -11,6 +11,7 @@
 #include "I18n.h"
 #include "LiteHarness.h"
 #include "UiScale.h"
+#include "UpdateManager.h" // s17.12 自更新：启动时清理上一版换体留下的残留（须在 setApplicationVersion 之后）
 
 int main(int argc, char *argv[])
 {
@@ -100,6 +101,12 @@ int main(int argc, char *argv[])
     // 版本号进运行时：LITE_VERSION 宏由 CMake target_compile_definitions 注入
     // （= project VERSION 拼 s 前缀，唯一真源，如 "s17.11"），供设置页等展示点取用
     QCoreApplication::setApplicationVersion(QStringLiteral(LITE_VERSION));
+
+    // s17.12 自更新残留清理：必须在 setApplicationVersion 之后——清理的版本闸门拿的
+    // 就是 applicationVersion()（判据单源 UpdateRules::shouldCleanResidue），早一步取到的是空。
+    // 也必须在建窗之前：残留是上一版可执行体改名留下的，窗口起来后再动磁盘只会把
+    // 启动路径上的 IO 竞争引进来。删失败不致命（仍被上一实例占用等），下次启动重试。
+    UpdateManager::cleanupResidueAtStartup();
 
     // i18n 第八轮：translator 须在任何窗口构造前装载，控件构造期 tr() 即取目标
     // 语言文案（FluentUI 控件无运行中重译能力，语言切换以重启生效）

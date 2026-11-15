@@ -11,6 +11,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
+#include <QShowEvent> // s17.12 showEvent：自动校准的触发点（BasePage 未覆写，定义须自取）
 #include <QFontMetrics> // WorkDirSettingCard 说明位的长路径中间省略（同 WorkDirPathBar 口径）
 #include <QLocale>
 #include "AppSettings.h"
@@ -768,6 +769,22 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     //// add spacing
     scrollView->getMainLayout()->addSpacing(20);
 
+    /// update（s17.12：自更新——组标题同款「上下文」写法，卡紧随其下）
+    // 整块交给 UpdateSettingCard：判据在 UpdateRules.h（可 ctest）、编排在 UpdateManager，
+    // 本页只挂标题 + 卡。刻意**不在构造期检查**——本页面由主窗口构造函数即时 new
+    // （LiteHarness.cpp），在这里打网络等于每次启动程序都访问一次 GitHub；
+    // 自动校准改挂 showEvent（首次可见），见 SettingsPage::showEvent。
+    m_updateLabel = new FluLabel;
+    m_updateLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
+    m_updateLabel->setText(tr("更新"));
+    scrollView->getMainLayout()->addWidget(m_updateLabel, 0, Qt::AlignTop);
+
+    m_updateCard = new UpdateSettingCard;
+    scrollView->getMainLayout()->addWidget(m_updateCard, 0, Qt::AlignTop);
+
+    //// add spacing
+    scrollView->getMainLayout()->addSpacing(20);
+
     /// about
     m_aboutLabel = new FluLabel;
     m_aboutLabel->setLabelStyle(FluLabelStyle::BodyStrongTextBlockStyle);
@@ -800,6 +817,257 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     // QSS 首刷 + themeChanged 订阅收敛到 ThemeAware::bind。
     // 修正既有缺陷：原构造不首刷 SettingsPage.qss，须等首次主题切换才生效
     ThemeAware::bind("SettingsPage.qss", this);
+}
+
+// ---- s17.12 自更新设置卡 ----
+// 分工纪律：本卡只做「令牌 → 文案」与按钮动作。版本比较、路径判定、删谁的决定一律在
+// UpdateRules.h（可 ctest）与 UpdateManager（IO 编排）里——写进本卡即失去全部直测覆盖。
+
+UpdateSettingCard::UpdateSettingCard(QWidget *parent)
+    : InfoSlotSettingCard(parent)
+{
+    setTitleInfo(tr("版本更新"), QString()); // 说明位归状态管（同上下文上限卡的「值」语义）
+    setIcon(FluAwesomeType::Sync);       // 同步语义；Sync 未被同页其余六卡占用
+    getComboBox()->hide();               // 本卡不用下拉，右侧改放自定义操作行
+
+    m_updateManager = new UpdateManager(this);
+
+    m_checkButton = new FluPushButton(tr("检查更新"), this);
+    m_checkButton->setFixedSize(cardActionButtonSize());
+    m_applyButton = new FluPushButton(tr("下载并更新"), this);
+    m_applyButton->setFixedSize(cardActionButtonSize());
+    m_applyButton->setVisible(false); // 只在确认有新版本时出现：常态不占位、不诱导点击
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_checkButton);
+    row->addWidget(m_applyButton);
+    m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），图标/标题布局不变
+
+    applyStatus();
+
+    connect(m_checkButton, &QPushButton::clicked, this, [this]() { startUpdateCheck(true); });
+    connect(m_applyButton, &QPushButton::clicked, this, [this]() { handleApplyClicked(); });
+
+    connect(m_updateManager, &UpdateManager::checkFinished, this, &UpdateSettingCard::onCheckFinished);
+    connect(m_updateManager, &UpdateManager::stageChanged, this, &UpdateSettingCard::onStageChanged);
+    connect(m_updateManager, &UpdateManager::progressChanged, this, &UpdateSettingCard::onProgressChanged);
+    connect(m_updateManager, &UpdateManager::staged, this, &UpdateSettingCard::onStaged);
+}
+
+void UpdateSettingCard::checkNow()
+{
+    startUpdateCheck(false);
+}
+
+void UpdateSettingCard::retranslate()
+{
+    setTitleInfo(tr("版本更新"), QString());
+    m_checkButton->setText(tr("检查更新"));
+    m_applyButton->setText(tr("下载并更新"));
+    applyStatus(); // 状态文案由令牌重生成，不在这里另拼一套
+}
+
+void UpdateSettingCard::startUpdateCheck(bool forced)
+{
+    // forced = 手动点按钮，允许再打一次 API；非 forced = showEvent 自动校准，同一卡实例
+    // 只查一次（未认证限流 60 次/小时/IP，反复切进切出设置页不该烧配额）。
+    if (m_checkStarted && !forced)
+        return;
+    m_checkStarted = true;
+    m_stateToken = QStringLiteral("checking");
+    m_progressText.clear();
+    m_applyButton->setVisible(false);
+    applyStatus();
+    m_updateManager->checkLatest();
+}
+
+QString UpdateSettingCard::statusText() const
+{
+    const QString local = QCoreApplication::applicationVersion();
+    const QString token = m_stateToken;
+
+    // 进行中 / 成功态
+    if (token == QLatin1String("checking"))
+        return tr("正在检查更新…");
+    if (token == QLatin1String("up_to_date"))
+        return tr("已是最新版本（%1）").arg(local); // 版本数字豁免翻译
+    if (token == QLatin1String("update_available"))
+        return tr("发现新版本 %1（当前 %2）").arg(m_remoteTag, local);
+    if (token == QLatin1String("downloading")) {
+        if (m_progressText.isEmpty())
+            return tr("正在下载 %1…").arg(m_remoteTag);
+        return tr("正在下载 %1… %2").arg(m_remoteTag, m_progressText);
+    }
+    if (token == QLatin1String("verifying"))
+        return tr("正在校验 SHA256…");
+    if (token == QLatin1String("extracting"))
+        return tr("校验通过，正在解包…");
+    if (token == QLatin1String("swapping"))
+        return tr("正在换体…");
+    if (token == QLatin1String("restart_pending"))
+        // 换体已成功，只是重启被取消或没拉起来。说成「更新失败」会诱导用户重装，是更坏的结果。
+        return tr("已更新到 %1，重启后生效").arg(m_remoteTag);
+
+    // 失败态：每条都给得出「为什么」，绝不与「已是最新」共用一句文案。
+    if (token == QLatin1String("dev_layout"))
+        return tr("开发态构建，已禁用");
+    if (token == QLatin1String("no_config_root"))
+        return tr("未找到数据根 config，已拒绝");
+    if (token == QLatin1String("read_only_install"))
+        return tr("安装目录不可写，无法更新");
+    if (token == QLatin1String("bad_repo_slug"))
+        return tr("更新源配置有误");
+    if (token == QLatin1String("no_win64_asset"))
+        return tr("%1 没有 win64 安装包").arg(m_remoteTag);
+    if (token == QLatin1String("no_digest"))
+        return tr("发布缺少 SHA256 校验和，已拒绝");
+    if (token == QLatin1String("digest_mismatch"))
+        return tr("校验和不匹配，已丢弃未换体");
+    if (token == QLatin1String("package_layout_rejected"))
+        return tr("包内路径越界，已拒绝换体");
+    if (token == QLatin1String("another_instance_swapping"))
+        return tr("另一个实例正在换体，稍后再试");
+    if (token == QLatin1String("swap_declined"))
+        return tr("已暂存未换体，可重试");
+    if (token.startsWith(QLatin1String("network:")))
+        return tr("检查失败：%1").arg(token.section(QLatin1Char(':'), 1).trimmed());
+    if (token.startsWith(QLatin1String("download:")))
+        return tr("下载中断：%1").arg(token.section(QLatin1Char(':'), 1).trimmed());
+    if (token.startsWith(QLatin1String("open_failed:")))
+        return tr("暂存文件写入失败：%1").arg(token.section(QLatin1Char(':'), 1).trimmed());
+    if (token.startsWith(QLatin1String("rename_failed:")) || token.startsWith(QLatin1String("copy_failed:")))
+        return tr("换体失败已回滚（%1）").arg(token.section(QLatin1Char(':'), 1).trimmed());
+    if (token.startsWith(QLatin1String("tar_")))
+        return tr("解包失败（%1）未换体").arg(token);
+    if (token == QLatin1String("cancelled"))
+        return tr("已取消");
+    if (token.isEmpty())
+        return tr("尚未检查");
+    return tr("更新未完成（%1）").arg(token); // 未知令牌如实带出，不伪装成已知状态
+}
+
+void UpdateSettingCard::applyStatus()
+{
+    // 走基类说明位：前缀恒完整、值按剩余宽度中间省略、ToolTip 给全量——长错误串与
+    // 进度文案正是这个形态要吃的东西（裸 FluLabel + wordWrap 会撑开行高、与同页六卡不齐）。
+    setInfoValue(tr("状态"), statusText());
+}
+
+void UpdateSettingCard::onCheckFinished(bool hasUpdate, const QString &remoteTag, const QString &error)
+{
+    m_remoteTag = remoteTag;
+    if (!error.isEmpty()) {
+        m_stateToken = error;
+        m_applyButton->setVisible(false);
+    } else if (hasUpdate) {
+        m_stateToken = QStringLiteral("update_available");
+        m_applyButton->setVisible(true);
+    } else {
+        m_stateToken = QStringLiteral("up_to_date");
+        m_applyButton->setVisible(false);
+    }
+    applyStatus();
+}
+
+void UpdateSettingCard::onStageChanged(UpdateManager::Stage stage, const QString &detail)
+{
+    // 令牌优先取 detail（它带具体错误码），detail 空时按阶段名映射。
+    if (!detail.isEmpty()) {
+        m_stateToken = detail;
+        applyStatus();
+        return;
+    }
+    switch (stage) {
+    case UpdateManager::Stage::Checking:    m_stateToken = QStringLiteral("checking"); break;
+    case UpdateManager::Stage::Downloading: m_stateToken = QStringLiteral("downloading"); break;
+    case UpdateManager::Stage::Verifying:   m_stateToken = QStringLiteral("verifying"); break;
+    case UpdateManager::Stage::Extracting:  m_stateToken = QStringLiteral("extracting"); break;
+    case UpdateManager::Stage::Swapping:    m_stateToken = QStringLiteral("swapping"); break;
+    case UpdateManager::Stage::Swapped:
+    case UpdateManager::Stage::Restarting:  m_stateToken = QStringLiteral("restart_pending"); break;
+    case UpdateManager::Stage::ReadyToSwap: return; // 紧接着的 onStaged 会落文案，这里不抢
+    case UpdateManager::Stage::Failed:      return; // 同上：staged / checkFinished 负责出话
+    case UpdateManager::Stage::Idle:        return;
+    }
+    applyStatus();
+}
+
+void UpdateSettingCard::onProgressChanged(qint64 received, qint64 total)
+{
+    if (total > 0 && received >= 0)
+        m_progressText = QStringLiteral("%1%").arg(qint64(received * 100 / total));
+    else
+        m_progressText = QStringLiteral("%1 MB").arg(received / (1024 * 1024));
+    // 分母为 0 不显示百分比：UpdateRules::assetSizeOrUnknown 刻意把「未知」留成 -1 而非 0，
+    // 就是为了不在这里渲染出一个恒 100% 的假进度。
+    if (m_stateToken == QLatin1String("downloading"))
+        applyStatus();
+}
+
+void UpdateSettingCard::handleApplyClicked()
+{
+    // 这一步只做「下载 + 校验 + 解包到暂存区」，全程可弃、不碰安装树，所以不必再确认；
+    // 唯一不可逆的换体留在 onStaged 里问。
+    m_stateToken = QStringLiteral("downloading");
+    m_progressText.clear();
+    m_applyButton->setVisible(false); // 下载期收起按钮防重入，失败时由 onStaged 放回来
+    applyStatus();
+    m_updateManager->stageUpdate(m_updateManager->remoteAssetUrl(),
+                                 m_updateManager->remoteDigest(),
+                                 m_updateManager->remoteSize());
+}
+
+void UpdateSettingCard::onStaged(bool ok, const QString &error)
+{
+    if (!ok) {
+        m_stateToken = error;
+        // 失败后把按钮放回来：远端资产信息仍在管理器里，用户可直接重试，
+        // 不必先「检查更新」再点一次（初稿一律隐藏，等于把重试入口也藏了）。
+        m_applyButton->setVisible(true);
+        applyStatus();
+        return;
+    }
+
+    // 下载、校验、解包都过了——**换体是唯一不可逆步骤**，必须在这里再问一次。
+    // 自更新通道不经工具权限门（bash 拒绝表、ASK 门都管不到它），这道确认就是它唯一的闸门。
+    FluMessageBox box(tr("更新已就绪"),
+                      tr("%1 已下载并校验通过，换体后需重启生效，重启会中断未完成的回合。现在更新并重启？")
+                          .arg(m_remoteTag),
+                      this);
+    // 默认键钉「取消」：与 LiteHarness::closeEvent 同一条数据丢失防线——FluMessageBox
+    // 不给按钮设默认键，裸用回车会命中排首位的「确定」。
+    if (auto *cancel = box.findChild<FluPushButton *>())
+        cancel->setDefault(true);
+    if (box.exec() != QDialog::Accepted) {
+        m_stateToken = QStringLiteral("swap_declined");
+        applyStatus();
+        return;
+    }
+
+    QString failure;
+    if (!m_updateManager->applySwap(&failure)) {
+        m_stateToken = failure;
+        m_applyButton->setVisible(false);
+        applyStatus();
+        return;
+    }
+    m_applyButton->setVisible(false);
+    // 重启走主窗口 close() 守卫：守卫取消（有回合在跑且用户不退出）时换体已完成、
+    // marker 已在位，下次正常启动自然生效并由 cleanupResidueAtStartup 清残留。
+    if (!m_updateManager->requestRestartAfterSwap(window())) {
+        m_stateToken = QStringLiteral("restart_pending");
+        applyStatus();
+    }
+}
+
+void SettingsPage::showEvent(QShowEvent *event)
+{
+    BasePage::showEvent(event);
+    // 首次可见才自动校准：只查一次的旗标与限流口径都在卡内，本页只做转发。
+    if (m_updateCard)
+        m_updateCard->checkNow();
 }
 
 void SettingsPage::changeEvent(QEvent *event)
@@ -849,6 +1117,13 @@ void SettingsPage::retranslateUi()
         m_apiTokenCard->retranslate();
     if (m_modelListCard)
         m_modelListCard->retranslate();
+
+    // s17.12 自更新：组标题在此重译（与「上下文」等其余五组同款），卡内文案走卡自己的 retranslate。
+    m_updateLabel->setText(tr("更新"));
+    // 整卡重译（按钮文案 + 状态令牌重生成文案），状态文案的唯一出口在
+    // UpdateSettingCard::statusText()，本页不再另拼一套。
+    if (m_updateCard)
+        m_updateCard->retranslate();
 
     m_aboutLabel->setText(tr("关于"));
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
