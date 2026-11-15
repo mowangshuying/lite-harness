@@ -19,7 +19,7 @@
         <translation>Failed to parse history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="277"/>
+        <location filename="../src/AgentLoop.cpp" line="278"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
@@ -45,7 +45,7 @@
         <translation>Manual compaction (compact tool)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="527"/>
+        <location filename="../src/AgentLoop.cpp" line="528"/>
         <source>已停止。</source>
         <translation>Stopped.</translation>
     </message>
@@ -293,7 +293,7 @@ Output:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="1277"/>
+        <location filename="../src/ChatSessionPage.cpp" line="1287"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -418,25 +418,25 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContributionHeatmap</name>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="161"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="162"/>
         <source>会话活动</source>
         <translation>Session activity</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="203"/>
-        <location filename="../src/ContributionHeatmap.cpp" line="205"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="207"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="209"/>
         <source>%1月</source>
         <translation>%1</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="219"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="223"/>
         <source>
 （口径：仅主循环与队友回合，不含压缩/记忆/workflow）</source>
         <translation>
 (Scope: main loop and teammate turns only; excludes compact/memory/workflow)</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="226"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="230"/>
         <source>%1
 输入 %2 · 输出 %3
 缓存命中 %4 · 思考 %5
@@ -447,24 +447,11 @@ Cache hit %4 · Reasoning %5
 %6 usage reads</translation>
     </message>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="234"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="238"/>
         <source>%1
 无消耗记录</source>
         <translation>%1
 No consumption recorded</translation>
-    </message>
-</context>
-<context>
-    <name>FluentInputDialog</name>
-    <message>
-        <location filename="../src/FluentInputDialog.cpp" line="99"/>
-        <source>确定</source>
-        <translation>OK</translation>
-    </message>
-    <message>
-        <location filename="../src/FluentInputDialog.cpp" line="104"/>
-        <source>取消</source>
-        <translation>Cancel</translation>
     </message>
 </context>
 <context>
@@ -476,68 +463,81 @@ No consumption recorded</translation>
     </message>
 </context>
 <context>
+    <name>InputDialog</name>
+    <message>
+        <location filename="../src/InputDialog.cpp" line="99"/>
+        <source>确定</source>
+        <translation>OK</translation>
+    </message>
+    <message>
+        <location filename="../src/InputDialog.cpp" line="104"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+</context>
+<context>
     <name>LiteHarness</name>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="111"/>
+        <location filename="../src/LiteHarness.cpp" line="112"/>
         <source>切换主题</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="144"/>
-        <location filename="../src/LiteHarness.cpp" line="785"/>
+        <location filename="../src/LiteHarness.cpp" line="145"/>
+        <location filename="../src/LiteHarness.cpp" line="795"/>
         <source>新建对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="151"/>
-        <location filename="../src/LiteHarness.cpp" line="787"/>
+        <location filename="../src/LiteHarness.cpp" line="152"/>
+        <location filename="../src/LiteHarness.cpp" line="797"/>
         <source>会话</source>
         <translation>Sessions</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="154"/>
-        <location filename="../src/LiteHarness.cpp" line="789"/>
+        <location filename="../src/LiteHarness.cpp" line="155"/>
+        <location filename="../src/LiteHarness.cpp" line="799"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="210"/>
+        <location filename="../src/LiteHarness.cpp" line="211"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="444"/>
+        <location filename="../src/LiteHarness.cpp" line="445"/>
         <source>重命名</source>
         <translation>Rename</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="445"/>
-        <location filename="../src/LiteHarness.cpp" line="506"/>
+        <location filename="../src/LiteHarness.cpp" line="446"/>
+        <location filename="../src/LiteHarness.cpp" line="507"/>
         <source>删除会话</source>
         <translation>Delete Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="473"/>
+        <location filename="../src/LiteHarness.cpp" line="474"/>
         <source>重命名会话</source>
         <translation>Rename Session</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="473"/>
+        <location filename="../src/LiteHarness.cpp" line="474"/>
         <source>名称</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="507"/>
+        <location filename="../src/LiteHarness.cpp" line="508"/>
         <source>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</source>
         <translation>Delete this session and all of its data (tasks/memory/history)? This action cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="729"/>
+        <location filename="../src/LiteHarness.cpp" line="739"/>
         <source>退出确认</source>
         <translation>Confirm Exit</translation>
     </message>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="730"/>
+        <location filename="../src/LiteHarness.cpp" line="740"/>
         <source>任务仍在运行，退出将丢失未完成回合。确定退出吗？</source>
         <translation>Tasks are still running. Exiting will lose incomplete turns. Quit anyway?</translation>
     </message>
@@ -758,12 +758,12 @@ No consumption recorded</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/MemoryManager.cpp" line="874"/>
+        <location filename="../src/MemoryManager.cpp" line="614"/>
         <source>已存储 %1 条记忆</source>
         <translation>Stored %1 memories</translation>
     </message>
     <message>
-        <location filename="../src/MemoryManager.cpp" line="1106"/>
+        <location filename="../src/MemoryManager.cpp" line="846"/>
         <source>已整理记忆：%1 → %2 条</source>
         <translation>Memory consolidated: %1 → %2 entries</translation>
     </message>
