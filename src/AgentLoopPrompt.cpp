@@ -156,7 +156,8 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
 
 // 请求尾部注入块（规格修1 / D1；D2 裁决回填技能目录——模型需知道存在哪些 skill 才可能用
 // load_skill，技能目录数据随修1 移出 system 后彻底丢失属功能回归，骨架 §3.1c 两参形态是
-// 规格自身疏漏，以 D2 决策表为准）。三段：技能目录/记忆目录/本轮召回，每轮随 payload 末尾
+// 规格自身疏漏，以 D2 决策表为准）。s17.11 起六段：项目指令（AGENTS.md）/技能目录/记忆目录/
+// 本轮召回/MCP 已连清单/workflow 注册清单，每轮随 payload 末尾
 // 独立 user 消息下发，前缀缓存全保。C 类禁翻 QStringLiteral，禁 tr()；段标题英文，与旧
 // system 段 "Memory catalog:" 风格一致。
 // 空段省略：各段为空时不输出该段标题与内容；三段全空返回空串（保持既有「皆空→不注入」语义，
@@ -167,7 +168,8 @@ QString makeSystemPrompt(const QString &workDir, const QString &tempRoot)
 // 再扫描展开），段间以 "\n\n" join、尾段与闭合标签间单 "\n"——与原两参模板「Memory catalog
 // 与 Relevant memory records 双段皆非空」的产物逐字节相同；'+' 与 join 不解释 '%'（同文件
 // 顶部 makeSystemPrompt 注释既定纪律）。
-QString makeContextInjection(const QString &skillCatalog, const QString &memoryIndex,
+QString makeContextInjection(const QString &projectInstructions,
+                             const QString &skillCatalog, const QString &memoryIndex,
                              const QString &memoryText, const QString &mcpNote,
                              const QString &wfNote)
 {
@@ -175,6 +177,12 @@ QString makeContextInjection(const QString &skillCatalog, const QString &memoryI
     const QString skills =
         skillCatalog == QStringLiteral("(no skills found)") ? QString() : skillCatalog;
     QStringList sections;
+    // s17.11: 第 0 段 = 项目指令文件（AGENTS.md）正文，段文本（含来源路径与截断标注）
+    // 单源在 ProjectInstructions::formatSection，本处只判空原样 append（同 mcpNote/wfNote
+    // 纪律：带前导句的段不再套段标题）。排在技能目录之前——它是仓库级约束，比"有哪些
+    // skill 可用"更接近本轮任务的边界。空串（两级候选都不存在/正文空）→ 整段省略。
+    if (!projectInstructions.isEmpty())
+        sections.append(projectInstructions);
     if (!skills.isEmpty())
         sections.append(QStringLiteral("Skills available:\n%1").arg(skills));
     if (!memoryIndex.isEmpty())
@@ -222,7 +230,9 @@ QString AgentLoop::buildContextInjection(const QString &memoryIndex,
 {
     // s14: 第四实参 = MCP 已连 server 感知段（空注册表/未连接时 systemPromptNote() 返回空串，
     // 注入块产物与旧状逐字节一致）；s16: 第五实参 = workflow 注册清单感知段，同纪律
-    return makeContextInjection(skillsCatalog(), memoryIndex, memoryText,
+    // s17.11: 首实参 = 项目指令文件（AGENTS.md）段，读盘与缓存见 AgentLoopInstructions.cpp，
+    // 每回合现取（与 MEMORY.md 索引「目录读盘即时取」同纪律）：会话中途编辑下一轮即生效。
+    return makeContextInjection(projectInstructions(), skillsCatalog(), memoryIndex, memoryText,
                                 m_mcp.systemPromptNote(), m_workflow.systemPromptNote());
 }
 

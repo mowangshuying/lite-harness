@@ -486,6 +486,12 @@ private:
     // 请求尾部注入块构建的成员包装（模板单源在 AgentLoopPrompt.cpp 匿名 ns；run() 召回续延调用；
     // 经包装透传 skillsCatalog()，签名不含技能参数）
     QString buildContextInjection(const QString &memoryIndex, const QString &memoryText) const;
+    // 项目指令文件（AGENTS.md）注入段（判据单源 ProjectInstructions.h，本 TU 侧读盘见
+    // AgentLoopInstructions.cpp）：两级候选「<workDir>/AGENTS.md → <configRoot>/AGENTS.md」
+    // 命中即止，按 路径+mtime+size 签名惰性缓存（const 方法配 mutable 成员，承
+    // m_toolsSchemaTokens 先例）。空串 = 不产生注入段，注入块产物与改造前逐字节一致。
+    // 仅主循环生效：子代理/队友刻意不带（承临时目录引导的同一处不对称，见 AGENTS.md）。
+    QString projectInstructions() const;
 
     // ---- 上下文 token 计量（规格修4：usage 锚定 + 增量估算）----
     // 采纳 ChatStream::usageReceived 回传的 usage.prompt_tokens 为锚（<=0 忽略；同时以发送点
@@ -622,6 +628,11 @@ private:
     // 本回合注入块快照（规格修1/D1）：run() 召回续延构建一次、回合内字节恒定；
     // doStartChatRequest 以独立 user 消息追加 payload 尾部，不落 m_messages/history.json
     QString m_contextInjection;
+    // 项目指令文件（AGENTS.md）惰性缓存（projectInstructions() 专用）：签名 = 路径|mtime|size
+    // （单源 ProjectInstructions::signatureFor）。mutable 因宿主方法是 const——同
+    // m_toolsSchemaTokens 的取舍理由：构造后不变的东西不该为了缓存把签名改成非 const。
+    mutable QString m_instructionsSignature;
+    mutable QString m_instructionsSection;
     // ---- 上下文 token 计量锚（规格修4）：prompt_tokens 真值锚 + 发送点快照增量外推 ----
     qint64 m_tokenAnchor = -1;           // 最近一次有效 usage.prompt_tokens；-1=无锚（本地全量兜底）
     qsizetype m_tokenAnchorCount = 0;    // 锚对应的历史条数（发送点 m_messages.size()）

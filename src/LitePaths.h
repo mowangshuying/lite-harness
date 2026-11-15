@@ -102,6 +102,25 @@ public:
     {
         return joined(storeRootFor(root), QStringLiteral("skills"));
     }
+    // ---- 项目指令文件（AGENTS.md，注入块第 0 段的数据源）----
+    // 文件名单源：两级候选（工程根 / 存储根）都走这一个名字，写死两处会漂移。
+    static QString agentsFileName()
+    {
+        return QStringLiteral("AGENTS.md");
+    }
+    // 纯口：任意目录下的 AGENTS.md。入参是上一级的返回值（workDir 或 configRoot），
+    // 零全局依赖、零 IO，可进 ctest 直测；本头只派生字符串，判存在归消费点。
+    static QString agentsFileFor(const QString &dir)
+    {
+        return joined(dir, agentsFileName());
+    }
+    // 生产便捷口：全局兜底候选 `<configRoot>/AGENTS.md`。工程根候选由调用方以
+    // agentsFileFor(workDir) 现推——workDir 是会话属性而非本头的存储锚点，收进来
+    // 就等于给「唯一存储根」掺进第二种根。
+    static QString globalAgentsFile()
+    {
+        return agentsFileFor(configRoot());
+    }
     // 单会话数据根。空 dataId → 回退会话存储区本身，与改造前
     // AgentLoop::sessionDataRoot() 的「无 ID = 未隔离」语义逐字对齐（删除护栏依赖这条回退
     // 形态判「未隔离」，见 LiteHarness::destroySessionPage）。

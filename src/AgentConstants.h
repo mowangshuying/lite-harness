@@ -400,6 +400,16 @@ constexpr qsizetype kGlobScanEntryLimit = 20000;
 // 否则上限先于展示窗口生效、"more matches omitted" 提示失去意义）
 constexpr qsizetype kGlobCollectLimit = 2000;
 
+// ---- 项目指令文件（AGENTS.md）注入预算（s17.11）----
+// 注入块第 0 段的字符上限（UTF-16 码元计数，与全仓字符计量口径同源）。AGENTS.md 是
+// 「每轮都随 payload 尾部重发」的注入段而非一次性 system 段，不设上限就等于把仓库规则
+// 全文按工具轮数倍乘进 token 账——本仓 AGENTS.md 实测 122,971 字节，按 CJK 1:1 折算
+// 是每轮数万 token，故必须设预算。超限只下发前缀并在段标题里标注「前 N / 共 M 字符」
+// （截断可见，判据单源 ProjectInstructions::formatSection）。
+// 刻意不做成 config.json 键：这是提示词体量纪律而非用户偏好，与 kUsageGraceMs /
+// kStreamTotalTimeoutMs 同族——常量单点、无设置页、无回退分支。
+constexpr qsizetype kProjectInstructionsCharBudget = 16000;
+
 // ---- 工具执行权限审批开关（s17.2：设置页「工具执行权限审批」） ----
 // config.json 键 permissionApproval：true=需要审批（缺省，命中询问规则弹 PermissionCard 挂起队列），
 // false=无需审批（三道「询问类」门一律放行）。纯布尔无区间校验；键缺失或写成读不出来的串一律回退

@@ -61,9 +61,12 @@ int tst_heatmapgrid();        // 热力图网格算术（HeatmapGrid.h）：371 
 int tst_memoryrules();      // 记忆纯判据（MemoryRules.h）：frontmatter 回落/slug 撞名/括号配对状态机/去重门槛/写读往返，零夹具恒跑
 int tst_toolschema();       // 工具 schema 单源（ToolSchema.h）：信封骨架/required⊆properties/类型专属关键字配对/todo enum+maxItems 同源/无 default/additionalProperties 四把锁/workflow 委托同源，零夹具恒跑
 int tst_sessionkeys();      // 会话键算术纯头（SessionKeys.h）：两族键形态/归属反解/生成 dataId 形状/不相交的真实理由(长度非字母表)/撞车谓词与旧注释证伪，零夹具恒跑
+int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstructions.h）：两级候选顺序/命中即止的探测次数/空段省略/截断如实标注/'%'不展开/签名三字段任一变即换，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1275，与本机无夹具全量实跑 pass=1099 逐条对上（带夹具为 2075）。
+// 全表求和 = 1322（s17.11 项目指令文件批 +47 后为 1324），与本机无夹具全量实跑 pass=1324
+// 逐条对上（带夹具为 2300）。上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
+// s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
     const char *name;
     int floor;
@@ -83,6 +86,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"memoryrules", 76},
     {"toolschema", 55},
     {"sessionkeys", 45},
+    {"projectinstructions", 49},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -159,6 +163,7 @@ int main()
     failed += runSuite("memoryrules", tst_memoryrules);
     failed += runSuite("toolschema", tst_toolschema);
     failed += runSuite("sessionkeys", tst_sessionkeys);
+    failed += runSuite("projectinstructions", tst_projectinstructions);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
