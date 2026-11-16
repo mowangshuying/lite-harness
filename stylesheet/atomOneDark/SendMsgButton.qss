@@ -1,33 +1,38 @@
 SendMsgButton {
-    background-color: transparent;
-    border: 1px solid rgb(71, 74, 79);
     border-radius: 15px;
+    background-color: rgb(82, 139, 255);
+    border: 1px solid rgb(82, 139, 255);
 }
 
 SendMsgButton:hover {
-    background-color: rgba(255, 255, 255, 15);
+    border: 1px solid rgb(78, 106, 189);
+    background-color: rgb(78, 106, 189);
 }
 
 SendMsgButton:pressed {
-    background-color: rgba(255, 255, 255, 25);
+    border: 1px solid rgb(90, 116, 194);
+    background-color: rgb(90, 116, 194);
 }
 
-SendMsgButton:disabled {
-    background-color: transparent;
-}
-
-/* 停止形态（回合运行中）：atomOneDark 强调蓝 #528BFF 淡染（与侧栏 running 灯
-   同源；语法黄专属审批警示不占用），冷灰底上保持辨识度
-   （属性选择器置后，压过中性态规则） */
+/* 停止态底色 = 本主题失败红 rgb(242,117,126)（SessionSidebar `#sbRow[status="failed"] #sbMark` 与
+   ToolBlock 失败态同值，两处均已核实）等比压暗 0.72 后的 rgb(174,84,91)，取代 HEAD 的强调蓝淡染
+   rgba(82,139,255,20/36/52)——那与本主题 send 态是同一支蓝紫，两形态分不开。242,117,126 同样是
+   文字级浅色，直接当填充白图标 CR 只有 2.76；压暗 0.72（S 仍 52%）后 CR 4.98。阶梯逐通道
+   −15 / −25，幅度同 AGENTS「浮钮合成实色」条给 #jumpBottomBtn 定的档；方向取变暗，因字形恒白
+   （SendMsgButton.cpp updateIcon 传 Qt::white）：变暗实测 4.98 → 6.12 → 7.04，提亮 +15/+25
+   则掉到 4.07 → 3.58。三态描边跟随填充，且 hover 与 pressed 必得是两档
+   （HEAD 的 hover/pressed 只改 background）。 */
 SendMsgButton[stopMode="true"] {
-    background-color: rgba(82, 139, 255, 20);
-    border: 1px solid rgba(82, 139, 255, 120);
+    background-color: rgb(174, 84, 91);
+    border: 1px solid rgb(174, 84, 91);
 }
 
 SendMsgButton[stopMode="true"]:hover {
-    background-color: rgba(82, 139, 255, 36);
+    background-color: rgb(159, 69, 76);
+    border: 1px solid rgb(159, 69, 76);
 }
 
 SendMsgButton[stopMode="true"]:pressed {
-    background-color: rgba(82, 139, 255, 52);
+    background-color: rgb(149, 59, 66);
+    border: 1px solid rgb(149, 59, 66);
 }

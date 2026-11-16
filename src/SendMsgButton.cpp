@@ -19,7 +19,7 @@ SendMsgButton::SendMsgButton(QWidget *parent) : QPushButton(parent)
     setToolTip(tr("发送"));
     setAccessibleName(tr("发送"));
     // QSS 加载 + themeChanged 订阅收敛到 ThemeAware::bind；本组件特有行为
-    // （SVG 图标按主题重着色）作为 extraRefresh 挂入，首刷与联动同一路径
+    // （图标按形态取字形）作为 extraRefresh 挂入；首刷全靠 bind 的 apply 无条件调它一次
     ThemeAware::bind("SendMsgButton.qss", this, [this] { updateIcon(); });
 }
 
@@ -36,8 +36,8 @@ void SendMsgButton::setStopMode(bool stop)
     // （ChatMsgEdit::applyBusyState 曾单独设 tooltip，首次同值早退时漏设）
     setToolTip(stop ? tr("停止") : tr("发送"));
     setAccessibleName(stop ? tr("停止") : tr("发送"));
-    // 形态经动态属性喂 QSS 属性选择器（ToolTagKind/focused 同款惯例）：停止态钮环
-    // 强调蓝淡染（与侧栏 running 灯同源色，琥珀专属留给审批），传达"可中止运行中回合"；
+    // 形态经动态属性喂 QSS 属性选择器（ToolTagKind/focused 同款惯例）：停止态实心红底
+    // （三主题各一支，见 stylesheet/<theme>/SendMsgButton.qss 的 stopMode 段），传达"可中止运行中回合"；
     // 首帧不在此设属性（默认发送态无需选择器命中，免多余 polish）
     setProperty("stopMode", stop);
     style()->unpolish(this);
@@ -47,8 +47,7 @@ void SendMsgButton::setStopMode(bool stop)
 
 void SendMsgButton::updateIcon()
 {
-    // 两形态字形单源：发送箭头 / 停止方块（Segoe 媒体停止 E71A），随主题前景色重着色；
-    // 主题切换经 bind 的 extraRefresh 再入本函数，字形不滞后
-    setIcon(FluIconUtils::getFluentIcon(m_stopMode ? FluAwesomeType::Stop : FluAwesomeType::Send,
-                                        FluThemeUtils::getUtils()->getTheme()));
+    // 两形态字形由 m_stopMode 单源切换；画笔恒白，不随主题前景色走——
+    // FluTheme 重载在 light 下给 QColor(8,8,8) 深字，压停止态实心深红底 CR 仅 3.56（白字 5.63）
+    setIcon(FluIconUtils::getFluentIcon(m_stopMode ? FluAwesomeType::Stop : FluAwesomeType::Send, Qt::white));
 }

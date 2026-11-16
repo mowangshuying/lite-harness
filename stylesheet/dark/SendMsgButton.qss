@@ -1,33 +1,39 @@
 SendMsgButton {
-    background-color: transparent;
+    background-color: rgb(118, 185, 237);
     border: 1px solid rgb(69, 69, 69);
     border-radius: 15px;
 }
 
 SendMsgButton:hover {
-    background-color: rgba(255, 255, 255, 15);
+    border: 1px solid rgb(120, 176, 219);
+    background-color: rgb(109, 169, 216);
 }
 
 SendMsgButton:pressed {
-    background-color: rgba(255, 255, 255, 25);
+    border: 1px solid rgb(100, 154, 195);
+    background-color: rgb(100, 154, 195);
 }
 
-SendMsgButton:disabled {
-    background-color: transparent;
-}
 
-/* 停止形态（回合运行中）：强调蓝淡染（dark 主题 accent 118,196,237 一档提亮，
-   与侧栏 running 灯同源；琥珀专属审批警示不占用），
-   hover/pressed 逐档加深（属性选择器置后，压过中性态规则） */
+/* 停止态底色 = 本主题失败红 rgb(255,117,117)（SessionSidebar `#sbRow[status="failed"] #sbMark`）等比
+   压暗约 0.70 后的 rgb(179,82,82)，取代 HEAD 的强调蓝淡染 rgba(118,185,237,20/36/52)——那与本主题
+   send 态是同一支蓝，两形态分不开。不能直接拿 255,117,117 当填充：它是**文字级** token（浅底深字
+   反过来用是深底浅字），白图标 CR 只有 2.61；压暗 0.70 后色相与饱和度不变（S 仍 54%）、CR 到 4.95。
+   阶梯逐通道 −15 / −25，幅度同 AGENTS「浮钮合成实色」条给 #jumpBottomBtn 定的档（dark 页底 40：
+   +15/+25）；方向取变暗（实测 4.95 → 6.07 → 6.96），因为字形恒白（SendMsgButton.cpp updateIcon 传
+   Qt::white），照抄提亮会掉到 4.06 → 3.57，pressed 档已贴近 3:1 的图形下限。
+   三态描边跟随填充，且 hover 与 pressed 必得是两档（HEAD 的 hover/pressed 只改 background）。 */
 SendMsgButton[stopMode="true"] {
-    background-color: rgba(118, 185, 237, 20);
-    border: 1px solid rgba(118, 185, 237, 120);
+    background-color: rgb(179, 82, 82);
+    border: 1px solid rgb(179, 82, 82);
 }
 
 SendMsgButton[stopMode="true"]:hover {
-    background-color: rgba(118, 185, 237, 36);
+    background-color: rgb(164, 67, 67);
+    border: 1px solid rgb(164, 67, 67);
 }
 
 SendMsgButton[stopMode="true"]:pressed {
-    background-color: rgba(118, 185, 237, 52);
+    background-color: rgb(154, 57, 57);
+    border: 1px solid rgb(154, 57, 57);
 }

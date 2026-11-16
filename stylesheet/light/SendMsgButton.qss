@@ -1,33 +1,40 @@
 SendMsgButton {
-    background-color: transparent;
-    border: 1px solid rgb(229, 229, 229);
+    background-color: rgb(0, 90, 158);
+    border: 1px solid rgb(20, 103, 166);
     border-radius: 15px;
 }
 
 SendMsgButton:hover {
-    background-color: rgba(0, 0, 0, 13);
+    border: 1px solid rgb(20, 103, 166);
+    background-color: rgb(25, 106, 167);
 }
 
 SendMsgButton:pressed {
-    background-color: rgba(0, 0, 0, 26);
+    border: 1px solid rgb(49, 121, 175);
+    background-color: rgb(49, 121, 175);
 }
 
-SendMsgButton:disabled {
-    background-color: transparent;
-}
-
-/* 停止形态（回合运行中）：强调蓝淡染底 + 描边（与侧栏 running 状态灯同源色；
-   琥珀专属审批警示不占用），传达"可中止运行中回合"；hover/pressed 逐档加深
-   （属性选择器置后，压过中性态规则） */
+/* 停止态底色 = 本主题既有的失败红 rgb(196,43,44)（与 SessionSidebar `#sbRow[status="failed"] #sbMark`
+   逐字同值），取代 HEAD 的强调蓝淡染 rgba(0,90,158,16/30/46)——同一支 send 蓝既当发送态又当停止态，
+   两形态在视觉上分不开。阶梯幅度取 AGENTS「浮钮合成实色」条给本主题定的 −13 / −26
+   （页底 249：249−13=236、249−26=223）。方向取变暗而不是照抄 dark/aod 的 +15/+25 提亮：那两条是给
+   透明底浮钮用的（提亮才显出 hover），本钮停止态是实心填充且字形恒白（SendMsgButton.cpp updateIcon
+   传 Qt::white，getFluentIconPixmap 第二参即画笔色）：实测变暗 5.63 → 6.52 → 7.51，提亮 +13/+26
+   反而降到 4.84 → 4.16。与本主题 send 态方向相反是有意的——send 底色 0,90,158 起步 CR 7.10，提亮
+   两档仍剩 5.92 / 4.96；这支红起步只有 5.63，没有提亮的余量。
+   三态描边跟随填充，且 hover 与 pressed 必得是两档（HEAD 的 hover/pressed 只改 background，
+   Qt QSS 下 border 会整段留在 base 色上）。 */
 SendMsgButton[stopMode="true"] {
-    background-color: rgba(0, 90, 158, 16);
-    border: 1px solid rgba(0, 90, 158, 110);
+    background-color: rgb(196, 43, 44);
+    border: 1px solid rgb(196, 43, 44);
 }
 
 SendMsgButton[stopMode="true"]:hover {
-    background-color: rgba(0, 90, 158, 30);
+    background-color: rgb(183, 30, 31);
+    border: 1px solid rgb(183, 30, 31);
 }
 
 SendMsgButton[stopMode="true"]:pressed {
-    background-color: rgba(0, 90, 158, 46);
+    background-color: rgb(170, 17, 18);
+    border: 1px solid rgb(170, 17, 18);
 }
