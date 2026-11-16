@@ -35,6 +35,14 @@ QSize cardActionButtonSize()
                  UiScale::scaled(LayoutConst::kCardActionHeight));
 }
 
+/// 版本更新卡「检查更新 / 下载并更新」两枚钮的尺寸：高与其余六卡同值（行高不能变），
+/// 宽走 kCardUpdateActionWidth —— 那两枚的文案是 4-5 字，64 档会裁字。
+QSize cardUpdateActionButtonSize()
+{
+    return QSize(UiScale::scaled(LayoutConst::kCardUpdateActionWidth),
+                 UiScale::scaled(LayoutConst::kCardActionHeight));
+}
+
 /// 写配置并就地提示失败（P1）：AppSettings::setValue 返回是否成功落盘，此前 7 个
 /// 调用点全部丢弃返回值 —— config.json 只读/被占用/磁盘满时，卡片值区会回读成旧值，
 /// 用户只看到「改了没反应」，没有任何错误说明（语言项还会接着弹「重启生效」的假承诺）。
@@ -837,9 +845,9 @@ UpdateSettingCard::UpdateSettingCard(QWidget *parent)
     m_updateManager = new UpdateManager(this);
 
     m_checkButton = new FluPushButton(tr("检查更新"), this);
-    m_checkButton->setFixedSize(cardActionButtonSize());
+    m_checkButton->setFixedSize(cardUpdateActionButtonSize());
     m_applyButton = new FluPushButton(tr("下载并更新"), this);
-    m_applyButton->setFixedSize(cardActionButtonSize());
+    m_applyButton->setFixedSize(cardUpdateActionButtonSize());
     m_applyButton->setVisible(false); // 只在确认有新版本时出现：常态不占位、不诱导点击
 
     // 下载进度环。**刻意不用 vendor 默认的 60×60**：那是独立控件页的尺寸，塞进这张

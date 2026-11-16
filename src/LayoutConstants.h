@@ -71,6 +71,28 @@ inline constexpr int kWindowMinHeight = 600;
 inline constexpr int kCardActionWidth = 64;
 inline constexpr int kCardActionHeight = 30;
 
+/// 版本更新卡右侧「检查更新 / 下载并更新」两枚钮的宽基值（实际值经 UiScale::scaled 放大）。
+/// **不复用 kCardActionWidth=64**：那档是为「修改/清除」两字文案定的，本卡文案是 4-5 字。
+/// Qt 实测 naturalW（`QPushButton::sizeHint().width()`，挂真实 vendor FluPushButton.qss，
+/// 选择器改写为 QPushButton 使其确实命中——用裸 QPushButton 挂原选择器时规则不命中，
+/// 量出来的 naturalW 全是 75/117 一类的假数）：
+///   修改 32 / 清除 32 / 检查更新 62 / 下载并更新 77 / Change 57 / Clear 39
+///   Check for Updates 136 / Download && Update 151
+/// **英文档必须按修正后的运行时串 `Download && Update` 量**。`.ts` 原写 `Download &amp; Update`，
+/// XML 解码即单 `&`，QPushButton 把单 `&` 当助记符吃掉（实测 `shortcut()` 返回 `Alt+Space`），
+/// 界面上显示成 "Download  Update"——于是 naturalW 只有 **138**。138 是**缺陷态**的宽度而非文案
+/// 宽度，拿它当基线会系统性低估 13px（本头初稿即取 126/150 两档，都被这个假数带偏，已作废）。
+/// 本批同批把 `.ts` 改成 `&amp;&amp;`，此后 151 才是真基线。
+/// 字号由 vendor qss 钉死 15px：那份 qss 由控件自加载、不经本仓 UiScale::scaleQssFontSizes，
+/// 故字形不随 uiFontScale 变，只有这里的框随倍率走——于是**倍率越低越紧**，80% 才是最坏档。
+/// 160 在 100% 档覆盖修正后英文两档（151 之外余 9px）与中文两档，符合「装下英文即装下中文」。
+/// **已知边界，登记而非假装解决**：80% 档框缩到 `scaledSize(160,80)=128px`，仍小于英文所需的
+/// 151，裁 23px；三档全不裁需 **≥189**（`scaledSize(189,80)=151` 恰好达标，188 只给 150）。
+/// 阈值一律按 `scaledSize` 的真实算式 `(base*percent+50)/100` 整数除法算，勿用纯 `ceil`；
+/// 早先注释里的「≥172」是按缺陷态 138 推的，与修正后文案无关，同批作废。
+/// 本批按用户裁决取 160，即「100% 与 200% 档英文不裁、80% 档英文仍裁」。
+inline constexpr int kCardUpdateActionWidth = 160;
+
 /// 版本更新卡右侧进度环的边长（s17.12）：实际值经 UiScale::scaled 放大，与同排按钮同步。
 /// **不复用 FluProgressRing 的默认 60×60**——那是独立控件页的尺寸，塞进设置卡操作行会把
 /// 卡片行高从 30 撑到 60，与同页其余六卡视觉不齐（正是本仓反复登记过的那类缺陷）。

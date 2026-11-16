@@ -1628,7 +1628,7 @@ No consumption recorded</translation>
         <location filename="../src/SettingsPage.cpp" line="837"/>
         <location filename="../src/SettingsPage.cpp" line="868"/>
         <source>下载并更新</source>
-        <translation>Download &amp; Update</translation>
+        <translation>Download &amp;&amp; Update</translation>
     </message>
     <message>
         <location filename="../src/SettingsPage.cpp" line="893"/>
