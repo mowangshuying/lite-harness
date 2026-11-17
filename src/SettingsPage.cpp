@@ -1155,7 +1155,11 @@ void UpdateSettingCard::handleRestartClicked()
     if (auto *cancel = box.findChild<FluPushButton *>())
         cancel->setDefault(true);
     if (box.exec() != QDialog::Accepted) {
-        m_stateToken = QStringLiteral("swap_declined");
+        // 取消时的令牌必须按 m_swapApplied 分流，不能一律 swap_declined：已换体后那句
+        // 「已暂存未换体，可重试」与实际状态相反，会把用户引向重装或再点「下载并更新」，
+        // 而这条路径上重跑 stageUpdate 只是白下一遍——实际只差一次重启。
+        m_stateToken = m_swapApplied ? QStringLiteral("restart_pending")
+                                     : QStringLiteral("swap_declined");
         applyStatus();
         return;
     }
