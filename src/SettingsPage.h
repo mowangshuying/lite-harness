@@ -235,7 +235,8 @@ private:
     QString m_remoteTag;
     QString m_progressText; // 百分比数字豁免翻译，单独存不混进令牌
     bool m_checkStarted = false;
-    bool m_swapApplied = false; // 换体已落盘旗标：置位后重启按钮再点只问重启，绝不重跑 applySwap
+    bool m_swapApplied = false; // 换体已落盘旗标：置位后重启按钮再点只问重启，绝不重跑 applySwap；
+                                // 进程存活期内绝不复位（复位会放行二次换体、毁掉旧体唯一备份）
 };
 
 class SettingsPage : public BasePage

@@ -930,7 +930,8 @@ void UpdateSettingCard::startUpdateCheck(bool forced)
     m_applyButton->setEnabled(false);
     applyStatus();
     m_restartButton->setEnabled(false);
-    m_swapApplied = false;
+    // m_swapApplied 刻意不复位：换体已落盘时再检查→再下载→再点重启，若旗标被清掉就会
+    // 二次 applySwap——其改名腾位步先 remove(backup)，删掉的正是旧版可执行体的唯一副本。
     m_updateManager->checkLatest();
 }
 
@@ -983,6 +984,8 @@ QString UpdateSettingCard::statusText() const
         return tr("包内路径越界，已拒绝换体");
     if (token == QLatin1String("another_instance_swapping"))
         return tr("另一个实例正在换体，稍后再试");
+    if (token == QLatin1String("pending_marker"))
+        return tr("存在未完成的更新残留，已拒绝换体（请先重启完成上一次更新）");
     if (token == QLatin1String("swap_declined"))
         return tr("已暂存未换体，可重试");
     if (token.startsWith(QLatin1String("network:")))
@@ -1011,6 +1014,19 @@ void UpdateSettingCard::applyStatus()
     // 分开的写法迟早会出现「改了令牌忘了收环」，而那种分叉冒烟看不出来（环还在转，
     // 文案已说成功），只会以「更新成功后环一直转」的形式被用户撞见。
     applyProgressRing();
+    // 按钮态也收口在这里（与环同理，防各槽分别维护迟早分叉）：
+    // ① 忙态禁「检查更新」——在途时再查会覆写管理器的单 reply 指针，下载数据从此
+    //    不落盘，好包被误报校验和不匹配（管理器侧另有 busy 卫兵兜底）。
+    const QString &token = m_stateToken;
+    const bool busy = token == QLatin1String("checking") || token == QLatin1String("downloading")
+                      || token == QLatin1String("verifying") || token == QLatin1String("extracting")
+                      || token == QLatin1String("swapping");
+    m_checkButton->setEnabled(!busy);
+    // ② 已换体则「重启」恒可点：换体已落盘、只差一次重启，任何后续检查/下载/失败
+    //    都不该把这条唯一生效通路关掉（此前 startUpdateCheck 无条件禁它，检查一失败
+    //    用户就在 UI 上无路可走，只能手动关程序）。
+    if (m_swapApplied)
+        m_restartButton->setEnabled(true);
 }
 
 void UpdateSettingCard::applyProgressRing()
@@ -1039,6 +1055,9 @@ void UpdateSettingCard::applyProgressRing()
 
 void UpdateSettingCard::onCheckFinished(bool hasUpdate, const QString &remoteTag, const QString &error)
 {
+    // 忙态卫兵的回流不落文案也不动样本：在途流程的观测面由它自己的终态负责。
+    if (error == QLatin1String("busy"))
+        return;
     m_remoteTag = remoteTag;
     if (!error.isEmpty()) {
         m_stateToken = error;
@@ -1106,7 +1125,8 @@ void UpdateSettingCard::handleApplyClicked()
     m_applyButton->setEnabled(false); // 下载期禁用防重入（常驻可见，不收起）
     applyStatus();
     m_restartButton->setEnabled(false);
-    m_swapApplied = false;
+    // m_swapApplied 不复位，理由同 startUpdateCheck：旗标只随换体成功置 true，
+    // 进程存活期内没有任何路径使它「为 true 但实际未换体」，复位只会放行二次换体。
     m_updateManager->stageUpdate(m_updateManager->remoteAssetUrl(),
                                  m_updateManager->remoteDigest(),
                                  m_updateManager->remoteSize());
@@ -1114,6 +1134,8 @@ void UpdateSettingCard::handleApplyClicked()
 
 void UpdateSettingCard::onStaged(bool ok, const QString &error)
 {
+    if (error == QLatin1String("busy"))
+        return; // 同 onCheckFinished：忙态回流不打断在途流程
     if (!ok) {
         m_stateToken = error;
         // 失败后把按钮放回来：远端资产信息仍在管理器里，用户可直接重试，

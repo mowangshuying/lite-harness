@@ -165,6 +165,13 @@ void UpdateManager::cancel()
 
 void UpdateManager::checkLatest()
 {
+    // 重入卫兵：m_reply 是单指针，在途时再发请求会覆写它——旧 reply 泄漏、其 readyRead
+    // 闭包改读新 reply，下载数据不再落盘/入哈希，好包最终被误报 digest_mismatch。
+    // 不改 stage：忙态回流不得打断在途流程的观测面（UI 侧对 busy 令牌同样不落文案）。
+    if (isBusy()) {
+        emit checkFinished(false, QString(), QStringLiteral("busy"));
+        return;
+    }
     if (!installLooksLikeRelease()) {
         // 开发态/只读安装直接拒，并给出可辨原因——不能让它长得像「没有新版本」。
         emit checkFinished(false, QString(), selfUpdateRefusal());
@@ -252,6 +259,12 @@ void UpdateManager::checkLatest()
 
 void UpdateManager::stageUpdate(const QString &assetUrl, const QString &apiDigest, qint64 declaredSize)
 {
+    // 重入卫兵（同 checkLatest）：在途时再进会泄漏上一轮的 hash/file/idleTimer，
+    // 且两个下载流写同一个归档路径。不改 stage，只回 busy。
+    if (isBusy()) {
+        emit staged(false, QStringLiteral("busy"));
+        return;
+    }
     m_apiDigest = UpdateRules::normalizeDigest(apiDigest.isEmpty() ? m_apiDigest : apiDigest);
     m_assetUrl = assetUrl.isEmpty() ? m_assetUrl : assetUrl;
     m_assetSize = declaredSize > 0 ? declaredSize : m_assetSize;
@@ -460,6 +473,13 @@ bool UpdateManager::applySwap(QString *error)
     if (!lock.tryLock(0))
         return fail(QStringLiteral("another_instance_swapping"));
 
+    // marker 护栏：上一轮换体尚未重启生效（版本闸门不过）或 marker 无法识别时一律拒——
+    // 下方改名腾位步会先 remove 同名备份，那可能是旧版可执行体的唯一副本（双实例场景：
+    // 实例 1 已换体未重启，实例 2 再换体就会把它删掉）。marker 属于已生效的上一轮升级
+    // （闸门过）则就地补清残留，清干净才放行；touchStaging=false 保住本次待换体的暂存。
+    if (!cleanupResidue(false))
+        return fail(QStringLiteral("pending_marker"));
+
     const QString installRoot = installRootPath();
     const QString stagingRoot = stagingDirPath();
 
@@ -562,47 +582,65 @@ bool UpdateManager::requestRestartAfterSwap(QWidget *window)
 
 void UpdateManager::cleanupResidueAtStartup()
 {
+    cleanupResidue(true);
+}
+
+bool UpdateManager::cleanupResidue(bool touchStaging)
+{
     const QString markerFile = LitePaths::updateMarkerPathFor(LitePaths::configRoot());
     if (!QFileInfo::exists(markerFile))
-        return; // 常态：没有 marker，零开销
+        return true; // 常态：没有 marker，零开销
 
     QFile file(markerFile);
     if (!file.open(QIODevice::ReadOnly)) {
         LOG_WARN << "[update] marker unreadable, leaving residue alone:" << file.errorString();
-        return;
+        return false;
     }
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
     file.close();
     if (!doc.isObject()) {
         LOG_WARN << "[update] marker is not a json object; keeping residue for manual review";
-        return;
+        return false;
     }
     const UpdateRules::Marker marker = UpdateRules::parseMarker(doc.object());
     if (!marker.valid) {
         // 判据不过 → 一个文件都不删。备份是旧版唯一副本，宁留不误删。
         LOG_WARN << "[update] marker rejected by UpdateRules::parseMarker; residue kept";
-        return;
+        return false;
     }
     const QString current = QCoreApplication::applicationVersion();
     if (!UpdateRules::shouldCleanResidue(marker.toVersion, current)) {
         LOG_WARN << "[update] running" << current << "but marker claims" << marker.toVersion
                  << "; backups kept (they are the only working copy)";
-        return;
+        return false;
     }
 
     const QString installRoot = installRootPath();
     int removed = 0;
+    int failed = 0;
     for (const QString &rel : marker.backups) {
         const QString abs = joinRoot(installRoot, rel);
-        if (QFile::remove(abs))
+        // 不存在 = 上一轮已删掉的那部分，视为已清（幂等重试的前提，否则 marker 永删不掉）
+        if (!QFileInfo::exists(abs) || QFile::remove(abs)) {
             ++removed;
-        else
+        } else {
+            ++failed;
             LOG_WARN << "[update] could not remove residue (still locked? retry next start):" << abs;
+        }
     }
-    // 暂存与原档一并收尾；marker 最后删——中途崩溃则下次重来（幂等）。
-    QDir(LitePaths::updateStagingDirFor(LitePaths::configRoot())).removeRecursively();
-    QFile::remove(LitePaths::updateArchivePathFor(LitePaths::configRoot()));
+    if (touchStaging) {
+        // 暂存与原档一并收尾（applySwap 前置护栏走 false：暂存里躺着本次待换体的新文件）
+        QDir(LitePaths::updateStagingDirFor(LitePaths::configRoot())).removeRecursively();
+        QFile::remove(LitePaths::updateArchivePathFor(LitePaths::configRoot()));
+    }
+    // marker 只在备份全部清掉后才删——有删不掉的（更新重启时旧进程尚未退出、镜像仍被锁）
+    // 就保留它，下次启动真重试；提前删等于让那些备份永久滞留。中途崩溃则下次重来（幂等）。
+    if (failed > 0) {
+        LOG_WARN << "[update]" << failed << "residue files still locked; marker kept for next start";
+        return false;
+    }
     QFile::remove(markerFile);
     if (removed > 0)
         LOG_INFO << "[update] cleaned" << removed << "residue files after upgrade to" << current;
+    return true;
 }

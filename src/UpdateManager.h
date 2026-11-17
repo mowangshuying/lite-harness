@@ -77,6 +77,8 @@ public:
 
     // ⑤ 换体 + 写 marker。唯一不可逆步骤，调用方必须先拿到用户明确确认；内部 fail-closed：
     // 任一步失败即按逆序回滚，回滚成功后安装树回到换体前状态。
+    // 入口另有 marker 护栏：上一轮换体未重启生效（或残留无法识别）时拒绝本次换体——
+    // 改名腾位步会先删同名备份，那可能是旧版可执行体的唯一副本。
     // 刻意**不含重启**：重启必须走 requestRestartAfterSwap()，否则就绕过了主窗口的
     // 「任务仍在运行」退出守卫——那是丢未完成回合的数据丢失级事故，自更新不是豁免理由。
     bool applySwap(QString *error);
@@ -87,7 +89,8 @@ public:
     // （FluLogUtils 的日志路径是 `../log/` 相对 CWD，不指目录新实例会把日志写进别处）。
     bool requestRestartAfterSwap(QWidget *window);
 
-    // ⑦ 下次启动时清残留（App.cpp 调用）。marker 无效或版本闸门不过 → 一个文件都不删。
+    // ⑦ 下次启动时清残留（App.cpp 调用）。marker 无效或版本闸门不过 → 一个文件都不删；
+    // 备份有删不掉的（旧实例仍在运行等）→ marker 保留，下次启动真重试。
     static void cleanupResidueAtStartup();
 
     Stage stage() const { return m_stage; }
@@ -107,6 +110,12 @@ signals:
 
 private:
     void setStage(UpdateManager::Stage stage, const QString &detail);
+    // 在途判定：网络请求或 tar 子进程任一在跑即忙。校验/换体是同步段、无事件循环，
+    // 不存在「阶段在忙但指针已空」的可重入窗口，故只看这两个指针。
+    bool isBusy() const { return m_reply != nullptr || m_extractProcess != nullptr; }
+    // 残留清理本体。touchStaging=false 供 applySwap 前置护栏用：只处理备份与 marker，
+    // 绝不碰暂存区——那里躺着本次待换体的新文件。返回 marker 是否已不存在（可放行换体）。
+    static bool cleanupResidue(bool touchStaging);
     QString updateDirPath() const;
     QString stagingDirPath() const;
     QString archivePath() const;
