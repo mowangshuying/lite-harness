@@ -17,6 +17,22 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）；`3rdparty/sqlite`（vendored sqlite3，约 11MB）与 `cmake/FindSQLite3.cmake` 已同批 `git rm`——自摘除子构建起全仓零引用，属纯死码，勿再 vendored 回来。
 - **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s17.13.1-win64.zip`（约 54MB。**条目数分两种产物，必须分开登记**——s17.12 自更新批实测：本地 `cpack` 出包 = **74 条目（10 目录条目 + 64 文件）**，`bin/` 19 + `plugins/` 24 + `translations/` 31，56,361,719 字节；**CI 发布的同名资产 = 69 条目（10 目录 + 59 文件）**，`bin/` 18 + `plugins/` 11 + `translations/` 30，55,858,237 字节。两者不等源于构建环境（本机 Qt/翻译文件与 runner 上的不同），不是打包 bug。本条此前只写「74」并把旧值 75 判成「过期台账」，实为**两种产物各自都对、当时没分开说**，按「文档与实测冲突以实测为准」在此分列。自更新下载校验走的是 **CI 那份**：其 API `size` 与实测下载字节逐字吻合，API `digest` 的 sha256 与下载文件实算哈希完全一致（本机 MATCH=True），故校验依据取 API digest 而非本地包字节数。顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。**杀后台构建后残留进程会锁 `.obj`**（s17.13 本机实证）：被杀的那一轮留下 `cl`/`MSBuild`/`vctip` 存活，下一轮前台构建报 `LNK1104: 无法打开文件 lite-harness.dir\Release\<X>.obj`、`EXIT=1`（不是编译错误）；先 `Get-Process -Name cl,msbuild,link,vctip -EA SilentlyContinue | Stop-Process -Force` 清干净再重跑，同一命令即 `EXIT=0`。
+  **但这条清理命令绝不可把 `lite-harness` 加进 `-Name` 列表**：安装版宿主与构建产物**同名**，按名全杀会连带
+  杀掉用户正在使用的宿主实例（s17.13.1 本机实证：命令里带 `lite-harness` 后，桌面安装版实例被 `-Force` 打掉、
+  5 秒后以 `explorer.exe` 为父进程重启，无优雅退出、未落盘的会话状态丢失；幸而 `config/.lite-harness` 下
+  未留锁/残留文件，损失止于该实例本身）。要结束**占用 `build/bin/lite-harness.exe`** 的进程，按可执行路径过滤
+  而非按名：`Get-Process | Where-Object { $_.Path -eq "$PWD\build\bin\lite-harness.exe" } | Stop-Process -Force`；
+  拿不准就先问用户，别按名扫。同理 `cl`/`msbuild`/`link`/`vctip` 也只在该轮构建确实结束后才清——
+  它们可能是**另一个在途构建**的进程（本仓多轮后台构建跨轮续跑，见同条上文）。
+- **后台构建的终局结果可能不投递，别等通知**（s17.13.1 本机实证）：`run_in_background` 起的「重配置 + 全量
+  Release 构建」跑了约 3.6 分钟、两个 exe 均已重链、`ctest` 全绿，但 shell 退出后**没有 `task_notification`**，
+  退出码随 shell 一起丢失；且本条上文登记的「`run_in_background` 受 120s 硬顶」在该轮**未复现**（跑过 120s
+  仍在写 `.obj`）——该登记按现状视为条件性/已过期，遇到反例先实测再改口径。正解是后台构建后**独立核验产物**：
+  `Get-Process -Name cl,msbuild,link,vctip,cmake` 是否已清空、`build/**/*.obj` 最新时间戳是否停止推进、
+  `build/bin/lite-harness.exe` 与 `build/tests/lite-harness-tests.exe` 时间戳是否已更新到本轮（改了测试夹具
+  示例串时尤其要看后者，旧测试 exe 会让「全绿」变成假证），再跑 `ctest` 与两种夹具形态实跑。
+  另注：命令尾部 `| Select-Object -Last N` 会吞掉全部中间输出，中途在对话里看不到任何进度——
+  这不代表任务没在跑；要看实时进度就 `*> build/rel-build.log` 落盘再 `Get-Content -Wait`。
 - **源文件收集:** `file(GLOB CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")` + `GLOB_RECURSE "stylesheet/*.qss"`（经 `qt_add_resources` 打包为 `:/stylesheet/`）。**新增源文件/QSS 无需改 CMakeLists.txt**，重新 configure 即自动拾取。
 
 ## 测试（tests/ + ctest）
