@@ -848,7 +848,13 @@ UpdateSettingCard::UpdateSettingCard(QWidget *parent)
     m_checkButton->setFixedSize(cardUpdateActionButtonSize());
     m_applyButton = new FluPushButton(tr("下载并更新"), this);
     m_applyButton->setFixedSize(cardUpdateActionButtonSize());
-    m_applyButton->setVisible(false); // 只在确认有新版本时出现：常态不占位、不诱导点击
+    m_restartButton = new FluPushButton(tr("重启"), this);
+    // 尺寸走 kCardActionWidth=64 那档（两字文案桶，与「修改/清除」同档，实测 naturalW 32）：
+    // 160 档是给 4-5 字文案定的，「重启」两字用它会把本卡三枚按钮的行宽推到 524px 挤掉标题区。
+    // 已知边界登记：英文「Restart」naturalW≈57，80% 档 scaledSize(64,80)=51 会裁 6px。
+    m_restartButton->setFixedSize(cardActionButtonSize());
+    m_restartButton->setEnabled(false); // 常态禁用：未下载完成不可点，staged 后由 onStaged 解禁
+    m_applyButton->setEnabled(false); // 三枚按钮常驻可见：只用禁用表达状态，不隐藏、不收起
 
     // 下载进度环。**刻意不用 vendor 默认的 60×60**：那是独立控件页的尺寸，塞进这张
     // 30 高操作行的卡里会把行高撑到 60，与同页其余六卡视觉不齐（本仓反复登记过的那类缺陷）。
@@ -878,12 +884,14 @@ UpdateSettingCard::UpdateSettingCard(QWidget *parent)
     row->addWidget(m_progressRing); // 环在钮左侧：进度在左、动作在右，与阅读顺序一致
     row->addWidget(m_checkButton);
     row->addWidget(m_applyButton);
+    row->addWidget(m_restartButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），图标/标题布局不变
 
     applyStatus();
 
     connect(m_checkButton, &QPushButton::clicked, this, [this]() { startUpdateCheck(true); });
     connect(m_applyButton, &QPushButton::clicked, this, [this]() { handleApplyClicked(); });
+    connect(m_restartButton, &QPushButton::clicked, this, [this]() { handleRestartClicked(); });
 
     connect(m_updateManager, &UpdateManager::checkFinished, this, &UpdateSettingCard::onCheckFinished);
     connect(m_updateManager, &UpdateManager::stageChanged, this, &UpdateSettingCard::onStageChanged);
@@ -901,6 +909,7 @@ void UpdateSettingCard::retranslate()
     setTitleInfo(tr("版本更新"), QString());
     m_checkButton->setText(tr("检查更新"));
     m_applyButton->setText(tr("下载并更新"));
+    m_restartButton->setText(tr("重启"));
     applyStatus(); // 状态文案由令牌重生成，不在这里另拼一套
 }
 
@@ -918,8 +927,10 @@ void UpdateSettingCard::startUpdateCheck(bool forced)
     // 首个 downloadProgress 到来后它才纠正——这段时间环显示的是一个编出来的进度。
     m_progressReceived = 0;
     m_progressTotal = -1;
-    m_applyButton->setVisible(false);
+    m_applyButton->setEnabled(false);
     applyStatus();
+    m_restartButton->setEnabled(false);
+    m_swapApplied = false;
     m_updateManager->checkLatest();
 }
 
@@ -946,6 +957,9 @@ QString UpdateSettingCard::statusText() const
         return tr("校验通过，正在解包…");
     if (token == QLatin1String("swapping"))
         return tr("正在换体…");
+    if (token == QLatin1String("ready_to_restart"))
+        // 换体未做、重启未问：说清「点重启才落盘」，不写成已更新。
+        return tr("已就绪，点击重启完成更新（%1）").arg(m_remoteTag);
     if (token == QLatin1String("restart_pending"))
         // 换体已成功，只是重启被取消或没拉起来。说成「更新失败」会诱导用户重装，是更坏的结果。
         return tr("已更新到 %1，重启后生效").arg(m_remoteTag);
@@ -1028,13 +1042,13 @@ void UpdateSettingCard::onCheckFinished(bool hasUpdate, const QString &remoteTag
     m_remoteTag = remoteTag;
     if (!error.isEmpty()) {
         m_stateToken = error;
-        m_applyButton->setVisible(false);
+        m_applyButton->setEnabled(false);
     } else if (hasUpdate) {
         m_stateToken = QStringLiteral("update_available");
-        m_applyButton->setVisible(true);
+        m_applyButton->setEnabled(true);
     } else {
         m_stateToken = QStringLiteral("up_to_date");
-        m_applyButton->setVisible(false);
+        m_applyButton->setEnabled(false);
     }
     applyStatus();
 }
@@ -1089,8 +1103,10 @@ void UpdateSettingCard::handleApplyClicked()
     // 数字起转，而不是从不定态重新开始。
     m_progressReceived = 0;
     m_progressTotal = -1;
-    m_applyButton->setVisible(false); // 下载期收起按钮防重入，失败时由 onStaged 放回来
+    m_applyButton->setEnabled(false); // 下载期禁用防重入（常驻可见，不收起）
     applyStatus();
+    m_restartButton->setEnabled(false);
+    m_swapApplied = false;
     m_updateManager->stageUpdate(m_updateManager->remoteAssetUrl(),
                                  m_updateManager->remoteDigest(),
                                  m_updateManager->remoteSize());
@@ -1102,19 +1118,40 @@ void UpdateSettingCard::onStaged(bool ok, const QString &error)
         m_stateToken = error;
         // 失败后把按钮放回来：远端资产信息仍在管理器里，用户可直接重试，
         // 不必先「检查更新」再点一次（初稿一律隐藏，等于把重试入口也藏了）。
-        m_applyButton->setVisible(true);
+        m_applyButton->setEnabled(true);
         applyStatus();
         return;
     }
 
-    // 下载、校验、解包都过了——**换体是唯一不可逆步骤**，必须在这里再问一次。
-    // 自更新通道不经工具权限门（bash 拒绝表、ASK 门都管不到它），这道确认就是它唯一的闸门。
-    FluMessageBox box(tr("更新已就绪"),
-                      tr("%1 已下载并校验通过，换体后需重启生效，重启会中断未完成的回合。现在更新并重启？")
-                          .arg(m_remoteTag),
-                      this);
-    // 默认键钉「取消」：与 LiteHarness::closeEvent 同一条数据丢失防线——FluMessageBox
-    // 不给按钮设默认键，裸用回车会命中排首位的「确定」。
+    // 下载、校验、解包都过了：换体是唯一不可逆步骤，不自动执行，也不自动弹框。
+    // 重启按钮在这里解禁——常态禁用（未下载完成不可点），staged 后由用户主动点击触发确认框。
+    m_stateToken = QStringLiteral("ready_to_restart");
+    m_applyButton->setEnabled(false);
+    m_restartButton->setEnabled(true);
+    applyStatus();
+}
+
+void UpdateSettingCard::handleRestartClicked()
+{
+    // parent 必须传 window()：FluMessageBox 的构造用 setGeometry(0,0,parentW,parentH) 把遮罩
+    // 铺满**父控件**，其内部卡片固定 318×218、按钮行贴在 y≈218。传 this（本卡操作行，高约 30）
+    // 会把对话框裁成卡片大小、「确定/取消」整条被切掉——用户看不到按钮，exec() 就地永久阻塞。
+    QWidget *anchor = window();
+    if (!anchor) {
+        // FluMessageBox 的约定是 parent 不可为 null（构造里直接 m_parentWidget->size()）。
+        m_stateToken = QStringLiteral("restart_pending");
+        applyStatus();
+        return;
+    }
+    // 换体是否已落盘决定问法：已换体时只问重启，绝不重跑 applySwap——暂存目录在换体末尾已被
+    // removeRecursively，重跑必 copy_failed 触发回滚，把已换好的新体删掉、把旧体改回原位。
+    const QString info = m_swapApplied
+        ? tr("%1 已换体，重启后生效，重启会中断未完成的回合。现在重启？").arg(m_remoteTag)
+        : tr("%1 已下载并校验通过，换体后需重启生效，重启会中断未完成的回合。现在更新并重启？")
+              .arg(m_remoteTag);
+    FluMessageBox box(tr("更新已就绪"), info, anchor);
+    // 默认键钉「取消」：与 LiteHarness::closeEvent 同一条数据丢失防线——FluMessageBox 不给按钮
+    // 设默认键，裸用回车会命中排首位的「确定」。
     if (auto *cancel = box.findChild<FluPushButton *>())
         cancel->setDefault(true);
     if (box.exec() != QDialog::Accepted) {
@@ -1123,16 +1160,21 @@ void UpdateSettingCard::onStaged(bool ok, const QString &error)
         return;
     }
 
-    QString failure;
-    if (!m_updateManager->applySwap(&failure)) {
-        m_stateToken = failure;
-        m_applyButton->setVisible(false);
-        applyStatus();
-        return;
+    if (!m_swapApplied) {
+        QString failure;
+        if (!m_updateManager->applySwap(&failure)) {
+            m_stateToken = failure;
+            m_applyButton->setEnabled(false);
+            m_restartButton->setEnabled(false);
+            applyStatus();
+            return;
+        }
+        m_swapApplied = true;
     }
-    m_applyButton->setVisible(false);
-    // 重启走主窗口 close() 守卫：守卫取消（有回合在跑且用户不退出）时换体已完成、
-    // marker 已在位，下次正常启动自然生效并由 cleanupResidueAtStartup 清残留。
+    m_applyButton->setEnabled(false);
+    // 重启被主窗口 close() 守卫挡下（有回合在跑且用户不退出）时保持可点：换体与 marker 已在位，
+    // 用户可再点一次；下次正常启动也会由 cleanupResidueAtStartup 收尾。
+    m_restartButton->setEnabled(true);
     if (!m_updateManager->requestRestartAfterSwap(window())) {
         m_stateToken = QStringLiteral("restart_pending");
         applyStatus();

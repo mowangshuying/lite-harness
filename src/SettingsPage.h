@@ -205,6 +205,7 @@ public:
 private:
     void startUpdateCheck(bool forced);
     void handleApplyClicked();
+    void handleRestartClicked();
     void onCheckFinished(bool hasUpdate, const QString& remoteTag, const QString& error);
     void onStageChanged(UpdateManager::Stage stage, const QString& detail);
     void onProgressChanged(qint64 received, qint64 total);
@@ -218,6 +219,7 @@ private:
     UpdateManager* m_updateManager = nullptr;
     FluPushButton* m_checkButton = nullptr;
     FluPushButton* m_applyButton = nullptr;
+    FluPushButton* m_restartButton = nullptr;
     // 下载进度环：**只在 downloading 阶段可见**，其余阶段既隐藏也已停掉无限动画。
     // 环内不写字——百分比的唯一出口仍是说明位文案（`statusText()`），两处各写一遍
     // 就会在语言切换时有一处滞留，且 20px 的环里塞数字本来也读不清。
@@ -233,6 +235,7 @@ private:
     QString m_remoteTag;
     QString m_progressText; // 百分比数字豁免翻译，单独存不混进令牌
     bool m_checkStarted = false;
+    bool m_swapApplied = false; // 换体已落盘旗标：置位后重启按钮再点只问重启，绝不重跑 applySwap
 };
 
 class SettingsPage : public BasePage
