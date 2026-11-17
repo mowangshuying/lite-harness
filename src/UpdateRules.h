@@ -32,9 +32,12 @@ namespace UpdateRules {
 // ---- 版本 ----
 
 // 解析版本串为数值段：剥可选前缀字母（s/v），按 '.' 分段取十进制。
-// 任一段非纯数字、或段数不为 2 → 返回 false（本仓版本形态固定为「主.补丁」两段，
-// 收紧比放宽安全：将来真要三段，改这里会当场编译/测试提醒，而不是静默错比）。
-inline bool parseVersion(const QString &text, int *major, int *patch)
+// 形态为「主.补丁」两段，或「主.补丁.修订」三段（s17.13.1 起启用第三段）。
+// **出参个数就是调用方声明的形态宽度**：给了 `micro` 才接受三段；只给两指出参时遇到三段
+// 一律返回 false，而不是把第三段悄悄丢掉——静默截断会把 `s17.13.1` 读成 `s17.13`，
+// 于是「已装 17.13.1」与「已装 17.13」在残留清理闸门里等价，那正是本闸门唯一要防的事。
+// 段数 >3、任一段非纯数字、`+17.11` 这类 toInt 宽松形态同样拒。
+inline bool parseVersion(const QString &text, int *major, int *patch, int *micro = nullptr)
 {
     if (major == nullptr || patch == nullptr)
         return false;
@@ -46,12 +49,16 @@ inline bool parseVersion(const QString &text, int *major, int *patch)
         || head == QLatin1Char('v') || head == QLatin1Char('V'))
         body = body.mid(1);
     const QStringList parts = body.split(QLatin1Char('.'), Qt::SkipEmptyParts);
-    if (parts.size() != 2)
+    if (parts.size() != 2 && parts.size() != 3)
         return false;
+    if (parts.size() == 3 && micro == nullptr)
+        return false; // 调用方不读第三段 → 拒，绝不静默截断成两段
     bool okMajor = false;
     bool okPatch = false;
+    bool okMicro = true;
     const int m = parts.at(0).toInt(&okMajor);
     const int p = parts.at(1).toInt(&okPatch);
+    const int r = parts.size() == 3 ? parts.at(2).toInt(&okMicro) : 0;
     // toInt 对 "+3"/" 3" 等形态可能宽松通过，这里再逐字确认是纯数字
     for (const QString &seg : parts) {
         if (seg.isEmpty())
@@ -61,24 +68,30 @@ inline bool parseVersion(const QString &text, int *major, int *patch)
                 return false;
         }
     }
-    if (!okMajor || !okPatch)
+    if (!okMajor || !okPatch || !okMicro)
         return false;
     *major = m;
     *patch = p;
+    if (micro != nullptr)
+        *micro = r; // 两段形态下第三段按 0 计：s17.13 == s17.13.0
     return true;
 }
 
 // 数值比较：负=左小、0=相等、正=左大。任一解析失败返回 0（当作「不是更新」，
 // 宁可不更新也不基于垃圾串换体——fail-closed 与全仓「解析不出来回退更保守一侧」同调）。
+// 逐段比到第三段：`s17.13.1 > s17.13`（第三段按 0 补）必须成立，否则刚发的补丁版
+// 会被判成「不是更新」，用户停在 s17.13 上再也升不上来。
 inline int compareVersions(const QString &left, const QString &right)
 {
-    int lm = 0, lp = 0, rm = 0, rp = 0;
-    if (!parseVersion(left, &lm, &lp) || !parseVersion(right, &rm, &rp))
+    int lm = 0, lp = 0, lr = 0, rm = 0, rp = 0, rr = 0;
+    if (!parseVersion(left, &lm, &lp, &lr) || !parseVersion(right, &rm, &rp, &rr))
         return 0;
     if (lm != rm)
         return lm < rm ? -1 : 1;
     if (lp != rp)
         return lp < rp ? -1 : 1;
+    if (lr != rr)
+        return lr < rr ? -1 : 1;
     return 0;
 }
 
@@ -372,10 +385,10 @@ inline Marker parseMarker(const QJsonObject &object)
     marker.fromVersion = object.value(QStringLiteral("from")).toString();
     marker.toVersion = object.value(QStringLiteral("to")).toString();
     marker.packageRoot = object.value(QStringLiteral("packageRoot")).toString();
-    int m1 = 0, p1 = 0, m2 = 0, p2 = 0;
-    if (!parseVersion(marker.toVersion, &m2, &p2))
+    int m1 = 0, p1 = 0, r1 = 0, m2 = 0, p2 = 0, r2 = 0;
+    if (!parseVersion(marker.toVersion, &m2, &p2, &r2))
         return marker; // 目标版本都读不出：这不是我们的 marker
-    if (!marker.fromVersion.isEmpty() && !parseVersion(marker.fromVersion, &m1, &p1))
+    if (!marker.fromVersion.isEmpty() && !parseVersion(marker.fromVersion, &m1, &p1, &r1))
         return marker; // from 允许缺省，但给了就必须是合法形态
     if (normalizeEntryPath(marker.packageRoot + QStringLiteral("/bin/x")).isEmpty())
         return marker; // packageRoot 自身必须是个干净单段目录名
@@ -398,12 +411,14 @@ inline Marker parseMarker(const QJsonObject &object)
 // 版本对不上 → 一律不删、保留 marker、留给人工处置。
 inline bool shouldCleanResidue(const QString &markerToVersion, const QString &currentVersion)
 {
-    int m1 = 0, p1 = 0, m2 = 0, p2 = 0;
-    if (!parseVersion(markerToVersion, &m1, &p1))
+    int m1 = 0, p1 = 0, r1 = 0, m2 = 0, p2 = 0, r2 = 0;
+    if (!parseVersion(markerToVersion, &m1, &p1, &r1))
         return false;
-    if (!parseVersion(currentVersion, &m2, &p2))
+    if (!parseVersion(currentVersion, &m2, &p2, &r2))
         return false;
-    return m1 == m2 && p1 == p2;
+    // 三段逐段等值。第三段必须参与：`s17.13` 与 `s17.13.1` 是两个不同的换体目标，
+    // 只比前两段就会在「换到 .1 没生效」时把旧体唯一副本删掉。
+    return m1 == m2 && p1 == p2 && r1 == r2;
 }
 
 // ---- 端点字符串（拼错即 404/403，且失败只表现为「没有更新」，故必须钉死） ----

@@ -53,8 +53,8 @@ int tst_updaterules()
     // 而进程退出码非零（本仓 main.cpp 的一致性门禁正是为此而设）。
     const int failBefore = TestHarness::failCount();
 
-    // ---- ① 版本解析：只认「主.补丁」两段，形态不符一律拒 ----
-    int major = 0, patch = 0;
+    // ---- ① 版本解析：认「主.补丁」两段与「主.补丁.修订」三段，形态不符一律拒 ----
+    int major = 0, patch = 0, micro = 0;
     check(UpdateRules::parseVersion(QStringLiteral("s17.11"), &major, &patch),
           "parseVersion: s-prefixed two-segment parses");
     check(major == 17 && patch == 11, "parseVersion: s17.11 -> (17,11)");
@@ -68,7 +68,19 @@ int tst_updaterules()
     check(!UpdateRules::parseVersion(QStringLiteral("s17"), &major, &patch),
           "parseVersion: single segment rejected (not the shipped shape)");
     check(!UpdateRules::parseVersion(QStringLiteral("17.11.2"), &major, &patch),
-          "parseVersion: three segments rejected rather than silently truncated");
+          "parseVersion: a third segment is refused when the caller only asks for two, never truncated");
+    check(UpdateRules::parseVersion(QStringLiteral("s17.13.1"), &major, &patch, &micro)
+              && major == 17 && patch == 13 && micro == 1,
+          "parseVersion: three-segment form parses once the caller asks for the third segment");
+    check(UpdateRules::parseVersion(QStringLiteral("s17.13"), &major, &patch, &micro)
+              && micro == 0,
+          "parseVersion: two-segment form zero-pads the third segment (s17.13 == s17.13.0)");
+    check(!UpdateRules::parseVersion(QStringLiteral("s17.13.x"), &major, &patch, &micro),
+          "parseVersion: non-numeric third segment rejected");
+    check(!UpdateRules::parseVersion(QStringLiteral("s17.13.1.2"), &major, &patch, &micro),
+          "parseVersion: four segments rejected - the shipped shape is two or three");
+    check(!UpdateRules::parseVersion(QStringLiteral("17.11.2"), &major, nullptr, &micro),
+          "parseVersion: null out pointer rejected even on the three-segment overload");
     check(!UpdateRules::parseVersion(QStringLiteral("s17.x"), &major, &patch),
           "parseVersion: non-numeric patch rejected");
     check(!UpdateRules::parseVersion(QStringLiteral("+17.11"), &major, &patch),
@@ -91,6 +103,16 @@ int tst_updaterules()
           "compareVersions: major dominates patch");
     check(UpdateRules::compareVersions(QStringLiteral("bad"), QStringLiteral("s17.11")) == 0,
           "compareVersions: unparsable input yields 0 (treated as not-an-update)");
+    // 三段形态（s17.13.1 起启用）。这三条钉的是「补丁位与修订位谁大」——
+    // 若只比前两段，s17.13.1 会被判成与 s17.13 相等，刚发的补丁版当场消失。
+    check(UpdateRules::compareVersions(QStringLiteral("s17.13.1"), QStringLiteral("s17.13")) > 0,
+          "compareVersions: s17.13.1 > s17.13 (the third segment must participate, not be ignored)");
+    check(UpdateRules::compareVersions(QStringLiteral("s17.13.1"), QStringLiteral("s17.14")) < 0,
+          "compareVersions: the patch segment still outranks the revision segment (s17.13.1 < s17.14)");
+    check(UpdateRules::compareVersions(QStringLiteral("s17.13.10"), QStringLiteral("s17.13.9")) > 0,
+          "compareVersions: third segment compares numerically, not lexicographically");
+    check(UpdateRules::compareVersions(QStringLiteral("s17.13"), QStringLiteral("s17.13.0")) == 0,
+          "compareVersions: a missing third segment is zero, so s17.13 == s17.13.0");
 
     // ---- ③ 是否该更新：宁可不更新，也不基于垃圾串换体 ----
     check(UpdateRules::isUpdateAvailable(QStringLiteral("s17.11"), QStringLiteral("s17.12")),
@@ -105,6 +127,13 @@ int tst_updaterules()
           "isUpdateAvailable: unparsable remote tag refuses to update");
     check(!UpdateRules::isUpdateAvailable(QString(), QStringLiteral("s17.12")),
           "isUpdateAvailable: unparsable local version refuses to update");
+    // 三段：这两条是「发 s17.13.1」能不能被看见的正反两面。
+    check(UpdateRules::isUpdateAvailable(QStringLiteral("s17.13"), QStringLiteral("s17.13.1")),
+          "isUpdateAvailable: s17.13 -> s17.13.1 IS an update (the reason three segments exist)");
+    check(!UpdateRules::isUpdateAvailable(QStringLiteral("s17.13.1"), QStringLiteral("s17.13")),
+          "isUpdateAvailable: s17.13.1 never downgrades to s17.13");
+    check(UpdateRules::isUpdateAvailable(QStringLiteral("s17.13.1"), QStringLiteral("s17.13.2")),
+          "isUpdateAvailable: s17.13.1 -> s17.13.2 offers the next revision");
 
     // ---- ④ 资产择优：错平台的包一旦下下来，校验前就已经开始动手 ----
     const QStringList assets = {
@@ -328,6 +357,16 @@ int tst_updaterules()
           "shouldCleanResidue: missing running version refuses to delete");
     check(!UpdateRules::shouldCleanResidue(QStringLiteral("garbage"), QStringLiteral("garbage")),
           "shouldCleanResidue: two identical garbage strings do not count as a match");
+    // 三段：这条是发 s17.13.1 之后最贵的一条。换到 .1 没生效时，备份是旧版可执行体的
+    // 唯一副本——若闸门只比前两段，`s17.13.1` 与 `s17.13` 会被判成同一个版本而把副本删掉。
+    check(UpdateRules::shouldCleanResidue(QStringLiteral("s17.13.1"), QStringLiteral("s17.13.1")),
+          "shouldCleanResidue: three-segment match cleans residue");
+    check(!UpdateRules::shouldCleanResidue(QStringLiteral("s17.13.1"), QStringLiteral("s17.13")),
+          "shouldCleanResidue: the third segment participates - s17.13 running is NOT the s17.13.1 swap");
+    check(!UpdateRules::shouldCleanResidue(QStringLiteral("s17.13"), QStringLiteral("s17.13.1")),
+          "shouldCleanResidue: and the other direction is a mismatch too");
+    check(UpdateRules::shouldCleanResidue(QStringLiteral("s17.13"), QStringLiteral("s17.13.0")),
+          "shouldCleanResidue: a zero third segment matches the two-segment spelling");
 
     // ---- ⑩b 端点字符串：拼错的后果是「静默没有更新」，UI 上看不出来 ----
     check(UpdateRules::releaseApiUrl(QStringLiteral("mowangshuying/lite-harness"))
@@ -451,6 +490,20 @@ int tst_updaterules()
     UpdateRules::writeMarker(nullptr, QStringLiteral("s17.11"), QStringLiteral("s17.12"),
                              QStringLiteral("r"), writtenBackups); // 空指针不得崩
     check(true, "writeMarker: null out pointer is ignored rather than dereferenced");
+
+    // 三段 marker：发 s17.13.1 之后 marker 里存的就是三段串。schema 版本**故意不升**——
+    // 已发布实例写的两段 marker 必须还能读（否则换体没生效时残留删不掉、备份被永久滞留），
+    // 兼容性靠 parseVersion 同时接受两种形态，而不是靠放宽 schema 闸门。
+    QJsonObject threeSegMarker;
+    UpdateRules::writeMarker(&threeSegMarker, QStringLiteral("s17.13"), QStringLiteral("s17.13.1"),
+                             QStringLiteral("lite-harness-s17.13.1-win64"), writtenBackups);
+    const UpdateRules::Marker threeSeg = UpdateRules::parseMarker(threeSegMarker);
+    check(threeSeg.valid,
+          "parseMarker: a three-segment marker round-trips valid without bumping the schema");
+    check(threeSeg.toVersion == QStringLiteral("s17.13.1"),
+          "parseMarker: three-segment target version preserved verbatim");
+    check(UpdateRules::shouldCleanResidue(threeSeg.toVersion, QStringLiteral("s17.13.1")),
+          "parseMarker + residue gate: the marker written for s17.13.1 unlocks cleanup on s17.13.1");
 
     // 作废路径：任一异常 → 整体 invalid（绝不部分照办）
     QJsonObject tampered = markerJson;
