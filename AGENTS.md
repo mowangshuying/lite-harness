@@ -7,7 +7,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **工具链:** Qt 6.9.0 + MSVC 2022 + CMake 3.20+，C++17，仅 Windows
 - **Prefix:** `CMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64`
 - **构建目录:** `build/`（VS 解决方案 `build/lite-harness.sln`）
-- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 17.13.1`；展示/运行时/打包名统一带 `s` 前缀 = `s17.13.1`，阶段名仍是 `s17`、补丁位 `.13` 见「发布」节）
+- **输出路径:** `build/bin/lite-harness.exe`（CMake `project VERSION 18`；展示/运行时/打包名统一带 `s` 前缀 = `s18`，s18 起主段为自有发布阶段、单段形态，lcc 参照阶段到 s17 为止，见「发布」节）
 - **编译选项:** MSVC `/W4 /utf-8`（无 `/WX`）；仅链 Qt6 Widgets/Svg/Network + FluentUI::Controls/Utils（find_package 另需 LinguistTools 组件供翻译生成）
 - **单元测试:** `tests/` + ctest，见下独立节「测试（tests/ + ctest）」；**无 lint 配置**；**CI:**
  GitHub Actions `.github/workflows/Windows-Qt6.9.0.yml`（main 分支 push/PR 触发于源码 paths 清单，干净环境全量 **Release** 构建 + ctest 单测 + cpack 出 zip 即验收；首跑实测约 19.5 分钟量级。
@@ -22,7 +22,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
   `CopyFromScreen`；关窗用 `WindowPattern.Close()` 走正常 closeEvent 守卫。
 
 - **首次构建前置:** `git submodule update --init 3rdparty/FluentUI`（必需）。`3rdparty/lcc` 仅为移植规格参考、从不参与构建，init 可选；`3rdparty/sqlite_orm` 已从 .gitmodules 与索引 gitlink 清账移除（全仓零引用）；`3rdparty/sqlite`（vendored sqlite3，约 11MB）与 `cmake/FindSQLite3.cmake` 已同批 `git rm`——自摘除子构建起全仓零引用，属纯死码，勿再 vendored 回来。
-- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s17.13.1-win64.zip`（约 54MB。**条目数分两种产物，必须分开登记**——s17.12 自更新批实测：本地 `cpack` 出包 = **74 条目（10 目录条目 + 64 文件）**，`bin/` 19 + `plugins/` 24 + `translations/` 31，56,361,719 字节；**CI 发布的同名资产 = 69 条目（10 目录 + 59 文件）**，`bin/` 18 + `plugins/` 11 + `translations/` 30，55,858,237 字节。两者不等源于构建环境（本机 Qt/翻译文件与 runner 上的不同），不是打包 bug。本条此前只写「74」并把旧值 75 判成「过期台账」，实为**两种产物各自都对、当时没分开说**，按「文档与实测冲突以实测为准」在此分列。自更新下载校验走的是 **CI 那份**：其 API `size` 与实测下载字节逐字吻合，API `digest` 的 sha256 与下载文件实算哈希完全一致（本机 MATCH=True），故校验依据取 API digest 而非本地包字节数。顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
+- **打包 (CPack ZIP，唯一部署/打包路径):** `LITE_PACKAGE` 默认 ON。先构建出 exe，再 `cpack --config build/CPackConfig.cmake -B build`（`--config` 必带，否则报 generator not specified；cpack.exe 与 VS 自带 cmake 同目录）→ `build/lite-harness-s18-win64.zip`（约 54MB。**条目数分两种产物，必须分开登记**——s17.12 自更新批实测：本地 `cpack` 出包 = **74 条目（10 目录条目 + 64 文件）**，`bin/` 19 + `plugins/` 24 + `translations/` 31，56,361,719 字节；**CI 发布的同名资产 = 69 条目（10 目录 + 59 文件）**，`bin/` 18 + `plugins/` 11 + `translations/` 30，55,858,237 字节。两者不等源于构建环境（本机 Qt/翻译文件与 runner 上的不同），不是打包 bug。本条此前只写「74」并把旧值 75 判成「过期台账」，实为**两种产物各自都对、当时没分开说**，按「文档与实测冲突以实测为准」在此分列。自更新下载校验走的是 **CI 那份**：其 API `size` 与实测下载字节逐字吻合，API `digest` 的 sha256 与下载文件实算哈希完全一致（本机 MATCH=True），故校验依据取 API digest 而非本地包字节数。顶层目录内 `bin/` = exe + Qt6 运行时 + VC 运行库 + qt.conf，根级 `plugins/` + `translations/`。机制与坑（均实证）：① `qt_generate_deploy_app_script` 生成的 windeployqt 命令固定 `--dir . --libdir bin`（多配置 Windows 下 QtDeploySupport 默认），故 exe 必须 `RUNTIME DESTINATION bin`，包内平铺布局不可行；windeployqt 自动写 `bin/qt.conf`（Prefix=..）令根级 plugins/translations 生效；此路默认携带 VC 运行库（windeployqt 无 `--no-compiler-runtime`）。② FluentUI 子项目在同一 staging 树注册了自己的 install 规则（include/lib/share、`bin/` 下 Gallery.exe 及重复 Qt 运行时）——根级 `install(CODE)` 整删垃圾目录 + 逐个删 `bin/` 内非 lite-harness.exe；CMake 子目录规则先于父目录规则执行，父级清理必跑最后。③ FluentUI 内部泄漏过一次 `include(CPack)`，根尾部后发 `include(CPack)` 覆盖生成 `build/CPackConfig.cmake` 才生效（FILE_NAME=lite-harness… 实证）；勿删根级 include 顺序。④ cpack 不触发编译，staging 取 `build/bin/` 当前 exe（RUNTIME_OUTPUT 配置无关）；多配置 staging 默认按 Release 执行子规则。原就地 `deploy`（windeployqt 自定义目标）已随本链落地摘除，勿恢复双轨。CI 已接入本打包链：Windows-Qt6.9.0.yml 按 Release 构建后 `cpack --config build/CPackConfig.cmake -B build`，`v*`/`s*` tag 推送时 zip 自动上传为该 tag 的 GitHub Release。
 - **链接坑:** Debug/Release 共用 `build/bin/` 输出目录互相覆盖；运行中的 lite-harness.exe（含用户自己开的实例）占文件导致 LNK1168，重链前先结束占用进程。FluentUI 的 Release 全量首编很慢（>15 分钟），设足超时。**主程序全量重编同样超单轮时限**（拉取上游大批提交后必遇）：`run_in_background` 也受 120s 硬顶，后台全量重编会被杀（实证：日志停在 moc 阶段、无 error，非编译失败）。正解是**同一构建命令跨轮续跑**——MSBuild 以 `.obj` 留存进度，重复调用两三轮即收敛（实测第三次 `exit=0`、`/W4` 零告警），勿为此拆目标或降并行。**杀后台构建后残留进程会锁 `.obj`**（s17.13 本机实证）：被杀的那一轮留下 `cl`/`MSBuild`/`vctip` 存活，下一轮前台构建报 `LNK1104: 无法打开文件 lite-harness.dir\Release\<X>.obj`、`EXIT=1`（不是编译错误）；先 `Get-Process -Name cl,msbuild,link,vctip -EA SilentlyContinue | Stop-Process -Force` 清干净再重跑，同一命令即 `EXIT=0`。
   **但这条清理命令绝不可把 `lite-harness` 加进 `-Name` 列表**：安装版宿主与构建产物**同名**，按名全杀会连带
   杀掉用户正在使用的宿主实例（s17.13.1 本机实证：命令里带 `lite-harness` 后，桌面安装版实例被 `-Force` 打掉、
@@ -158,8 +158,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     （只有 `restoreSessions` 有）。本头只算键、不改行为，加不加卫兵待用户裁决。**未覆盖面诚实登记**：
     `insert` 覆盖与 `unregister` 按值全表扫荡这两条后果侧逻辑仍不可直测（QHash 行为绑在链 Widgets 的 TU 上）。
     `tst_projectinstructions`（s17.11 项目指令文件纯头 `ProjectInstructions.h`：**两级候选顺序**——工程根必排在存储根之前（写反即「全局那份静默压住项目改的仓库规则」且零报错）/ 命中即止的**探测次数**判据（第一个命中后 `calls==1`、全不中才 `calls==候选数`、空表 `calls==0`）/ 空根与全空白根不进候选表（防拼出 `/AGENTS.md` 落到当前驱动器根）/ 空 path、空正文、全空白正文三类一律返回空串（空段省略，不产出「标题挂着、正文没有」的指令段）/ 截断如实标注 `first N of M characters shown` 且只下发前缀 / `size == budget` 不截断（差一即每轮都挂个假残篇标记）/ 预算 `<=0` = 不设预算而非全丢 / 正文与路径里的 `%N` 不被 `arg()` 二次展开 / 签名三字段任一变即换、且路径段防住「同秒改完又改回原大小」的跨层级撞车，49 条 = 静态点 49（无循环内断言，两数相等），零夹具恒跑——存在性判定经 `std::function` 注入桩、路径经 `LitePaths` 纯口，本头零 IO 零 `QCoreApplication` 依赖；**读盘接线不在本套件口径内**（`AgentLoopInstructions.cpp` 链 `AgentLoop.h`→`QOpenAi.h`→`Qt6::Network` 进不了 ctest，缓存命中/读失败重试靠编译期等价 + 冒烟））——
-    `tst_updaterules`（s17.12 自更新判据纯头 `UpdateRules.h`：**版本数值比较**——`s17.9 < s17.10 < s17.11` 必须成立，字典序在这里恰好反向，而补丁位形态是本仓既定事实 / 认「主.补丁」两段**或**「主.补丁.修订」三段（s17.13.1 起启用第三段）且逐字符验数字，`+17.11` 这类 `toInt` 宽松形态一律拒；**出参个数即调用方声明的形态宽度**——只给两指出参时遇三段仍拒，绝不把 `s17.13.1` 静默截断成 `s17.13`（截断会让「已装 .1」与「已装 .0」在残留清理闸门里等价，而那正是闸门唯一要防的事）/ 资产择优只认 `-win64.zip` 后缀且含目标 tag，错平台包不会被拖下来 / digest 归一：非 64 位十六进制、`sha512:` 前缀、空值一律返回空串，而 `digestMatches` 对空串恒不等——**缺校验和即拒绝换体，不降级放行** / zip 条目映射：`..` 段、绝对路径、盘符全拒（zip-slip），且顶层目录走**白名单** `bin/plugins/translations`，`config/`（数据根）与 `log/` 进不来 / 包内根从条目清单**推导**而非写死（根目录名带版本号，随每次发布变化）/ 目录条目判定读**原始串**（归一化会吃掉尾斜杠，先归一再判就把正常包判成坏包）/ 换体计划：任一条目落不进白名单即**整批作废**而非跳过（半份计划换体留下新旧混合态比不更新更糟）/ 回滚逆序而清理正序（两者刻意不同）/ marker：一条不可删即整体 invalid，绝不部分照办 / 残留清理的版本闸门：`marker.to != 当前版本` 时不删备份——备份是旧版唯一副本 / 端点与 UA 判据（GitHub API 缺 UA 直接拒答，本机实测）/ 开发态布局闸门（exe 旁无 Qt6Core.dll 即拒，防发布包盖进构建树），174 条 = 静态点 174（无循环内断言，两数相等；s17.12 初批 137、进度环分母判据 +18、s17.13.1 三段版本判据 +19），零夹具恒跑；**网络下载、tar 解压、改名换体、进程交接不在本套件口径内**（`UpdateManager.cpp` 链 `Qt6::Network` 进不了 ctest，靠编译期等价 + 冒烟））——
-    全量实跑 2474 条断言（s17.13.1 三段版本判据批 HEAD 复跑，fail=0 skip=1，本批给 `tst_updaterules` 补 19 条三段版本判据、零夹具恒跑，2455+19=2474；上一批 2455，再上一批 2300；历史句保留：全量实跑 2455 条断言（s17.12 自更新判据批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_updaterules` 155 条、零夹具恒跑，2300+155=2455——其中进度环分母判据 `progressPercentOrUnknown` 补 18 条；上一批 2300，再上一批 2251；历史句保留：全量实跑 2300 条断言（s17.11 项目指令文件批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_projectinstructions` 49 条、零夹具恒跑，2251+49=2300；上一批 2251，再上一批 2206；历史句保留：全量实跑 2251 条断言（s17.9 会话键算术抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_sessionkeys` 45 条、零夹具恒跑，2206+45=2251；上一批 2206，再上一批 2151；全量实跑 2206 条断言（s17.9 工具 schema 抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_toolschema` 55 条、零夹具恒跑，2151+55=2206；上一批登记 2151，再上一批 2075；历史句保留：全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
+    `tst_updaterules`（s17.12 自更新判据纯头 `UpdateRules.h`：**版本数值比较**——`s17.9 < s17.10 < s17.11` 必须成立，字典序在这里恰好反向，而补丁位形态是本仓既定事实 / 认「主」一段（s18 起启用，缺的补丁/修订段按 0 计）/「主.补丁」两段/「主.补丁.修订」三段（s17.13.1 起启用第三段）且逐字符验数字，`+17.11` 这类 `toInt` 宽松形态一律拒；**出参个数即调用方声明的形态宽度**——只给两指出参时遇三段仍拒，绝不把 `s17.13.1` 静默截断成 `s17.13`（截断会让「已装 .1」与「已装 .0」在残留清理闸门里等价，而那正是闸门唯一要防的事）/ 资产择优只认 `-win64.zip` 后缀且含目标 tag，错平台包不会被拖下来 / digest 归一：非 64 位十六进制、`sha512:` 前缀、空值一律返回空串，而 `digestMatches` 对空串恒不等——**缺校验和即拒绝换体，不降级放行** / zip 条目映射：`..` 段、绝对路径、盘符全拒（zip-slip），且顶层目录走**白名单** `bin/plugins/translations`，`config/`（数据根）与 `log/` 进不来 / 包内根从条目清单**推导**而非写死（根目录名带版本号，随每次发布变化）/ 目录条目判定读**原始串**（归一化会吃掉尾斜杠，先归一再判就把正常包判成坏包）/ 换体计划：任一条目落不进白名单即**整批作废**而非跳过（半份计划换体留下新旧混合态比不更新更糟）/ 回滚逆序而清理正序（两者刻意不同）/ marker：一条不可删即整体 invalid，绝不部分照办 / 残留清理的版本闸门：`marker.to != 当前版本` 时不删备份——备份是旧版唯一副本 / 端点与 UA 判据（GitHub API 缺 UA 直接拒答，本机实测）/ 开发态布局闸门（exe 旁无 Qt6Core.dll 即拒，防发布包盖进构建树），198 条 = 静态点 198（无循环内断言，两数相等；s17.12 初批 137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、s18 一段版本判据 +24），零夹具恒跑；**网络下载、tar 解压、改名换体、进程交接不在本套件口径内**（`UpdateManager.cpp` 链 `Qt6::Network` 进不了 ctest，靠编译期等价 + 冒烟））——
+    全量实跑 2498 条断言（s18 一段版本判据批 HEAD 复跑，fail=0 skip=1，本批给 `tst_updaterules` 补 24 条一段版本判据、零夹具恒跑，2474+24=2498；上一批 2474，再上一批 2455；历史句保留：全量实跑 2474 条断言（s17.13.1 三段版本判据批 HEAD 复跑，fail=0 skip=1，本批给 `tst_updaterules` 补 19 条三段版本判据、零夹具恒跑，2455+19=2474；上一批 2455，再上一批 2300；历史句保留：全量实跑 2455 条断言（s17.12 自更新判据批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_updaterules` 155 条、零夹具恒跑，2300+155=2455——其中进度环分母判据 `progressPercentOrUnknown` 补 18 条；上一批 2300，再上一批 2251；历史句保留：全量实跑 2300 条断言（s17.11 项目指令文件批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_projectinstructions` 49 条、零夹具恒跑，2251+49=2300；上一批 2251，再上一批 2206；历史句保留：全量实跑 2251 条断言（s17.9 会话键算术抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_sessionkeys` 45 条、零夹具恒跑，2206+45=2251；上一批 2206，再上一批 2151；全量实跑 2206 条断言（s17.9 工具 schema 抽头批 HEAD 复跑，fail=0 skip=1，本批新增整套 `tst_toolschema` 55 条、零夹具恒跑，2151+55=2206；上一批登记 2151，再上一批 2075；历史句保留：全量实跑 2034 条断言（本轮 HEAD 复跑，fail=0 skip=1；上一轮登记的 2001 已过期——本批 `tst_usagetokens` 49→82（新增 `formatCompact` 紧凑读数 33 条，全部挂在恒跑组、不依赖 `LITE_TEST_TMPROOT`），
     增量**只认实跑差值、不得用推算链顶替**，口径见下条「断言数口径」）。被测生产
     源需显式列进 `CMakeLists.txt` 的测试目标清单（当前十一个 TU：TaskStore / MessageBus / WorktreeManager /
     AgentTeamsManager / McpManager / BackgroundTasksManager / WorkflowManager / WorkflowRuntime / GoalManager / CronSchedulerManager /
@@ -168,7 +168,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
     `CompactTokens.h` / `SettingsCache.h` / `UsageTokens.h` / `StreamRate.h` / `GoalRules.h` / `ActivityLedger.h` / `HeatmapGrid.h`）**不占此清单**——测试直接 include 生产头即可，零 CMake 改动；带非 QtCore 依赖的
    TU（如 `CompactManager.cpp` 依赖 `QOpenAi::AsyncRequest`）**不得**为凑覆盖率塞进测试目标，
    要直测它先把纯函数抽成头。
-    **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 16 TU、`SubAgent`、`TeammateRuntime`）
+    **仍不可证的部分（勿高估覆盖面）:** L4 主循环（`AgentLoop` 家族 17 TU、`SubAgent`、`TeammateRuntime`）
    与网络层 `QOpenAi` **零覆盖**——阻塞点在 `QOpenAi` 的函数局部 static 单例无注入点，需先引入 transport
    接口才能测。这些改动的验证手段仍是「编译期等价 + 冒烟运行 + `docs/doc.md` 清单篇」。s15 宿主接线
    （两拍续打、异步锁存与门、fallback 粘滞、bg 唤醒开回合）同属不可证区——直测仅覆盖纯头与引擎判据
@@ -197,7 +197,9 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
    `LITE_TEST_TMPROOT` 夹具门上，缺该环境变量时只残 18 条，故下界不得按满量逼平）；其后两批的下界上调（1400→1450→1600）此前只在
    CI 注释留痕、未回写本文——当时现值 `1600` 按 HEAD 实跑 1798（fail=0 skip=1，静态断言点 1543——口径为行首 `check(` 调用点，该轮按 HEAD 复核；上一轮登记的 1730 按三种口径（行首 1543 / 任意位置 1544 / 限定名 `TestHarness::check` 1357）均无法复现，视为误记、以 1543 为准）留约 10% 余量所设
    （该批新增 `tst_sessionstore` 实跑 101 条，1697+101=1798），台账与 CI 注释自本条起重新对齐，后续上调两处同写。
-   **现值 `2226`**（s17.13.1 三段版本判据批 2209→2226，按本机实跑 2474×0.9≈2226 等量上移——本批给
+   **现值 `2248`**（s18 一段版本判据批 2226→2248，按本机实跑 2498×0.9≈2248 等量上移——本批
+   `tst_updaterules` 198 条、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足；无夹具侧实跑 1522
+   与 `kSuiteFloors` 求和 1522 逐条自洽，本批表项 198 恰等于该套件静态点 198）；上一批现值 `2226`（s17.13.1 三段版本判据批 2209→2226，按本机实跑 2474×0.9≈2226 等量上移——本批给
    `tst_updaterules` 补 19 条三段版本判据、零夹具恒跑，故带/不带 `LITE_TEST_TMPROOT` 均满足；无夹具侧实跑 1498
    与 `kSuiteFloors` 求和 1498 逐条自洽，本批表项 174 恰等于该套件静态点 174）；上一批现值 `2209`
    （s17.12 自更新判据批 2070→2193→2209，按本机实跑 2455×0.9≈2209 等量上移——本批
@@ -249,7 +251,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 ## 架构（src/）
 
-> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 16 个 TU 的职责地图、
+> 本节只给「模块是什么」的一句话定位；**分层依赖图、AgentLoop 家族 17 个 TU 的职责地图、
 > `AgentLoopDetail` 内部工具归属、一条消息的完整数据流与回填总表、运行时目录布局、已知分层
 > 异常与技术债、新增代码落位决策树**见 [docs/doc.md](docs/doc.md) 第二部分「模块结构总览」（锚点 `#architecture`）——改结构须同步它**。
 > 本仓文档的权威等级、「该读哪篇」与同步纪律见同文件**第一部分（锚点 `#index`）**。
@@ -297,7 +299,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **ProjectInstructions.h** — 项目指令文件（AGENTS.md）判据单源（`ProjectInstructions` 命名空间，header-only **不占测试目标 TU 清单**，`tst_projectinstructions` 直接 include 生产头）：`candidatesFor(workDir, configRoot)` 两级候选顺序（工程根在前、存储根在后，空根/全空白根跳过防拼出 `/AGENTS.md`）、`selectExisting(candidates, exists)` 命中即止（存在性经 `std::function` 注入，本头零 IO）、`signatureFor(path, mtimeMs, sizeBytes)` 惰性缓存签名、`formatSection(path, text, budgetChars)` 注入段拼装与字符预算截断（空 path/空正文/全空白正文一律返回空串 = 空段省略；超限只下发前缀并在段标题标注 `first N of M characters shown`）。抽头动机：读盘侧 `AgentLoopInstructions.cpp` 链 `AgentLoop.h`→`QOpenAi.h`→`Qt6::Network` 进不了 ctest，而四条判据全是「跑得出但喂错料」——候选顺序写反会让全局那份静默压住项目根规则且零报错，命中即止写成叠加会让两段指令互相打架、截断静默吞尾会让模型宣称「已遵循项目全部约定」。**本头绝不 include `AgentLoop.h`**（同 `ToolSchema.h` / `SessionKeys.h` 登记的坑）。
 
-- **UpdateRules.h** — 自更新判据单源（`UpdateRules` 命名空间，header-only **不占测试目标 TU 清单**，`tst_updaterules` 直接 include 生产头）：`parseVersion`/`compareVersions`/`isUpdateAvailable`（**数值段比较**，字典序在补丁位上恰好反向；形态为「主.补丁」两段**或**「主.补丁.修订」三段，第三段自 `s17.13.1` 起启用，两段形态缺的第三段按 0 计故 `s17.13 == s17.13.0`；**出参个数即调用方声明的形态宽度**——只取两指出参的调用方遇到三段一律拒，绝不静默截断，这条是 `shouldCleanResidue` 不误删旧体唯一副本的前提）、`pickAssetName`（只认 `-win64.zip` 后缀且含目标 tag，多命中取排序首项防 API 顺序漂移）、`normalizeDigest`/`digestMatches`（非 64 位十六进制、`sha512:` 前缀、空值一律归零，比对对空串恒不等 = **缺校验和即拒绝换体的 fail-closed**）、`normalizeEntryPath`/`derivePackageRoot`/`mapEntryToInstallRel`（zip-slip 防线：`..` 段、绝对路径、盘符全拒；顶层目录走**白名单** `bin/plugins/translations`，数据根 `config/` 与 `log/` 结构上进不来；包内根**从条目清单推导**而非写死，因根目录名带版本号随发布变化；目录条目判定必须读**原始串**——归一化会吃掉尾斜杠，先归一再判就把正常包判成坏包）、`planSwap`/`rollbackOrder`/`cleanupOrder`（**任一条目落不进白名单即整批作废**而非跳过——半份计划换体留下新旧混合态比不更新更糟；回滚逆序、清理正序，两者刻意不同）、`backupSuffix`/`markerSchemaVersion`/`writeMarker`/`parseMarker`/`isDeletableBackupPath`（marker 内容来自磁盘而后果是删文件：**一条不可删即整体 invalid**，绝不部分照办）、`shouldCleanResidue`（版本闸门——备份是旧版可执行体的**唯一副本**，对不上就宁留不误删）、`releaseApiUrl`/`userAgentFor`/`assetSizeOrUnknown`（UA 是硬要求：本机实测不带 UA 被 GitHub 直接拒答，而该失败在 UI 上与「已是最新」「网络不通」三者同形；缺 size 归 -1 而非 0，防渲染恒 100% 假进度）、`progressPercentOrUnknown`（**下载进度的分母判据单源**：`total<=0` 或 `received<0` 一律回 -1 = 未知，UI 据此走不定态旋转，**绝不拿 0 当分母去渲染出一个看起来合理的百分比**；`received>=total` 先钳 100 再乘 100，既挡 137% 的溢出弧、又避开 `received * 100` 在 INT64_MAX 上的溢出；整数截断而非四舍五入，99.6% 不许显示 100%。进度环与说明位文案读同一条判据——两处各判一次「有没有分母」迟早分叉成「文案写着 47%、环却在空转」，而那种分叉冒烟看不出来）、`canSelfUpdate`/`refusalReason`（开发态布局闸门：exe 旁无 `Qt6Core.dll` 即拒——实测 `build/bin` 里 Qt6*.dll 为 0 个，防发布包盖进构建树）。抽头动机：IO 侧 `UpdateManager.cpp` 链 `Qt6::Network` 因而进不了 ctest，而自更新是「一次做错、用户环境不可恢复」的操作；**定义顺序硬约束**——inline 自由函数无两阶段查找，`backupSuffix`/`normalizeEntryPath` 必须先于其使用者 `planSwap`/`derivePackageRoot` 定义，本头初稿两次踩此坑当场编译失败。
+- **UpdateRules.h** — 自更新判据单源（`UpdateRules` 命名空间，header-only **不占测试目标 TU 清单**，`tst_updaterules` 直接 include 生产头）：`parseVersion`/`compareVersions`/`isUpdateAvailable`（**数值段比较**，字典序在补丁位上恰好反向；形态为一段（`s18` 起）、「主.补丁」两段**或**「主.补丁.修订」三段（第三段自 `s17.13.1` 起启用），缺段按 0 计故 `s18 == s18.0`、`s17.13 == s17.13.0`；**出参个数即调用方声明的形态宽度**——只取两指出参的调用方遇到三段一律拒，绝不静默截断，这条是 `shouldCleanResidue` 不误删旧体唯一副本的前提）、`pickAssetName`（只认 `-win64.zip` 后缀且含目标 tag，多命中取排序首项防 API 顺序漂移）、`normalizeDigest`/`digestMatches`（非 64 位十六进制、`sha512:` 前缀、空值一律归零，比对对空串恒不等 = **缺校验和即拒绝换体的 fail-closed**）、`normalizeEntryPath`/`derivePackageRoot`/`mapEntryToInstallRel`（zip-slip 防线：`..` 段、绝对路径、盘符全拒；顶层目录走**白名单** `bin/plugins/translations`，数据根 `config/` 与 `log/` 结构上进不来；包内根**从条目清单推导**而非写死，因根目录名带版本号随发布变化；目录条目判定必须读**原始串**——归一化会吃掉尾斜杠，先归一再判就把正常包判成坏包）、`planSwap`/`rollbackOrder`/`cleanupOrder`（**任一条目落不进白名单即整批作废**而非跳过——半份计划换体留下新旧混合态比不更新更糟；回滚逆序、清理正序，两者刻意不同）、`backupSuffix`/`markerSchemaVersion`/`writeMarker`/`parseMarker`/`isDeletableBackupPath`（marker 内容来自磁盘而后果是删文件：**一条不可删即整体 invalid**，绝不部分照办）、`shouldCleanResidue`（版本闸门——备份是旧版可执行体的**唯一副本**，对不上就宁留不误删）、`releaseApiUrl`/`userAgentFor`/`assetSizeOrUnknown`（UA 是硬要求：本机实测不带 UA 被 GitHub 直接拒答，而该失败在 UI 上与「已是最新」「网络不通」三者同形；缺 size 归 -1 而非 0，防渲染恒 100% 假进度）、`progressPercentOrUnknown`（**下载进度的分母判据单源**：`total<=0` 或 `received<0` 一律回 -1 = 未知，UI 据此走不定态旋转，**绝不拿 0 当分母去渲染出一个看起来合理的百分比**；`received>=total` 先钳 100 再乘 100，既挡 137% 的溢出弧、又避开 `received * 100` 在 INT64_MAX 上的溢出；整数截断而非四舍五入，99.6% 不许显示 100%。进度环与说明位文案读同一条判据——两处各判一次「有没有分母」迟早分叉成「文案写着 47%、环却在空转」，而那种分叉冒烟看不出来）、`canSelfUpdate`/`refusalReason`（开发态布局闸门：exe 旁无 `Qt6Core.dll` 即拒——实测 `build/bin` 里 Qt6*.dll 为 0 个，防发布包盖进构建树）。抽头动机：IO 侧 `UpdateManager.cpp` 链 `Qt6::Network` 因而进不了 ctest，而自更新是「一次做错、用户环境不可恢复」的操作；**定义顺序硬约束**——inline 自由函数无两阶段查找，`backupSuffix`/`normalizeEntryPath` 必须先于其使用者 `planSwap`/`derivePackageRoot` 定义，本头初稿两次踩此坑当场编译失败。
 
 - **ToolSchema.h** — 工具 schema 单源（`ToolSchema` 命名空间，header-only **不占测试目标 TU 清单**，`tst_toolschema` 直接 include 生产头）：`createToolsDefinition()` 逐工具构造发给服务端的 OpenAI function 定义，共 27 个（26 个来自 `ToolNames` 常量 + workflow 信封委托 `WorkflowManager::toolInfo()`）。函数体内 `static const QJsonArray cached` 的惰性缓存在 inline 函数里仍是跨 TU 单实例，缓存语义不变；`makeTool` lambda 只支持平铺参数并**恒写 `required`**，嵌套 array 与「无参数」两类必须手工构造（勿"顺手补齐" required）。抽头动机与硬约束：本体此前长在 `AgentLoopPrompt.cpp`，该 TU 经 `AgentLoop.h` 传递 include `QOpenAi.h`（链 `Qt6::Network`）因而进不了 ctest，整套 schema 零直测；`AgentLoop::createToolsDefinition()` 退化为**一行转发**，调用点与 `AgentLoop.h` 签名均不变；**本头绝不 include `AgentLoop.h`**（同 `AgentPathGuard.h` 登记的坑：那会把 moc + QOpenAi 依赖拖进只链 `Qt6::Core` 的测试目标）。
 
@@ -344,14 +346,18 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 - **切换=重启生效:** FluentUI 控件无运行中重译能力（无 languageChanged 信号）。仅跨切换常驻的组件经 `changeEvent(QEvent::LanguageChange)` 重译（LiteHarness 导航三项 / SettingsPage / NewChatPage / WorkDirPathBar / TodoCard 标题）；弹出即重建的菜单/对话框/卡片天然取当次语言。已渲染历史气泡滞留旧语言（接受）。
 - **新增/修改 UI 字符串:** 照常写中文 `tr()`；**勿跑 `lite-harness_lupdate` 目标**（实证会把 FluentUI 子工程源码扫入、灌入上千外部串），改手动 `lupdate -recursive src -no-obsolete -source-language zh_CN -target-language zh_CN -ts i18n/lite-harness_zh_CN.ts` 与 `-ts i18n/lite-harness_en_US.ts` 各刷一次，补英文译文再构建；漏译条目运行时回退中文源。成对手刷已固化为 `scripts/update-i18n.ps1`（仓库根执行即可，两条 `-ts` 命令的权威单源）。
 - **禁翻区:** 发往 LLM 的 C 类串（system prompt、压缩摘要指令、`AgentLoop` 落盘进历史的合成文本如 `(恢复：工具结果不可用)`——已改 `QStringLiteral` 硬隔离，禁再包 `tr()`）不进翻译、不入 .ts。品牌名/版本号豁免口径：代码中 `tr("lite-harness")`/`tr("AtomOneDark")` 等品牌专名与版本标签**保留 tr 包裹**（版本号经 LITE_VERSION 宏注入串天然不在 ts），在 .ts 内以译文=源文恒等登记，保证 Linguist 审计面完整。
-- **版本号单源:** CMake `project VERSION`（数字段，如 17.13.1）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s17.13.1`）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。**版本名与 lcc 阶段名是两回事**：阶段名到 `s17` 为止（`3rdparty/lcc` 子模块 tag 即 `s17`），版本名可带补丁位（`s13.1`/`s16.1`/`s17.1`，先例已成串）；故文档里「与阶段 tag 同名」的旧表述在带补丁位时**不成立**，已改为「阶段名仍 s17」。看到 `s17` 要先分辨语境：指移植阶段=历史台账（不改），指当前版本=示例（随 bump 改）。
-  **段数口径（s17.13.1 起）**：数字段可为两段（`17.13`）或三段（`17.13.1`，第三段是补丁版之上的修订位）。
-  但**版本串的解析单源在 `UpdateRules::parseVersion`**，它只认自己登记的形态——发三段版前必须先确认该判据
-  已接受三段（本仓已接受），否则后果是静默的：三段串解析失败 → `compareVersions` 返回 0 →
+- **版本号单源:** CMake `project VERSION`（数字段，如 18）→ `LITE_VERSION` 宏拼 `s` 前缀（→ `s18`）→ App.cpp `setApplicationVersion` → 设置页标签/侧栏页脚取运行时值，不许散落硬编码。`s` 前缀只出现在 CMakeLists 的宏注入与 `CPACK_PACKAGE_FILE_NAME` 两处，升版本只改 `project VERSION` 一行。**版本名与 lcc 阶段名是两回事**：阶段名到 `s17` 为止（`3rdparty/lcc` 子模块 tag 即 `s17`），版本名可带补丁位（`s13.1`/`s16.1`/`s17.1`，先例已成串）；故文档里「与阶段 tag 同名」的旧表述在带补丁位时**不成立**，已改为「阶段名仍 s17」。看到 `s17` 要先分辨语境：指移植阶段=历史台账（不改），指当前版本=示例（随 bump 改）。**自 `s18` 起主段是 lite-harness 自有发布阶段、不再与 lcc 参照阶段一一对应**（lcc 参照止于 s17），见到主段 >17 勿判漏改。
+  **段数口径（s17.13.1 起三段、s18 起一段）**：数字段可为一段（`18`，缺的补丁/修订按 0 计）、
+  两段（`17.13`）或三段（`17.13.1`，第三段是补丁版之上的修订位）。
+  但**版本串的解析单源在 `UpdateRules::parseVersion`**，它只认自己登记的形态——发新段数的版本前必须先确认
+  该判据已接受对应段数（本仓自 s18 起认一/二/三段），否则后果是静默的：版本串解析失败 → `compareVersions` 返回 0 →
   `isUpdateAvailable` 恒 false，**装上该版的实例从此永远看不到任何更新**（UI 上显示「已是最新」，不报错），
   且 `shouldCleanResidue` 恒 false 使换体残留与旧体备份永久滞留。这条在冒烟里看不出来（点「检查更新」照样绿），
-  只能靠 `tst_updaterules` 的三段断言钉住。三段版也不升 marker `schema` 版本：已发布实例写的两段 marker
-  必须还能读，兼容性靠 `parseVersion` 同时接受两种形态，而不是靠放宽 schema 闸门。
+  只能靠 `tst_updaterules` 的对应段数断言钉住。改段数也不升 marker `schema` 版本：已发布实例写的旧形态 marker
+  必须还能读，兼容性靠 `parseVersion` 同时接受各形态，而不是靠放宽 schema 闸门。
+  **升级路径提醒（s18 一段版）**：判据放宽只进 s18 及以后的实例——`s17.13.1` 及更早实例的旧判据不认单段远端串
+  `s18`，解析失败即「已是最新」，故**老版本实例在应用内看不到 s18，须手动下载 zip 升级**；s18 起的实例之间自更新正常。
+  这条须写进对应 Release 简介，冒烟同样测不出来。
 
 ## 关键约定
 
@@ -369,7 +375,7 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **升版本：行为只改一行，文档必须 grep 同步。** 行为单源是 CMake
   `project(lite-harness VERSION <数字段>)`——`LITE_VERSION` 宏注入与 `CPACK_PACKAGE_FILE_NAME`
-  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s17.13.1`），
+  都从 `${PROJECT_VERSION}` 派生，于是运行时展示版本、zip 名、tag 名三者自动同名（`s18`），
   代码里**不得**再硬编码版本号（口径详见「国际化」节末「版本号单源」条）。
   `project VERSION` 只收数字点分，故 `s` 前缀永远不进 CMake 版本字段。
   **但「只改一行」只对行为成立**：README / AGENTS / `docs/doc.md`（结构篇与清单篇）与若干
@@ -379,8 +385,8 @@ Qt6 桌面 AI 编码代理 harness：内置 LLM 工具主循环、会话、记�
 
 - **tag 命名:** `s<数字段>`，与版本号单源同名（历史：`s00` 前身即 `v0.1.0`）。CI 的 tag 过滤
   写的是 `v*`/`s*`，两者都会触发 Release 上传，但新 tag 一律用 `s` 前缀保持一致。
-  数字段可为两段或三段（`s17.13` / `s17.13.1`）；**发三段 tag 前必须先确认 `UpdateRules::parseVersion`
-  已接受三段**（判据口径见「国际化」节末「版本号单源」条）——判据没放宽就发，装上新版的实例会静默
+  数字段可为一段、两段或三段（`s18` / `s17.13` / `s17.13.1`）；**发新段数 tag 前必须先确认 `UpdateRules::parseVersion`
+  已接受对应段数**（本仓自 s18 起认一段；判据口径见「国际化」节末「版本号单源」条）——判据没放宽就发，装上新版的实例会静默
   失去自更新通道（显示「已是最新」而非报错），冒烟测不出来。
   另注：提交信息里的批次标签（`s17.12.1`、`s17.12.2` 这类）**不等于**已发布的版本号，历史上它们
   都折叠进下一个连号版本发布；只有进了 `project VERSION` 并被 tag 的才算一次发布。

@@ -62,13 +62,12 @@ int tst_memoryrules();      // 记忆纯判据（MemoryRules.h）：frontmatter 
 int tst_toolschema();       // 工具 schema 单源（ToolSchema.h）：信封骨架/required⊆properties/类型专属关键字配对/todo enum+maxItems 同源/无 default/additionalProperties 四把锁/workflow 委托同源，零夹具恒跑
 int tst_sessionkeys();      // 会话键算术纯头（SessionKeys.h）：两族键形态/归属反解/生成 dataId 形状/不相交的真实理由(长度非字母表)/撞车谓词与旧注释证伪，零夹具恒跑
 int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstructions.h）：两级候选顺序/命中即止的探测次数/空段省略/截断如实标注/'%'不展开/签名三字段任一变即换，零夹具恒跑
-int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱/三段形态 s17.13.1 起)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
+int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱/三段形态 s17.13.1 起/一段形态 s18 起)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1498（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19 后），
-// 与本机无夹具全量实跑 pass=1498 fail=0 skip=35 逐条对上。带夹具一栏自 s17.12 批登记为 2300，
-// 本批**未复测带夹具数**（本机 `LITE_TEST_TMPROOT` 夹具通道跑不起来：四个纯夹具套件仍走 SKIP，
-// 与本批改动无关——改动前同机同形制也是 skip=35），故此处只更新无夹具一栏，不编新数。
+// 全表求和 = 1522（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、s18 一段版本判据 +24 后），
+// 与本机无夹具全量实跑 pass=1522 fail=0 skip=35 逐条对上；带夹具实跑 pass=2498 fail=0 skip=1
+// （s18 批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -91,7 +90,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"toolschema", 55},
     {"sessionkeys", 45},
     {"projectinstructions", 49},
-    {"updaterules", 174},
+    {"updaterules", 198},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));

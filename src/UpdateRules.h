@@ -32,10 +32,12 @@ namespace UpdateRules {
 // ---- 版本 ----
 
 // 解析版本串为数值段：剥可选前缀字母（s/v），按 '.' 分段取十进制。
-// 形态为「主.补丁」两段，或「主.补丁.修订」三段（s17.13.1 起启用第三段）。
+// 形态为「主」一段（s18 起启用，缺的补丁/修订段按 0 计）、「主.补丁」两段，
+// 或「主.补丁.修订」三段（s17.13.1 起启用第三段）。
 // **出参个数就是调用方声明的形态宽度**：给了 `micro` 才接受三段；只给两指出参时遇到三段
 // 一律返回 false，而不是把第三段悄悄丢掉——静默截断会把 `s17.13.1` 读成 `s17.13`，
 // 于是「已装 17.13.1」与「已装 17.13」在残留清理闸门里等价，那正是本闸门唯一要防的事。
+// 一段没有可截断的尾段，故两指出参也接受（patch 交 0）。
 // 段数 >3、任一段非纯数字、`+17.11` 这类 toInt 宽松形态同样拒。
 inline bool parseVersion(const QString &text, int *major, int *patch, int *micro = nullptr)
 {
@@ -49,15 +51,15 @@ inline bool parseVersion(const QString &text, int *major, int *patch, int *micro
         || head == QLatin1Char('v') || head == QLatin1Char('V'))
         body = body.mid(1);
     const QStringList parts = body.split(QLatin1Char('.'), Qt::SkipEmptyParts);
-    if (parts.size() != 2 && parts.size() != 3)
+    if (parts.size() < 1 || parts.size() > 3)
         return false;
     if (parts.size() == 3 && micro == nullptr)
         return false; // 调用方不读第三段 → 拒，绝不静默截断成两段
     bool okMajor = false;
-    bool okPatch = false;
+    bool okPatch = true;
     bool okMicro = true;
     const int m = parts.at(0).toInt(&okMajor);
-    const int p = parts.at(1).toInt(&okPatch);
+    const int p = parts.size() >= 2 ? parts.at(1).toInt(&okPatch) : 0;
     const int r = parts.size() == 3 ? parts.at(2).toInt(&okMicro) : 0;
     // toInt 对 "+3"/" 3" 等形态可能宽松通过，这里再逐字确认是纯数字
     for (const QString &seg : parts) {
@@ -73,7 +75,7 @@ inline bool parseVersion(const QString &text, int *major, int *patch, int *micro
     *major = m;
     *patch = p;
     if (micro != nullptr)
-        *micro = r; // 两段形态下第三段按 0 计：s17.13 == s17.13.0
+        *micro = r; // 缺段按 0 计：s18 == s18.0 == s18.0.0、s17.13 == s17.13.0
     return true;
 }
 

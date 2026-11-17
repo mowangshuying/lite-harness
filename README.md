@@ -58,7 +58,7 @@ cmake -B build -S . -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64
 cmake --build build --config Release
 ```
 
-输出：`build/bin/lite-harness.exe`（版本 s17.13.1）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
+输出：`build/bin/lite-harness.exe`（版本 s18）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
 
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目的 install 规则在 configure 期即注册进全树安装清单，单目标构建缺 `Gallery.exe`/`cmark.exe` 会让后续 cpack 硬错误中止。
 
@@ -88,13 +88,13 @@ ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s17.13.1-win64.zip`（约 54MB），解压后运行 `lite-harness-s17.13.1-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s18-win64.zip`（约 54MB），解压后运行 `lite-harness-s18-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
-| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 16 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime / WorkflowManager / WorkflowRuntime / GoalManager（s17 引擎群）…）+ FluentUI 页面与控件 |
+| `src/` | 全部 C++ 源码（扁平目录、无子目录，分层靠 include 纪律）：Agent 核心（AgentLoop 家族 17 个 TU / QOpenAi / TaskStore / CompactManager / MemoryManager / CronScheduler / MessageBus / WorktreeManager / AgentTeamsManager / TeammateRuntime / WorkflowManager / WorkflowRuntime / GoalManager（s17 引擎群）…）+ FluentUI 页面与控件 |
 | `tests/` | ctest 纯函数单测（`TestHarness.h` 极简断言骨架 + `tst_<模块>.cpp`），产物 `build/tests/`，不进发布包 |
 | `stylesheet/` | 三主题 QSS（light / dark / atomOneDark），经 qrc 打包 |
 | `i18n/` | 翻译源 `lite-harness_en_US.ts`（中文源→英文译文）与 `lite-harness_zh_CN.ts`（同文镜像，供 Linguist 审计），构建期 lrelease 内嵌 |
@@ -118,7 +118,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 ## 发布
 
-版本单源 = CMake `project VERSION`（数字段 `17.13.1`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s17.13.1`）自动同名。补丁位 `.13` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例：lcc 移植阶段仍是 `s17`，`s17.13.1` 是该阶段内的第十三个发布版（自本版起带第三段修订位）。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
+版本单源 = CMake `project VERSION`（数字段 `18`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s18`）自动同名。补丁位 `.13` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例（`s17.13.1` 是阶段 s17 内第十三个发布版、带第三段修订位）；`s18` 起版本主段是 lite-harness 自有发布阶段（lcc 参照阶段到 `s17` 为止），单段形态。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
 
 ## 致谢
 
