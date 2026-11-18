@@ -100,6 +100,10 @@ public:
     // 宿主经本组接口注入预算并驱动压缩；锚/估算口径与主循环 estimatedContextTokens
     // 同源（AgentConst::estimateTokens / CompactManager::estimateTokens）。
     void setContextBudget(qsizetype fullBudgetTokens, qsizetype overheadTokens);
+    // 每回合刷新满额预算（宿主在回合驱动点现取 AgentConst::contextTokenBudget() 注入，
+    // 与主循环 prepareAsync 每回合现取同纪律）：overhead 出生时定值不动——队友 system
+    // prompt 与 10 工具 schema 字节恒定，变的只有用户可改的窗口声明值。
+    void refreshContextBudget(qsizetype fullBudgetTokens);
     // usage 回读锚（修②）：prompt_tokens = 发送点真值（system+tools+messages，含 overhead）；
     // countAtSend = 发送时 m_messages.size()（不含 system 消息——它是宿主侧单独下发的）。
     // 锚有效期内增量用 AgentConst::estimateTokens 外推（与主循环 adoptUsageAnchor 同口径）。

@@ -297,6 +297,8 @@ inline qsizetype contextCharLimitValue()
 
 // CJK 区段判定（估算用粗分类，非严格字族学）：假名/汉字/日韩谚文/兼容汉字/全角半角。
 // 落在 U+2E80–U+9FFF、U+AC00–U+D7AF、U+F900–U+FAFF、U+FF00–U+FFEF 之外的一律按 4:1 折算。
+// 注意中文标点区段 U+3000–303F（。、《》「」【】等）在首段范围内**已被覆盖**，
+// 勿误判为漏计而扩区——扩区会动到实测钉死的折算口径。
 inline bool isCjkCodePoint(char16_t u)
 {
     return (u >= 0x2E80 && u <= 0x9FFF) || (u >= 0xAC00 && u <= 0xD7AF)
@@ -305,6 +307,10 @@ inline bool isCjkCodePoint(char16_t u)
 
 // UTF-16 码元串 → token 估算：CJK 每码元计 1，其余按 4 字符=1 token 向上取整
 // （代理对按 2 个非 CJK 码元参与折算，与全仓 UTF-16 字符计量口径同源的近似，登记偏差）。
+// 已知低估方向（登记，勿"修"折算率）：变音拉丁字母（é 等）与 emoji（代理对计 0.5）
+// 实际多为 1~3 token/字，4:1 会低估——后果是压缩触发略滞后于真实占用，由服务端
+// 溢出 400 → 反应式压缩兜底（isContextOverflowError），不会静默丢历史；锚定路径
+// 每次 usage 回读自校正，低估只存在于两次回读之间的外推窗口。
 inline qsizetype estimateTokens(const QString &text)
 {
     qsizetype cjk = 0;

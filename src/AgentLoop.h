@@ -512,6 +512,10 @@ private:
     // 非会话口径的固定开销（system[0] + tools schema + 注入块），交 prepareAsync 拆分
     // conversationTokens = estimated − overhead（token 计量升级后压缩触发不再漏计 B4）
     qsizetype contextOverheadTokens() const;
+    // tools schema 总估算 = 静态 27 工具惰性缓存 + 动态 mcp__ 工具现估（assemble 快照
+    // 随连接变化不能进缓存；空注册表时动态项为空数组，估算为 0）。兜底占用与 overhead
+    // 拆分共用本口，防两处各算一套再分叉。
+    qsizetype toolsSchemaTokens() const;
 
     // 记忆沉淀链启动（异步化 P2，设计文档 §2.2/§3.4）：单槽队列——链空闲则立即发起
     // extractMemoriesAsync，在途则置 m_memoryChainPending（至多补一次，尽力而为语义）；
@@ -640,7 +644,7 @@ private:
     qsizetype m_lastSendHistoryCount = 0;  // 发送点快照：请求发出时 m_messages.size()
     qsizetype m_lastSendInjectionTokens = 0; // 发送点快照：请求发出时注入块估算
     bool m_historyRewrittenSinceAnchor = false; // 锚后历史被压缩/恢复改写 → 锚作废
-    mutable qsizetype m_toolsSchemaTokens = 0;  // tools schema 估算惰性缓存（构造后字节恒定）
+    mutable qsizetype m_toolsSchemaTokens = 0;  // 静态 tools schema 估算惰性缓存（构造后字节恒定；动态 mcp__ 项不入缓存，见 toolsSchemaTokens()）
     // 会话消耗累计（区别于上面的锚：锚是「窗口现在多大」的瞬时真值，会被后续回读覆盖；
     // 本累计是「已经花了多少」的只增账）。采纳点两处：主循环 adoptUsageAnchor + 队友回合
     // （AgentLoopTeam 的 usageReceived 汇入本对象——队友 runtime 随清算消亡，账不能记在它身上）

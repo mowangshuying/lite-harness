@@ -58,6 +58,11 @@ void TeammateRuntime::setContextBudget(qsizetype fullBudgetTokens, qsizetype ove
     m_overheadTokens = qMax<qsizetype>(0, overheadTokens);
 }
 
+void TeammateRuntime::refreshContextBudget(qsizetype fullBudgetTokens)
+{
+    m_fullBudgetTokens = qMax<qsizetype>(0, fullBudgetTokens);
+}
+
 // lcc 无锚：队友回合增量仅来自 m_messages 尾部追加（无 system 改写、无注入块），
 // 锚外推即「锚 prompt_tokens + 锚后每条消息估算」——与主循环 estimatedContextTokens
 // 同口径（AgentConst::estimateTokens 串行化一致）。锚失效（改写/越界/未锚）回落全量。

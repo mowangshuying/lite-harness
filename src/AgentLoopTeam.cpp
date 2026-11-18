@@ -55,7 +55,8 @@ void AgentLoop::initTeamEngine()
         // 修① 上下文预算注入：全局 token 预算（AgentConst::contextTokenBudget，与主循环
         // 同源）为满额；overhead = 队友 system prompt + 10 工具 schema 估算（非会话固定
         // 开销，供 estimatedContextTokens 兜底路径补计）。launcher 处注入保证出生即带
-        // 预算；后续回合同值（设置改预算下一回合经 CompactManager 生效，队友等值对齐）。
+        // 预算；满额另在每回合驱动点经 refreshContextBudget 现取刷新（设置改预算下一
+        // 回合即生效，与主循环同纪律），overhead 字节恒定不再重注。
         runtime->setContextBudget(
             AgentConst::contextTokenBudget(),
             AgentConst::estimateTokens(runtime->systemPrompt())
@@ -402,6 +403,10 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
         return;
     if (m_teammateStreams.value(name))
         return; // 单飞防御：上一回合流未收口（正常时序不可达：deliver 后才再 request）
+    // 预算每回合现取（与主循环 prepareAsync 入口现取 contextTokenBudget 同纪律）：
+    // 会话中途改 contextCharLimit 后存量队友下一回合即对齐，不再钉死出生时快照。
+    // overhead 不重注——队友 system prompt 与 10 工具 schema 字节恒定（launcher 定值）。
+    runtime->refreshContextBudget(AgentConst::contextTokenBudget());
     // 修①：回合发起前的主动压缩挂接——会话体逼近预算（4/5 闸门）时先整组裁剪
     // 旧回合交换，再带收小后的历史出流（与主循环 applyCompactPipelineAsync 前置
     // 挂接同语义；此处是引擎内同步段，无异步摘要链，直接在本调用栈完成）

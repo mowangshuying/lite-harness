@@ -563,6 +563,7 @@ void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
 // - 锚失效（首回合未回读/压缩/恢复/setWorkDir/换目录）：本地全量估算 =
 //   CompactManager::estimateTokens(m_messages)（含 system[0]）+ tools schema + 注入块。
 //   此为修 B4 的关键：旧字符口径触发漏计 system 与全量 tools schema（当时 18 工具，s13 起 25），本兜底一并计入。
+//   schema 项经 toolsSchemaTokens() 单源（静态缓存 + 动态 mcp__ 现估，MCP 接入后不漏计）。
 qsizetype AgentLoop::estimatedContextTokens() const
 {
     const qsizetype injectionTokens = AgentConst::estimateTokens(m_contextInjection);
@@ -576,11 +577,26 @@ qsizetype AgentLoop::estimatedContextTokens() const
         return qMax<qsizetype>(0, static_cast<qsizetype>(m_tokenAnchor) + delta
                                     + injectionTokens - m_anchorInjectionTokens);
     }
+    return CompactManager::estimateTokens(m_messages) + toolsSchemaTokens() + injectionTokens;
+}
+
+// tools schema 总估算单源：静态 27 工具字节恒定 → 惰性缓存（mutable 承既有取舍）；
+// 动态 mcp__ 工具随 assemble 快照变化 → 每次现估不入缓存（空注册表时为空数组，
+// QJsonDocument 空数组序列化估算为 0 量级，兜底路径低频不构成成本）。此前兜底与
+// overhead 只计静态项，MCP 接入后锚失效窗口会低估 overhead——本口补齐该缺口。
+qsizetype AgentLoop::toolsSchemaTokens() const
+{
     if (m_toolsSchemaTokens == 0) {
         m_toolsSchemaTokens = AgentConst::estimateTokens(QString::fromUtf8(
             QJsonDocument(createToolsDefinition()).toJson(QJsonDocument::Compact)));
     }
-    return CompactManager::estimateTokens(m_messages) + m_toolsSchemaTokens + injectionTokens;
+    qsizetype tokens = m_toolsSchemaTokens;
+    const QJsonArray &dynamic = m_mcp.dynamicTools();
+    if (!dynamic.isEmpty()) {
+        tokens += AgentConst::estimateTokens(QString::fromUtf8(
+            QJsonDocument(dynamic).toJson(QJsonDocument::Compact)));
+    }
+    return tokens;
 }
 
 // 非会话开销（prepareAsync 拆分 conversationTokens 用，契约 C-1/C-6）：system[0] + tools
@@ -593,11 +609,7 @@ qsizetype AgentLoop::contextOverheadTokens() const
         tokens += AgentConst::estimateTokens(QString::fromUtf8(
             QJsonDocument(m_messages.at(0)).toJson(QJsonDocument::Compact)));
     }
-    if (m_toolsSchemaTokens == 0) {
-        m_toolsSchemaTokens = AgentConst::estimateTokens(QString::fromUtf8(
-            QJsonDocument(createToolsDefinition()).toJson(QJsonDocument::Compact)));
-    }
-    tokens += m_toolsSchemaTokens;
+    tokens += toolsSchemaTokens();
     tokens += AgentConst::estimateTokens(m_contextInjection);
     return tokens;
 }

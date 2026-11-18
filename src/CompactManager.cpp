@@ -342,6 +342,9 @@ QString CompactManager::persistLargeOutput(const QString &toolUseId, const QStri
 // 判定对象由字符长度改 token 估算。单条 token 数前置一次计算并增量维护：
 // 估算是 O(长度) 扫描，沿用旧「每轮 totalOf 全量重算」在新口径下会放大常数
 // （缓存与旧逐轮重算等值、非语义变更；B3 纪律——不引入比现状更差的复杂度）。
+// 口径微差登记：本段按 content-only 估算（承 lcc block 长度语义），micro/fit 两段
+// 按整条消息 JSON 估算（CompactTokens::messageTokens）——差一个 JSON 信封（几十
+// token 量级），各段内部自洽、总量级远小于阈值，刻意不统一（统一即改触发点=行为回归）。
 void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation,
                                       qsizetype convBudgetTokens) const
 {
