@@ -124,7 +124,7 @@
 }
 #statusRow[state="running"] #statusDot, #statusRow[state="running"] #statusText { color: rgb(118, 185, 237); }
 #statusRow[state="running"] #statusText { font-weight: bold; }
-#statusRow[state="waiting"] #statusDot, #statusRow[state="waiting"] #statusText { color: rgb(255, 196, 10); }
+#statusRow[state="waiting"] #statusDot, #statusRow[state="waiting"] #statusText { color: rgb(255, 214, 122); }
 #statusRow[state="waiting"] #statusText { font-weight: bold; }
 
 /* ---- TODO / 文件行 ---- */
@@ -142,7 +142,7 @@
 #sbRow[status="active"] {
     background: rgba(255, 196, 10, 14);
 }
-#sbRow[status="active"] #sbMark { color: rgb(255, 196, 10); }
+#sbRow[status="active"] #sbMark { color: rgb(255, 214, 122); }
 #sbRow[status="active"] #sbText { color: rgb(220, 220, 220); font-weight: bold; }
 #sbRow[status="done"] #sbMark { color: rgb(108, 203, 91); }
 #sbRow[status="done"] #sbText { color: rgb(163, 163, 163); }
@@ -150,7 +150,7 @@
 #sbRow[status="failed"] #sbMark { color: rgb(255, 117, 117); }
 #sbRow[status="failed"] #sbText { color: rgb(163, 163, 163); }
 #sbEmptyHint {
-    color: rgb(151, 151, 151);
+    color: rgb(153, 153, 153);
     font: italic 12px "Segoe UI";
     background: transparent;
     padding-left: 8px;
@@ -163,7 +163,7 @@
     background: transparent;
 }
 #sbFooterVersion {
-    color: rgb(151, 151, 151);
+    color: rgb(153, 153, 153);
     font: 11px "Consolas";
     background: transparent;
 }

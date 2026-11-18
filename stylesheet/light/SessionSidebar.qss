@@ -123,7 +123,7 @@
 }
 #statusRow[state="running"] #statusDot, #statusRow[state="running"] #statusText { color: rgb(0, 90, 158); }
 #statusRow[state="running"] #statusText { font-weight: bold; }
-#statusRow[state="waiting"] #statusDot, #statusRow[state="waiting"] #statusText { color: rgb(151, 99, 0); }
+#statusRow[state="waiting"] #statusDot, #statusRow[state="waiting"] #statusText { color: rgb(157, 93, 0); }
 #statusRow[state="waiting"] #statusText { font-weight: bold; }
 
 /* ---- TODO / 文件行 ---- */
@@ -141,7 +141,7 @@
 #sbRow[status="active"] {
     background: rgba(194, 127, 0, 14);
 }
-#sbRow[status="active"] #sbMark { color: rgb(151, 99, 0); }
+#sbRow[status="active"] #sbMark { color: rgb(157, 93, 0); }
 #sbRow[status="active"] #sbText { color: rgb(60, 60, 60); font-weight: bold; }
 #sbRow[status="done"] #sbMark { color: rgb(16, 124, 16); }
 #sbRow[status="done"] #sbText { color: rgb(92, 92, 92); }

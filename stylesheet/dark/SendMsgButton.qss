@@ -1,6 +1,8 @@
+/* 基态描边取强调色族浅一档（bg 118,185,237 +20/+13/+8，与 light 基态描边同口径、与本钮 hover/pressed 描边同族），
+   取代旧中性灰 69,69,69（与按钮强调色无关、跨主题口径不一） */
 SendMsgButton {
     background-color: rgb(118, 185, 237);
-    border: 1px solid rgb(69, 69, 69);
+    border: 1px solid rgb(138, 198, 245);
     border-radius: 15px;
 }
 

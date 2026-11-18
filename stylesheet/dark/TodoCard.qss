@@ -71,12 +71,12 @@ TodoCard {
 }
 
 /* 进行中：最强视觉权重 —— 琥珀实心圆 + 淡染底行 + 提亮加粗正文
-   （琥珀与 PermissionCard 警示同谱系 rgb(255,196,10)，深底提亮档） */
+   （琥珀文字与 PermissionCard 警示同值 rgb(255,214,122)，深底提亮档；底染基琥珀 rgb(255,196,10)） */
 #todoRow[status="active"] {
     background-color: rgba(255, 196, 10, 14);
 }
 #todoRow[status="active"] #todoMark {
-    color: rgb(255, 196, 10);
+    color: rgb(255, 214, 122);
 }
 #todoRow[status="active"] #todoText {
     color: rgb(220, 220, 220);

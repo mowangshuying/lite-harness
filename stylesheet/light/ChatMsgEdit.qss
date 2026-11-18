@@ -15,7 +15,7 @@ ChatMsgEdit[focused="true"] {
     /* 空态引导字色（ChatMsgEdit::setPlaceholderText）：placeholder 只能由这条
        Qt6 原生 QSS 属性着色（palette 的 PlaceholderText 会被本样式表的 re-polish
        覆盖回默认值，故不在 C++ 里设）。 */
-    placeholder-text-color: rgb(130, 130, 130);
+    placeholder-text-color: rgb(112, 112, 112);
 }
 
 /* 运行中（turn busy）禁用态：此前只 setEnabled(false)，而 QSS 又显式写了 color，

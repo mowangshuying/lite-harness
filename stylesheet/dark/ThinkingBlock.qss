@@ -22,15 +22,17 @@ ThinkingBlock {
     background-color: rgb(55, 55, 55);
 }
 
+/* 标题对比度对齐 light/atom（原 153 CR 4.97 偏低）：163 灰 CR 5.61，给预览留出可读层级 */
 #thinkingTitle {
-    color: rgb(153, 153, 153);
+    color: rgb(163, 163, 163);
     font-size: 13px;
 }
 
 /* 进行态预览行（P1）：思考期间块保持折叠，最新输出行显示在头部。
-   比标题淡一档 —— 它是「正在输出的片段」，不是需要读的结论 */
+   比标题淡一档 —— 它是「正在输出的片段」，不是需要读的结论。
+   色值保 ≥4.5:1（叠头部底 43）：148 灰 CR 4.67，仍淡于标题 163（CR 5.61） */
 #thinkingPreview {
-    color: rgb(122, 122, 122);
+    color: rgb(148, 148, 148);
     font-size: 12px;
 }
 

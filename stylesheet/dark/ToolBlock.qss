@@ -105,8 +105,9 @@ QLabel#toolOutcome {
 QLabel#toolOutcome[outcome="ok"] {
     color: rgb(108, 203, 91);
 }
+/* 失败红 = 本主题失败红 token，与 SessionSidebar #sbRow[status="failed"] #sbMark / SendMsgButton 停止态同值 */
 QLabel#toolOutcome[outcome="fail"] {
-    color: rgb(255, 102, 82);
+    color: rgb(255, 117, 117);
 }
 QLabel#toolOutcome[outcome="stopped"] {
     color: rgb(163, 163, 163);

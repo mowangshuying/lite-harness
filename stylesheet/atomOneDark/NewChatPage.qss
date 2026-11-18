@@ -20,16 +20,16 @@ NewChatPage QLabel#subtitleLabel {
 
 /* 工作目录行：12px 次要信息，题头比路径更浅一档，整体弱于输入框（灰阶取 Atom 前景/注释之间） */
 NewChatPage QLabel#workDirCaption {
-    color: rgb(148, 157, 174);
+    color: rgb(147, 157, 167);
 }
 
 NewChatPage QLabel#workDirPath {
-    color: rgb(150, 157, 170);
+    color: rgb(147, 157, 167);
 }
 
 /* 「浏览」：透明扁平文字钮，仅 hover 提亮为强调色，不抢焦点 */
 NewChatPage QToolButton#workDirBrowse {
-    color: rgb(150, 157, 170);
+    color: rgb(147, 157, 167);
     background: transparent;
     border: none;
     border-radius: 4px;

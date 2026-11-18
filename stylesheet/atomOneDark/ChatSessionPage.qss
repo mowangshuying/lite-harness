@@ -28,11 +28,11 @@ MessageBubbleWidget {
 /* 只读工作目录页眉：12px 次要灰字（字号在代码设定以对齐 elide 量纲），
    题头比路径更浅一档，与 NewChatPage 路径条同一套灰阶 token（灰阶取 Atom 前景/注释之间） */
 ChatSessionPage QLabel#workDirCaption {
-    color: rgb(148, 157, 174);
+    color: rgb(147, 157, 167);
 }
 
 ChatSessionPage QLabel#workDirPath {
-    color: rgb(150, 157, 170);
+    color: rgb(147, 157, 167);
 }
 
 /* P1-9 空态引导卡：空会话时消息列唯一内容，读作「面板」而非「气泡」——
@@ -51,7 +51,7 @@ ChatSessionPage QLabel#emptyHintTitle {
 }
 
 ChatSessionPage QLabel#emptyHintLine {
-    color: rgb(140, 148, 162);
+    color: rgb(152, 160, 174);
     font-size: 12px;
 }
 

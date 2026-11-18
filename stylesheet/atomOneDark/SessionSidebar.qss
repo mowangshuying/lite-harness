@@ -150,7 +150,7 @@
 #sbRow[status="failed"] #sbMark { color: rgb(242, 117, 126); }
 #sbRow[status="failed"] #sbText { color: rgb(147, 157, 167); }
 #sbEmptyHint {
-    color: rgb(148, 157, 174);
+    color: rgb(147, 157, 167);
     font: italic 12px "Segoe UI";
     background: transparent;
     padding-left: 8px;
@@ -158,12 +158,12 @@
 
 /* ---- 页脚 ---- */
 #sbFooterDir {
-    color: rgb(150, 157, 170);
+    color: rgb(147, 157, 167);
     font: 11px "Consolas";
     background: transparent;
 }
 #sbFooterVersion {
-    color: rgb(148, 157, 174);
+    color: rgb(147, 157, 167);
     font: 11px "Consolas";
     background: transparent;
 }

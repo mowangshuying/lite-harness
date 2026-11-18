@@ -51,7 +51,7 @@ ChatSessionPage QLabel#emptyHintTitle {
 }
 
 ChatSessionPage QLabel#emptyHintLine {
-    color: rgb(112, 118, 126);
+    color: rgb(100, 106, 114);
     font-size: 12px;
 }
 
