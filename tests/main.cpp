@@ -66,9 +66,9 @@ int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h�
 int tst_contexttrim();         // 上下文成组裁剪内核纯头（ContextTrim.h）：配对不变量/keepHead 头部保护/oldest-first/孤立 tool 兜底/目标比 4/5 与 1/2/幂等，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1582（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
-// s18 一段版本判据 +24、s18 热力图月份标签去重 +12、s18 子代理上下文压缩成组裁剪内核 +48 后），
-// 与本机无夹具全量实跑 pass=1582 fail=0 skip=35 逐条对上；带夹具实跑 pass=2558 fail=0 skip=1
+// 全表求和 = 1585（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
+// s18 一段版本判据 +24、s18 热力图月份标签去重 +12、s18 子代理上下文压缩成组裁剪内核 +48、workflow A+B+C 修复批 +3 后），
+// 与本机无夹具全量实跑 pass=1585 fail=0 skip=35 逐条对上；带夹具实跑 pass=2596 fail=0 skip=1
 // （s18 子代理压缩批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
@@ -79,7 +79,7 @@ struct SuiteFloor {
 static const SuiteFloor kSuiteFloors[] = {
     {"lineending", 36},         {"messagebus", 0},          {"taskstore_lease", 0},
     {"worktree", 0},            {"agentteams", 0},          {"mcpmanager", 45},
-    {"agentrecovery", 34},      {"backgroundtasks", 43},    {"workflowmanager", 118},
+    {"agentrecovery", 34},      {"backgroundtasks", 43},    {"workflowmanager", 121},
     {"workflowruntime", 3},     {"compacttokens", 48},      {"settingscache", 35},
     {"usagetokens", 82},        {"streamrate", 30},         {"goalmanager", 209},
     {"cronmanager", 26},        {"uiscale", 68},            {"fluconfigstore", 49},

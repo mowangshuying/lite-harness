@@ -160,9 +160,10 @@ public:
     void start(WorkflowManager &manager, const QJsonObject &toolArgs,
                const WfAgentRunner &runner, const ToolOutputDone &out);
 
-    // 宿主停止钩子（§10-3 闭环的 lite 增项，lcc 无停止路径——偏差登记见 .cpp）：置旗后在途
-    // 续跑点在下一拍折叠为 failed 终态（result.error="workflow: run cancelled"）；若此刻无在途
-    // 直接即时终态。迟到的 runner 回调被终局门闩丢弃。
+    // 宿主停止钩子（§10-3 闭环的 lite 增项，lcc 无停止路径——偏差登记见 .cpp）：即时折叠为
+    // failed 终态（result.error="workflow: run cancelled"），不论是否有在途——宿主 runner 桥在
+    // AsyncRequest::cancel 后永久静默 done，等在途回调闭环会把运行 strand（active 集合/journal
+    // 永不释放、被停 runId 无法 resume）。迟到的 runner 回调被终局门闩丢弃。
     void requestCancel();
 
     // ---- runner 适配辅助（交付 7：AnthropicAgentRunner :242-283 的宿主侧常量与拼装）----

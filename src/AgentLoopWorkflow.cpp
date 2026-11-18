@@ -149,17 +149,19 @@ void AgentLoop::cancelActiveWorkflow()
         return;
 
     // Clear the slot FIRST so the out closure's pointer-match guard rejects the terminal
-    // backfill (requestCancel folds to a "workflow: run cancelled" result on the next
-    // deferred beat; Lane B header claims an immediate terminal when nothing is in flight,
-    // but the .cpp only raises the flag — registered as an observed deviation).
+    // backfill. requestCancel() now folds to a "workflow: run cancelled" terminal IMMEDIATELY
+    // (regardless of in-flight): it closes the journal, writes the terminal snapshot/output and
+    // releases the run-active lock, so a stopped runId can be resumed again. The terminal
+    // envelope is discarded here by the pointer-match guard (slot already cleared); the host
+    // synthesizes the tool_use↔tool_result pairing below instead.
     const std::shared_ptr<WorkflowRuntime> runtime = m_activeWorkflow;
     m_activeWorkflow.reset();
 
     runtime->requestCancel();
 
-    // Cancel the network bridge: done() never fires after cancel(), so the WfRun continuation
-    // chain strands mid-flight (memory leak, not UB — the chain holds only Lane A/B state).
-    // The tool_use↔tool_result pairing must therefore be synthesized by the host below.
+    // Cancel the network bridge: AsyncRequest::cancel() nulls the handler (done() forever silent)
+    // and deleteLater()s the request, releasing the runner callback chain. The run is already
+    // terminal'd by requestCancel above, so any late callback is discarded by the settled latch.
     for (QPointer<QOpenAi::AsyncRequest> &req : m_workflowInFlight)
     {
         if (req)

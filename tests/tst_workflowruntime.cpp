@@ -335,7 +335,9 @@ void testResumeAllCached(const QString &root)
     TestHarness::check(rec2.outCount == 1 && !rec2.out.startsWith(QStringLiteral("Error:")),
                        "resume: 二跑成功闭环");
     TestHarness::check(mock2.calls.isEmpty(), "resume: HIT 全命中，runner 零调用（lcc :436-440）");
-    TestHarness::check(resultOf(rec2) == resultOf(rec1), "resume: result 与首跑逐字一致");
+    TestHarness::check((parseEnvelope(rec2.out).value(QStringLiteral("result"))
+                                   == parseEnvelope(rec1.out).value(QStringLiteral("result"))
+                               && parseEnvelope(rec1.out).value(QStringLiteral("result")) == QJsonValue(true)), "resume: result 与首跑逐字一致");
     const QJsonObject usage = taskOf(rec2).value(QStringLiteral("usage")).toObject();
     TestHarness::check(usage.value(QStringLiteral("agents")).toInt() == 0
                            && usage.value(QStringLiteral("tokens")).toInt() == 0,
@@ -814,6 +816,29 @@ void testReviewChangesFullRing(const QString &root)
     TestHarness::check(shapeOk, "全环: isReal 过滤 + high<medium 排序 + dimension 回挂（lcc :569-574）");
 
     // phase 去重：Review/Verify 各一次；workflow_log 汇总行
+    // 盘上产物等值（B：全环组读盘，兑现「内容等值断言放全环组」承诺）——output.json == result、快照钉形
+    {
+        const QString runId = runIdOf(rec);
+        QFile of(storeDir + QLatin1Char('/') + runId + QStringLiteral(".output.json"));
+        const bool outOk = of.open(QIODevice::ReadOnly);
+        const QJsonObject diskOut = QJsonDocument::fromJson(of.readAll()).object();
+        TestHarness::check(outOk && diskOut == resultOf(rec),
+                           "全环: output.json 盘上内容 == envelope.result（B 读盘等值）");
+        QFile sf(storeDir + QLatin1Char('/') + runId + QStringLiteral(".json"));
+        const bool snapOk = sf.open(QIODevice::ReadOnly);
+        const QJsonObject snap = QJsonDocument::fromJson(sf.readAll()).object();
+        TestHarness::check(snapOk && snap.value(QStringLiteral("runId")).toString() == runId
+                               && snap.value(QStringLiteral("workflowName")).toString()
+                                      == QStringLiteral("review-changes")
+                               && snap.value(QStringLiteral("args")).toObject()
+                                      .value(QStringLiteral("changes")).toString()
+                                      .contains(QStringLiteral("db.query"))
+                               && snap.value(QStringLiteral("task")).toObject()
+                                      .value(QStringLiteral("status")).toString()
+                                      == QStringLiteral("completed"),
+                           "全环: 终态快照 runId/workflowName/args/status 钉形（B 读盘）");
+    }
+
     const QJsonObject task = taskOf(rec);
     QJsonArray ph = progressOfType(task, QStringLiteral("workflow_phase"));
     QStringList titles;
@@ -1076,6 +1101,337 @@ void testResumeGatesAndPreemption(const QString &root)
     }
 }
 
+// ---------------- B 批新增共用小工具（并发/取消/迟到组复用，收口样板） ----------------
+
+// n 个 agent 的 parallel 脚本（label C0..C(n-1)、prompt c0..c(n-1)）
+WfScriptFn parallelAgentsScript(int n)
+{
+    return [n](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+        auto self = ctx.shared_from_this();
+        std::vector<WfThunk> thunks;
+        for (int i = 0; i < n; ++i) {
+            const QString p = QStringLiteral("c%1").arg(i);
+            const QString l = QStringLiteral("C%1").arg(i);
+            thunks.push_back([self, p, l](const WfDone &d) {
+                self->agent(p, QJsonValue(), l, QString(), d);
+            });
+        }
+        self->parallel(thunks, done);
+    };
+}
+
+// manual mock 按 label 以 API 层错误放行一个在途 done（reply 只放成功，此补失败形）
+void failPendingByLabel(MockRunner &mock, const QString &label, const QString &error)
+{
+    for (int i = 0; i < mock.pending.size(); ++i) {
+        if (mock.pending[i].first == label) {
+            auto d = mock.pending[i].second;
+            mock.pending.removeAt(i);
+            d(QJsonValue(), 0, error);
+            return;
+        }
+    }
+}
+
+// 夹具组建 mgr + storeDir（样板收口；WorkflowManager 可移动，NRVO 返回值）
+WorkflowManager makeMgr(const QString &root)
+{
+    WorkflowManager mgr;
+    QDir(root).mkpath(QStringLiteral(".workflows"));
+    mgr.setStoreDir(root + QStringLiteral("/.workflows"));
+    return mgr;
+}
+
+// ---------------- B：并发门 FIFO 队列 + 释槽续派（CONCURRENCY=8，偏差11，queue.push_back） ----------------
+void testConcurrencyGate(const QString &root)
+{
+    OverrideGuard guard(parallelAgentsScript(9));
+    WorkflowManager mgr = makeMgr(root);
+    MockRunner mock;
+    mock.manual = true;
+    Recorded rec;
+    WorkflowRuntime rt;
+    rt.setInlineDispatch(true);
+    startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+    TestHarness::check(mock.calls.size() == 8 && mock.pending.size() == 8 && rec.outCount == 0,
+                       "并发门: 前 8 占满计数门、第 9 入队（inFlight=8）");
+    mock.reply(QStringLiteral("C0"), QStringLiteral("C0v"));
+    TestHarness::check(mock.calls.size() == 9 && mock.calls[8].label == QStringLiteral("C8"),
+                       "并发门: 释槽续派队首 C8（FIFO）");
+    for (int i = 1; i < 9; ++i)
+        mock.reply(QStringLiteral("C%1").arg(i), QStringLiteral("C%1v").arg(i));
+    const QJsonArray arr = parseEnvelope(rec.out).value(QStringLiteral("result")).toArray();
+    bool orderOk = rec.outCount == 1 && arr.size() == 9;
+    for (int i = 0; i < 9 && orderOk; ++i)
+        orderOk = arr[i].toString() == QStringLiteral("C%1v").arg(i);
+    TestHarness::check(orderOk, "并发门: 9 值按 thunk 序收口、终局恰一次");
+}
+
+// ---------------- B：取消三形（A1 即时终态 / A3 清队 / 无在途） ----------------
+void testCancelPaths(const QString &root)
+{
+    WorkflowManager mgr = makeMgr(root);
+
+    // (a) 在途>0：requestCancel 不等回调即时终态；迟到 done 丢弃；被停 runId 可再 resume
+    {
+        OverrideGuard guard(oneAgentScript(QStringLiteral("cancel-probe"), QJsonValue(), QStringLiteral("X")));
+        MockRunner mock;
+        mock.manual = true;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        TestHarness::check(mock.pending.size() == 1 && rec.outCount == 0, "取消: 在途未终局");
+        rt.requestCancel();
+        TestHarness::check(rec.outCount == 1
+                               && resultOf(rec).value(QStringLiteral("error")).toString()
+                                      == QStringLiteral("workflow: run cancelled"),
+                           "取消: 在途>0 即时终态、不等回调（A1）");
+        mock.reply(QStringLiteral("X"), QStringLiteral("late"));
+        TestHarness::check(rec.outCount == 1, "取消: 迟到 runner 回调被 settled 门闩丢弃");
+        const QString runId = runIdOf(rec);
+        MockRunner m2;
+        m2.responder = [](const QString &, int) { return QJsonValue(QStringLiteral("g")); };
+        Recorded rec2;
+        WorkflowRuntime rt2;
+        rt2.setInlineDispatch(true);
+        QJsonObject t;
+        t[QStringLiteral("name")] = QStringLiteral("review-changes");
+        t[QStringLiteral("resume_from_run_id")] = runId;
+        startOnce(rt2, mgr, t, m2, rec2);
+        TestHarness::check(rec2.outCount == 1 && !rec2.out.startsWith(QStringLiteral("Error:"))
+                               && taskOf(rec2).value(QStringLiteral("status")).toString()
+                                      == QStringLiteral("completed"),
+                           "取消: 被停 runId 锁已释放、同 id 可再 resume（A1 回归）");
+    }
+
+    // (b) 带排队：8 在途 + 1 排队 → 即时终态 + 清队（A3），迟到全丢弃
+    {
+        OverrideGuard guard(parallelAgentsScript(9));
+        MockRunner mock;
+        mock.manual = true;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        TestHarness::check(mock.pending.size() == 8 && rec.outCount == 0, "取消: 8 在途 + 1 排队");
+        rt.requestCancel();
+        TestHarness::check(rec.outCount == 1
+                               && resultOf(rec).value(QStringLiteral("error")).toString()
+                                      == QStringLiteral("workflow: run cancelled"),
+                           "取消: 带排队即时终态、清队不误减 inFlight（A3）");
+        for (int i = 0; i < 8; ++i)
+            mock.reply(QStringLiteral("C%1").arg(i), QStringLiteral("v"));
+        TestHarness::check(rec.outCount == 1, "取消: 清队后迟到回调全丢弃、不双收");
+    }
+
+    // (c) 无在途（脚本挂起不收口）：inFlight=0 即时终态
+    {
+        OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &) {
+            ctx.phase(QStringLiteral("Stall")); // 只宣告阶段、不收口 → 运行挂执行期、inFlight=0
+        });
+        MockRunner mock;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        TestHarness::check(rec.outCount == 0 && mock.calls.isEmpty(), "取消: 无在途运行挂起");
+        rt.requestCancel();
+        TestHarness::check(rec.outCount == 1
+                               && resultOf(rec).value(QStringLiteral("error")).toString()
+                                      == QStringLiteral("workflow: run cancelled"),
+                           "取消: 无在途即时终态（inFlight=0 分支）");
+    }
+}
+
+// ---------------- B：parallel 迟到者落账语义（§10-2 在途照常入账 / 终态后丢弃） ----------------
+void testParallelLateArrival(const QString &root)
+{
+    WorkflowManager mgr = makeMgr(root);
+    const QString storeDir = mgr.storeDir();
+
+    // 场景1：C1 先成功落账，C0 后败 → 整体败一次，但 C1 已入 journal/台账
+    {
+        OverrideGuard guard(parallelAgentsScript(2));
+        MockRunner mock;
+        mock.manual = true;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        TestHarness::check(mock.pending.size() == 2, "parallel迟到: 双在途");
+        mock.reply(QStringLiteral("C1"), QStringLiteral("C1v"));
+        failPendingByLabel(mock, QStringLiteral("C0"), QStringLiteral("boom"));
+        TestHarness::check(rec.outCount == 1
+                               && resultOf(rec).value(QStringLiteral("error")).toString()
+                                      == QStringLiteral("workflow: boom"),
+                           "parallel迟到: 一败俱败只回一次");
+        TestHarness::check(taskOf(rec).value(QStringLiteral("usage")).toObject()
+                                   .value(QStringLiteral("agents")).toInt() == 1,
+                           "parallel迟到: 先成 C1 照常入账 agents=1（§10-2）");
+        const QString runId = runIdOf(rec);
+        QFile jf(storeDir + QLatin1Char('/') + runId + QStringLiteral(".journal.jsonl"));
+        const bool jOk = jf.open(QIODevice::ReadOnly);
+        const QByteArray jbytes = jf.readAll();
+        TestHarness::check(jOk && jbytes.contains("C1v") && !jbytes.contains("C0v"),
+                           "parallel迟到: 先成 C1 落 journal、败者 C0 不落（在途照常落盘）");
+    }
+
+    // 场景2：C0 先败 → 终态；C1 迟到成功被丢弃（零入账、不双收）
+    {
+        OverrideGuard guard(parallelAgentsScript(2));
+        MockRunner mock;
+        mock.manual = true;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        failPendingByLabel(mock, QStringLiteral("C0"), QStringLiteral("boom"));
+        TestHarness::check(rec.outCount == 1, "parallel迟到: 首败即终态");
+        mock.reply(QStringLiteral("C1"), QStringLiteral("C1v"));
+        TestHarness::check(rec.outCount == 1
+                               && taskOf(rec).value(QStringLiteral("usage")).toObject()
+                                      .value(QStringLiteral("agents")).toInt() == 0,
+                           "parallel迟到: 终态后迟到者丢弃、零入账");
+    }
+}
+
+// ---------------- B：pipeline 失败路（任一 stage 败整体败一次） ----------------
+void testPipelineFailure(const QString &root)
+{
+    OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+        auto self = ctx.shared_from_this();
+        QJsonArray items{QStringLiteral("good"), QStringLiteral("bad")};
+        std::vector<WfStage> stages;
+        stages.push_back([](const QJsonValue &, const QJsonValue &item, int, const WfDone &next) {
+            if (item.toString() == QStringLiteral("bad"))
+                next(QJsonValue(), QStringLiteral("stage-boom"));
+            else
+                next(item, QString());
+        });
+        self->pipeline(items, stages, done);
+    });
+    WorkflowManager mgr = makeMgr(root);
+    MockRunner mock;
+    Recorded rec;
+    WorkflowRuntime rt;
+    rt.setInlineDispatch(true);
+    startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+    TestHarness::check(rec.outCount == 1
+                           && resultOf(rec).value(QStringLiteral("error")).toString()
+                                  == QStringLiteral("workflow: stage-boom"),
+                       "pipeline败: 任一 stage 败整体败恰一次（先到先得）");
+    TestHarness::check(mock.calls.isEmpty(), "pipeline败: stage 直接回错零 runner 调用");
+}
+
+// ---------------- B：agent cap 端到端（第 1001 次触 cap，先增后判 lcc :386-388） ----------------
+void testAgentCapEndToEnd(const QString &root)
+{
+    OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+        auto self = ctx.shared_from_this();
+        for (int i = 0; i < kWorkflowAgentCap; ++i)
+            self->agent(QStringLiteral("cap%1").arg(i), QJsonValue(), QStringLiteral("K%1").arg(i),
+                        QString(), [](const QJsonValue &, const QString &) {});
+        self->agent(QStringLiteral("cap-overflow"), QJsonValue(), QStringLiteral("K-over"), QString(),
+                    [done](const QJsonValue &, const QString &err) { done(QJsonValue(), err); });
+    });
+    WorkflowManager mgr = makeMgr(root);
+    MockRunner mock;
+    mock.responder = [](const QString &, int) { return QJsonValue(QStringLiteral("v")); };
+    Recorded rec;
+    WorkflowRuntime rt;
+    rt.setInlineDispatch(true);
+    startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+    TestHarness::check(rec.outCount == 1
+                           && resultOf(rec).value(QStringLiteral("error")).toString()
+                                  == QStringLiteral("workflow: agent() cap reached (1000)"),
+                       "cap端到端: 第 1001 次 agent 触 cap、错误逐字");
+    TestHarness::check(mock.calls.size() == kWorkflowAgentCap,
+                       "cap端到端: 恰 1000 次 runner 调用（超限那次零调用）");
+}
+
+// ---------------- B：原语杂项（空 parallel/pipeline、depth/phase、注册表三处同步） ----------------
+void testPrimitivesMisc(const QString &root)
+{
+    WorkflowManager mgr = makeMgr(root);
+    // 空 parallel 即回空数组
+    {
+        OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+            ctx.parallel({}, done);
+        });
+        MockRunner mock;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        const QJsonValue r = parseEnvelope(rec.out).value(QStringLiteral("result"));
+        TestHarness::check(rec.outCount == 1 && r.isArray() && r.toArray().isEmpty(),
+                           "原语: 空 parallel 即回空数组（gather([])）");
+    }
+    // 空 pipeline 即回空数组
+    {
+        OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+            ctx.pipeline(QJsonArray(), {}, done);
+        });
+        MockRunner mock;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        const QJsonValue r = parseEnvelope(rec.out).value(QStringLiteral("result"));
+        TestHarness::check(rec.outCount == 1 && r.isArray() && r.toArray().isEmpty(),
+                           "原语: 空 pipeline 即回空数组");
+    }
+    // depth root=0 + phase→currentPhase
+    {
+        OverrideGuard guard([](WfExecState &ctx, const QJsonObject &, const WfDone &done) {
+            auto self = ctx.shared_from_this();
+            const bool depthOk = self->depth() == 0;
+            self->phase(QStringLiteral("P1"));
+            const bool phaseOk = self->currentPhase() == QStringLiteral("P1");
+            done(QJsonValue(depthOk && phaseOk), QString());
+        });
+        MockRunner mock;
+        Recorded rec;
+        WorkflowRuntime rt;
+        rt.setInlineDispatch(true);
+        startOnce(rt, mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock, rec);
+        TestHarness::check(rec.outCount == 1
+                               && parseEnvelope(rec.out).value(QStringLiteral("result")) == QJsonValue(true),
+                           "原语: 根 depth=0、phase 写 currentPhase");
+    }
+    // 注册表三处同步：workflowNames ↔ scriptFor ↔ policyFor（§10-6 手工同步债护栏）
+    {
+        const QStringList names = mgr.workflowNames();
+        bool syncOk = names == QStringList{QStringLiteral("review-changes")};
+        for (const QString &n : names)
+            syncOk = syncOk && static_cast<bool>(WorkflowRuntime::scriptFor(n))
+                     && mgr.policyFor(n) == QStringLiteral("allow");
+        syncOk = syncOk && !WorkflowRuntime::scriptFor(QStringLiteral("no-such-wf"));
+        TestHarness::check(syncOk, "注册表: meta/scriptFor/policy 三处逐名同步（§10-6 护栏）");
+    }
+}
+
+// ---------------- B：运行生命周期（A2 断环回归：terminal 清 finalDone） ----------------
+void testRuntimeLifetime(const QString &root)
+{
+    OverrideGuard guard(oneAgentScript(QStringLiteral("life"), QJsonValue(), QStringLiteral("L")));
+    WorkflowManager mgr = makeMgr(root);
+    auto rt = std::make_shared<WorkflowRuntime>();
+    std::weak_ptr<WorkflowRuntime> weak = rt;
+    rt->setInlineDispatch(true);
+    MockRunner mock;
+    mock.responder = [](const QString &, int) { return QJsonValue(QStringLiteral("v")); };
+    Recorded rec;
+    // 模仿宿主 out 闭包按值强持 runtime（AgentLoopWorkflow.cpp [self, runtime]）
+    rt->start(mgr, toolArgsFor(QStringLiteral("review-changes"), QJsonObject{}), mock.runner(),
+              [&rec, rt](const QString &out) { ++rec.outCount; rec.out = out; });
+    rt.reset(); // 宿主释放自己的槽
+    TestHarness::check(rec.outCount == 1, "生命周期: 运行完成");
+    TestHarness::check(weak.expired(),
+                       "生命周期: terminal 清 finalDone 断 WfRun↔runtime 环、无泄漏（A2 回归）");
+}
+
 } // namespace
 
 int tst_workflowruntime()
@@ -1104,6 +1460,13 @@ int tst_workflowruntime()
     testReviewChangesFullRing(tmp.path());
     testAdapterStrings(tmp.path());
     testResumeGatesAndPreemption(tmp.path());
+    testConcurrencyGate(tmp.path());
+    testCancelPaths(tmp.path());
+    testParallelLateArrival(tmp.path());
+    testPipelineFailure(tmp.path());
+    testAgentCapEndToEnd(tmp.path());
+    testPrimitivesMisc(tmp.path());
+    testRuntimeLifetime(tmp.path());
 
     return TestHarness::failCount() - before;
 }

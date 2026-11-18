@@ -204,6 +204,10 @@ struct WfRun : std::enable_shared_from_this<WfRun>
             envelope.insert(QStringLiteral("result"), result);
             envelope.insert(QStringLiteral("task"), manager->serializeTask(task));
             finalDone(envelope, QString());
+            // 断环（lite 修复 A2）：宿主 out 闭包按值强持 shared_ptr<WorkflowRuntime>，而
+            // runtime->m_current 又持本 WfRun——finalDone 不清则 WfRun→finalDone→out→runtime→
+            // m_current→WfRun 成环，每次运行（成功/失败/取消）都泄漏一对对象。调用后立即清空。
+            finalDone = nullptr;
         }
     }
 
@@ -242,10 +246,6 @@ struct WfRun : std::enable_shared_from_this<WfRun>
     {
         if (settled)
             return;
-        if (cancelRequested) {
-            drainCancelled();
-            return;
-        }
         if (dispatching)
             return; // 外层循环还在转，继续消费队列
         if (queue.empty() || inFlight >= kWorkflowConcurrency)
@@ -297,12 +297,7 @@ struct WfRun : std::enable_shared_from_this<WfRun>
                         qint64 tokens, const QString &error)
     {
         if (settled)
-            return; // 迟到回调被终局门闩丢弃（含取消路径）
-        if (cancelRequested) {
-            --inFlight;
-            drainCancelled();
-            return;
-        }
+            return; // 迟到回调被终局门闩丢弃（含取消路径——requestCancel 已即时终态，settled 恒先置）
         job->tokens += tokens;
         if (!error.isEmpty()) { // runner API 层失败（lcc 裸调用异常 → failed 终态同形，§10-3）
             failJob(job, error);
@@ -341,13 +336,10 @@ struct WfRun : std::enable_shared_from_this<WfRun>
 
     void drainCancelled()
     {
-        while (!queue.empty() && !settled) {
-            const std::shared_ptr<WfJob> job = queue.front();
-            queue.pop_front();
-            failJob(job, cancelErrorText()); // 首条错误沿屏障/续跑链收口脚本，其余丢弃
-        }
-        if (!settled && running && inFlight <= 0)
-            terminal(true, cancelErrorText());
+        // 排队 job 从未占槽：直接随队列释放（不走 failJob/releaseSlot——那会对未派发 job
+        // 误减 inFlight 致负，并经 requestDispatch 递归重派，修复 A3）。done 随 job 析构释放，
+        // 断开 job→脚本续跑→WfRun 引用链；脚本终态由 requestCancel 统一收口，无需逐条回错误。
+        queue.clear();
     }
 
     void requestCancel()
@@ -355,9 +347,13 @@ struct WfRun : std::enable_shared_from_this<WfRun>
         if (settled || cancelRequested || !hasRun)
             return;
         cancelRequested = true;
-        if (inFlight > 0)
-            return; // 最后一个 runner 回调经 cancel 分支闭环
-        drainCancelled();
+        drainCancelled(); // 清排队 job（断引用链）
+        // 即时终态，不再等在途 runner 回调（lite 修复 A1）：宿主 runner 桥在 AsyncRequest::cancel
+        // 后永久静默 done（QOpenAi.cpp cancel 契约），等回调闭环会把运行 strand——releaseRunActive/
+        // journal.close/终态产物永不执行，被停 runId 永占 active 集合致无法 resume。迟到回调由
+        // onRunnerResult 顶部 settled 门闩丢弃，绝不双收。
+        if (!settled && running)
+            terminal(true, cancelErrorText());
     }
 };
 
@@ -989,8 +985,12 @@ void WorkflowRuntime::run(WorkflowManager &manager, const QString &name, const Q
     // 9. 预算 + 根 ctx + 启动（lcc :829-833；budget 非数值视为不限=偏差16）
     qint64 budgetTotal = -1;
     const QJsonValue budgetVal = mergedArgs.value(QStringLiteral("budget"));
-    if (budgetVal.isDouble())
-        budgetTotal = static_cast<qint64>(budgetVal.toDouble());
+    if (budgetVal.isDouble()) {
+        const double d = budgetVal.toDouble();
+        // 负数 budget 钳 0（拒支）：-1 是「不限」哨兵（None 转译），负数输入不得静默落入不限
+        // （lcc Budget(-5) 立即拒绝，lite 对齐拒支语义；修复 A4，原偏差16 只登记非数值→不限）。
+        budgetTotal = d < 0 ? 0 : static_cast<qint64>(d);
+    }
     runState->budget = std::make_unique<WfBudget>(budgetTotal);
 
     auto ctx = std::make_shared<WfExecState>(); // 根 ctx：friend 直填私有（lcc ExecutionState 构造 :831）

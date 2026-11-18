@@ -768,6 +768,88 @@ void testFileActiveRuns(WorkflowManager &mgr)
                        "释放后必须可再抢占");
 }
 
+// ---------------- B：objectEnd 字符串态/转义态（parseRunnerJson 候选扫描） ----------------
+void testParseRunnerJsonEscapes()
+{
+    bool ok = false;
+    // 字符串内含转义引号 + 花括号：objectEnd 转义态/字符串态不误判配平
+    const QJsonValue v1 = WorkflowManager::parseRunnerJson(
+        QStringLiteral("noise {\"a\":\"x\\\"}y\"} tail"), &ok);
+    TestHarness::check(ok && v1.isObject()
+                           && v1.toObject().value(QStringLiteral("a")).toString()
+                                  == QStringLiteral("x\"}y"),
+                       "objectEnd: 字符串内转义引号+花括号不误判配平（转义态）");
+    // 字符串内裸花括号不计深度（前置噪声逼出候选扫描路）
+    const QJsonValue v2 = WorkflowManager::parseRunnerJson(
+        QStringLiteral("pre {\"s\":\"}{\"} post"), &ok);
+    TestHarness::check(ok && v2.isObject()
+                           && v2.toObject().value(QStringLiteral("s")).toString()
+                                  == QStringLiteral("}{"),
+                       "objectEnd: 字符串内裸花括号不计深度（字符串态）");
+    // 前置未配平坏候选跳过、首个合法对象胜出
+    const QJsonValue v3 = WorkflowManager::parseRunnerJson(
+        QStringLiteral("oops { broken {\"a\":1}"), &ok);
+    TestHarness::check(ok && v3.isObject()
+                           && v3.toObject().value(QStringLiteral("a")).toDouble() == 1.0,
+                       "objectEnd: 前置坏候选跳过、首个合法对象胜出");
+}
+
+// ---------------- B：文件产物错误路（writeJsonAtomic false / reserve 耗尽 / journal 结构门与 IO） ----------------
+void testFileErrorPaths(WorkflowManager &mgr, const QString &store)
+{
+    Q_UNUSED(mgr);
+    QString err;
+    // writeJsonAtomic false 分支：目标为已存在目录 → QSaveFile open 失败 → false（偏差19 判据）
+    const QString dirPath = store + QLatin1Char('/') + QStringLiteral("a-directory");
+    QDir().mkpath(dirPath);
+    TestHarness::check(!WorkflowManager::writeJsonAtomic(
+                           dirPath, QJsonObject{{QStringLiteral("k"), QStringLiteral("v")}}),
+                       "writeJsonAtomic: 目标为目录必须返 false（false 分支，偏差19）");
+
+    // reserveRunId 耗尽：storeDir 指向已存在文件 → 其下建 {id}.json 32 次全败 → 耗尽串
+    {
+        const QString filePath = store + QLatin1Char('/') + QStringLiteral("blocker.bin");
+        QFile f(filePath);
+        if (f.open(QIODevice::WriteOnly)) { f.write("x"); f.close(); }
+        WorkflowManager blocked;
+        blocked.setStoreDir(filePath);
+        QString id;
+        TestHarness::check(!blocked.reserveRunId(QStringLiteral("review-changes"), &id, &err)
+                               && err == QStringLiteral("could not allocate a unique workflow runId"),
+                           "reserveRunId: 32 次耗尽必须逐字 could not allocate a unique workflow runId");
+    }
+
+    // journal 结构门：key 非串 → invalid resume journal record at line 1
+    {
+        const QString jpath = store + QLatin1Char('/') + QStringLiteral("struct.journal.jsonl");
+        QFile f(jpath);
+        if (f.open(QIODevice::WriteOnly)) { f.write("{\"key\":5,\"value\":1}\n"); f.close(); }
+        WfJournal j;
+        TestHarness::check(!j.open(store, QStringLiteral("struct"), true, &err)
+                               && err == QStringLiteral("invalid resume journal record at line 1"),
+                           "journal结构门: key 非串必须逐字 invalid resume journal record at line 1");
+    }
+    // journal 结构门：缺 value → 同串
+    {
+        const QString jpath = store + QLatin1Char('/') + QStringLiteral("noval.journal.jsonl");
+        QFile f(jpath);
+        if (f.open(QIODevice::WriteOnly)) { f.write("{\"key\":\"k\"}\n"); f.close(); }
+        WfJournal j;
+        TestHarness::check(!j.open(store, QStringLiteral("noval"), true, &err)
+                               && err == QStringLiteral("invalid resume journal record at line 1"),
+                           "journal结构门: 缺 value 必须逐字 invalid resume journal record at line 1");
+    }
+    // journal IO 折叠串：目录冒充 journal 文件 → exists 真但 open(ReadOnly) 败
+    {
+        const QString jdir = store + QLatin1Char('/') + QStringLiteral("iofail.journal.jsonl");
+        QDir().mkpath(jdir);
+        WfJournal j;
+        TestHarness::check(!j.open(store, QStringLiteral("iofail"), true, &err)
+                               && err == QStringLiteral("cannot open workflow journal"),
+                           "journal IO: 存在却读不开必须逐字 cannot open workflow journal（lite 折叠串）");
+    }
+}
+
 } // namespace
 
 int tst_workflowmanager()
@@ -785,6 +867,7 @@ int tst_workflowmanager()
     testRegistryPolicyNoteTool();
     testResponseText();
     testBudgetLimitsTask();
+    testParseRunnerJsonEscapes();
 
     // ---- 文件产物组：夹具缺失只 SKIP 本组（半跳过形，见文件头登记）----
     ScopedTempRoot tmp("workflowmanager");
@@ -800,6 +883,7 @@ int tst_workflowmanager()
     testFileLastRun(mgr, store);
     testFileJournal(store);
     testFileActiveRuns(mgr);
+    testFileErrorPaths(mgr, store);
 
     return TestHarness::failCount() - before;
 }
