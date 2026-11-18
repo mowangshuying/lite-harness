@@ -57,7 +57,7 @@ int tst_layoutconst();        // P2：布局常量自洽（LayoutConstants.h）�
 int tst_agentconst();         // P2：智能体数值域与键名契约（AgentConstants.h），零夹具恒跑
 int tst_compacttranscript();  // 压缩转写回溯（CompactTranscript.h），零夹具恒跑
 int tst_activityledger();     // 会话每日 token 消耗账本（ActivityLedger.h）：阈值/日期键/累加/求和/截断恒跑 + 读写往返/脏数据降级夹具门控
-int tst_heatmapgrid();        // 热力图网格算术（HeatmapGrid.h）：371 满矩形 / 末格恒为 today / cellOf↔dateOfCell 互逆 / 窗口外，零夹具恒跑
+int tst_heatmapgrid();        // 热力图网格算术（HeatmapGrid.h）：371 满矩形 / 末格恒为 today / cellOf↔dateOfCell 互逆 / 窗口外 / 月份标签按月号去重、首列补标让位给同号 1 号锚点，零夹具恒跑
 int tst_memoryrules();      // 记忆纯判据（MemoryRules.h）：frontmatter 回落/slug 撞名/括号配对状态机/去重门槛/写读往返，零夹具恒跑
 int tst_toolschema();       // 工具 schema 单源（ToolSchema.h）：信封骨架/required⊆properties/类型专属关键字配对/todo enum+maxItems 同源/无 default/additionalProperties 四把锁/workflow 委托同源，零夹具恒跑
 int tst_sessionkeys();      // 会话键算术纯头（SessionKeys.h）：两族键形态/归属反解/生成 dataId 形状/不相交的真实理由(长度非字母表)/撞车谓词与旧注释证伪，零夹具恒跑
@@ -65,9 +65,10 @@ int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstr
 int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱/三段形态 s17.13.1 起/一段形态 s18 起)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1522（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、s18 一段版本判据 +24 后），
-// 与本机无夹具全量实跑 pass=1522 fail=0 skip=35 逐条对上；带夹具实跑 pass=2498 fail=0 skip=1
-// （s18 批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
+// 全表求和 = 1534（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
+// s18 一段版本判据 +24、s18 热力图月份标签去重 +12 后），
+// 与本机无夹具全量实跑 pass=1534 fail=0 skip=35 逐条对上；带夹具实跑 pass=2510 fail=0 skip=1
+// （s18 月份标签批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -85,7 +86,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"configmerge", 14},        {"sessionstore", 4},        {"uiux", 11},
     {"tooltagkind", 26},        {"toolnames", 7},           {"navkeys", 14},
     {"layoutconst", 23},        {"agentconst", 16},         {"compacttranscript", 40},
-    {"activityledger", 37},        {"heatmapgrid", 27},
+    {"activityledger", 37},        {"heatmapgrid", 39},
     {"memoryrules", 76},
     {"toolschema", 55},
     {"sessionkeys", 45},

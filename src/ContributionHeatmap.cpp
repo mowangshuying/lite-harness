@@ -181,32 +181,22 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
         }
     }
 
-    // 月份标签（底部）：标签贴在「含该月 1 号的那一列」——列首不再对齐周日，
-    // 月界常落在列中段，只看列首月份会让标签晚 1-6 天。首列不含 1 号时补它自己的月份，
-    // 否则左端空白。月长 ≥28 天 = 4 列，标签间距天然 ≥3 列，不会互叠。
+    // 月份标签（底部）：选列与去重判据单源在 HeatmapGrid::monthLabels（含该月 1 号的列、
+    // 按月号去重、首列补标让位给同号 1 号锚点——371 天窗口恒覆盖 ≥13 个月份实例，起点月与
+    // 终点月同号跨年，不去重底部必出现两个相同月份；保留补标又会与相邻月标签挤压）。
+    // 本处只画像素，不重述判据。
     p.setPen(palette.monthText);
     QFont monthFont = p.font();
     monthFont.setPixelSize(11);
     p.setFont(monthFont);
     const int labelY = grid.bottom() + kMonthLabelHeight - 2;
-    for (int col = 0; col < kWeeks; ++col) {
-        int labelMonth = -1;
-        for (int row = 0; row < kDaysPerWeek; ++row) {
-            // 同一口径：列内日期只由 HeatmapGrid::dateOfCell 给出，与上方绘制循环、
-            // cellDateAt 命中判定三者同源（月界判错会让标签晚 1-6 天）
-            const QDate date = HeatmapGrid::dateOfCell(col, row, today);
-            if (date.day() == 1)
-                labelMonth = date.month();
-        }
-        if (labelMonth < 0 && col > 0)
-            continue;
-        if (labelMonth < 0)
-            labelMonth = HeatmapGrid::dateOfCell(col, 0, today)
-                             .month(); // 首列：窗口起点所在月（可能是该月的残余几天）
+    const QList<HeatmapGrid::MonthLabel> labels = HeatmapGrid::monthLabels(today);
+    for (const HeatmapGrid::MonthLabel &label : labels) {
         // 末列标签按列左缘起画会溢出卡片右缘，按文本宽度回推
-        const int textW = p.fontMetrics().horizontalAdvance(tr("%1月").arg(labelMonth));
-        const int x = qMin(grid.left() + col * step, grid.right() - textW + 1);
-        p.drawText(x, labelY, tr("%1月").arg(labelMonth));
+        const QString text = tr("%1月").arg(label.anchor.month());
+        const int textW = p.fontMetrics().horizontalAdvance(text);
+        const int x = qMin(grid.left() + label.col * step, grid.right() - textW + 1);
+        p.drawText(x, labelY, text);
     }
 }
 

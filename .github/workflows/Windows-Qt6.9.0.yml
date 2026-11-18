@@ -232,11 +232,21 @@ jobs:
         # 2474→2498，下界 2226→2248 按 2498×0.9≈2248 等量上调。
         # 升级路径提醒：s17.13.1 及更早实例的旧判据不认单段远端串，应用内看不到 s18
         # （须手动下载 zip 升级）；s18 起实例之间自更新正常。
+        # s18 热力图月份标签去重批：底部月份标签选列判据抽成 HeatmapGrid::monthLabels
+        # （含 1 号的列贴标 / 按**月号**去重 / 首列补标让位给同号 1 号锚点）。371 天窗口恒覆盖 ≥13 个
+        # 月份实例而月号只有 12 个，重复必然存在（起点月与终点月同号跨年，如 today=11-18
+        # 时窗口从去年 11-13 起，两端都是「11月」）——按年+月去重抓不到这种重复，这正是
+        # 用户报障的形态；而保留首列补标又会与相邻月标签挤压（月界距首日最近仅 1 列），
+        # 让位后所有标签都是 1 号锚点、相邻恒 ≥4 列。tst_heatmapgrid 27→39（+12，零夹具恒跑：
+        # 任意 today 恰 12 标签 / 月号互异覆盖 1..12 / 列序递增 / 相邻间距 ≥4 列 /
+        # 锚点落在标签列 / 去重不丢首次），
+        # 无夹具全表求和 1522→1534；带夹具基数等量 2498→2510，下界 2248→2259 按
+        # 2510×0.9=2259 等量上调。
       - name: Unit tests (ctest)
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '2248'
+          $env:LITE_TEST_MIN_PASS = '2259'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
