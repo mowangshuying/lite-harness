@@ -559,7 +559,9 @@ void AgentLoop::adoptUsageAnchor(const QJsonObject &usage)
 //   锚真值 + 其后新增消息逐条估算 + 注入块变化量（当前注入 - 锚时注入，契约 C-6）。
 //   注意锚路径不再计 overhead——prompt_tokens 已含 system/tools/注入的发送点真值；
 //   增量与锚值同为 token 口径（AgentConst::estimateTokens），混合口径误差有界，
-//   下一次 usage 回读自然自校正（§9.7 已知项：todo reminder/后台注入尾拼接不计入，轻微低估有界）。
+//   下一次 usage 回读自然自校正（§9.7 已知项：todo reminder/后台注入尾拼接不计入；
+//   锚后 tools schema 变化——如 connect_mcp 新接入——同样不做差量修正，只有注入块
+//   有差量项；两者均轻微低估有界，方向压缩略滞后，reactive-400 兜底）。
 // - 锚失效（首回合未回读/压缩/恢复/setWorkDir/换目录）：本地全量估算 =
 //   CompactManager::estimateTokens(m_messages)（含 system[0]）+ tools schema + 注入块。
 //   此为修 B4 的关键：旧字符口径触发漏计 system 与全量 tools schema（当时 18 工具，s13 起 25），本兜底一并计入。

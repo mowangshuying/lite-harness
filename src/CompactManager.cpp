@@ -433,8 +433,8 @@ void CompactManager::snipCompact(QVector<QJsonObject> &conversation, bool tokenG
 // lcc micro_compact：模型已"消化"（最后一条 assistant 之前）的旧工具结果，
 // 除最近 3 条外逐个落盘换成 Format B 标记，直到估算值达标。
 // consumed[:len-3] 的 [:0] 陷阱用显式索引循环规避（docs/code 冲突以代码为准）。
-// 修4：达标口径切 token（每轮对整体重新估算——沿用旧 estimateChars 同款行为，
-// 单轮成本与旧全量序列化同量级，未新增劣化；B3 整体现状保持）。
+// 修4：达标口径切 token；总量前置一次 + 循环内增量维护（§9.9 抽头批改，恒等性由
+// CompactTokens.h 不变量①保证，见函数体内注释与 tst_compacttokens）。
 // 短结果豁免 kMicroExemptChars 仍字符域（D11 内容级启发不动）。
 void CompactManager::microCompact(QVector<QJsonObject> &conversation,
                                   qsizetype targetTokens) const
@@ -487,8 +487,8 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
 
 // lcc fit_tool_results：对全部工具结果（无 unseen 保护——以代码为准，docs 表述不采）
 // 按长度降序换成 1000 字符预览（Format A），只在替换确实变短时生效。
-// 修4：达标口径切 token（每轮整体重估，同 micro 段纪律）；排序/变短判定仍字符域
-// （D11 内容级启发不随迁）。
+// 修4：达标口径切 token；总量前置一次 + 循环内增量维护（同 micro 段纪律，见函数体内注释）；
+// 排序/变短判定仍字符域（D11 内容级启发不随迁）。
 void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
                                     qsizetype targetTokens) const
 {
