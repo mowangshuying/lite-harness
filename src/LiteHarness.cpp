@@ -257,12 +257,21 @@ void LiteHarness::createSession(const QString &text)
     // （与 Gallery "先建 item 后 setViewWidth" 的启动期对齐语义一致）
     sessionsItem->setItemWidth(sessionsItem->width());
 
+    // 高度维护的不变量：本体固定高度 = 图标行 + 当前**可见**的子项容器（s17.13.1）。
+    // adjustItemHeight 把子项总高算进本体固定高度，却不看 wrapWidget2 是否真在显示——容器隐藏时
+    // 调它 = 把不可见行算进本体 → 「会话」那一行被空白撑高、下缘整体下移（用户报的现象）。
+    // 原写法拿「子项条数 == 1」当判据，只在「分组空 → 建第一条」这一格碰巧对（折叠态命中
+    // onItemClicked 的 Expanding 分支），第二条起就踩进坑；而「点过零子项分组」留下的
+    // 「逻辑已展开但容器未显示」内部态下，onItemClicked 走 Collapsing 收口到 30、随后子项自己的
+    // onItemClicked 又经 adjustItemHeight(m_parentItem) 把不可见行算回来——翻转语义堵不住这个态，
+    // 故两分支都落到显式终态：容器已在显示 → 只重算高度；没在显示 → revealChildren 一次摆正
+    // （show 容器 + 逻辑态 + 箭头字形 + 重算高度，幂等，重复调不改变结果）。
     if (m_navView->isLong())
     {
-        if (sessionsItem->getItems().size() == 1)
-            sessionsItem->onItemClicked();
-        else
+        if (sessionsItem->getWrapWidget2()->isVisible())
             sessionsItem->adjustItemHeight(sessionsItem);
+        else
+            sessionsItem->revealChildren();
     }
     childItem->onItemClicked();
 }
@@ -340,13 +349,17 @@ void LiteHarness::restoreSessions()
                 [this, dataId](const QString &) { refreshActivityForDataId(dataId); });
         // 同 createSession：子项默认宽 180 不继承父宽，恢复后统一对齐到父项当前宽
         sessionsItem->setItemWidth(sessionsItem->width());
-        // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致
+        // 恢复不切换当前页（不调 childItem->onItemClicked），仅按需展开/调高保持导航视觉一致。
+        // 判据与 createSession 完全同源（子项容器是否真在显示，s17.13.1）：本循环跑在构造期、
+        // 窗口尚未 show，isVisible() 对一切子项恒为 false——revealChildren 恰好是想要的终态（容器
+        // 显示 + 高度算对），且幂等：第二条子项再走一遍也只是把同一件事做第二次，不会像
+        // onItemClicked 那样按翻转语义把已展开的分组又折回去。
         if (m_navView->isLong())
         {
-            if (sessionsItem->getItems().size() == 1)
-                sessionsItem->onItemClicked();
-            else
+            if (sessionsItem->getWrapWidget2()->isVisible())
                 sessionsItem->adjustItemHeight(sessionsItem);
+            else
+                sessionsItem->revealChildren();
         }
     }
 }
@@ -477,11 +490,14 @@ void LiteHarness::renameSession(const QString &key)
         return;
 
     childItem->getLabel()->setText(text);
-    // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确
+    // 标题变长可能撑破导航宽，按长导航重算该项高度保持换行显示正确。
+    // 与 createSession 同一判据（s17.13.1）：子项容器没在显示时重算会把空白算进本体固定高度，
+    // 表现为「会话」行被撑高、下缘下移；改名不增删行，容器不可见时什么都不做才是对的。
     if (m_navView->isLong())
     {
         if (auto *grp = static_cast<NavItem *>(m_navView->getItemByKey(NavKey::SessionsGroup)))
-            grp->adjustItemHeight(childItem);
+            if (grp->getWrapWidget2()->isVisible())
+                grp->adjustItemHeight(childItem);
     }
     // 仅更新索引标题（model/workDir 传空即不覆盖）；读写经 AppSettings::reader() 单源
     // （与登记/恢复/删除四处同源，口径成对绑死，此处不自拼 QSettings）
