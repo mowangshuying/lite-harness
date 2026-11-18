@@ -25,6 +25,10 @@ class QProcess;
 // - 轮次预算 m_maxTurns（start() 入口快照 AgentConst::maxToolIterationsValue()，与主循环
 //   同源可设置，默认 500）：每次发起请求（含 Stop 续跑）消耗一次，
 //   预算耗尽仍未产出最终答案时以停跑文案收尾
+// - 上下文压缩（与队友同族，内核共用 ContextTrim.h）：每请求主动压缩（现取
+//   contextTokenBudget()，目标 4/5 预算，保 system[0]+任务 prompt[1]）+ 服务端溢出
+//   400 反应式压缩恰一次/回合（目标 1/2 预算，成功 messageFinished 复位旗标）；
+//   子代理无 usage 回读、无 token 锚，估算=本地全量+tools schema，裁剪后无需锚簿记
 // - 取消：cancel() 幂等地断流、kill 子进程、抑制完成回调；配对收口由宿主
 //   AgentLoop::cancelSubAgent() 统一处理（stop()/错误链/析构三路复用）
 class SubAgent : public QObject
@@ -75,6 +79,13 @@ private:
     void finish(const QString &result);
     // 子代理 system prompt（独立于主循环 makeSystemPrompt）
     static QString subSystemPrompt(const QString &workDir);
+    // 子工具定义单源（白名单过滤 + bash 剥 run_in_background）：请求装配与压缩
+    // overhead 折算共用。静态成员而非自由函数——friend 权限只覆盖 SubAgent 成员，
+    // 自由函数够不着 AgentLoop::createToolsDefinition（私有静态）
+    static QJsonArray subToolsDefinition();
+    // 压缩收口（主动/反应式共用）：keepHead=2 保 system[0]+任务 prompt[1]，
+    // overhead 仅 tools schema（system 已在 m_messages 内）；返回是否动过
+    bool compactMessages(qsizetype targetTokens);
 
     AgentLoop *m_host = nullptr;            // 宿主（钩子注册表与权限信号转发；父子关系保证生命周期）
     QString m_workDir;                      // 创建时继承宿主工作目录（沙箱根，宿主改目录不影响运行中的子代理）
@@ -91,6 +102,7 @@ private:
     int m_maxTurns = 0;                     // 轮次预算入口快照（与主循环 maxToolIterations 同源，start() 写入）
     bool m_settled = false;                 // finish() 已触发（幂等保护）
     bool m_cancelled = false;               // 已取消（回调抑制）
+    bool m_reactiveCompactUsed = false;     // 反应式压缩预算 1 次/回合（成功 messageFinished 复位，队友同款纪律）
     CompleteHandler m_onComplete;
     // 同步 handler 表（lcc subToolsHandlers 等价：仅 read/write/edit/glob；
     // bash 为异步特判，todo_write/task 无表项 → 即便模型幻觉调用也只回填 Unknown）

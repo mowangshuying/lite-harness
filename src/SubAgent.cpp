@@ -7,6 +7,8 @@
 #include "AgentConstants.h" // 模型清单/max_tokens 单源（bash 超时与截断已随执行链收敛到 BashRunner）
 #include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与主循环单源共用
 #include "BackgroundTasksManager.h" // formatBashResult：非零退出码前缀，与主循环前台/后台分支同口径
+#include "ContextTrim.h"    // 成组裁剪内核与目标比单源（队友共用，tst_contexttrim 直测）
+#include "CompactTokens.h"  // 会话体 token 估算单源（压缩 current 口径）
 
 #include <QDebug>
 #include <QJsonDocument>
@@ -85,6 +87,24 @@ QString SubAgent::subSystemPrompt(const QString &workDir)
         .arg(workDir);
 }
 
+QJsonArray SubAgent::subToolsDefinition()
+{
+    // 静态成员内调用私有静态（friend 生效），白名单过滤交给匿名 ns 自由函数。
+    // 请求装配与压缩 overhead 折算共用本单源，防两处各滤一份漂移。
+    return filterSubTools(AgentLoop::createToolsDefinition());
+}
+
+bool SubAgent::compactMessages(qsizetype targetTokens)
+{
+    // 子代理估算口径：本地全量会话体 + tools schema。system[0] 已在 m_messages 内，
+    // 故 overhead 仅 schema（区别于队友——其 system 在 messages 外、overhead 含 system）。
+    // 无 usage 锚，纯本地估算，裁剪后无需锚作废簿记。keepHead=2 保 system+任务 prompt。
+    const qsizetype toolsTokens = AgentConst::estimateTokens(QString::fromUtf8(
+        QJsonDocument(subToolsDefinition()).toJson(QJsonDocument::Compact)));
+    const qsizetype current = CompactTokens::conversationTokens(m_messages) + toolsTokens;
+    return ContextTrim::trimConversation(m_messages, 2, current, targetTokens);
+}
+
 void SubAgent::start(CompleteHandler onComplete)
 {
     m_onComplete = std::move(onComplete);
@@ -121,11 +141,22 @@ void SubAgent::startChatRequest()
     }
     ++m_turns;
 
+    // 主动压缩：每请求现取预算（与主循环/队友同源 contextTokenBudget()），估算超 4/5
+    // 目标则成组丢旧，保 system[0]+任务 prompt[1]（keepHead=2）。子代理无 usage 回读、
+    // 无 token 锚，估算=本地全量+tools schema（system 已在 messages 内，overhead 仅 schema）。
+    const qsizetype budget = AgentConst::contextTokenBudget();
+    if (budget > 0)
+    {
+        const qsizetype target = budget * ContextTrim::kCompactTargetRatioNumerator
+                                 / ContextTrim::kCompactTargetRatioDenominator;
+        compactMessages(target);
+    }
+
     QJsonObject request;
     request[QStringLiteral("model")] = m_model;
     request[QStringLiteral("messages")] = AgentLoopDetail::snapshotMessages(m_messages);
-    // 成员函数内调用私有静态（friend 生效），过滤交给自由函数
-    request[QStringLiteral("tools")] = filterSubTools(AgentLoop::createToolsDefinition());
+    // 子工具定义单源（请求装配与压缩 overhead 折算共用，见 subToolsDefinition）
+    request[QStringLiteral("tools")] = subToolsDefinition();
     // lcc s06：显式输出上限（与主循环同取 AgentConst::kMaxTokens）；子代理不开 enable_thinking（黑盒无思考展示）
     request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
 
@@ -140,6 +171,9 @@ void SubAgent::startChatRequest()
         s->deleteLater();
         if (m_cancelled)
             return;
+
+        // 回合成功收口：复位反应式压缩预算（队友 deliverTurnResult 成功路径同款纪律）
+        m_reactiveCompactUsed = false;
 
         const QJsonArray toolCalls = fullMsg.value(QStringLiteral("tool_calls")).toArray();
         if (toolCalls.isEmpty())
@@ -163,6 +197,27 @@ void SubAgent::startChatRequest()
         s->deleteLater();
         if (m_cancelled)
             return;
+
+        // 反应式压缩：服务端溢出 400 才触发，预算 1 次/回合（m_reactiveCompactUsed，
+        // 成功 messageFinished 复位）。目标 1/2 预算留余量，保 system[0]+任务 prompt[1]。
+        // 裁剪动过则重发（startChatRequest 再走一遍主动压缩与轮次预算）；无可删或再溢出
+        // 则照旧以错误字符串收尾——不无限重试。判定与主循环/队友共用 isContextOverflowError。
+        if (!m_reactiveCompactUsed && AgentLoopDetail::isContextOverflowError(msg))
+        {
+            const qsizetype budget = AgentConst::contextTokenBudget();
+            if (budget > 0)
+            {
+                const qsizetype target = budget * ContextTrim::kReactiveTargetRatioNumerator
+                                         / ContextTrim::kReactiveTargetRatioDenominator;
+                if (compactMessages(target))
+                {
+                    m_reactiveCompactUsed = true;
+                    startChatRequest();
+                    return;
+                }
+            }
+        }
+
         // API 失败以字符串结果回给主模型（lcc except → return "Error: ..."），
         // 不触发主循环 error 信号、不中断主循环
         finish(QStringLiteral("Error: subagent API call failed: %1").arg(msg));

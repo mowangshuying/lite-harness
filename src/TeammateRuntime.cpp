@@ -12,6 +12,7 @@
 #include "AgentRecovery.h" // 工具成败判据单源（纯 QtCore，不破坏本 TU 的 GUI 依赖纪律）
 #include "AgentTeamsManager.h"
 #include "CompactManager.h"
+#include "ContextTrim.h" // 成组裁剪内核与目标比单源（子代理共用，tst_contexttrim 直测）
 #include "MessageBus.h"
 #include "TaskStore.h"
 
@@ -40,16 +41,8 @@ bool teamToolOutputLooksFailed(const QString &output)
 
 // ── 修① 上下文预算与压缩────────────────────────────────────────────
 // 队友回合协议与主循环同源：≤ budget 平稳运行；超预算丢旧（保任务卡）+ usage 锚
-// 外推；服务端溢出 → 反应式强压缩重发恰一次。两目标比在 AgentConstants 语义域外
-// （预算单位是 token，比例只作用于换算后整数），系数取整为 qsizetype 防丢尾。
-namespace {
-// 常规压缩目标：预算的 80%（与主循环 CompactManager 压缩目标 0.8T' 同口径簇）
-constexpr qsizetype kCompactTargetRatioNumerator = 4;
-constexpr qsizetype kCompactTargetRatioDenominator = 5;
-// 反应式压缩目标：预算的 50%（溢出后要留足余量给新回合输出）
-constexpr qsizetype kReactiveTargetRatioNumerator = 1;
-constexpr qsizetype kReactiveTargetRatioDenominator = 2;
-} // namespace
+// 外推；服务端溢出 → 反应式强压缩重发恰一次。目标比与成组裁剪内核单源在
+// ContextTrim.h（子代理共用；原匿名 ns 常量与内核本体搬入该头，行为零变更）。
 
 // 宿主注入预算（initTeamEngine 拉线：full = contextTokenBudget()，overhead 见 AgentLoopTeam）。
 void TeammateRuntime::setContextBudget(qsizetype fullBudgetTokens, qsizetype overheadTokens)
@@ -96,14 +89,14 @@ void TeammateRuntime::adoptUsageAnchor(const QJsonObject &usage, int countAtSend
 
 // 主（非反应式）压缩：估算超预算才动手，目标 4/5 预算。丢旧只保留任务卡 [0]。
 // 返回是否动过（锚作废）；m_messages 只删不重组，OpenAI 形态配对（assistant 带
-// tool_calls 与其后连续 tool 是成组单元）在 compactConversationTo 内保证。
+// tool_calls 与其后连续 tool 是成组单元）在 ContextTrim::trimConversation 内保证。
 bool TeammateRuntime::compactConversationIfNeeded()
 {
     if (m_fullBudgetTokens <= 0 || m_messages.size() <= 1) {
         return false;
     }
-    const qsizetype target = m_fullBudgetTokens * kCompactTargetRatioNumerator
-                             / kCompactTargetRatioDenominator;
+    const qsizetype target = m_fullBudgetTokens * ContextTrim::kCompactTargetRatioNumerator
+                             / ContextTrim::kCompactTargetRatioDenominator;
     if (estimatedContextTokens() <= target) {
         return false;
     }
@@ -118,8 +111,8 @@ bool TeammateRuntime::tryReactiveCompact()
     if (m_fullBudgetTokens <= 0 || m_reactiveCompactUsed || m_messages.size() <= 1) {
         return false;
     }
-    const qsizetype target = m_fullBudgetTokens * kReactiveTargetRatioNumerator
-                             / kReactiveTargetRatioDenominator;
+    const qsizetype target = m_fullBudgetTokens * ContextTrim::kReactiveTargetRatioNumerator
+                             / ContextTrim::kReactiveTargetRatioDenominator;
     if (!compactConversationTo(target)) {
         return false;
     }
@@ -127,37 +120,12 @@ bool TeammateRuntime::tryReactiveCompact()
     return true;
 }
 
-// 私有压缩内核：从最旧开始找「可安全成组删除」的单元：
-//  - assistant 带 tool_calls：连同其随后连续 tool 结果一并删（tool 孤立删会破坏配对）
-//  - 其余单条（user / 无 tool_calls 的 assistant）：可独立删
-// 迭代直到估算低于目标或无可删单元。m_messages[0] 任务卡恒保留（索引 1 起扫）。
-// QVector::remove 逐段 O(n)，队友回合规模下可接受。
+// 成组裁剪内核单源在 ContextTrim.h::trimConversation（子代理共用，tst_contexttrim 直测）；
+// 本函数一行转发 + 队友侧锚作废簿记：m_messages[0] 任务卡恒保留（keepHead=1）。
 bool TeammateRuntime::compactConversationTo(qsizetype targetTokens)
 {
-    bool changed = false;
-    qsizetype current = estimatedContextTokens();
-    int i = 1; // 任务卡 [0] 不删
-    while (current > targetTokens && i < m_messages.size()) {
-        const QJsonObject &head = m_messages.at(i);
-        const QString role = head.value(QStringLiteral("role")).toString();
-        if (role == QLatin1String("tool")) {
-            // 属于更早 assistant 的工具结果：不能独立删，继续向后找单元头
-            ++i;
-            continue;
-        }
-        int j = i + 1;
-        if (role == QLatin1String("assistant") && head.contains(QLatin1String("tool_calls"))) {
-            while (j < m_messages.size()
-                   && m_messages.at(j).value(QStringLiteral("role")).toString()
-                          == QLatin1String("tool")) {
-                ++j;
-            }
-        }
-        current -= CompactManager::estimateTokens(m_messages.mid(i, j - i));
-        m_messages.remove(i, j - i);
-        changed = true;
-        (void)role; // (无 tool_calls 的 assistant / user 单条) 默认单元 [i, j)
-    }
+    const bool changed = ContextTrim::trimConversation(
+        m_messages, 1, estimatedContextTokens(), targetTokens);
     if (changed) {
         m_rewrittenSinceAnchor = true;
         m_anchorPromptTokens = -1;

@@ -63,12 +63,13 @@ int tst_toolschema();       // 工具 schema 单源（ToolSchema.h）：信封�
 int tst_sessionkeys();      // 会话键算术纯头（SessionKeys.h）：两族键形态/归属反解/生成 dataId 形状/不相交的真实理由(长度非字母表)/撞车谓词与旧注释证伪，零夹具恒跑
 int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstructions.h）：两级候选顺序/命中即止的探测次数/空段省略/截断如实标注/'%'不展开/签名三字段任一变即换，零夹具恒跑
 int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱/三段形态 s17.13.1 起/一段形态 s18 起)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
+int tst_contexttrim();         // 上下文成组裁剪内核纯头（ContextTrim.h）：配对不变量/keepHead 头部保护/oldest-first/孤立 tool 兜底/目标比 4/5 与 1/2/幂等，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
-// 全表求和 = 1534（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
-// s18 一段版本判据 +24、s18 热力图月份标签去重 +12 后），
-// 与本机无夹具全量实跑 pass=1534 fail=0 skip=35 逐条对上；带夹具实跑 pass=2510 fail=0 skip=1
-// （s18 月份标签批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
+// 全表求和 = 1582（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
+// s18 一段版本判据 +24、s18 热力图月份标签去重 +12、s18 子代理上下文压缩成组裁剪内核 +48 后），
+// 与本机无夹具全量实跑 pass=1582 fail=0 skip=35 逐条对上；带夹具实跑 pass=2558 fail=0 skip=1
+// （s18 子代理压缩批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -92,6 +93,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"sessionkeys", 45},
     {"projectinstructions", 49},
     {"updaterules", 198},
+    {"contexttrim", 48},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -170,6 +172,7 @@ int main()
     failed += runSuite("sessionkeys", tst_sessionkeys);
     failed += runSuite("projectinstructions", tst_projectinstructions);
     failed += runSuite("updaterules", tst_updaterules);
+    failed += runSuite("contexttrim", tst_contexttrim);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();
