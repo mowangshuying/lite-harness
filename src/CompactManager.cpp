@@ -1,6 +1,8 @@
 #include "CompactManager.h"
+#include "CompactStageNames.h" // 本地四段轻量卡的 UI 伪工具名单源（非模型工具名，不入 ToolNames.h）
 #include "CompactTokens.h" // 计量单源纯头（逐条独立求和，增量维护的恒等性由它保证）
 #include "LiteLog.h"
+#include "ToolNames.h" // 全量压缩两路的卡片名恒 COMPACT（本地四段走 CompactStageNames）
 
 #include "AgentConstants.h" // 会话数据根下中间目录名单源（拼法涉既有落盘兼容，禁止字面量漂移）
 #include "QOpenAi.h"
@@ -114,6 +116,11 @@ CompactManager::CompactManager(WorkDirSink workDirSink, ModelSink modelSink)
 void CompactManager::setCardSink(CardSink sink)
 {
     m_cardSink = std::move(sink);
+}
+
+void CompactManager::setPhaseSink(PhaseSink sink)
+{
+    m_phaseSink = std::move(sink);
 }
 
 QString CompactManager::transcriptDir() const
@@ -374,6 +381,10 @@ void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation,
     std::sort(items.begin(), items.end(),
               [](const std::pair<qsizetype, qsizetype> &a,
                  const std::pair<qsizetype, qsizetype> &b) { return a.second > b.second; });
+    // s18.2 轻量卡计量：前后值都取本段**已有**的 batch 增量 total（content-only 口径，
+    // 见上方口径微差登记），不新增任何全量估算——B3 纪律：发卡不得让管线变贵。
+    const qsizetype totalBefore = total;
+    qsizetype offloaded = 0;
     for (auto &item : items) {
         if (total <= limit)
             break;
@@ -389,6 +400,17 @@ void CompactManager::toolResultBudget(QVector<QJsonObject> &conversation,
         total += newTokens - item.second; // 等价于 lcc 每轮重算（本轮仅该条变化）
         item.second = newTokens;
         conversation[item.first][QStringLiteral("content")] = replacement;
+        if (replacement != output)
+            ++offloaded; // 只数真改写：直通返回原串的那条不算成效（也不该发卡）
+    }
+    // 本段真的卸载了大结果才发卡（空转段不发，防每请求刷屏）；四段各自一张，不合并
+    if (offloaded > 0) {
+        emitLocalCard(CompactStageNames::BUDGET,
+                      QObject::tr("卸载超大工具结果 %1 条").arg(offloaded),
+                      QStringLiteral("toolResultBudget: %1 offloaded\nbatch %2 → %3 ≈tokens")
+                          .arg(offloaded)
+                          .arg(totalBefore)
+                          .arg(total));
     }
 }
 
@@ -427,7 +449,18 @@ void CompactManager::snipCompact(QVector<QJsonObject> &conversation, bool tokenG
     QVector<QJsonObject> replaced = conversation.first(headEnd);
     replaced.append(marker);
     replaced.append(conversation.mid(tailStart));
+    // s18.2 轻量卡：走到这里才是真归档（上面三条早退——门槛不足/切点重合/落盘失败——
+    // 都不发卡）。计量用条数而非 token：本段原本零 token 估算，为发卡补两次全量估算
+    // 违反 B3 纪律；条数是用户真正关心的「归档了多少历史」，且与 replaced 组装同源。
+    const qsizetype archived = tailStart - headEnd;
+    const qsizetype beforeSize = conversation.size();
     conversation = replaced;
+    emitLocalCard(CompactStageNames::SNIP,
+                  QObject::tr("归档中段历史 %1 条").arg(archived),
+                  QStringLiteral("snipCompact: %1 archived\n%2 → %3 messages")
+                      .arg(archived)
+                      .arg(beforeSize)
+                      .arg(replaced.size()));
 }
 
 // lcc micro_compact：模型已"消化"（最后一条 assistant 之前）的旧工具结果，
@@ -458,6 +491,9 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
     // 本轮只有 index 那条变化，故 total += 新项 - 旧项 与此刻全量重估逐值相等。
     // 断言见 tests/tst_compacttokens.cpp（含同款替换序列的逐步对表）。
     qsizetype total = CompactTokens::conversationTokens(conversation);
+    // s18.2 轻量卡计量：前后值复用本段已有的增量 total（整会话口径），零新增估算
+    const qsizetype totalBefore = total;
+    qsizetype replaced = 0;
     for (qsizetype k = 0; k < processCount; ++k) {
         if (total <= targetTokens)
             break; // lcc 每轮对整体重新估算（等价改读增量 total）
@@ -476,12 +512,23 @@ void CompactManager::microCompact(QVector<QJsonObject> &conversation,
                 conversation[index][QStringLiteral("content")] =
                     QStringLiteral("Error: failed to persist tool output: %1").arg(id);
                 total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
+                ++replaced; // 降级写错误串也是真改写，计入成效（saveOutput 已记 WARN 留痕）
                 continue; // 偏差登记（裁决 g）：lcc 抛异常，lite 写错误串继续
             }
         }
         conversation[index][QStringLiteral("content")] =
             QStringLiteral("[Earlier tool result saved at %1]").arg(saved);
         total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
+        ++replaced;
+    }
+    // 达标即 break 的路径也可能已改写若干条 → 按 replaced 判发卡，不按「是否跑满循环」
+    if (replaced > 0) {
+        emitLocalCard(CompactStageNames::MICRO,
+                      QObject::tr("微压缩旧工具结果 %1 条").arg(replaced),
+                      QStringLiteral("microCompact: %1 replaced\n%2 → %3 ≈tokens")
+                          .arg(replaced)
+                          .arg(totalBefore)
+                          .arg(total));
     }
 }
 
@@ -507,6 +554,9 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
     // 同 micro 段纪律：总量前置一次、循环内增量维护（恒等性依据见 CompactTokens.h ①②）。
     // 排序阶段不改 conversation，故此处前置取值与逐轮重估的起点同态。
     qsizetype total = CompactTokens::conversationTokens(conversation);
+    // s18.2 轻量卡计量：同 micro 段，复用已有增量 total，零新增估算
+    const qsizetype totalBefore = total;
+    qsizetype trimmed = 0;
     for (const qsizetype index : indices) {
         if (total <= targetTokens)
             break;
@@ -521,7 +571,16 @@ void CompactManager::fitToolResults(QVector<QJsonObject> &conversation,
             const qsizetype beforeTokens = CompactTokens::messageTokens(conversation.at(index));
             conversation[index][QStringLiteral("content")] = replacement;
             total += CompactTokens::messageTokens(conversation.at(index)) - beforeTokens;
+            ++trimmed; // 只在「确实变短」分支计数：未变短的那条没改写，不该算成效
         }
+    }
+    if (trimmed > 0) {
+        emitLocalCard(CompactStageNames::FIT,
+                      QObject::tr("裁剪工具结果 %1 条").arg(trimmed),
+                      QStringLiteral("fitToolResults: %1 trimmed\n%2 → %3 ≈tokens")
+                          .arg(trimmed)
+                          .arg(totalBefore)
+                          .arg(total));
     }
 }
 
@@ -619,11 +678,48 @@ void CompactManager::emitCard(const QString &cardSummary, qsizetype beforeTokens
 {
     if (!m_cardSink)
         return;
-    m_cardSink(cardSummary,
+    m_cardSink(ToolNames::COMPACT, cardSummary,
                QStringLiteral("Transcript: %1\n%2 → %3 ≈tokens")
                    .arg(transcript)
                    .arg(beforeTokens)
                    .arg(afterTokens));
+}
+
+// 摘要侧链失败的终态留痕卡（s18）。判据成对红线：output 首行必须以 `Error: ` 开头——
+// 宿主 ok 单源是 AgentLoop::isToolFailure（RecoveryRules::isToolFailureText 四前缀），
+// 前缀写歪就静默显成「已压缩」。ToolBlock 据此取 toolFailText("compact")=「压缩失败」，
+// 该词条自 s08 起就在词表里、但因 output 恒以 Transcript: 开头而恒不可达（死文案）。
+// 红线不动：本卡纯 UI 留痕，历史仍原样交付、绝不替换（丢历史事故修复）。
+void CompactManager::emitFailureCard(const QString &cardSummary, qsizetype beforeTokens,
+                                     const QString &transcript) const
+{
+    if (!m_cardSink)
+        return;
+    // 占位符编号必须互不相同：QString::arg() 一次只替换「最低编号的那个出现」，
+    // 写 %2 → %2 会让第二个 %2 原样漏进卡片正文（本行曾踩过，改动时勿合并成同编号）
+    m_cardSink(ToolNames::COMPACT, cardSummary,
+               QStringLiteral("Error: summary side-chain failed, history unchanged\nTranscript: %1\n%2 → %3 ≈tokens")
+                   .arg(transcript)
+                   .arg(beforeTokens)
+                   .arg(beforeTokens));
+}
+
+// 本地四段的轻量压缩卡（s18.2）：四段**各自一张**，不合并成一张汇总卡。
+// 与全量压缩卡（emitCard）的三点差别，都是刻意的：
+//   ① toolName 取 CompactStageNames 的 UI 伪名而非 "compact"——ToolBlock 按名取标题，
+//      四个名字 → 四个不同标题（已卸载/已归档/已微压缩/已裁剪），时间线上是四张独立卡；
+//      伪名不入 ToolNames.h（非模型工具名，同 s09 "memory" 先例），标签类别落 other 中性灰。
+//   ② 无 Transcript 行：本地四段不产生全量转写快照（snip 的归档文件是会话级固定名追加，
+//      不是本次快照），写一行假路径会误导用户去点开不存在的文件。
+//   ③ 无事前 live 卡：四段是纯本地同步操作（无 LLM 往返），毫秒级完成，发「压缩中」只会闪一下。
+// 发卡判据由调用方把住：本段真的改写了会话（changed > 0）才调本函数，空转段不发卡。
+// 红线：纯 UI 留痕——不改阈值、不改五段顺序、不碰历史替换语义（prepareAsync 零改动）。
+void CompactManager::emitLocalCard(const QString &toolName, const QString &summary,
+                                   const QString &output) const
+{
+    if (!m_cardSink)
+        return;
+    m_cardSink(toolName, summary, output);
 }
 
 // lcc compact_history：转写全量 → 摘要 → 整个会话替换为单条摘要消息（print 由卡片承接）。
@@ -642,16 +738,25 @@ CompactManager::compactHistoryAsync(const QVector<QJsonObject> &conversation,
     if (transcript.isEmpty())
         transcript = QStringLiteral("(transcript unavailable)"); // 落盘失败占位（偏差登记）
 
+    // 进行态留痕（s18）：摘要侧链挂起前发事前卡，宿主复用 toolStarted("compact", 档位)。
+    // 挂起窗口是秒级到分钟级的 LLM 调用，此前界面完全不动（记忆链有 live 卡、压缩侧无对应物）
+    if (m_phaseSink)
+        m_phaseSink(cardSummary);
+
     return summarizeHistoryAsync(
         conversation, ctx,
         [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, done](
             const QString &rawSummary) {
-            // 摘要失败/空内容 → 放弃本次压缩：不替换、不发卡、原样交付（丢历史事故修复——
+            // 摘要失败/空内容 → 放弃本次压缩：不替换、原样交付（丢历史事故修复——
             // 旧行为以 "(empty summary)" 占位整体替换，摘要超时会把全部历史换成一条占位
             // 消息）。交付原样后：prepare 链 changed 判定按前四段结果照常生效；批尾路径
             // apply 恒等 → persist → 重发，历史不被改写。
+            // s18：仍发一张 Error: 终态卡（纯 UI 留痕，红线不动）——此前静默放弃让
+            // toolFailText("compact")=「压缩失败」恒不可达，用户只看到压缩没发生、
+            // 却不知道是摘要侧链挂了（上下文随后多半直接 400）。
             if (rawSummary.isEmpty())
             {
+                emitFailureCard(cardSummary, beforeTokens, transcript);
                 if (done)
                     done(conversation);
                 return;
@@ -690,14 +795,22 @@ CompactManager::reactiveCompactAsync(const QVector<QJsonObject> &conversation,
     const QVector<QJsonObject> oldHistory =
         tailStart > 0 ? conversation.first(tailStart) : conversation;
 
+    // 进行态留痕（s18，与 compactHistoryAsync 同款）：反应式压缩同样要等一次摘要 LLM
+    // 往返，此前这段窗口界面完全不动
+    if (m_phaseSink)
+        m_phaseSink(cardSummary);
+
     return summarizeHistoryAsync(
         oldHistory, ctx,
         [this, conversation, activeRequest, cardSummary, beforeTokens, transcript, tailStart, done](
             const QString &rawSummary) {
-            // 摘要失败/空内容 → 放弃本次压缩：不替换、不发卡、原样交付（丢历史事故修复同
-            // compactHistoryAsync；调用点照旧走 apply（恒等）+ 重发，历史安全）
+            // 摘要失败/空内容 → 放弃本次压缩：不替换、原样交付（丢历史事故修复同
+            // compactHistoryAsync；调用点照旧走 apply（恒等）+ 重发，历史安全）。
+            // s18：仍发 Error: 终态卡留痕——反应式压缩失败等于本轮直接终局，静默时
+            // 用户只看到「本轮失败」，看不到失败的真正原因是上下文压不下来。
             if (rawSummary.isEmpty())
             {
+                emitFailureCard(cardSummary, beforeTokens, transcript);
                 if (done)
                     done(conversation);
                 return;

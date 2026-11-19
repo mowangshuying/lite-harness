@@ -68,10 +68,20 @@ AgentLoop::AgentLoop(const QString &sessionDataId, const QString &workDir, QObje
     // 内置生命周期钩子（对齐 lcc s04 模块尾部的 register_hook 清单）
     registerBuiltinHooks();
 
-    // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用四参 toolOutputReady，
-    // toolName 固定 "compact"，summary 为档位描述，output 携带转写路径与前后估算
-    m_compact.setCardSink([this](const QString &summary, const QString &output) {
-        emit toolOutputReady(ToolNames::COMPACT, summary, output, !isToolFailure(output));
+    // 压缩卡片出口（lcc s08 裁决 e：零新增公共信号）：复用四参 toolOutputReady。
+    // s18.2 起 toolName 由引擎给出、宿主**原样透传**不再写死：全量压缩两路恒 "compact"，
+    // 本地四段各用 CompactStageNames 的 UI 伪名 → 时间线上四张独立轻量卡（不合并成一张）
+    m_compact.setCardSink([this](const QString &toolName, const QString &summary,
+                                 const QString &output) {
+        emit toolOutputReady(toolName, summary, output, !isToolFailure(output));
+    });
+
+    // 压缩进行态出口（s18 补）：摘要侧链挂起前复用既有 toolStarted 发事前 live 卡，
+    // 零新增公共信号——UI 端走常规工具事前卡同一套（compact 标签 + 「执行中」轮播 +
+    // 档位摘要），终态卡 toolOutputReady("compact") 到达时就地收口带 ✓/✕，
+    // stop/error 终局由 finishStreaming 兜底切「已停止」（B3 既有纪律，无新路径）
+    m_compact.setPhaseSink([this](const QString &stage) {
+        emit toolStarted(ToolNames::COMPACT, stage);
     });
 
     // 记忆卡片出口（lcc s09 裁决：复用四参 toolOutputReady，toolName 固定 "memory"，

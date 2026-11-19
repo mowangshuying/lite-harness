@@ -588,9 +588,10 @@ void MessageBubbleWidget::appendToolStart(const QString &toolName, const QString
     if (m_role != Assistant)
         return;
 
-    // memory/compact 无 toolStarted 语义（批尾 sink 直发终态，AgentLoop 已不发
-    // 本信号）：防御跳过，正常路径不会到达
-    if (toolName == QLatin1String("memory") || toolName == QLatin1String("compact"))
+    // memory 无 toolStarted 语义（批尾 sink 直发终态，AgentLoop 已不发本信号）：防御跳过。
+    // compact 自 s18 起**要发**事前卡（摘要侧链挂起前由 CompactManager phaseSink 经宿主
+    // 发 toolStarted("compact", 档位)），故本闸只留 memory——压缩期间界面不再空转。
+    if (toolName == QLatin1String("memory"))
         return;
 
     // task：挂/复用「子代理执行中」进度卡（与 appendSubagentProgress 共槽幂等，

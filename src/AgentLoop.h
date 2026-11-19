@@ -159,7 +159,10 @@ signals:
     void textDelta(const QString &delta);
     // 工具执行开始（UI 用于事前 live 卡）：工具名 / 人类可读关键参数摘要（与
     // toolOutputReady 前两参同源生成）。经权限门放行、即将真正执行时发射；
-    // compact（批尾特判）与参数 JSON 解析失败（直接终态）不发。权限询问续跑重发时
+    // 参数 JSON 解析失败（直接终态）不发。compact 不走 executeTool 这条路，但**自 s18 起
+    // 由 CompactManager phaseSink 在摘要侧链挂起前发本信号**（toolName 恒为 "compact"、
+    // summary 为档位描述），补上进行态 live 卡——同名终态卡到达时 UI 就地收口，
+    // 与常规事前卡同一套纪律。权限询问续跑重发时
     // 同名信号可能到达两次，UI 端幂等去重；SubAgent 内部工具不经本信号（黑盒契约不变）
     void toolStarted(const QString &toolName, const QString &summary);
     // 工具执行结果（UI 展示）：工具名 / 人类可读关键参数摘要 / 完整输出 / 成败判定

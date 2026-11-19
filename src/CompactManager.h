@@ -20,7 +20,12 @@ namespace QOpenAi { class AsyncRequest; }
  *   - workDirSink：动态读取宿主会话数据根（含 .lite-harness 或按会话隔离的 sessions/<id>，
  *     setWorkDir/会话 ID 变化后路径自然跟随，对应 lcc env 目录）；
  *   - modelSink：摘要 LLM 调用使用的模型 id（与主循环一致）；
- *   - cardSink：压缩发生时回传 GUI 卡片（宿主复用 toolOutputReady，见裁决 e）。
+ *   - cardSink：压缩发生时回传 GUI 卡片（宿主复用 toolOutputReady，见裁决 e）；
+ *     s18.2 起首参带 toolName——全量压缩两路恒 ToolNames::COMPACT，本地四段各用
+ *     CompactStageNames 的 UI 伪名，故四段各自成卡、互不合并（见 emitLocalCard）；
+ *   - phaseSink：全量压缩摘要侧链**挂起之前**回传档位名（宿主复用 toolStarted 发事前
+ *     live 卡，s18 补进行态——记忆链有 memoryPhaseStarted live 卡，压缩侧此前无对应物，
+ *     摘要秒级到分钟级期间界面完全不动）。
  *
  * OpenAI 形态映射（R-1 裁决）：Anthropic 的 tool_use/tool_result content block
  * 在我们的历史里是"assistant 消息的 tool_calls 字段"与"role==tool 消息的 content 字符串"，
@@ -31,11 +36,17 @@ class CompactManager
 public:
     using WorkDirSink = std::function<QString()>;
     using ModelSink = std::function<QString()>;
-    using CardSink = std::function<void(const QString &summary, const QString &output)>;
+    /// 卡片出口：toolName 由引擎给出（全量压缩恒 "compact"；本地四段各用自己的
+    /// CompactStageNames 伪名），宿主原样透传给 toolOutputReady，不再写死单一名字。
+    using CardSink = std::function<void(const QString &toolName, const QString &summary,
+                                        const QString &output)>;
+    /// 进行态出口：全量压缩摘要侧链挂起**之前**回传档位名（宿主复用 toolStarted 发事前卡）。
+    using PhaseSink = std::function<void(const QString &stage)>;
 
     CompactManager(WorkDirSink workDirSink, ModelSink modelSink);
 
     void setCardSink(CardSink sink);
+    void setPhaseSink(PhaseSink sink);
 
     // ---- 异步链（P3，设计文档 §2.3/§3.3）：五条路径中仅"摘要 LLM 调用"一段挂起，
     //      转写落盘/尾段回退/卡片组装等本地段仍同步执行；prompt 构建与结果应用沿用
@@ -43,7 +54,9 @@ public:
     //      done 恒恰好调用一次；ctx 为生命周期锚（请求 parent 到 ctx，ctx 析构即链
     //      作废、done 永久静默）；返回在途 AsyncRequest 供宿主 cancel，本地短路路径
     //      同步交付后返回 nullptr。摘要失败/超时交付空串；两条全量压缩续延对空串一律
-    //      放弃本次替换（原样交付、不发卡，历史不被改写——丢历史事故修复，不抛不卡）。 ----
+    //      放弃本次替换（原样交付、历史不被改写——丢历史事故修复，不抛不卡）。
+    //      s18 改口径：该分支**仍发一张 `Error:` 前缀终态卡**（emitFailureCard）——纯 UI 留痕，
+    //      不触碰历史；此前"不发卡"让 toolFailText("compact")=「压缩失败」恒不可达。 ----
 
     /** prepare 的异步版（lcc prepare 五级压缩流水线，原地修改 conversation）：
      *  前四段本地管线同步跑；仅触发全量压缩时挂起。
@@ -139,6 +152,19 @@ private:
     /** 修4：卡片前后值改 token 口径（文案 `≈tokens` 同步；Transcript 路径行不变）。 */
     void emitCard(const QString &cardSummary, qsizetype beforeTokens, qsizetype afterTokens,
                   const QString &transcript) const;
+    /** 摘要侧链失败/超时的终态留痕卡（s18）：output 以 `Error: ` 开头，命中
+     *  RecoveryRules::isToolFailureText 前缀判据 → 宿主 ok=false → ToolBlock 走
+     *  toolFailText("compact")=「压缩失败」+✗（该文案自 s08 起存在但恒不可达）。
+     *  红线不动：本卡纯 UI 留痕，历史仍**原样交付、绝不替换**（丢历史事故修复）。 */
+    void emitFailureCard(const QString &cardSummary, qsizetype beforeTokens,
+                         const QString &transcript) const;
+    /** 本地四段的轻量压缩卡（s18.2）：每段**各自一张**、互不合并——toolName 取
+     *  CompactStageNames 的 UI 伪名（非模型工具名，不入 ToolNames.h），故 ToolBlock
+     *  按名取到四个不同标题，时间线上是四张独立卡而非一张汇总卡。
+     *  发卡判据 = 本段**真的改写了会话**（changed > 0）；空转段不发卡，避免每请求刷屏。
+     *  红线：纯 UI 留痕，不改阈值/顺序/历史替换语义，prepareAsync 五段管线零改动。 */
+    void emitLocalCard(const QString &toolName, const QString &summary,
+                       const QString &output) const;
 
     QString transcriptDir() const;
     QString toolResultsDir() const;
@@ -146,4 +172,5 @@ private:
     WorkDirSink m_workDirSink;
     ModelSink m_modelSink;
     CardSink m_cardSink;
+    PhaseSink m_phaseSink;
 };

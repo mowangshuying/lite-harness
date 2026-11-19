@@ -655,7 +655,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 会话内发若干消息 → `<会话数据根>/.lite-harness/sessions/<dataId>/history.json` 存在且与可见消息一致（dataId 为 8 位 hex）
 - [ ] 重启程序 → 会话按 createdMs 升序恢复、历史气泡回放完整；恢复不自动切换当前页（仍停在新对话页）；workDir 失效时静默回退进程当前目录
 - [ ] 会话历史损坏（手工把 `history.json` 截半/写坏）→ 打开该会话弹「历史加载失败」Error 提示（`kNoticeErrorMs` 自动消失）并按空会话打开；全新会话（无 ID / 无文件）静默空页、**不**弹提示（判据：会话标题非空才提示）
-- [ ] （**压缩后重启回放**）触发一次全量压缩（`compact` 工具或自动压缩）→ 侧栏出现压缩卡且气泡时间线被摘要替换；**退出重启** → 打开同一会话，摘要之前的原始对话按原顺序回放出来（含工具块），摘要消息仍在原位；模型上下文仍是压缩后内容（侧栏占用读数与压缩后一致，非全量）。反例判定：重启后只剩一条 `[Compacted] …` 摘要 = 回放没接上（转写缺失/判据漂移）。另验降级：手工删掉该会话 `.transcripts/transcript_*.jsonl` 后重启 → 仅剩摘要、不弹错、不崩
+- [ ] （**压缩后重启回放**）触发一次全量压缩（`compact` 工具或自动压缩）→ **会话气泡时间线**出现压缩卡（非侧栏——侧栏变的只是占用条与数字，`SessionSidebar` 无压缩卡）；摘要侧链挂起期间先见「压缩中」事前 live 卡，终态就地收成「已压缩」✓；**退出重启** → 打开同一会话，摘要之前的原始对话按原顺序回放出来（含工具块），摘要消息仍在原位；模型上下文仍是压缩后内容（侧栏占用读数与压缩后一致，非全量）。反例判定：重启后只剩一条 `[Compacted] …` 摘要 = 回放没接上（转写缺失/判据漂移）。另验降级：手工删掉该会话 `.transcripts/transcript_*.jsonl` 后重启 → 仅剩摘要、不弹错、不崩
 - [ ] 右键会话导航子项 → 仅弹「重命名 / 删除会话」菜单；单击子项不因基类 itemClicked 误翻页（eventFilter 吞 press/release）
 - [ ] 键盘上下文菜单：选中会话子项后按 Shift+F10 或菜单键 → 同样弹「重命名 / 删除会话」；鼠标右键与键盘**各弹一次**（鼠标路径走 press/release 延拍、键盘走 ContextMenu，两条路不得双弹）
 - [ ] 重命名：输入新名确认 → 导航与索引标题同步（索引不再刷 `lastActiveMs`，该字段已删）；取消/空/未变 → 保持原值
@@ -717,7 +717,9 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 ### 五、P1 异步链与压缩（禁回退阻塞的验证点）
 
 - [ ] 新回合首条消息 → 记忆召回在开聊前**异步**注入（等待期 UI 不冻结、无嵌套事件循环），注入请求 payload 尾部独立消息（`<agent_context>` user，不落 history.json），system 全会话字节恒定（前缀缓存锚点）；召回飞行中 cron 交付被 `m_running` 卫兵拒投不插队
-- [ ] 压缩三路径各触发一次（超限自动 / `compact` 工具 / 溢出反应式）→ 全程滚动气泡、切主题、切页均响应
+- [ ] 压缩三路径各触发一次（超限自动 / `compact` 工具 / 溢出反应式）→ 全程滚动气泡、切主题、切页均响应；**三路径都先见「压缩中」事前 live 卡**（`compact` 标签 + 档位摘要轮播），终态就地收成「已压缩」✓——事前卡与终态卡**同一张**，不是两张
+- [ ] 摘要侧链失败/超时（断网或让摘要模型报错）→ 该 live 卡就地收成「压缩失败」✕，且**历史不被改写**（查 `history.json` 与会话气泡均未被摘要替换）；反例判定：卡片显「已压缩」✓ 而历史没变 = `Error:` 前缀写歪、失败被判成成功
+- [ ] **本地四段轻量卡（s18.2：四张独立卡，不合并）**：制造超限会话（超大工具输出 + >60 条历史 + 占用过 T′）→ 气泡时间线出现**四张不同的卡**，标题分别为「已卸载」/「已归档」/「已微压缩」/「已裁剪」，等宽标签分别为 `compact_budget` / `compact_snip` / `compact_micro` / `compact_fit`（中性灰），头部关键参数位带条数、正文带前后计量；**不是一张汇总卡**。各段空转时**不出卡**（判据 = 本段改动计数 >0）；四段卡**无「压缩中」事前态、无 `Transcript:` 行**（纯本地同步、不产生全量转写快照）。反例判定：① 四张卡标题全是「已压缩」= `CardSink` 仍写死 `compact` 或 `ToolBlock` 标题表漏配伪名；② 只出一张卡 = 四段被合并发射；③ 每请求恒出四张 = 空转段也发了卡。红线复核：`prepareAsync` 五段顺序/阈值/`done` 语义与改动前逐字一致，历史替换语义不变
 - [ ] 超大工具输出（token 估算 >0.6T′）→ 卸载落 `.task_outputs/tool-results/`，历史内仅保留约 2000 字符预览（预览仍字符域）
 - [ ] 压缩完成后查盘 → 原转录落 `.transcripts/*.jsonl`；压缩后历史体量 ≤0.8×T′；派生阈值读码 CompactManager：batch=4×T′ / large=0.6×T′ / 压缩目标=0.8×T′（`T′ = contextTokenBudget() − overhead`，overhead = system + tools schema + 注入块，钳位 `[T/4, T]`；勿写死绝对值），**唯 summary 输入裁剪是独立字符域常量 `kSummaryInputCharLimit`=320000**（s17.9 起与窗口解耦、不随声明窗口缩放，内容级启发不随迁；旧写法 `1.6S` 已废，要放宽只改这一个常量）；snip 迟滞 60/50（>60 条**且**过 token 闸门才归档、归档后总量 ≈50 条，10 条迟滞带内不重复 snip）、归档只追加落固定名 `.transcripts/snip_archive.jsonl`（非全量重写）、会话内归档标记为恒定文本（无条数/无路径，缓存友好）
 - [ ] 人为制造上下文超限错误 → 服务端 4xx 响应体原文并入 error 文本（错误气泡可见 `context_length_exceeded` 等，不再恒为 Unknown error）；溢出关键词表单源 `isContextOverflowError`；反应式压缩自动重试恰 1 次（**s15** 起旗标为 **per-用户回合一次性**：单源复位仅在 `run()` 入口、成功收响应**不**复位——对照 lcc `hasAttemptedReactiveCompact`，同一回合压缩只试一次不复活预算）后重发
@@ -929,9 +931,39 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 
 ### 11. 记忆卡与压缩卡 — 复用同一 `toolOutputReady` 通道
 
-- 两者都**不新增公共信号**：`CompactManager` / `MemoryManager` 各持一个 card sink，把内部事件（压缩档位达成、记忆 stored/consolidated）经宿主注入的四参 `toolOutputReady(toolName, summary, output, ok)` 出口发出，`toolName` 固定 `"compact"` / `"memory"`，成败仍走 `isToolFailure` 单源判定。
+- 两者都**不新增公共信号**：`CompactManager` / `MemoryManager` 各持一个 card sink，把内部事件（压缩档位达成、记忆 stored/consolidated）经宿主注入的四参 `toolOutputReady(toolName, summary, output, ok)` 出口发出，成败仍走 `isToolFailure` 单源判定。`toolName`：记忆恒 `"memory"`；压缩侧自 s18.2 起**由引擎给出、宿主原样透传**（不再写死单一名字）——全量压缩两路恒 `"compact"`，本地四段各用 `CompactStageNames` 的 UI 伪名，见下「本地四段轻量压缩卡」条。
 - 好处：UI 侧只需接一条信号即可渲染，历史里也天然与工具卡同构（回放同口径）；代价：`memory` 卡有相位丢失风险，见下。
 - **记忆 live 卡**：`memoryPhaseStarted` 挂出（`appendMemoryProgress`）、`memoryChainFinished` 收尾（`finishStreaming` + 释放 `m_memoryBubble`）。
+- **压缩 live 卡（s18 补进行态）**：`CompactManager::phaseSink` 在摘要侧链**挂起之前**经宿主发
+  `toolStarted("compact", 档位)`，走常规工具事前卡同一套形态（`startToolLive`：等宽 `compact` 标签 +
+  「压缩中」轮播 + 档位摘要），终态 `toolOutputReady("compact")` 到达时同名就地收口带 ✓/✕，stop/error
+  终局由 `finishStreaming` 兜底切「已停止」——**零新增公共信号、零新增 UI 方法**（此前压缩侧无对应物：
+  记忆链有 live 卡而压缩链没有，摘要秒级到分钟级期间界面完全不动）。
+- **压缩失败显形（s18 补）**：摘要侧链失败/超时交付空串时，两条全量压缩续延仍发一张以 `Error: ` 开头的
+  终态卡——命中 `isToolFailure` 前缀判据 → `ok=false` → `toolFailText("compact")`=「压缩失败」+✕
+  （该词条自 s08 就在词表里，但 output 恒以 `Transcript:` 开头，此前恒不可达＝死文案）。
+  **红线不动**：本卡纯 UI 留痕，历史仍原样交付、绝不替换（丢历史事故修复）。
+- **本地四段轻量压缩卡（s18.2：四张独立卡，不合并成一张）**：`toolResultBudget` / `snipCompact` /
+  `microCompact` / `fitToolResults` 各自在**真的改写了会话**时经 `CompactManager::emitLocalCard` 发一张
+  终态卡，`toolName` 取 `CompactStageNames.h` 的四个 UI 伪名（`compact_budget` / `compact_snip` /
+  `compact_micro` / `compact_fit`；单源纯头，发射侧与 `ToolBlock` 标题表共用，杜绝散写字面量漂移），
+  标题分别为「已卸载」/「已归档」/「已微压缩」/「已裁剪」——时间线上是**四张不同的卡**。
+  - **发卡判据 = 本段改动计数 > 0**：budget 只数 `replacement != output` 的真改写；snip 走到归档赋值
+    才算（门槛不足 / 切点重合 / 落盘失败三条早退都不发）；micro 数两条改写路径（含落盘失败降级写错误串
+    那条，`saveOutput` 已记 WARN）；fit 只数「确实变短」分支。空转段不发卡，防每请求刷屏。
+  - **计量零新增估算**（B3 纪律）：前后值复用各段**已有**的增量 `total`——budget 是 batch content-only
+    口径、micro/fit 是整会话口径（卡片正文分别标 `batch` 与不标，口径差异沿用各段既有登记）；snip 用
+    **条数**而非 token（该段原本零 token 估算，为发卡补两次全量估算即劣化）。
+  - 与全量压缩卡的三点差别都是刻意的：**无 `Transcript:` 行**（本地段不产生全量转写快照，snip 的归档
+    文件是会话级固定名追加、不是本次快照，写假路径会误导用户去点不存在的文件）；**无事前 live 卡**
+    （纯本地同步、毫秒级，发「压缩中」只会闪一下）；**只加完成词条、不加失败词条**（output 恒不以
+    `Error: ` 开头 → `ok` 恒 true，失败词条写了就是恒不可达的死文案，同上一条教训）。
+  - 标签类别落 `other` 中性灰（同 `compact` / `memory`），不新增 kind → 三主题 QSS 零改动；伪名**不入**
+    `ToolNames.h`（非模型工具名，入表会破坏「常量清单 ↔ 静态 schema 27 项恰好重合」断言），
+    `tst_toolnames` ⑦ 组钉住四个字面量 + 与真工具名及 `memory` 零交集 + 映射恒 `other`。
+  - **红线不动**：`prepareAsync` 五段顺序 / 阈值 / `done` 交付语义**零改动**（发卡在各段函数体内，
+    不在管线编排层），卡片纯 UI 留痕、不碰历史替换语义。
+  - 代价登记：长期超限会话每请求最多出 4 张本地卡（各段真干活才出），这是有意的可见性取舍，不是刷屏 bug。
 - **M1 相位闸**：`toolOutputReady("memory")` 到达时若 `m_memoryBubble` 已空（清屏 / 双回合交叠丢相位），**静默丢弃该卡**——记忆数据早已落盘 `.memory/`，此卡纯 UI 留痕，兜底成独立气泡反而在清空后的视图里造孤儿。
 
 ### 12. 历史回放与实时链路同口径
@@ -1012,8 +1044,11 @@ void cancel();   // 取消后 done 永不触发，对象 deleteLater 自清理
 - 公开三入口：`prepareAsync`（五级管线，仅触发全量压缩时挂起）、`compactHistoryAsync`（批尾主动压缩）、
   `reactiveCompactAsync`（溢出反应式）。**均返回 `AsyncRequest *`**，`done` 恒一次。
 - **拆分点唯一**：`summarizeHistory` → `summarizeHistoryAsync`（私有），失败交付空串；两条全量压缩
-  续延对空串一律**放弃本次替换、原样交付**（不补占位、不发卡）——丢历史事故修复后替换旧
+  续延对空串一律**放弃本次替换、原样交付**（不补占位、历史绝不改写）——丢历史事故修复后替换旧
   `(empty summary)` 占位语义。前四段纯本地管线不动。
+  **s18 起该分支发一张 `Error:` 前缀终态卡**（`emitFailureCard`，纯 UI 留痕、不触碰历史）：
+  此前"不发卡"使「压缩失败」词条恒不可达。代价登记：摘要侧链持续失败时，超限会话每个请求
+  各出一张失败卡（自动路径每请求判一次门槛）——这是有意的可见性取舍，不是刷屏 bug。
 - `prepareAsync` 按值收 `conversation`、`done` 按值交付最终 conversation（挂起跨 await 后调用方栈引用
   有悬挂风险）；`changed` 判定为"最终态与入参不等价"。
 - 入口门槛用宿主锚定的 `conversationTokens`，段内退出判定用管线自身对 conversation 的即时

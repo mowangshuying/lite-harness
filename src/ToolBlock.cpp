@@ -1,6 +1,7 @@
 #include "ToolBlock.h"
 #include "ToolTagKind.h"
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9）；"memory" 为 UI 伪键保持字面量
+#include "CompactStageNames.h" // 本地四段压缩的 UI 伪名（与 CompactManager 发射侧同源）
 #include "AgentConstants.h" // kSubagentProgressMaxLines 进度行上限
 
 #include <QFontMetrics>
@@ -81,6 +82,19 @@ QString ToolBlock::toolTitleText(const QString &toolName)
         return tr("已加载"); // 按技能名载入 SKILL.md 全文（s07 load_skill 工具）
     if (toolName == ToolNames::COMPACT)
         return tr("已压缩"); // 压缩会话上下文释放额度（s08 compact 工具）
+    // s18.2 本地四段轻量压缩卡：四段各自一张、四个不同标题（不合并成一张汇总卡）。
+    // 名字单源在 CompactStageNames.h（UI 伪键，非模型工具名，同下方 "memory" 先例不入
+    // ToolNames.h）；标签类别未识别落 other 中性灰，三主题 QSS 零改动。
+    // 只加完成词条、**不加失败词条**：四段是纯本地操作，卡片 output 恒不以 `Error: ` 开头
+    // → ok 恒 true，失败词条写了就是恒不可达的死文案（s18 压缩失败卡那条教训）。
+    if (toolName == CompactStageNames::BUDGET)
+        return tr("已卸载"); // tool_result_budget：超大工具结果落盘换预览
+    if (toolName == CompactStageNames::SNIP)
+        return tr("已归档"); // snip_compact：中段历史归档到 snip_archive.jsonl
+    if (toolName == CompactStageNames::MICRO)
+        return tr("已微压缩"); // micro_compact：已消化的旧工具结果换 Format B 标记
+    if (toolName == CompactStageNames::FIT)
+        return tr("已裁剪"); // fit_tool_results：工具结果换 1000 字符预览
     if (toolName == QLatin1String("memory"))
         return tr("已记忆"); // 记忆写入/合并等事件的合成卡片（s09 记忆系统）
     if (toolName == ToolNames::CREATE_TASK)
@@ -447,7 +461,10 @@ void ToolBlock::startToolLive(const QString &toolName, const QString &summary)
     if (m_live)
         return;
     m_live = true;
-    m_liveTitle = tr("执行中");
+    // 进行态词条按工具族取词：压缩侧链是秒级到分钟级的摘要 LLM 往返（s18 补事前卡，
+    // 见 CompactManager::phaseSink），「执行中」太泛，按词表同款朴素直译给「压缩中」；
+    // 其余工具维持原形态，零行为变更
+    m_liveTitle = (toolName == ToolNames::COMPACT) ? tr("压缩中") : tr("执行中");
     m_liveDots = 0;
 
     // 身份可见形态与终态卡同款（bash $ / 其余等宽标签 + 类别着色）——toolStarted

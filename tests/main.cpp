@@ -85,7 +85,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"cronmanager", 26},        {"uiscale", 68},            {"fluconfigstore", 49},
     {"fluconfigutils", 4},      {"litepaths", 29},          {"pathguard", 21},
     {"configmerge", 14},        {"sessionstore", 4},        {"uiux", 11},
-    {"tooltagkind", 26},        {"toolnames", 7},           {"navkeys", 14},
+    {"tooltagkind", 26},        {"toolnames", 16},          {"navkeys", 14},
     {"layoutconst", 23},        {"agentconst", 16},         {"compacttranscript", 40},
     {"activityledger", 37},        {"heatmapgrid", 39},
     {"memoryrules", 76},
