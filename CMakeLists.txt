@@ -1,13 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
-# 版本号与阶段 tag 对齐（当前 s18）：CMake project VERSION 只收数字点分，故存数字段 18，
+# 版本号与阶段 tag 对齐（当前 s18.1）：CMake project VERSION 只收数字点分，故存数字段 18.1，
 # 展示/打包用的 s 前缀统一在 LITE_VERSION 宏与 CPACK_PACKAGE_FILE_NAME 两处拼接（历史：s00 前身即 v0.1.0）
 # 补丁位（.13）沿用 s13.1 / s16.1 / s17.1 / s17.2 先例；s18 起版本主段是 lite-harness 自有发布阶段，
 # 不再与 lcc 参照阶段一一对应（lcc 子模块 tag 到 s17 为止），见到主段 >17 勿判漏改。
 # 补丁位只表发布次序、不要求连号：s17.4 经用户裁决跳过且后续不再启用，故序列为
-# s17.1 → s17.2 → s17.3 → s17.5 → s17.6 → s17.7 → s17.8 → s17.9 → s17.10 → s17.11 → s17.12 → s17.13 → s17.13.1 → s18，
+# s17.1 → s17.2 → s17.3 → s17.5 → s17.6 → s17.7 → s17.8 → s17.9 → s17.10 → s17.11 → s17.12 → s17.13 → s17.13.1 → s18 → s18.1，
 # s17.13.1 启用第三段「修订位」（首个三段发布版），s18 回到单段阶段形态（parseVersion 同步放宽认一段，
 # 发前判据须同步放宽，见 AGENTS「发布」节）；见到断档勿判漏改、更勿回填一个 s17.4 tag。
-project(lite-harness VERSION 18)
+# s18.1 起启用第二段「补丁位」（阶段 s18 内第一个补丁发布版）；parseVersion 自 s18 起已认一/二/三段，
+# 故本次 bump 无需再放宽判据——tst_updaterules 已有 s18.1 两段形断言（compareVersions / isUpdateAvailable /
+# shouldCleanResidue 三处），发前闸门已被测试钉住。
+project(lite-harness VERSION 18.1)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -87,7 +90,7 @@ target_include_directories(${TGT} PRIVATE
 # 不加 /WX：第三方/存量警告不致中断构建
 target_compile_options(${TGT} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>)
 
-# 版本号单源：CMake project VERSION（数字段）→ LITE_VERSION 宏（拼 s 前缀=s18）→ 运行时 setApplicationVersion
+# 版本号单源：CMake project VERSION（数字段）→ LITE_VERSION 宏（拼 s 前缀=s18.1）→ 运行时 setApplicationVersion
 # → 设置页版本标签 / 侧栏页脚（原 tr("0.0.1") 硬编码与 CMake 版本脱节，另案修并入此）
 target_compile_definitions(${TGT} PRIVATE LITE_VERSION="s${PROJECT_VERSION}")
 

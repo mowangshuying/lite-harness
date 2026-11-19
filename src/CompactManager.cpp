@@ -847,11 +847,15 @@ CompactManager::prepareAsync(QVector<QJsonObject> conversation, qsizetype conver
     const qsizetype budget = AgentConst::contextTokenBudget();
     const qsizetype convBudget = qBound(
         budget / 4, budget > overheadTokens ? budget - overheadTokens : budget / 4, budget);
-    // 验收期观测点（修4 口径换算校准用）：跑通后可降级 qCDebug 或移除，勿留噪音
-    LOG_INFO << QStringLiteral("[compact] prepare 入口 conv=%1 overhead=%2 T'=%3")
-                               .arg(conversationTokens)
-                               .arg(overheadTokens)
-                               .arg(convBudget);
+    // 口径换算校准观测点（修4 验收期用）：s18.1 发布前按本注释原有指引**降级为 LOG_DEBUG**。
+    // 降级理由（非实日志）：它每请求无条件打一条，即使四段与全量压缩一次都没发生，留在
+    // INFO 级会让日志读起来像「每回合都在压缩」。校准已跑通，观测价值只剩排障，故降不删——
+    // 开 debug 级仍可取到 conv/overhead/T' 三元组。「压缩真发生了」的留痕自此由 UI 侧承担：
+    // 本地四段各一张轻量卡（CompactStageNames）+ 全量压缩卡/失败卡；日志侧只留失败 WARN。
+    LOG_DEBUG << QStringLiteral("[compact] prepare 入口 conv=%1 overhead=%2 T'=%3")
+                                 .arg(conversationTokens)
+                                 .arg(overheadTokens)
+                                 .arg(convBudget);
     auto convTokens = [](const QVector<QJsonObject> &c) { return estimateTokens(c); };
 
     toolResultBudget(conversation, convBudget);
