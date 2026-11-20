@@ -13,7 +13,6 @@ class PermissionCard;
 class WorkDirPathBar;
 class SessionSidebar;
 class ChatStatusStrip;
-class FluInfoBar;
 class QToolButton;
 class QHBoxLayout;
 class QTimer;
@@ -81,15 +80,13 @@ private:
     // 构造拆分（纯搬移不改行为）：主布局/滚动区/底部输入组（工作目录条 + ChatMsgEdit +
     // 其下的 ChatStatusStrip 状态条）的创建摆位
     void buildLayout();
-    // P1-9 通知条：消息列顶部的非阻塞 FluInfoBar（默认隐藏，隐藏件不占布局空间）。
-    // autoDismissMs<=0＝常驻直到下一次 showNotice/hideNotice（重试态用，成功即由首个
-    // 增量事件收口）；>0＝到时自动淡出（错误/换模等一次性告知用）。
+    // P1-9 通知条：FluInfoBarMgr 挂在 window() 上的非阻塞浮层，到时自动淡出并自毁
+    // （淡出末尾 closeRequested → removeInfoBar + deleteLater），本页不持句柄、也就没有
+    // 收口函数。autoDismissMs 直传 Mgr 的 disappearDuration（ms）；<=0 时
+    // FluInfoBar::disappear() 早退、条常驻到用户点 X——四类提示均已给定时长，不用该形态，
+    // 故不留默认值，强制每个调用点显式表态。
     void showNotice(NoticeLevel level, const QString &title, const QString &message,
-                    int autoDismissMs = 0);
-    void hideNotice();
-    // 重试通知的专用收口：仅当当前条是重试态点亮时才关（错误条正挂着时来增量事件，
-    // 不能把错误通知顺手关掉）
-    void clearRetryNotice();
+                    int autoDismissMs);
     // P1-9 空态引导：消息列里除引导件本身外没有任何内容时显示，任何内容入列即永久收起
     // （气泡一旦产生就不会再全部消失——goalNotice 路径删的是占位泡，同批必有用户气泡），
     // 故用「首次入列即 hide」的 O(1) 口径，不在每次 addMessage 上扫全列（那是 O(n2)）
@@ -169,17 +166,9 @@ private:
 
     SessionSidebar *m_sidebar = nullptr;   // 右侧信息面板（纯视图，本页单源接线；显隐偏好落 config.json sidebarVisible）
     ChatStatusStrip *m_statusStrip = nullptr; // 输入框下方状态条（轮步/消耗/速度三段文字；占用条+数字与状态灯在侧栏，见 SessionSidebar.h）
-    // P1-9 通知条三件：条本体 + 自动淡出定时器 + 与消息列同栏宽的居中行布局。
-    // 走「页面内常驻条」而非 FluentUI 的 FluInfoBarMgr 浮层：管理器把条做成父件上的
-    // 绝对定位 toast，与本页「列宽手动钳制 + Ignored 行容器」的构图纪律冲突（会脱栏、
-    // 且随窗口缩放压在侧栏上）；常驻条进布局即天然同栏，隐藏时不占位。
-    FluInfoBar *m_noticeBar = nullptr;
-    QWidget *m_noticeRow = nullptr;   // 通知条的居中行容器（与消息列同栏宽；条关闭时整行收起不留空档）
-    QTimer *m_noticeDismissTimer = nullptr;
-    QHBoxLayout *m_noticeRowLayout = nullptr;
-    // 当前通知条是否由「退避重试」点亮：重试态是**自愈型**状态，首个增量到达即作废，
-    // 而错误/换模通知要留到用户裁决或下一条通知覆盖——两者共用一条，靠此位区分收口时机
-    bool m_noticeIsRetry = false;
+    // P1-9 通知条不再持有成员：改由 FluInfoBarMgr 建在 window() 上的自毁浮层，页面只发
+    // 不追——无条句柄、无淡出定时器、无居中行容器、无「当前是不是重试条」状态位。
+    // 条的淡出与摘除由 Mgr 经 closeRequested 一条链办完（removeInfoBar + deleteLater）。
     // 用户主动停止旗标：AgentLoop::stop() 的终局也走 error("已停止。")，若照原样点亮
     // 红色通知条，会把「我按了停止」报成「本轮失败」。置位/消费单点见 stop() 与 error 接线
     bool m_stopRequested = false;

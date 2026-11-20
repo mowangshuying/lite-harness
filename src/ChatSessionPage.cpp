@@ -3,6 +3,7 @@
 #include <FluThemeUtils.h>
 #include <FluUtils.h>
 #include <FluInfoBar.h>
+#include <FluInfoBarMgr.h>
 #include <QLabel>
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -50,12 +51,14 @@ static QWidget *makeCenteringRow(QWidget *column, QWidget *parent, QHBoxLayout *
     return row;
 }
 
-// P1-9 通知条自动淡出时长：错误 8s / 换模 6s。取这两个数是因为条内文本是「一句可读完
+// P1-9 通知条自动淡出时长：错误 8s / 换模 6s / 重试 8s。取这两个数是因为条内文本是「一句可读完
 // 的短说明」（错误详情另在气泡里全文留痕），8s 足够读完又不至于长期挡阅读列；
-// 换模是状态告知而非需要裁决的事，比错误更短一档。重试条不在此列——它常驻到首个增量
-// 到达（见 clearRetryNotice），因为「还在退避等待」这件事本身就是要持续可见的状态
+// 换模是状态告知而非需要裁决的事，比错误更短一档。重试条原为常驻（首个增量到达即自发收口，
+// 因为「还在退避等待」本身就是要持续可见的状态），改走 Mgr 浮层后无常驻形态——条由 Mgr 自己
+// 计时自毁、页面不持句柄也就无从提前关，故与错误同档取 8s；连番重试逐条堆叠不做覆盖。
 constexpr int kNoticeErrorMs = 8000;
 constexpr int kNoticeInfoMs = 6000;
+constexpr int kNoticeRetryMs = 8000;
 
 // 构造拆分①：主布局 + 滚动消息列 + 底部输入组（工作目录条 + ChatMsgEdit + 其下的
 // ChatStatusStrip 状态条）。
@@ -77,32 +80,9 @@ void ChatSessionPage::buildLayout()
                                     LayoutConst::kSideMargin, LayoutConst::kPageVMargin);
     vMainLayout->setSpacing(LayoutConst::kColGap);
 
-    // P1-9 通知条：消息列正上方的非阻塞 FluInfoBar（重试态/换模/错误三类即时提示）。
-    // 刻意不用 FluentUI 的 FluInfoBarMgr 浮层——那是绝对定位的 toast，与本页「列宽手动
-    // 钳制 + Ignored 行容器」的构图纪律冲突（脱栏、随窗口缩放压到侧栏上）；进布局的常驻
-    // 条天然同栏，且关闭时 setIsOpen(false) 自带淡出并 hide()，隐藏件不占布局空间。
-    m_noticeBar = new FluInfoBar(FluInfoBarSeverity::Informational, leftColumn);
-    m_noticeBar->setObjectName(QStringLiteral("sessionNotice"));
-    // FluInfoBar 构造写死 minimumWidth 320：最小窗（900）下消息列可用宽仅 ~282，
-    // 320 地板会把条撑出栏外。本条宽度全权交给 applyColumnWidth 钳制，地板拆掉。
-    m_noticeBar->setMinimumWidth(0);
-    m_noticeBar->setIsClosable(true);
-    m_noticeBar->setIsOpen(false);
-    // FluInfoBar 构造里 m_isOpen 初值即 false，上面那句会走「状态相同早退」分支，
-    // 永远触发不了淡出末尾的 hide()——而构造器自己也不 hide，子 widget 默认可见，
-    // 于是从未弹过通知的新会话页面会挂一条空内容的条在顶部。显式收口一次；
-    // 后续 showNotice 走 setIsOpen(true) 自带 show()，不受此 hide 影响。
-    m_noticeBar->hide();
-    m_noticeRow = makeCenteringRow(m_noticeBar, leftColumn, &m_noticeRowLayout);
-    vMainLayout->addWidget(m_noticeRow);
-
-    // 通知条自动淡出定时器（singleShot，时长由 showNotice 逐次设定）：0/负数＝常驻，
-    // 由下一次通知或 clearRetryNotice 收口——重试态属前者（成功即被首个增量关掉），
-    // 错误/换模属后者（一次性告知，读完就该自己走，不留残条挡阅读列）
-    m_noticeDismissTimer = new QTimer(this);
-    m_noticeDismissTimer->setSingleShot(true);
-    connect(m_noticeDismissTimer, &QTimer::timeout, this, &ChatSessionPage::hideNotice);
-
+    // P1-9 通知条不在本函数建：三类即时提示（重试态/换模/错误）改走 FluInfoBarMgr 浮层
+    // （见 showNotice），父件是 window() 而非本列，故左列布局只剩消息列与底部输入组两件，
+    // 无通知行容器、无淡出定时器——条的显示/定位/回收全归 Mgr，页面只发不追。
     m_scrollView = new FluVScrollView(leftColumn);
     m_scrollView->getMainLayout()->setAlignment(Qt::AlignTop);
     // 栏内间隙单源（P2-D3）：此前 15 在本页两处与 ChatMsgEdit 工具集行各抄一遍
@@ -352,9 +332,9 @@ void ChatSessionPage::wireAgent()
         // P1-9 通知条：气泡是**留痕**（进时间线、会被滚走），通知条是**即时提示**——
         // 二者互补而非替代：只留通知条会让历史里看不到失败，只留气泡则用户上翻回看时
         // 完全不知道刚发生了什么。用户主动停止的终局不走本档（见 stop()）。
-        if (m_stopRequested)
-            hideNotice(); // 停止前若挂着重试条，一并收掉：停都停了，别再报「正在重试」
-        else
+        // 改走 Mgr 浮层后不再收口在挂的重试条——条自己到时淡出，页面不持句柄也无从提前关。
+        // 用户主动停止仍压掉本档：「我按了停止」不该报成「本轮失败」。
+        if (!m_stopRequested)
             showNotice(NoticeLevel::Error, tr("本轮失败"), err, kNoticeErrorMs);
         m_stopRequested = false;
         // 侧栏收口：错误终局同样灭审批灯 + 重算占用（与 finished 对称）
@@ -382,7 +362,6 @@ void ChatSessionPage::wireAgent()
         flushPendingScroll();
     });
     connect(m_agentLoop, &AgentLoop::thinkingDelta, this, [this](const QString &delta) {
-        clearRetryNotice(); // 重试已自愈：首个增量即证据，条再挂着会读成「还在等」
         if (m_currentBubble)
         {
             m_currentBubble->appendThinkingText(delta);
@@ -391,7 +370,6 @@ void ChatSessionPage::wireAgent()
         }
     });
     connect(m_agentLoop, &AgentLoop::textDelta, this, [this](const QString &delta) {
-        clearRetryNotice(); // 同上：正文增量也是重试成功的直接证据
         if (m_currentBubble)
         {
             m_currentBubble->appendText(delta);
@@ -700,7 +678,7 @@ void ChatSessionPage::wireAgent()
                        .arg(attempt)
                        .arg(totalAttempts)
                        .arg(delayMs / 1000),
-                   0); // 常驻：成功由首个增量收口，失败由错误通知覆盖，不留残条也不早退
+                   kNoticeRetryMs); // 不再常驻：读完自己走，下一次重试再弹一条新的（Mgr 逐条往下叠）
     });
     // 529 过载换模（s15）：引擎只打 LOG_WARN，用户看不到「这轮答案来自另一个模型」——
     // 与输入框下拉仍显示原模型名构成两个读数，故在此显形。下拉不改（生效模型仍由后端
@@ -739,49 +717,34 @@ void ChatSessionPage::dismissPendingPermission()
         staleCard->resolveDenySilently();
 }
 
-// P1-9 通知条三件套（show/hide/clearRetry）：一条常驻件承载三类即时提示，
-// 状态位只有一位「当前是不是重试条」——它决定收口时机（重试条由首个增量自发关闭，
-// 其余由淡出定时器或下一条通知关闭），其余差异都在展示文案里，无需更多状态。
+// P1-9 通知条：一次通知＝一条一次性浮层，交给 FluInfoBarMgr 挂在 window() 上定位/堆叠/
+// 自毁（淡出末尾 closeRequested → removeInfoBar + deleteLater），页面只发不追——不持句柄、
+// 不管淡出、不区分「当前是不是重试条」，四类提示各自到点自己走，允许同屏叠着。
 void ChatSessionPage::showNotice(NoticeLevel level, const QString &title,
                                  const QString &message, int autoDismissMs)
 {
-    if (!m_noticeBar)
-        return;
     // 枚举→FluentUI 档位单点映射：页面 API 面不暴露 FluInfoBarSeverity（见 .h 声明处），
     // 取色/图标全在 FluentUI 自带 FluInfoBar.qss 的 severity 选择器里，本仓零新增 QSS
-    m_noticeBar->setSeverity(level == NoticeLevel::Info    ? FluInfoBarSeverity::Informational
-                             : level == NoticeLevel::Warning ? FluInfoBarSeverity::Warning
-                                                             : FluInfoBarSeverity::Error);
-    m_noticeBar->setTitle(title);
-    m_noticeBar->setMessage(message);
-    m_noticeIsRetry = (level == NoticeLevel::Warning);
-    m_noticeBar->setIsOpen(true);
-    if (autoDismissMs > 0)
-        m_noticeDismissTimer->start(autoDismissMs);
-    else
-        m_noticeDismissTimer->stop();
-    // 条从「无内容」到「有内容」会改整列高度：延帧重钳一次栏宽并贴底，
-    // 否则首帧可能出现条宽未跟上限、或新条把当前视野顶走而滚动位置没跟上
-    QTimer::singleShot(0, this, [this]() {
-        applyColumnWidth();
-        followScrollToBottom();
-    });
-}
-
-void ChatSessionPage::hideNotice()
-{
-    if (!m_noticeBar)
-        return;
-    m_noticeDismissTimer->stop();
-    m_noticeBar->setIsOpen(false); // 自带 250ms 淡出，动画末尾 hide() → 布局剔除占位
-    m_noticeIsRetry = false;
-}
-
-void ChatSessionPage::clearRetryNotice()
-{
-    // 只收重试条：错误/换模通知正挂着时被增量事件顺手关掉，等于把「本轮失败」藏了
-    if (m_noticeIsRetry)
-        hideNotice();
+    const FluInfoBarSeverity severity =
+        level == NoticeLevel::Info    ? FluInfoBarSeverity::Informational
+        : level == NoticeLevel::Warning ? FluInfoBarSeverity::Warning
+                                        : FluInfoBarSeverity::Error;
+    // 父件取 window() 而非本页布局容器：Mgr 的条是父件上的绝对定位浮层，挂 leftColumn 会
+    // 被本页「列宽手动钳制 + Ignored 行容器」的构图甩出栏外、随缩放压到侧栏上；挂最外层
+    // 窗口则与本页构图彻底解耦，代价是浮层遮挡阅读列——纯提示作用，可接受。
+    QWidget *host = window();
+    // 刻意不走便捷口 showInfoBar：它只 setMessage（本页三类都有标题）、时长写死 800ms
+    // （一句中文读不完）、且返回 void 事后无从改时长。走底层 addInfoBar，宽高两行照抄
+    // showInfoBar 自己的口径（320 取 FluInfoBar 构造自带 minimumWidth，比 270 少折行）。
+    auto *bar = new FluInfoBar(severity, host);
+    bar->setTitle(title);
+    bar->setMessage(message);
+    bar->setIsClosable(true);
+    bar->setFixedWidth(320);
+    bar->setIsOpen(true);
+    bar->adjustSize();
+    FluInfoBarMgr::getInstance()->addInfoBar(host, bar, autoDismissMs,
+                                             FluInfoBarPosition::TopCenter);
 }
 
 void ChatSessionPage::dismissEmptyHint()
@@ -1212,12 +1175,7 @@ void ChatSessionPage::applyColumnWidth()
         m_scrollRowLayout->setContentsMargins(pad, 0, padRight, 0);
     if (m_inputRowLayout)
         m_inputRowLayout->setContentsMargins(pad, 0, padRight, 0);
-    // P1-9 通知条同栏：行容器留白与消息列一致，条本身钳到列宽上限（其 sizePolicy
-    // 是 Expanding，不钳会铺满左列、与阅读列脱栏）
-    if (m_noticeRowLayout)
-        m_noticeRowLayout->setContentsMargins(pad, 0, padRight, 0);
-    if (m_noticeBar)
-        m_noticeBar->setMaximumWidth(columnWidth);
+    // P1-9 通知条不在此钳宽：改走 FluInfoBarMgr 浮层后它不在本页布局内，定宽 320 自管
     if (m_scrollView)
         m_scrollView->setMaximumWidth(columnWidth);
     if (m_inputSection)
