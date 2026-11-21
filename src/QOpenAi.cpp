@@ -4,7 +4,9 @@
 #include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）+ s15 恢复常量（kMaxConsecutive529）
 #include "AppSettings.h"    // config.json 单源（apiBaseUrl / apiToken 两个键）
 #include "AgentRecovery.h"  // s15 过载文本判据单源（RecoveryRules::isOverloadedText，lcc s15 af26862）
+#include "ProviderSpec.h"   // s18.3 多 Provider：按模型名反查凭据（route/Provider/loadProviders）
 
+#include <QList>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -25,6 +27,10 @@ public:
     QNetworkAccessManager manager;
     QString url;
     QString token;
+    // s18.3 多 Provider：生效 provider 表。凭据**不靠「当前选中」的全局状态**，而是在每次
+    // 发请求时按请求体里的 model 反查（见 credsForModel）——六条链并发发请求，全局切换会串。
+    // 表为空（未配 providers 键）时 route 恒不命中，全部回落上面的 url/token，行为与改造前一致。
+    QList<ProviderSpec::Provider> providers;
     int maxRetries = AgentConst::kMaxRetriesDefault; // 最大重试次数（仅 5xx / 429）；启动由 initFromSettings 读 config.json 覆盖
     int streamIdleTimeout = 60000;  // 流式静默超时（毫秒）：每收到数据即重置，服务器持续有输出则总时长不限；<=0 不限时
     // 流式总时长哨兵（毫秒）：idle 每收字节即重置，杀不死"慢而不断"的流（持续有字节、
@@ -95,13 +101,37 @@ QString trimTrailingSlashes(const QString &url)
     return base;
 }
 
-// 由基础 URL（不含端点路径）拼出具体端点
-QString endpointFor(OpenAiClient &c, QOpenAi::ChatStream::Mode mode)
+// 由基础 URL（不含端点路径）拼出具体端点。
+// s18.3：形参从 `OpenAiClient &c` 改成基址字符串——多 Provider 下「用哪个基址」不再恒等于
+// 进程级那一份 c.url，而是由调用方按模型名路由后传进来（见 sendRequest）。
+QString endpointFor(const QString &baseUrl, QOpenAi::ChatStream::Mode mode)
 {
     const char *suffix = mode == QOpenAi::ChatStream::Mode::LegacyCompletion
         ? "/completions"
         : "/chat/completions";
-    return trimTrailingSlashes(c.url) + QString::fromLatin1(suffix);
+    return trimTrailingSlashes(baseUrl) + QString::fromLatin1(suffix);
+}
+
+// s18.3 多 Provider：按请求体里的 model 反查这一发该用的基址与密钥。
+// 为什么在发请求时查、而不是维护一个「当前 provider」全局状态：主循环 / 子代理 / 队友 /
+// workflow / 压缩 / 记忆六条链会**并发**发请求，全局切换会让 A 会话切到服务商甲的瞬间，
+// 正在跑的 B 会话拿着甲的 key 去打乙的端点——静默 401，界面上复现不出来。请求体本来就带
+// model，凭据跟着请求走，六条链因此一行都不用改。
+// 查不到（providers 未配、或该 model 不在任何清单里）一律回落全局 url/token，
+// 保住「只配旧三键」与「MODEL_ID 环境变量」两条既有通路的行为逐字不变。
+struct RequestCreds
+{
+    QString baseUrl;
+    QString token;
+};
+
+RequestCreds credsForModel(const OpenAiClient &c, const QJsonObject &input)
+{
+    const int idx = ProviderSpec::route(
+        c.providers, input.value(QStringLiteral("model")).toString());
+    if (idx >= 0)
+        return { c.providers.at(idx).baseUrl, c.providers.at(idx).token };
+    return { c.url, c.token };
 }
 
 } // namespace
@@ -215,7 +245,9 @@ void ChatStream::startRequest(const QJsonObject &input, Mode mode)
 void ChatStream::sendRequest()
 {
     OpenAiClient &c = client();
-    if (c.url.isEmpty() || c.token.isEmpty())
+    // s18.3：基址与密钥按本请求的 model 反查（多 Provider 路由的唯一落点）
+    const RequestCreds creds = credsForModel(c, d->input);
+    if (creds.baseUrl.isEmpty() || creds.token.isEmpty())
     {
         // 不在此处同步 emit（调用方此刻尚未连接信号），延迟一拍让 connect 先完成
         QTimer::singleShot(0, this, [this] {
@@ -224,7 +256,7 @@ void ChatStream::sendRequest()
         return;
     }
 
-    const QString endpoint = endpointFor(c, d->mode);
+    const QString endpoint = endpointFor(creds.baseUrl, d->mode);
     QNetworkRequest req{QUrl(endpoint)}; // 基础 URL + 端点路径（/chat/completions 或 /completions）
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     req.setRawHeader("Authorization", QByteArray("Bearer ") + c.token.toUtf8());
@@ -848,8 +880,18 @@ void initFromSettings()
     // s15 后备模型同源于 config.json（键 fallbackModelId，空=禁用换模；对照 lcc env.py
     // FALLBACK_MODEL_ID "or None" 口径——未配置则全程不换模，行为与 s15 前逐字节一致）
     setFallbackModelId(AgentConst::fallbackModelIdValue());
-    if (c.url.isEmpty() || c.token.isEmpty())
+    reloadProviders();
+    // 「没配凭据」的判据必须把 provider 表算进来：s18.3 起可以只配 app/providers 而把旧三键
+    // 留空，那是完全正常的形态——只看 c.url/c.token 会对正常配置刷一条误导性的未配置告警。
+    if ((c.url.isEmpty() || c.token.isEmpty()) && c.providers.isEmpty())
         LOG_WARN << "QOpenAi: config.json 的 app/apiBaseUrl / app/apiToken 未配置或为空。";
+}
+
+void reloadProviders()
+{
+    // 重读 app/providers（未配则内部回落旧三键合成的单条）。设置页每次写盘后调一次即热生效，
+    // 与 setUrl/setToken 的「下一回合请求即用新值」同口径，不需要重启。
+    client().providers = ProviderSpec::loadProviders();
 }
 
 } // namespace QOpenAi

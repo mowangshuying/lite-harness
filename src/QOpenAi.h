@@ -185,4 +185,11 @@ bool verbose();
 // （后两者经 AgentConst 单点取值，见 AgentConstants.h）
 void initFromSettings();
 
+// 重读 config.json 的 app/providers 表并注入运行时（s18.3 多 Provider）。
+// 设置页每次写盘后调一次即可热生效、无需重启；未配 providers 键时表为空，所有请求
+// 一律回落 setUrl/setToken 那一份全局凭据——旧三键配置的行为因此逐字不变。
+// 刻意只暴露这个动作、不把 Provider 类型放进本头：调用方要用数据就 include
+// ProviderSpec.h 自行 loadProviders()，避免 QOpenAi 的公开面被第三方数据结构绑住。
+void reloadProviders();
+
 } // namespace QOpenAi

@@ -4,6 +4,9 @@
 // s17.12：槽签名用了 UpdateManager::Stage 嵌套枚举，前向声明不够（枚举需要完整类型），
 // 只能真 include。本头因此间接带进 QObject，与既有 BasePage 同量级，不新增链接依赖。
 #include "UpdateManager.h"
+// s18.3 多 Provider：ModelServiceTarget 的接口按值收发 QList<ProviderSpec::Provider>，
+// 前向声明不够（返回类型需完整），只能真 include。该头纯 QtCore，不新增链接依赖。
+#include "ProviderSpec.h"
 
 #include <FluSettingsSelectBox.h>
 
@@ -113,6 +116,68 @@ private:
     FluPushButton* m_modifyButton = nullptr;
 };
 
+// 模型服务组四张卡共享的「当前在编辑哪个服务商」。
+//
+// 为什么要有这个对象：s18.3 多 Provider 之前，端点/密钥/模型清单三张卡各自直读写三个全局
+// 键（apiBaseUrl/apiToken/modelOptions），互不知情是安全的——反正全进程只有一份凭据。
+// 有了 provider 之后，「这张卡显示的是哪家的地址」成了四张卡的共同前提，若各卡自己存一份
+// 选中态，切一家后必然出现「地址卡已是乙、密钥卡还是甲」的错配写盘——那会静默把甲的 key
+// 配到乙的端点上。故选中态单点持有，四卡只读它、并由 targetChanged 统一重画。
+//
+// providerId 为空串 = 「旧三键形态」：config.json 未配 app/providers 时的兼容路径。
+// 此时四张卡退回改造前的全局键读写，**未迁移用户的行为逐字不变**，不是第三种状态。
+class ModelServiceTarget : public QObject
+{
+    Q_OBJECT
+public:
+    explicit ModelServiceTarget(QObject* parent = nullptr);
+
+    QString providerId() const { return m_providerId; }
+    void setProviderId(const QString& id); // 同值早退，不发信号
+
+    // 每次现取盘（SettingsCache 已按文件身份缓存，热改即生效），不缓存副本——
+    // 缓存了就会与「手改 config.json 下一次取值即生效」的既有语义打架。
+    QList<ProviderSpec::Provider> providers() const;
+    // 选中项下标；未选中或表空返回 -1。
+    int currentIndex() const;
+    // 选中项本体；无选中返回空表形态的 Provider（各字段空）。
+    ProviderSpec::Provider current() const;
+
+    // 落盘整表并广播重画。返回 false = 写失败（已弹「保存失败」，调用方不必再提示）。
+    // anchor 必须由调用方（某张卡）传 window()：本类是 QObject 而非 QWidget，自己取不到
+    // 主窗口，而 FluMessageBox 约定 parent 不可为 null。
+    bool commit(const QList<ProviderSpec::Provider>& next, QWidget* anchor);
+
+signals:
+    void targetChanged();
+
+private:
+    QString m_providerId;
+};
+
+// 服务商设置卡（模型服务组首卡）：用基类自带的下拉选「下面三张卡编辑哪家」，
+// 右侧另放「新增」「删除」两钮。本组唯一改 target 的卡，其余三卡只跟随 targetChanged。
+// 未配 providers 键时下拉只有一项「默认（旧配置）」，删除按钮置灰——避免把用户唯一的
+// 凭据入口删没（删掉即回落到旧三键，而旧三键可能同样是空的）。
+class ProviderSettingCard : public InfoSlotSettingCard
+{
+    Q_OBJECT
+public:
+    explicit ProviderSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
+
+    void retranslate();
+
+private:
+    void refreshCombo();
+    void promptAdd();
+    void promptRemove();
+
+    ModelServiceTarget* m_target = nullptr;
+    FluPushButton* m_addButton = nullptr;
+    FluPushButton* m_removeButton = nullptr;
+    bool m_repopulating = false; // 重填下拉期间抑制 currentIndexChanged 回环
+};
+
 // 服务地址设置卡（模型服务组）：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
 // 编辑弹 InputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
 // 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
@@ -123,7 +188,10 @@ class ApiUrlSettingCard : public InfoSlotSettingCard
 {
     Q_OBJECT
 public:
-    explicit ApiUrlSettingCard(QWidget* parent = nullptr);
+    // s18.3：target 交出「本卡编辑哪个 provider」。模型服务组四卡共享同一 target 实例，
+    // 切 provider 靠 targetChanged 统一重画——各卡自存选中态会出现「地址卡已是乙、密钥卡
+    // 还是甲」的错配写盘，那会把甲的 key 配到乙的端点上且无任何报错。
+    explicit ApiUrlSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
 
     void retranslate();
 
@@ -131,6 +199,7 @@ private:
     void updateValue();
     void promptEdit();
 
+    ModelServiceTarget* m_target = nullptr;
     FluPushButton* m_modifyButton = nullptr;
     FluPushButton* m_clearButton = nullptr;
 };
@@ -145,7 +214,7 @@ class ApiTokenSettingCard : public InfoSlotSettingCard
 {
     Q_OBJECT
 public:
-    explicit ApiTokenSettingCard(QWidget* parent = nullptr);
+    explicit ApiTokenSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
 
     void retranslate();
 
@@ -153,6 +222,7 @@ private:
     void updateValue();
     void promptEdit();
 
+    ModelServiceTarget* m_target = nullptr;
     FluPushButton* m_modifyButton = nullptr;
     FluPushButton* m_clearButton = nullptr;
 };
@@ -168,16 +238,27 @@ class ModelListSettingCard : public InfoSlotSettingCard
 {
     Q_OBJECT
 public:
-    explicit ModelListSettingCard(QWidget* parent = nullptr);
+    explicit ModelListSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
 
     void retranslate();
 
 private:
     void updateValue();
-    void promptEdit();
+    // 「管理」弹 FluPMenu：添加模型… / 从服务端拉取… / 逐项移除 / 清空清单。
+    // 刻意用菜单而非新建对话框：仓内 FluPMenu 已随三主题 QSS 着色（ChatMsgEdit.cpp:79、
+    // MessageBubbleWidget.cpp:134 两处既有用法），而自造对话框要为 light/dark/atomOneDark
+    // 各补一份 qss，漏一处就是暗色主题下的白底破相——纯视觉代价，无功能收益。
+    // 原「修改」编辑整串逗号文本的入口被本菜单取代：那是本次改造要修的主痛点。
+    void promptManage();
+    void promptAddOne();
+    void fetchFromServer();
 
-    FluPushButton* m_modifyButton = nullptr;
+    ModelServiceTarget* m_target = nullptr;
+    FluPushButton* m_manageButton = nullptr;
     FluPushButton* m_clearButton = nullptr;
+    // 拉取在途门闩：FluPMenu 每次即弹即毁，没有控件态可依据，不立这个门就能连点多次、
+    // 让后到的响应覆盖先到的（Request 自身只保证单次交付，不保证多请求间的顺序）。
+    bool m_fetching = false;
 };
 
 // 自更新设置卡（s17.12）：与 ContextLimitSettingCard 同款结构——标题「更新」+ 说明位承载
@@ -273,6 +354,11 @@ private:
     FluLabel* m_permissionLabel = nullptr;
     FluSettingsSelectBox* m_permissionBox = nullptr;
     FluLabel* m_modelLabel = nullptr;
+    // s18.3 多 Provider：模型服务组四卡共享的编辑目标（本页持有，四卡只持裸指针）。
+    // 生命周期依据：四张卡都是本页的子控件、且都在构造期建好，故 target 必须是本页
+    // 的子对象（parent=this）并**先于四卡构造**创建——否则四卡拿到空指针。
+    ModelServiceTarget* m_modelTarget = nullptr;
+    ProviderSettingCard* m_providerCard = nullptr;
     ApiUrlSettingCard* m_apiUrlCard = nullptr;
     ApiTokenSettingCard* m_apiTokenCard = nullptr;
     ModelListSettingCard* m_modelListCard = nullptr;

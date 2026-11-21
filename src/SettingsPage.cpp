@@ -5,9 +5,14 @@
 #include "InputDialog.h"
 #include "I18n.h"
 #include "QOpenAi.h" // 写入 ini 后即时覆盖全局配置（setUrl / setToken）
+#include "ModelListFetcher.h" // s18.3 B 项：从服务端拉取 /models
 #include "ThemeAware.h"
 #include <FluUtils.h>
 #include <FluMessageBox.h>
+#include <FluPMenu.h>  // s18.3：模型清单的「管理」菜单（已随三主题 QSS 着色，无需新增 qss）
+#include <FluAction.h>
+#include <QAction>     // menu.exec() 的返回类型与逐项 action（不依赖 QMenu 的传递包含）
+#include <QCursor>     // QCursor::pos()：菜单在鼠标处弹出
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
@@ -75,52 +80,18 @@ QString workDirDisplayText(const QString &stored)
     return stored.isEmpty() ? QObject::tr("未设置（使用进程当前目录）") : stored;
 }
 
-// 模型服务：config.json 键 apiBaseUrl / apiToken（QOpenAi::initFromSettings 读同源，
-// 设置页写入后立即 QOpenAi::setUrl/setToken 覆盖全局 client，无需重启）。
-// token 明文存配置文件属用户裁决：存储根下的本机文件，属主可见可改（原环境变量方案已废弃）。
+// 模型服务：s18.3 起权威存储是 config.json 键 app/providers（整表），下面三个旧键降级为
+// **兼容镜像 + 回落值**（见 mirrorPrimaryToLegacyKeys）：QOpenAi::initFromSettings 仍读同源，
+// 未配 providers 的老配置照旧可用。token 明文存配置文件属用户裁决：存储根下的本机文件，
+// 属主可见可改（原环境变量方案已废弃）。
+//
+// 此处原有 readApiBaseUrl / readApiToken / readModelOptionsRaw / normalizeModelOptions /
+// isHttpBaseUrl 五个助手，已随本批改造删除：读写改走 ModelServiceTarget（按 provider），
+// 基址合法性改走 ProviderSpec::isValidBaseUrl（与拉取端点拼接同一把尺子）。
+// 留着它们不会报错但会触发 /W4 的 C4505（匿名命名空间函数零调用者），故一并清掉。
 const QString kApiBaseUrlKey = QStringLiteral("apiBaseUrl");
 const QString kApiTokenKey = QStringLiteral("apiToken");
-
-QString readApiBaseUrl()
-{
-    return AppSettings::value(kApiBaseUrlKey).toString();
-}
-
-QString readApiToken()
-{
-    return AppSettings::value(kApiTokenKey).toString();
-}
-
-// 可选模型清单：config.json 键 modelOptions（逗号分隔）。解析与回退单源在
-// AgentConst::modelOptions()（未配置/写空即内置两项）；输入框下拉在每次弹层展开前
-// 重读该键，故本页改完配置无需重启即可选到新模型（见 ChatMsgEdit::reloadModelOptions）。
 const QString kModelOptionsKey = QStringLiteral("modelOptions");
-
-QString readModelOptionsRaw()
-{
-    return AgentConst::textValue(kModelOptionsKey); // 裸逗号串（ini）或数组（json）两种列表形态都读得回
-}
-
-// 录入规范化：逐项去空白、丢空项、保序去重（重名会让下拉出现同文两项，选中歧义且
-// 占位宽度白涨）；返回逗号分隔的落盘串。大小写原样保留——模型名大小写敏感
-// （QOpenAi 直接把它塞进请求体 model 字段，改大小写可能 404）
-QString normalizeModelOptions(const QString &input)
-{
-    // 口径单源：切分/去空/去重/条数上限全走 AgentConst::parseModelOptions（与下拉框读取侧
-    // 同一实现），本卡不再自带一份解析——否则写侧不截断、读侧截断，两处规则必然漂移
-    return AgentConst::parseModelOptions(input).join(QLatin1Char(','));
-}
-
-// Base URL 合法性：须为绝对 URL 且 scheme 为 http/https（QUrl 对裸主机名给出空 scheme，
-// 天然落回拒绝）；比对 QOpenAi 端点拼接方式，无 scheme 的值写进去只会请求必失败
-bool isHttpBaseUrl(const QString &input)
-{
-    const QUrl url(input);
-    if (!url.isValid())
-        return false;
-    const QString scheme = url.scheme().toLower();
-    return scheme == QLatin1String("http") || scheme == QLatin1String("https");
-}
 
 // API Key 值区脱敏摘要：长值取前 4 + 星 + 后 4；短值（<=8）一律固定四星——
 // 否则前后各 4 会覆盖整个 Key，等于把明文摆上界面
@@ -131,7 +102,243 @@ QString maskedApiToken(const QString &stored)
     return stored.left(4) + QStringLiteral("****") + stored.right(4);
 }
 
+/// s18.3 多 Provider：把整表落盘后**镜像首条回旧三键**。
+///
+/// 为什么必须镜像而不是只写 app/providers：旧三键是 loadProviders() 的回落路径
+/// （providers 缺失或删空时合成那条 id="legacy" 的 provider）。只写新键而把旧键留在
+/// 盘上，它们就成了陈旧副本——用户日后删空 providers 表，回落路径会把**改造前的老端点和
+/// 老 key** 悄悄复活，表现是「明明删干净了却又连上老服务」。镜像之后回落值恒等于当前
+/// 首条，两条路径给同一个答案。
+///
+/// 权威关系是单向的：providers 为准，旧三键只是兼容镜像与回落值，读侧永远先看新键。
+/// 写三条各一次而非整表覆盖：AppSettings 无 remove()（见 AppSettings.h 顶部对
+/// 「传 invalid QVariant 删键」的警告），逐键 setValue 是唯一安全写法。
+void mirrorPrimaryToLegacyKeys(const QList<ProviderSpec::Provider> &providers, QWidget *anchor)
+{
+    const ProviderSpec::Provider primary =
+        providers.isEmpty() ? ProviderSpec::Provider{} : providers.first();
+    applySetting(kApiBaseUrlKey, primary.baseUrl, anchor);
+    applySetting(kApiTokenKey, primary.token, anchor);
+    applySetting(kModelOptionsKey, primary.models.join(QLatin1Char(',')), anchor);
+}
+
 } // namespace
+
+// ============================================================================
+// ModelServiceTarget（s18.3）：模型服务组四张卡共享的「当前编辑哪家 provider」
+// ============================================================================
+
+ModelServiceTarget::ModelServiceTarget(QObject *parent) : QObject(parent)
+{
+}
+
+void ModelServiceTarget::setProviderId(const QString &id)
+{
+    if (m_providerId == id)
+        return; // 同值早退：不发信号，避免四张卡无谓重画（下拉重填还会抢焦点）
+    m_providerId = id;
+    emit targetChanged();
+}
+
+QList<ProviderSpec::Provider> ModelServiceTarget::providers() const
+{
+    return ProviderSpec::loadProviders();
+}
+
+int ModelServiceTarget::currentIndex() const
+{
+    const QList<ProviderSpec::Provider> list = providers();
+    const int at = ProviderSpec::indexOfId(list, m_providerId);
+    // 未选中（含 id 指向已被删掉的 provider）一律落到首条：四张卡必须恒有编辑目标，
+    // 否则「当前 provider 为空」会让地址/密钥卡显示空值、用户以为配置被清了。
+    return at >= 0 ? at : (list.isEmpty() ? -1 : 0);
+}
+
+ProviderSpec::Provider ModelServiceTarget::current() const
+{
+    const int at = currentIndex();
+    if (at < 0)
+        return ProviderSpec::Provider{};
+    return providers().at(at);
+}
+
+bool ModelServiceTarget::commit(const QList<ProviderSpec::Provider> &next, QWidget *anchor)
+{
+    if (!ProviderSpec::saveProviders(next))
+    {
+        FluMessageBox(tr("保存失败"),
+                      tr("配置无法写入 config.json，本次修改不会保留。"
+                         "请检查文件是否只读或被其它程序占用。"),
+                      anchor)
+            .exec();
+        return false;
+    }
+    mirrorPrimaryToLegacyKeys(next, anchor);
+    QOpenAi::reloadProviders(); // 热生效：下一回合请求即按新表路由凭据，无需重启
+    emit targetChanged();
+    return true;
+}
+
+namespace {
+
+/// 以「改当前 provider 的一个字段」的形态提交整表。四张卡共用，避免各写一套
+/// load→改→upsert→commit 而漏掉撞名校验或镜像回落。返回 false = 已弹错，调用方只需放弃刷新。
+/// 把 upsertProvider/addModelToProvider 回抛的机器码翻成用户可读文案。
+/// 判据串与 ProviderSpec.h 的返回值逐字对应，两处必须同步改——故集中在这一个自由函数里，
+/// 四张卡不再各自拼一套（各自拼就会有人漏掉 providers-cap 这种少见分支）。
+/// 用 QObject::tr 而非裸 tr：本函数是匿名命名空间里的自由函数，没有 Q_OBJECT 上下文，
+/// 裸 tr() 编译不过。
+QString providerErrorText(const QString &error)
+{
+    if (error == QLatin1String("invalid-base-url"))
+        return QObject::tr("服务地址须以 http:// 或 https:// 开头。");
+    if (error.startsWith(QLatin1String("duplicate-model:")))
+        return QObject::tr("以下模型名已被其它服务商占用：%1")
+            .arg(error.mid(QLatin1String("duplicate-model:").size())
+                     .replace(QLatin1Char(','), QStringLiteral("、")));
+    if (error == QLatin1String("providers-cap"))
+        return QObject::tr("服务商数量已达上限。");
+    if (error == QLatin1String("models-cap"))
+        return QObject::tr("本服务商模型数已达上限。");
+    if (error == QLatin1String("empty-model-name"))
+        return QObject::tr("模型名不能为空。");
+    if (error == QLatin1String("unknown-provider"))
+        return QObject::tr("目标服务商已不存在，请重新选择。");
+    return QObject::tr("配置被拒绝写入。");
+}
+
+bool commitEditedCurrent(ModelServiceTarget *target, const ProviderSpec::Provider &edited,
+                         QWidget *anchor)
+{
+    QString error;
+    const QList<ProviderSpec::Provider> next =
+        ProviderSpec::upsertProvider(target->providers(), edited, error);
+    if (!error.isEmpty())
+    {
+        // 文案必须把冲突项念出来——只说「保存失败」，用户无从知道是哪个模型名被别家占了。
+        FluMessageBox(QObject::tr("无法保存"), providerErrorText(error), anchor).exec();
+        return false;
+    }
+    return target->commit(next, anchor);
+}
+
+} // namespace
+
+// ============================================================================
+// ProviderSettingCard（s18.3）：服务商选择 + 新增 + 删除
+// ============================================================================
+
+ProviderSettingCard::ProviderSettingCard(ModelServiceTarget *target, QWidget *parent)
+    : InfoSlotSettingCard(parent), m_target(target)
+{
+    setTitleInfo(tr("服务商"), QString()); // 说明位归值管
+    setIcon(FluAwesomeType::ReadingMode);  // 多家服务并列语义（Link/Lock/ReadingList 已用于同组三卡）
+
+    // 本卡是四张卡里唯一**用基类自带下拉**的：其余三卡都 getComboBox()->hide() 换自定义
+    // 操作行，而这里要的正是「选一家」的交互，复用 vendor 控件即天然随主题着色。
+    m_addButton = new FluPushButton(tr("新增"), this);
+    m_addButton->setFixedSize(cardActionButtonSize());
+    m_removeButton = new FluPushButton(tr("删除"), this);
+    m_removeButton->setFixedSize(cardActionButtonSize());
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(m_addButton);
+    row->addWidget(m_removeButton);
+    m_mainLayout->addLayout(row, 0);
+
+    refreshCombo();
+
+    connect(getComboBox(), &FluComboBox::currentTextChanged, this, [this](const QString &) {
+        if (m_repopulating)
+            return; // 重填下拉触发的 currentTextChanged 不是用户意图，回环会把选中态打回首条
+        const int at = getComboBox()->currentIndex();
+        const QList<ProviderSpec::Provider> list = m_target->providers();
+        if (at >= 0 && at < list.size())
+            m_target->setProviderId(list.at(at).id);
+    });
+    connect(m_addButton, &QPushButton::clicked, this, [this]() { promptAdd(); });
+    connect(m_removeButton, &QPushButton::clicked, this, [this]() { promptRemove(); });
+    // 别处改了表（新增/删除/改名）也要反映到本卡下拉
+    connect(m_target, &ModelServiceTarget::targetChanged, this, [this]() { refreshCombo(); });
+}
+
+void ProviderSettingCard::retranslate()
+{
+    setTitleInfo(tr("服务商"), QString());
+    m_addButton->setText(tr("新增"));
+    m_removeButton->setText(tr("删除"));
+    refreshCombo();
+}
+
+void ProviderSettingCard::refreshCombo()
+{
+    const QList<ProviderSpec::Provider> list = m_target->providers();
+    m_repopulating = true;
+    getComboBox()->blockSignals(true);
+    getComboBox()->clear();
+    QStringList names;
+    for (const ProviderSpec::Provider &p : list)
+        names << (p.name.isEmpty() ? p.id : p.name);
+    getComboBox()->addItems(names);
+    const int at = m_target->currentIndex();
+    if (at >= 0)
+        getComboBox()->setCurrentIndex(at);
+    getComboBox()->blockSignals(false);
+    m_repopulating = false;
+
+    // 只剩一条时禁删：删空会让 loadProviders() 回落到旧三键镜像，而镜像正是这条本身——
+    // 表现为「删了又自己长回来」。与其让用户困惑，不如在入口就拦住并说明原因。
+    m_removeButton->setEnabled(list.size() > 1);
+    m_removeButton->setToolTip(list.size() > 1 ? QString()
+                                               : tr("至少需保留一个服务商。"));
+
+    const ProviderSpec::Provider cur = m_target->current();
+    setInfoValue(tr("当前编辑"),
+                 list.isEmpty() ? tr("无") : (cur.name.isEmpty() ? cur.id : cur.name),
+                 tr("共 %1 个服务商").arg(list.size()));
+}
+
+void ProviderSettingCard::promptAdd()
+{
+    const auto [input, accepted] = InputDialog::getInputText(
+        window(), tr("新增服务商"), tr("给这个服务商起个名字，如 DeepSeek。"), QString());
+    if (!accepted)
+        return;
+    ProviderSpec::Provider fresh;
+    fresh.name = ProviderSpec::normalizeProviderName(input);
+    // 新条目先建空壳（无端点无模型）：允许「先建档、再填地址」，与旧三键「空串=未配置」
+    // 口径一致。真正的合法性在填地址那一刻由 commitEditedCurrent 校验。
+    if (!commitEditedCurrent(m_target, fresh, window()))
+        return;
+    // 建完即切到新条目，否则用户接着填地址时改的还是老那条——那是最容易写错地方的一步
+    const QList<ProviderSpec::Provider> after = m_target->providers();
+    if (!after.isEmpty())
+        m_target->setProviderId(after.last().id);
+}
+
+void ProviderSettingCard::promptRemove()
+{
+    const ProviderSpec::Provider cur = m_target->current();
+    if (m_target->providers().size() <= 1)
+        return; // 按钮已禁，双保险
+    const QString label = cur.name.isEmpty() ? cur.id : cur.name;
+    if (FluMessageBox(tr("删除服务商"),
+                      tr("确定删除「%1」？其端点、密钥与模型清单都会移除。").arg(label),
+                      window())
+            .exec()
+        != QDialog::Accepted)
+        return;
+    const QList<ProviderSpec::Provider> next = ProviderSpec::removeProvider(m_target->providers(), cur.id);
+    if (!m_target->commit(next, window()))
+        return;
+    m_target->setProviderId(next.isEmpty() ? QString() : next.first().id);
+}
+
+// 注：上面 commitEditedCurrent 所在的匿名 namespace 已闭合。闭合并**不会**让它对后续代码
+// 失去可见性（同一 TU 内匿名命名空间成员在此后仍然可用），故此处不再重开一个
+// `namespace {`——重开而没有配对的 `}` 会让整个文件命名空间不闭合。
 
 // 说明位值卡基类：把「简短解释：值」渲染进 FluSettingsSelectBox 的 m_infoLabel
 // （标题下方那一格），右侧操作行只留按钮。六张设置卡共用，避免各写一份省略逻辑。
@@ -401,8 +608,10 @@ void MaxRoundsSettingCard::promptEdit()
 // 服务地址设置卡：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
 // 编辑走 InputDialog 单行输入（parent 传主窗口保遮罩铺满），预填存量值；
 // 校验不过弹 FluMessageBox 拒写，空串按清除处理。URL 非机密，明文展示、ToolTip 回落全量。
-ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
-    : InfoSlotSettingCard(parent)
+// s18.3：本卡读写的是 **target 当前选中 provider** 的 baseUrl，不再是全局单键；
+// 合法性判据也统一走 ProviderSpec::isValidBaseUrl（与拉取端点拼接同一把尺子）。
+ApiUrlSettingCard::ApiUrlSettingCard(ModelServiceTarget *target, QWidget *parent)
+    : InfoSlotSettingCard(parent), m_target(target)
 {
     setTitleInfo(tr("服务地址"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Link); // 端点链接语义（Globe 已被语言卡占用）
@@ -424,10 +633,12 @@ ApiUrlSettingCard::ApiUrlSettingCard(QWidget *parent)
 
     connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        applySetting(kApiBaseUrlKey, QString(), window());
-        QOpenAi::setUrl(QString()); // 即时生效：下一回合请求走空配置报错路径
-        updateValue();
+        ProviderSpec::Provider edited = m_target->current();
+        edited.baseUrl.clear();
+        commitEditedCurrent(m_target, edited, window());
     });
+    // 切了 provider 必须整体重画：否则显示的是甲的地址、写进去落在乙身上
+    connect(m_target, &ModelServiceTarget::targetChanged, this, [this]() { updateValue(); });
 }
 
 void ApiUrlSettingCard::retranslate()
@@ -440,7 +651,7 @@ void ApiUrlSettingCard::retranslate()
 
 void ApiUrlSettingCard::updateValue()
 {
-    const QString stored = readApiBaseUrl();
+    const QString stored = m_target->current().baseUrl;
     // ToolTip 传原始全量 URL（长 URL 省略后仍可悬停读全）；未设置时空串，基类回落占位文案
     setInfoValue(tr("OpenAI 兼容基址"), stored.isEmpty() ? tr("未设置") : stored, stored);
 }
@@ -449,11 +660,11 @@ void ApiUrlSettingCard::promptEdit()
 {
     const auto [input, accepted] = InputDialog::getInputText(
         window(), tr("设置服务地址"), tr("以 /v1 等版本路径结尾，不含补全端点。"),
-        readApiBaseUrl());
+        m_target->current().baseUrl);
     if (!accepted)
         return; // 取消：保持原值
     const QString cleaned = input.trimmed();
-    if (!cleaned.isEmpty() && !isHttpBaseUrl(cleaned))
+    if (!cleaned.isEmpty() && !ProviderSpec::isValidBaseUrl(cleaned))
     {
         // 非法 URL 拒绝并提示，不落盘（原值继续生效）
         FluMessageBox(tr("无效地址"),
@@ -462,17 +673,18 @@ void ApiUrlSettingCard::promptEdit()
             .exec();
         return;
     }
-    applySetting(kApiBaseUrlKey, cleaned, window());
-    QOpenAi::setUrl(cleaned); // 即时生效，无需重启
-    updateValue();
+    ProviderSpec::Provider edited = m_target->current();
+    edited.baseUrl = cleaned;
+    commitEditedCurrent(m_target, edited, window()); // 内部已 reloadProviders，热生效无需重启
 }
 
 // API Key 设置卡：结构与 URL 卡同款，差异全在「机密值」处理——说明位只显脱敏摘要，
 // **明文绝不上屏也不进 ToolTip**（基类会把 value 原样写进 ToolTip，故进说明位的必须
 // 已是 maskedApiToken 摘要，绝不能把 stored 明文交给基类）。
 // 编辑框不预填存量明文 + Password 回显；清除另有「清除」按钮，职责不重叠。
-ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
-    : InfoSlotSettingCard(parent)
+// s18.3：读写 target 当前 provider 的 token。掩码纪律一字未动，只是换了存储位置。
+ApiTokenSettingCard::ApiTokenSettingCard(ModelServiceTarget *target, QWidget *parent)
+    : InfoSlotSettingCard(parent), m_target(target)
 {
     setTitleInfo(tr("API Key"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::Lock); // 凭据语义（枚举表无 Key 项）
@@ -494,10 +706,11 @@ ApiTokenSettingCard::ApiTokenSettingCard(QWidget *parent)
 
     connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        applySetting(kApiTokenKey, QString(), window());
-        QOpenAi::setToken(QString()); // 即时生效：下一回合请求走空配置报错路径
-        updateValue();
+        ProviderSpec::Provider edited = m_target->current();
+        edited.token.clear();
+        commitEditedCurrent(m_target, edited, window());
     });
+    connect(m_target, &ModelServiceTarget::targetChanged, this, [this]() { updateValue(); });
 }
 
 void ApiTokenSettingCard::retranslate()
@@ -510,7 +723,7 @@ void ApiTokenSettingCard::retranslate()
 
 void ApiTokenSettingCard::updateValue()
 {
-    const QString stored = readApiToken();
+    const QString stored = m_target->current().token;
     // 安全收口：value 传脱敏摘要（非 stored），toolTip 显式传状态串而非全量值——
     // 否则基类的「回落 prefix+value」会把摘要写进悬停提示，虽仍非明文，但「已保存」
     // 的既有语义更贴合凭据卡（不重复罗列星号串）。
@@ -534,79 +747,207 @@ void ApiTokenSettingCard::promptEdit()
     const QString cleaned = input.trimmed();
     if (cleaned.isEmpty())
         return; // 留空＝不修改
-    applySetting(kApiTokenKey, cleaned, window());
-    QOpenAi::setToken(cleaned); // 即时生效，无需重启
-    updateValue();
+    ProviderSpec::Provider edited = m_target->current();
+    edited.token = cleaned;
+    commitEditedCurrent(m_target, edited, window());
 }
 
-// 可选模型清单设置卡：说明位「下拉候选：<清单>」+「修改 + 清除」操作行。
-// 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
-// 说明位展示的是**生效清单**（清洗去重后），非原始配置串——所见即下拉所得；
-// 原始串经 ToolTip 兜底（两者可能不同，留空不等于「没有模型可选」）。
-// 生效路径：本卡只写 config.json，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框下拉
-// 在每次弹层展开前重读该键并原地刷新，故改完配置无需重启即可选到新模型。
-ModelListSettingCard::ModelListSettingCard(QWidget *parent)
-    : InfoSlotSettingCard(parent)
+// 可选模型清单设置卡：说明位「下拉候选：<清单>」+「管理 + 清除」操作行。
+// s18.3 改造要点（本次「添加模型不方便」的主修对象）：
+//   旧形态是「修改」弹一个输入框、把整份清单当**一条逗号文本**让用户整体重打。三个后果：
+//     ① 加一个模型要重打全部已有模型；② 预填取的是原始存储值，而值区显示的是清洗后的
+//        生效清单——未配置时弹窗是**空的**，用户补一个新名字就把内置两项静默抹掉；
+//     ③ 模型名必须去服务商控制台手抄，拼错要到发消息时才发现。
+//   现改为「管理」弹菜单：添加一个 / 从服务端拉取 / 逐项移除 / 清空，逐项操作、不碰整串。
+// 说明位仍展示**生效清单**（所见即下拉所得）。清单来源改为 target 当前 provider。
+// 生效路径不变：本卡只写 config.json，不持有也不引用 ChatMsgEdit（两控件解耦）；输入框
+// 下拉在每次弹层展开前重读清单并原地刷新，故改完配置无需重启即可选到新模型。
+ModelListSettingCard::ModelListSettingCard(ModelServiceTarget *target, QWidget *parent)
+    : InfoSlotSettingCard(parent), m_target(target)
 {
     setTitleInfo(tr("可选模型"), QString()); // 说明位归值管
     setIcon(FluAwesomeType::ReadingList); // 清单语义（Link / Lock 已用于同组两卡）
     getComboBox()->hide(); // 本卡不用下拉，右侧改放自定义操作行
 
-    m_modifyButton = new FluPushButton(tr("修改"), this);
-    m_modifyButton->setFixedSize(cardActionButtonSize());
+    m_manageButton = new FluPushButton(tr("管理"), this);
+    m_manageButton->setFixedSize(cardActionButtonSize());
     m_clearButton = new FluPushButton(tr("清除"), this);
     m_clearButton->setFixedSize(cardActionButtonSize());
 
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    row->addWidget(m_modifyButton);
+    row->addWidget(m_manageButton);
     row->addWidget(m_clearButton);
     m_mainLayout->addLayout(row, 0); // 追加到卡片右侧（原下拉框位），保持图标/标题布局不变
 
     updateValue();
 
-    connect(m_modifyButton, &QPushButton::clicked, this, [this]() { promptEdit(); });
+    connect(m_manageButton, &QPushButton::clicked, this, [this]() { promptManage(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        applySetting(kModelOptionsKey, QString(), window()); // 即时生效：下拉下次展开回退内置清单
-        updateValue();
+        ProviderSpec::Provider edited = m_target->current();
+        edited.models.clear();
+        commitEditedCurrent(m_target, edited, window());
     });
+    connect(m_target, &ModelServiceTarget::targetChanged, this, [this]() { updateValue(); });
 }
 
 void ModelListSettingCard::retranslate()
 {
     setTitleInfo(tr("可选模型"), QString());
-    m_modifyButton->setText(tr("修改"));
+    m_manageButton->setText(tr("管理"));
     m_clearButton->setText(tr("清除"));
     updateValue();
 }
 
 void ModelListSettingCard::updateValue()
 {
-    const QString stored = readModelOptionsRaw().trimmed();
-    const QString shown = AgentConst::modelOptions().join(QStringLiteral(", "));
-    if (stored.isEmpty())
+    const QStringList mine = m_target->current().models;
+    if (mine.isEmpty())
     {
-        // 未配置：仍展示回退后的内置清单（下拉里就是这些），靠前缀标注来源
-        setInfoValue(tr("内置默认候选"), shown,
-                     tr("未配置 modelOptions 键，可用本卡「修改」填写。"));
+        // 本 provider 一个模型都没挂：下拉此刻用的是别家或内置兜底，如实标注来源，
+        // 不再像旧版那样把「未配置」与「配置了但为空」混成一句。
+        setInfoValue(tr("本服务商暂无模型"),
+                     AgentConst::modelOptions().join(QStringLiteral(", ")),
+                     tr("用「管理」添加或从服务端拉取。未添加前，下拉显示的是其它服务商或内置候选。"));
         return;
     }
-    // 展示清洗去重后的生效值；原始录入串经 ToolTip 兜底（两者可能不同）
-    setInfoValue(tr("下拉候选"), shown, tr("config.json: %1").arg(stored));
+    setInfoValue(tr("下拉候选"), mine.join(QStringLiteral(", ")),
+                 tr("共 %1 项（本服务商）").arg(mine.size()));
 }
 
-void ModelListSettingCard::promptEdit()
+void ModelListSettingCard::promptManage()
 {
+    const ProviderSpec::Provider cur = m_target->current();
+
+    FluPMenu menu(window());
+    menu.setTitle(tr("可选模型"));
+    auto *addItem = menu.addAction(tr("添加模型…"));
+    auto *fetchItem = menu.addAction(m_fetching ? tr("正在拉取…") : tr("从服务端拉取…"));
+    fetchItem->setEnabled(!m_fetching); // 在途期间禁掉，防连点后到的响应覆盖先到的
+    QAction *clearItem = nullptr;
+    QList<QAction *> removeItems;
+    if (!cur.models.isEmpty())
+    {
+        menu.addSeparator();
+        for (const QString &m : cur.models)
+            removeItems.append(menu.addAction(tr("移除 %1").arg(m)));
+        menu.addSeparator();
+        clearItem = menu.addAction(tr("清空本服务商模型清单"));
+    }
+
+    QAction *chosen = menu.exec(QCursor::pos());
+    if (!chosen)
+        return;
+    if (chosen == addItem)
+    {
+        promptAddOne();
+        return;
+    }
+    if (chosen == fetchItem)
+    {
+        fetchFromServer();
+        return;
+    }
+    if (clearItem && chosen == clearItem)
+    {
+        ProviderSpec::Provider edited = cur;
+        edited.models.clear();
+        commitEditedCurrent(m_target, edited, window());
+        return;
+    }
+    for (int i = 0; i < removeItems.size(); ++i)
+    {
+        if (chosen != removeItems.at(i))
+            continue;
+        const QList<ProviderSpec::Provider> next =
+            ProviderSpec::removeModelFromProvider(m_target->providers(), cur.id, cur.models.at(i));
+        m_target->commit(next, window());
+        return;
+    }
+}
+
+void ModelListSettingCard::promptAddOne()
+{
+    // 只录**一个**模型名——这是本次改造的核心取舍：录入单位与存储单位对齐后，
+    // 用户不必为了加一项而重打整张清单，也不可能因为漏个逗号抹掉别项。
     const auto [input, accepted] = InputDialog::getInputText(
-        window(), tr("设置可选模型"), tr("多个模型用英文逗号分隔，如 qwen3.8-flash,qwen3.8-max。"),
-        readModelOptionsRaw());
+        window(), tr("添加模型"),
+        tr("输入模型 ID（大小写敏感，须与服务端一致），如 qwen3.8-flash。"), QString());
     if (!accepted)
-        return; // 取消：保持原值
-    // 清洗后全空（只输了逗号或空白）按清除处理而非报错：语义与「清除」按钮一致，
-    // 且空清单本就不该落盘——下拉无项可展，AgentLoop 白名单也会把所有模型判成回落
-    applySetting(kModelOptionsKey, normalizeModelOptions(input), window());
-    updateValue();
+        return;
+    const QString name = ProviderSpec::normalizeModelName(input);
+    if (m_target->current().models.contains(name))
+    {
+        // addModelToProvider 对「本家已有」是幂等静默（返回原表、error 空），
+        // 但界面上什么都不说会被当成「点了没反应」，这里补一句如实反馈。
+        FluMessageBox(tr("无需添加"), tr("该模型已在本服务商清单中。"), window()).exec();
+        return;
+    }
+    QString error;
+    const QList<ProviderSpec::Provider> next =
+        ProviderSpec::addModelToProvider(m_target->providers(), m_target->current().id, input, error);
+    if (!error.isEmpty())
+    {
+        // 文案单源 providerErrorText（与地址/密钥卡同一套机器码→文案映射，两处不各拼一份）
+        FluMessageBox(tr("无法添加"), providerErrorText(error), window()).exec();
+        return;
+    }
+    m_target->commit(next, window());
+}
+
+void ModelListSettingCard::fetchFromServer()
+{
+    const ProviderSpec::Provider cur = m_target->current();
+    if (cur.baseUrl.isEmpty())
+    {
+        FluMessageBox(tr("无法拉取"), tr("请先为本服务商填写服务地址。"), window()).exec();
+        return;
+    }
+    m_fetching = true;
+    m_manageButton->setEnabled(false); // 在途期间锁住入口，回来再解
+    const QString providerId = cur.id;
+    ModelFetch::Request::fetch(
+        cur.baseUrl, cur.token, this,
+        [this, providerId](const QStringList &models, const QString &error) {
+            m_fetching = false;
+            m_manageButton->setEnabled(true);
+            if (!error.isEmpty())
+            {
+                // 拉不到不阻断：手填通路始终可用，这是设计前提而非兜底
+                FluMessageBox(tr("拉取失败"),
+                              error + tr("仍可用「添加模型」手动填写。"), window())
+                    .exec();
+                return;
+            }
+            const QList<ProviderSpec::Provider> table = m_target->providers();
+            const int at = ProviderSpec::indexOfId(table, providerId);
+            if (at < 0)
+                return; // 响应回来时那条 provider 已被删：丢弃，不往已消失的目标上写
+            const QStringList added =
+                ProviderSpec::mergeableModels(table.at(at), models, table);
+            if (added.isEmpty())
+            {
+                FluMessageBox(tr("拉取完成"),
+                              tr("服务端返回 %1 个模型，均已在本服务商清单中。").arg(models.size()),
+                              window())
+                    .exec();
+                return;
+            }
+            // 勾选式增删需要一套带列表的对话框与三主题 QSS，代价远大于收益；这里把
+            // 「全部可加的」一次性并入并如实报数，多余项可用「管理 → 移除」逐条摘掉。
+            // mergeableModels 已滤掉本家已有与别家占用的名字，故这里不会再触发撞名拒绝。
+            QList<ProviderSpec::Provider> next = table;
+            ProviderSpec::Provider edited = table.at(at);
+            for (const QString &m : added)
+            {
+                if (edited.models.size() >= ProviderSpec::kModelsPerProviderMax)
+                    break;
+                edited.models.append(m);
+            }
+            next[at] = edited;
+            m_target->commit(next, window());
+        });
 }
 
 SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
@@ -768,13 +1109,21 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     scrollView->getMainLayout()->addWidget(m_modelLabel, 0, Qt::AlignTop);
 
     // 同组三卡紧邻不加 addSpacing：与「外观与行为」组（主题盒 + 语言盒）既有排布同款
-    m_apiUrlCard = new ApiUrlSettingCard;
+    // s18.3：target 必须先于四张卡构造并作为它们的 parent——四卡持裸指针，且 target 的
+    // 生命周期要覆盖整页（页面是主窗口构造期即时 new 的常驻页，不是懒建）。
+    m_modelTarget = new ModelServiceTarget(this);
+
+    // 同组四卡紧邻不加 addSpacing：与「外观与行为」组（主题盒 + 语言盒）既有排布同款
+    m_providerCard = new ProviderSettingCard(m_modelTarget);
+    scrollView->getMainLayout()->addWidget(m_providerCard, 0, Qt::AlignTop);
+
+    m_apiUrlCard = new ApiUrlSettingCard(m_modelTarget);
     scrollView->getMainLayout()->addWidget(m_apiUrlCard, 0, Qt::AlignTop);
 
-    m_apiTokenCard = new ApiTokenSettingCard;
+    m_apiTokenCard = new ApiTokenSettingCard(m_modelTarget);
     scrollView->getMainLayout()->addWidget(m_apiTokenCard, 0, Qt::AlignTop);
 
-    m_modelListCard = new ModelListSettingCard;
+    m_modelListCard = new ModelListSettingCard(m_modelTarget);
     scrollView->getMainLayout()->addWidget(m_modelListCard, 0, Qt::AlignTop);
 
 
@@ -1256,6 +1605,10 @@ void SettingsPage::retranslateUi()
     m_permissionBox->getComboBox()->setItemText(1, tr("无需审批"));
 
     m_modelLabel->setText(tr("模型服务"));
+    // 四卡同组同口径重译（顺序与构造序一致：provider 卡在首）。漏掉任何一张，切语言后
+    // 那张的标题/按钮会滞留旧语言——它们都是构造期定值，不重译不会自己变。
+    if (m_providerCard)
+        m_providerCard->retranslate();
     if (m_apiUrlCard)
         m_apiUrlCard->retranslate();
     if (m_apiTokenCard)

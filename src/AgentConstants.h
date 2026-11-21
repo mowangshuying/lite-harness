@@ -12,7 +12,7 @@
 #include <QMetaType> // textValue 判返回值形态
 #include <QVariant>  // textValue 取原始值
 #include "AppSettings.h"
-
+#include "ProviderSpec.h" // s18.3 多 Provider：模型清单单源上移到 provider 表，normalizedText 转发过去
 namespace AgentConst {
 
 // 可选模型清单：内置兜底两项 + config.json 覆盖（键 modelOptions，逗号分隔）。
@@ -38,10 +38,11 @@ inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 // 标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
 inline QString normalizedText(const QVariant &stored)
 {
-    if (stored.metaType() == QMetaType::fromType<QStringList>()
-        || stored.metaType() == QMetaType::fromType<QVariantList>())
-        return stored.toStringList().join(QLatin1Char(','));
-    return stored.toString();
+    // 实现已上移到 ProviderSpec::listToCsv 并在那边单源（provider 的 models 字段要认同样
+    // 两种形态）。留这层转发而不是再抄一份：两处各持一套判据必然漂移，而漂移的后果是
+    // 「同一个列表键，A 处读得回、B 处静默判未配置」。tst_configmerge 仍直测本函数，
+    // 语义逐字不变。
+    return ProviderSpec::listToCsv(stored);
 }
 
 // 取值归一化（读侧唯一入口）：取原始值走 AppSettings::value()（缓存解析产物，按文件身份惰性
@@ -75,6 +76,19 @@ inline QStringList parseModelOptions(const QString &stored)
 // 一律回退内置清单——配置文件只增不改语义，写坏或清空都不会让下拉框变成空下拉。
 inline QStringList modelOptions()
 {
+    // s18.3 多 Provider：**只有 providers 键真配出非空表**才走 provider 摊平。
+    // 刻意不用 loadProviders()（它会把旧三键合成一条）：那条合成路径的截断口径是
+    // kModelsPerProviderMax=64，而旧路径是 parseModelOptions 的 kModelOptionsMax=32，
+    // 让合成值喂给本函数会把旧配置的 32 条上限静默放宽到 64（docs/doc.md:711 的验收项即漂）。
+    // 故这里只认新键，未配新键时下面三行与改造前逐字相同。
+    const QList<ProviderSpec::Provider> configured =
+        ProviderSpec::parseProviders(AppSettings::value(ProviderSpec::kProvidersKey));
+    if (!configured.isEmpty())
+    {
+        const QStringList flattened = ProviderSpec::allModels(configured);
+        if (!flattened.isEmpty())
+            return flattened;
+    }
     const QStringList parsed =
         parseModelOptions(textValue(kModelOptionsKey));
     return parsed.isEmpty() ? kBuiltinModelOptions : parsed;
