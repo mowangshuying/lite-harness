@@ -122,8 +122,15 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     m_modelComboBox->addItems(modelList);
     m_modelComboBox->setFixedWidth(modelComboWidth(modelList)); // 占位宽随清单最长名自适应，理由见 modelComboWidth
     // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 config.json
-    // 不必重启即可在下拉里选中新加的模型；清单未变时 reloadModelOptions 整体早退
+    // 不必重启即可在下拉里选中新加的模型；清单未变时 reloadModelOptions 整体早退。
+    // 钩子必须同时挂在两个子按钮上：FluComboBox 不是 QComboBox，整块可视区被
+    // m_textBtn(stretch=1) + m_iconBtn(24x24) 铺满（构造期 addWidget 时 reparent 到 combo），
+    // 鼠标按下投递到子按钮并被 QPushButton 接受、不向父件传播，只装在 combo 自身的过滤器
+    // 收不到——仅点到 combo 那 3px 边距才碰巧触发。这正是「设置页拉取模型后，会话页下拉
+    // 仍是旧清单」的根因；combo 自身那份保留，继续覆盖键盘路径与边距点击。
     m_modelComboBox->installEventFilter(this);
+    m_modelComboBox->getTextBtn()->installEventFilter(this);
+    m_modelComboBox->getIconBtn()->installEventFilter(this);
     toolSetsLayout->addWidget(m_modelComboBox);
 
     m_sendMsgButton = new SendMsgButton(this);
@@ -266,9 +273,22 @@ void ChatMsgEdit::applyBusyState()
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
 {
     // 模型下拉：鼠标按下/键盘展开弹层前先重读配置清单（过滤器早于控件处理，
-    // 刷新发生在弹层构建之前，用户展开即见最新配置；清单未变则早退无副作用）
-    if (watched == m_modelComboBox &&
-        (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress))
+    // 刷新发生在弹层构建之前，用户展开即见最新配置；清单未变则早退无副作用）。
+    // 判据必须一并认那两个子按钮：FluComboBox 的可视区被 m_textBtn(stretch=1) +
+    // m_iconBtn(24x24) 铺满，鼠标按下投递到子按钮并被 QPushButton 接受、不向父件传播，
+    // 只判 combo 自身就收不到绝大多数点击——「设置页拉取模型后会话页下拉不更新」即此因。
+    // 不改成连 FluComboBox::clicked()：vendor 构造期已先连了开弹层的 lambda，后连的槽
+    // 只会在弹层显示之后跑，刷新晚一拍。
+    // m_modelComboBox 判空不可省：本控件的过滤器有两处安装点，m_textEdit 那份在构造早期
+    // （见构造函数内 installEventFilter 顺序）就先于 m_modelComboBox 创建生效，且
+    // watched == m_modelComboBox 这种比较对空指针是安全的、而解引用不是。
+    // 事件类型放最前短路：这份过滤器同时装在 m_textEdit 上，FocusIn/FocusOut、InputMethod、
+    // 光标移动等高频事件都从本函数过，先判类型可让绝大多数事件零跨 TU 调用即出局
+    //（getTextBtn/getIconBtn 定义在 FluComboBox.cpp、非头文件内联，每次都是真调用）。
+    if ((event->type() == QEvent::MouseButtonPress || event->type() == QEvent::KeyPress) &&
+        m_modelComboBox &&
+        (watched == m_modelComboBox || watched == m_modelComboBox->getTextBtn() ||
+         watched == m_modelComboBox->getIconBtn()))
     {
         reloadModelOptions();
     }
