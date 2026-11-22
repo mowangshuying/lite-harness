@@ -74,7 +74,9 @@ private:
     // 从不直读磁盘、也从不订阅 AgentLoop：数据经本类 push 过去（承 SessionSidebar 的
     // setter-push 纪律）。
     void scanActivityLedgers();
-    void refreshActivityForDataId(const QString &dataId);
+    // push=false 供 scanActivityLedgers 启动循环使用：循环内只填缓存，循环外统一 push 一次。
+    // 默认 true 保持 :254/:349 两个增量刷新调用点的原语义（单会话落账后立刻推给热力图）。
+    void refreshActivityForDataId(const QString &dataId, bool push = true);
     void pushActivityToNewChat();
 
 protected:

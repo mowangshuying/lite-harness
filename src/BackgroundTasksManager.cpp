@@ -102,7 +102,13 @@ QJsonArray BackgroundTasksManager::ledgerSnapshot() const
     ids.sort();
     QJsonArray rows;
     for (const QString &id : ids) {
-        const Task &task = m_tasks.value(id);
+        // constFind 而非 value()：QHash::value(key) 按值返回，绑到 const& 仍发生整份深拷
+        // （Task 含 command/status 等多个 QString）。ids 刚由 keys() 取得，键必在。
+        // 本函数与 cron 台账同挂在每会话每秒一次的 tick 上（AgentLoop.cpp）。
+        const auto taskIt = m_tasks.constFind(id);
+        if (taskIt == m_tasks.constEnd())
+            continue; // 防御性早退，理论不可达
+        const Task &task = *taskIt;
         QJsonObject row;
         row[QStringLiteral("id")] = id;
         row[QStringLiteral("command")] = task.command;

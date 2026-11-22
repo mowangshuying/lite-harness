@@ -116,8 +116,11 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 模型下拉框：FluComboBox 自带三主题 QSS 与 hover/pressed 态，弹层为 FluIndicatorRoundMenu
     // （当前项左侧画主题色选中标识竖条，WinUI ComboBox 观感）；高度 30 与 SendMsgButton 同高
     m_modelComboBox = new FluComboBox(this);
-    m_modelComboBox->addItems(AgentConst::modelOptions()); // 清单来自 config.json（未配置回退内置两项）
-    m_modelComboBox->setFixedWidth(modelComboWidth(AgentConst::modelOptions())); // 占位宽随清单最长名自适应，理由见 modelComboWidth
+    // 清单取一次复用：原写法 modelOptions() 连调两遍，每遍都是 2 次 AppSettings::value
+    // （各 1 次文件 stat）+ 整张 provider 表重建；本控件实例数 = 会话数 + 1，全在首帧之前。
+    const QStringList modelList = AgentConst::modelOptions(); // 清单来自 config.json（未配置回退内置两项）
+    m_modelComboBox->addItems(modelList);
+    m_modelComboBox->setFixedWidth(modelComboWidth(modelList)); // 占位宽随清单最长名自适应，理由见 modelComboWidth
     // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 config.json
     // 不必重启即可在下拉里选中新加的模型；清单未变时 reloadModelOptions 整体早退
     m_modelComboBox->installEventFilter(this);

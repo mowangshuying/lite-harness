@@ -90,7 +90,11 @@ QString McpManager::connect(const QString &name)
     if (m_connected.contains(name))
         return QStringLiteral("MCP server '%1' already connected").arg(name);
 
-    if (!m_registry.contains(name))
+    // 一次 constFind 同时承担「存在性判定 + 取值」：原写法 contains() 再 value()，
+    // 既查两遍哈希，value() 又按值返回整份 McpServerDef（tools + handlers 深拷一遍）。
+    // 也避免引入「守卫在 append 之后」的中间态——早退路径与登记动作不再互相依赖。
+    const auto defIt = m_registry.constFind(name);
+    if (defIt == m_registry.constEnd())
     {
         // 未知名：报可用清单。空注册表回落 "(none)"（偏差6；lcc 拼 MOCK_SERVERS 键列）。
         QStringList available = m_registry.keys();
@@ -101,7 +105,7 @@ QString McpManager::connect(const QString &name)
     }
 
     m_connected.append(name);
-    const McpServerDef &def = m_registry.value(name);
+    const McpServerDef &def = *defIt;
     QStringList toolNames;
     for (const McpToolDef &tool : def.tools)
         toolNames.append(tool.rawName);
@@ -131,12 +135,17 @@ bool McpManager::assemble(const QStringList &baseToolNames, QString *error)
     {
         // 一律按名现查 m_registry（不存指针/副本，防 rehash 悬垂）。已连名字查不到定义
         // = 注册表热替换/清空后的边缘态：防御性跳过并留日志（lcc clients 持对象引用无此态）。
-        if (!m_registry.contains(serverName))
+        // 单次 constFind 同时承担「存在性判定 + 取值」：原写法 contains() 再 value() 是
+        // 双查哈希，且 value() 按值返回整份 McpServerDef（tools + handlers 深拷一遍）。
+        // 已连名字查不到定义 = 注册表热替换/清空后的边缘态：防御性跳过并留日志
+        // （lcc clients 持对象引用无此态）。
+        const auto defIt = m_registry.constFind(serverName);
+        if (defIt == m_registry.constEnd())
         {
             LOG_WARN << QStringLiteral("[mcp] assembled server vanished from registry: %1").arg(serverName);
             continue;
         }
-        const McpServerDef &def = m_registry.value(serverName);
+        const McpServerDef &def = *defIt;
 
         QString serverErr;
         const QString safeServer = normalizeName(def.name, &serverErr);

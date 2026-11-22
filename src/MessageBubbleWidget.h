@@ -2,6 +2,7 @@
 
 #include <FluWidget.h>
 #include <QElapsedTimer>
+#include <QFont>
 #include <QTextBrowser>
 #include <QVector>
 
@@ -115,6 +116,10 @@ private:
     {
         QString markdown;
         QTextBrowser *view = nullptr;
+        // 该段 markdown 是否已渲染。finalizeStreamedText 在一回合内被调两次
+        // （记忆相位 appendMemoryProgress + 收流 finishStreaming），无此标记则整篇
+        // 文档被 setMarkdown 重建两遍；长回答末尾可见地「顿一下」即源于此。
+        bool rendered = false;
     };
 
 private:
@@ -136,4 +141,16 @@ private:
     ToolBlock *m_liveToolBlock = nullptr;   // 常规工具事前 live 卡（toolStarted 创建），同名终态就地收口
     QString m_liveToolName;                 // 在途 live 卡工具名（串行契约下的匹配依据）
     QTimer *m_streamResizeTimer = nullptr;   // 流式期间测量节流
+
+    // ---- 热路径收敛用状态（见 .cpp updateSize/finalizeStreamedText 注释）----
+    // 这两个键**只服务于助手气泡的「流式期跳过已冻结段」**，不用于用户气泡（见 .cpp
+    // User 支路注释为何不缓存）。键 = 「可用宽 + 字体」两维：字体必须入键，因为字号
+    // 可运行时改，只比宽度会把已冻结段钉死在旧字号的高度上。
+    // 曾考虑改用 QTextDocument::documentRevision() 以免手工失效，已否决：本控件在
+    // makeTextView 里 setUndoRedoEnabled(false)，revision 在该模式下是否仍自增属 Qt
+    // 内部行为、离线不可核实——一旦不自增就是把尺寸永久钉死在旧文本上，故取可证明的一侧。
+    int m_lastMeasuredW = -1;
+    QFont m_lastMeasuredFont;
+    bool m_plainRendered = false;   // 非时间线分支的 markdown 已渲染（防记忆相位 + 收流渲染两遍）
+    QWidget *m_filterParent = nullptr; // 已挂 Resize 过滤器的父件：换父件时先摘旧再挂新，杜绝重复投递
 };

@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QResizeEvent>
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QMargins>
@@ -228,6 +229,10 @@ void MessageBubbleWidget::setRole(Role role)
 
 void MessageBubbleWidget::setContent(const QString &content)
 {
+    // 正文写入即令测量缓存失效（updateSize 的「可用宽+字体」键只看宽度与字体，
+    // 不看文本；文本是唯一另一维输入，必须在此显式作废）
+    m_lastMeasuredW = -1;
+
     if (m_role == User)
         m_content->setPlainText(content);
     else
@@ -269,6 +274,10 @@ void MessageBubbleWidget::startStreaming(const QString &placeholder)
     m_liveText.clear();
     m_thinkingRunning = false;
     m_liveThinking = nullptr;
+    // 正文重写 + 新一轮定稿：渲染旗标与测量缓存一并作废（缓存键只看宽度+字体，
+    // 不含文本，占位文案写进来必须手动失效，否则新段沿用上一轮的尺寸结论）
+    m_plainRendered = false;
+    m_lastMeasuredW = -1;
     m_content->setPlainText(placeholder);
     m_liveView = m_content;
     scheduleSizeUpdate();
@@ -504,7 +513,11 @@ void MessageBubbleWidget::appendMemoryProgress()
         if (m_liveView->document()->isEmpty())
             m_liveView->hide();
         else
-            m_textRuns.append({m_liveText, m_liveView});
+            // rendered 取 m_plainRendered：上面 finalizeStreamedText 若走的是非时间线分支，
+            // 本段（即主视图）已经 setMarkdown 过一次，归档时带上已渲染态，收流时
+            // finishStreaming 的第二次 finalize 才不会把整篇 markdown 重渲染第二遍。
+            // 其余 8 处冻结点都在 finalize 之前，m_plainRendered 恒 false，无需同改。
+            m_textRuns.append({m_liveText, m_liveView, m_plainRendered});
         m_liveView = nullptr;
         m_liveText.clear();
     }
@@ -675,8 +688,15 @@ void MessageBubbleWidget::finalizeStreamedText()
 
     if (!m_timeline)
     {
-        // 无思考、无工具块：直接渲染正文 markdown（保持原横向布局）
-        m_content->setMarkdown(m_liveText);
+        // 无思考、无工具块：直接渲染正文 markdown（保持原横向布局）。
+        // 本函数一回合内被调两次（记忆相位 appendMemoryProgress + 收流 finishStreaming），
+        // 无旗标则整篇 setMarkdown 重建两遍——长回答末尾可见地「顿一下」。
+        if (!m_plainRendered)
+        {
+            m_content->setMarkdown(m_liveText);
+            m_plainRendered = true;
+            m_lastMeasuredW = -1;   // markdown 重建改变文档高度，宽度键必须作废
+        }
         scheduleSizeUpdate();
         return;
     }
@@ -689,15 +709,25 @@ void MessageBubbleWidget::finalizeStreamedText()
         m_liveText.clear();
     }
 
-    for (const TextRun &run : m_textRuns)
+    bool anyRendered = false;
+    for (TextRun &run : m_textRuns)
     {
         if (run.markdown.trimmed().isEmpty())
             run.view->hide();   // 空文本段（思考不再经过正文视图，此处只会是占位残留）：收起不占位
-        else
+        else if (!run.rendered)
         {
             run.view->setMarkdown(run.markdown);
+            run.rendered = true;
+            anyRendered = true;
         }
     }
+
+    // 只要本帧真的重建过段落文档，宽度键必须作废：appendMemoryProgress 是在
+    // m_streaming 仍为 true 时调本函数的，而 updateSize 的助手支路在「流式期 + 列宽未变」
+    // 下只测 m_liveView——此刻 m_liveView 已被归档置空，若不作废就一段都不会重测，
+    // 重渲染后的 markdown 高度永远留在流式期的旧值上。
+    if (anyRendered)
+        m_lastMeasuredW = -1;
 
     // 思考块已在流式期间就地创建并收终态，不再重建（避免重复渲染与闪烁）
 
@@ -776,8 +806,16 @@ void MessageBubbleWidget::scheduleStreamResize()
 
 bool MessageBubbleWidget::eventFilter(QObject *watched, QEvent *event)
 {
+    // 仅宽度变化才重测：流式期本气泡长高会带动父件（FluVScrollView 的 contextWidget，
+    // setWidgetResizable 下与 viewport 同步）resize，若无判据，整列用户气泡每 50ms
+    // 各跑一遍「全文 toPlainText + split + 逐行 horizontalAdvance」，是 O(气泡数×行数)
+    // 的每拍固定开销。判据与 resizeEvent 同口径。
     if (watched == parentWidget() && event->type() == QEvent::Resize)
-        refreshSize();
+    {
+        auto *re = static_cast<QResizeEvent *>(event);
+        if (re->size().width() != re->oldSize().width())
+            refreshSize();
+    }
 
     return FluWidget::eventFilter(watched, event);
 }
@@ -814,8 +852,19 @@ void MessageBubbleWidget::updateSize()
 
     if (m_role == User)
     {
-        if (parentWidget())
-            parentWidget()->installEventFilter(this);
+        // 过滤器只挂一次：本泡构造期 parent 是页面、addWidget 后被 reparent 到滚动区
+        // contextWidget，旧父件上那份必须摘掉——否则同一 Resize 事件被投递多次，且
+        // 页面级过滤器永不摘除（全仓无 removeEventFilter 调用点）
+        if (QWidget *pw = parentWidget())
+        {
+            if (pw != m_filterParent)
+            {
+                if (m_filterParent)
+                    m_filterParent->removeEventFilter(this);
+                pw->installEventFilter(this);
+                m_filterParent = pw;
+            }
+        }
 
         int availW = availableContentWidth(this);
         availW *= LayoutConst::kMsgColWidthFactor;
@@ -825,6 +874,19 @@ void MessageBubbleWidget::updateSize()
             scheduleSizeUpdate();
             return;
         }
+
+        // 用户气泡正文一经 setContent 即不再变（唯一文本写入口，见该函数失效），
+        // 故「可用宽 + 字体」二元组未变 ⇒ 测量结论必未变，整段跳过：
+        // 省掉全文 toPlainText + split + 逐行 horizontalAdvance 的 O(行数) 重扫。
+        // 字体入键：主题切换可能改 msgBrowser 字体，只比宽度会把尺寸钉死在旧字体上。
+        const QFont curFont = m_content->font();
+        if (availW == m_lastMeasuredW && curFont == m_lastMeasuredFont)
+        {
+            m_updatingSize = false;
+            return;
+        }
+        m_lastMeasuredW = availW;
+        m_lastMeasuredFont = curFont;
 
         qreal margin = doc->documentMargin();
 
@@ -866,9 +928,16 @@ void MessageBubbleWidget::updateSize()
 
         // 逐段测量所有可见的文段视图（工具块会把正文切成多段；
         // 思考块不在 m_textViews 中，其高度由自身测量/动画机制管理）
+        // 流式期间只有「当前段」在长高：已冻结段的文档与尺寸均未变，跳过可把每拍
+        // O(全部段数) 收敛为 O(1)（段数 = 工具轮数，随回合线性增长）。
+        // 但列宽一变（拖窗口/侧栏切换）全部段都要按新宽重排，故宽度入判定键。
+        const bool widthChanged = (availW != m_lastMeasuredW);
+        m_lastMeasuredW = availW;
         for (QTextBrowser *view : m_textViews)
         {
             if (!view || view->isHidden())
+                continue;
+            if (m_streaming && !widthChanged && view != m_liveView)
                 continue;
 
             QTextDocument *viewDoc = view->document();
@@ -880,7 +949,10 @@ void MessageBubbleWidget::updateSize()
                 viewDoc->setTextWidth(availW);
             }
             QSizeF docSize = viewDoc->size();
-            view->setFixedSize(availW, qCeil(docSize.height()));
+            // 尺寸未变不重设：setFixedSize 每次都触发布局失效，回流式期即自我放大源
+            const int h = qCeil(docSize.height());
+            if (view->width() != availW || view->height() != h)
+                view->setFixedSize(availW, h);
         }
     }
 

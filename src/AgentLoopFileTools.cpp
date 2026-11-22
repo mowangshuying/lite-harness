@@ -317,6 +317,22 @@ QString AgentLoop::runGlobIn(const QStringList &roots, const QJsonObject &args)
     qsizetype scanned = 0; // 已遍历条目数（目录+文件合计，与原 iterator 逐项产出粒度一致）
     bool truncated = false;
 
+    // 剪枝名单的 O(1) 查找形态：kGlobPruneDirNames 的判定口径是 Qt::CaseInsensitive
+    // （Windows 文件系统大小写不敏感，见下方调用处注释），故这里以「全小写 QSet + 条目名
+    // toLower」等价复刻——名单 9 项纯 ASCII，toLower 与 case-insensitive 比较逐值同解。
+    // 单源仍是 AgentConst::kGlobPruneDirNames（本集合由它派生，不另立硬编码清单）。
+    // 原写法每个目录条目都要对 9 项各做一次大小写折叠比较，最坏 20000×9 次。
+    static const QSet<QString> pruneLower = [] {
+        QSet<QString> s;
+        for (const QString &name : AgentConst::kGlobPruneDirNames)
+            s.insert(name.toLower());
+        return s;
+    }();
+
+    // relativeFilePath 的基准目录在遍历期间恒定，提出循环：原写法每个命中条目都
+    // QDir(workDir) 现构造一个 QDir（含路径清理），命中数千条即数千次。
+    const QDir relBase(workDir);
+
     QStringList dirQueue; // 显式待遍历目录队列（头指针消费、尾部追加子目录——BFS）
     dirQueue.append(workDir);
     for (qsizetype head = 0; head < dirQueue.size() && !truncated; ++head)
@@ -338,7 +354,7 @@ QString AgentLoop::runGlobIn(const QStringList &roots, const QJsonObject &args)
                     dirQueue.append(info.absoluteFilePath());
                 continue;
             }
-            const QString rel = QDir(workDir).relativeFilePath(info.absoluteFilePath());
+            const QString rel = relBase.relativeFilePath(info.absoluteFilePath());
             if (!re.match(rel).hasMatch())
                 continue;
             QString err;

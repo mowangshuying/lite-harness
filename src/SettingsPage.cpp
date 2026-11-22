@@ -156,10 +156,16 @@ int ModelServiceTarget::currentIndex() const
 
 ProviderSpec::Provider ModelServiceTarget::current() const
 {
-    const int at = currentIndex();
-    if (at < 0)
+    // providers() 只取一次：原写法先调 currentIndex()（其内部已 providers() → loadProviders()
+    // 重建整张表），再 providers() 又建一遍——一次 current() = 两次整表重建（含全部模型名拷贝
+    // + normalizeModelName + 逐条 contains 查重）。SettingsPage 构造期本函数被调约 10-16 次。
+    // 下标判据与 currentIndex() 逐值一致：未选中/指向已删 provider → 落首条，空表 → -1。
+    const QList<ProviderSpec::Provider> list = providers();
+    const int at = ProviderSpec::indexOfId(list, m_providerId);
+    const int index = at >= 0 ? at : (list.isEmpty() ? -1 : 0);
+    if (index < 0)
         return ProviderSpec::Provider{};
-    return providers().at(at);
+    return list.at(index);
 }
 
 bool ModelServiceTarget::commit(const QList<ProviderSpec::Provider> &next, QWidget *anchor)

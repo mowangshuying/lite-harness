@@ -605,12 +605,16 @@ void LiteHarness::scanActivityLedgers()
         const QString dataId = m_registry.dataId(key);
         if (dataId.isEmpty())
             continue;
-        refreshActivityForDataId(dataId);
+        // push=false：本循环只负责「读文件 + 填缓存」。原先每刷一个会话都调一次
+        // pushActivityToNewChat()，而它内部要遍历**全部**已缓存会话重算合并表并推一次
+        // 热力图重绘——N 个会话即 N 次全量合并 = O(N²)，且 N 次 update() 里前 N-1 次的
+        // 终态都会被最后一次覆盖，纯浪费。循环结束后统一 push 一次，首帧终态不变。
+        refreshActivityForDataId(dataId, /*push=*/false);
     }
-    // push 由每个 refresh 各自完成——无变化时也不空白：首帧 NewChatPage 拿到的即是最终合并视图
+    pushActivityToNewChat();
 }
 
-void LiteHarness::refreshActivityForDataId(const QString &dataId)
+void LiteHarness::refreshActivityForDataId(const QString &dataId, bool push)
 {
     if (dataId.isEmpty())
         return;
@@ -625,7 +629,10 @@ void LiteHarness::refreshActivityForDataId(const QString &dataId)
                            ActivityLedger::windowFilter(ActivityLedger::readDaily(path),
                                                         ContributionHeatmap::gridStart(today),
                                                         today));
-    pushActivityToNewChat();
+    // push=false 时只填缓存、不合并重绘：供 scanActivityLedgers 启动循环使用（循环外统一
+    // push 一次）。增量路径（:254/:349 两个落账信号）走默认 true，单会话刷新后立刻上屏。
+    if (push)
+        pushActivityToNewChat();
 }
 
 void LiteHarness::pushActivityToNewChat()

@@ -1183,12 +1183,22 @@ void ChatSessionPage::applyColumnWidth()
 
     if (!m_scrollView)
         return;
-    auto mainLayout = m_scrollView->getMainLayout();
-    for (int i = 0; i < mainLayout->count(); ++i)
+    // 本循环是 O(列内气泡数)，且拖窗口时本函数以 30-60 次/秒的频率被调（同步 + 延帧各一次）。
+    // 气泡可用宽只由 m_scrollView->maximumWidth（即 columnWidth）决定：窗口宽过 800 上限后
+    // 继续变宽只挪居中留白，columnWidth 不变 ⇒ 每个气泡的测量结论必不变，跳过整循环无损终态。
+    // 注意这只收窄**本循环**——本函数整体不能按列宽早退（见 m_columnClampPending 注释的
+    // 「先猜后校」禁令：同步那次跑在布局结算前，延帧那次才是终态校正）。
+    const bool bubblesNeedRemeasure = (columnWidth != m_lastClampWidth);
+    m_lastClampWidth = columnWidth;
+    if (bubblesNeedRemeasure)
     {
-        auto bubble = qobject_cast<MessageBubbleWidget *>(mainLayout->itemAt(i)->widget());
-        if (bubble)
-            bubble->refreshSize();
+        auto mainLayout = m_scrollView->getMainLayout();
+        for (int i = 0; i < mainLayout->count(); ++i)
+        {
+            auto bubble = qobject_cast<MessageBubbleWidget *>(mainLayout->itemAt(i)->widget());
+            if (bubble)
+                bubble->refreshSize();
+        }
     }
     // 「回到底部」浮动钮的摆位依赖 m_scrollView 的几何，而本函数是 resizeEvent 与
     // setSidebarVisible 的共用入口（侧栏收起不触发本页 resizeEvent）：摆位必须跟这里

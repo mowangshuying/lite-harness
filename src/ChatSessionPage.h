@@ -142,6 +142,11 @@ private:
     // 注意它**不能**被改成「列宽未变就整个跳过」——同步调用跑在布局结算前、延帧那次才是终态，
     // 二者是「先猜后校」的配对，不是冗余。
     bool m_columnClampPending = false;
+    // 气泡重测循环专用判据：本函数整体**不能**按列宽早退（上面那条"先猜后校"禁令管的是
+    // 整个函数），但末尾那个 O(列内气泡数) 的重测循环可以——气泡可用宽只由
+    // m_scrollView 的 maximumWidth（= columnWidth）决定，avail 变而 columnWidth 不变时
+    // （窗口宽于 800 上限后继续变宽，只挪居中留白）重测结论必未变。-1 = 首帧必测。
+    int m_lastClampWidth = -1;
     // applyColumnWidth 手动写入边距（水平 Ignored 行容器，断开窗口收缩棘轮）
     QHBoxLayout *m_scrollRowLayout = nullptr;
     QHBoxLayout *m_inputRowLayout = nullptr;

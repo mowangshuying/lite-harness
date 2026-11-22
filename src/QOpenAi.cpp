@@ -301,13 +301,17 @@ void ChatStream::readIncoming()
     // "\r" + "\n" 天然由「无整行则留在 buffer」处理）；空行为帧边界：将已收集行以 '\n'
     // 拼回后整帧派发，与旧实现等价（processFrame 对帧仅做 trimmed()+data: 前缀判断，
     // 行内重组不影响语义；帧内含非 data: 行依旧静默忽略）。
+    // 游标推进、循环结束后一次性删除：原先每取一行就 buffer.remove(0, nl+1)，
+    // 一次 readyRead 里有 F 帧就要把残余缓冲整体 memmove F 次，是 O(F×len)。
+    // 改成 pos 只往前走、末尾 remove(0, pos) 一次，等价且与旧实现同样只保留「未成行残段」。
+    qsizetype pos = 0;
     for (;;)
     {
-        const int nl = d->buffer.indexOf('\n');
+        const qsizetype nl = d->buffer.indexOf('\n', pos);
         if (nl < 0)
             break;
-        QByteArray line = d->buffer.left(nl);
-        d->buffer.remove(0, nl + 1);
+        QByteArray line = d->buffer.mid(pos, nl - pos);
+        pos = nl + 1;
         if (line.endsWith('\r'))
             line.chop(1);
         if (line.isEmpty())
@@ -321,6 +325,8 @@ void ChatStream::readIncoming()
             d->pendingFrame += '\n';
         d->pendingFrame += line;
     }
+    if (pos > 0)
+        d->buffer.remove(0, pos);
 }
 
 void ChatStream::processFrame(const QByteArray &frame)
@@ -334,14 +340,16 @@ void ChatStream::processFrame(const QByteArray &frame)
     if (!line.startsWith("data:"))
         return; // 非 data: 帧即噪声（心跳/注释行），静默跳过——噪声容忍已在此分支存在
 
-    const QString payload = QString::fromUtf8(line.mid(5).trimmed());
+    // 直接吃字节：旧写法 QString::fromUtf8(...) 再 payload.toUtf8() 给 fromJson，
+    // 每帧多付一次 UTF-8 解码 + 一次再编码。[DONE] 判定与 JSON 解析都只需要字节。
+    const QByteArray payload = line.mid(5).trimmed();
     if (payload == "[DONE]")
     {
         finishStream();
         return;
     }
 
-    const QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8());
+    const QJsonDocument doc = QJsonDocument::fromJson(payload);
     if (!doc.isObject())
     {
         // 带 data: 前缀却是坏 JSON：属协议错误而非噪声（噪声已在上方非 data: 分支被吸收），
@@ -353,7 +361,10 @@ void ChatStream::processFrame(const QByteArray &frame)
         // error 终局处停哨（idle 表未停为既有行为——reply 已清空，其触发无副作用）
         d->totalTimer->stop();
         cleanupReply();
-        emit error(tr("SSE 帧 JSON 解析失败: %1").arg(payload.left(200)));
+        // 先 fromUtf8 再 left(200)：payload 现在是字节域，直接 payload.left(200) 会按
+        // **字节**截断、可能把一个多字节字符切成半个（原实现是 QString 域按字符截断，
+        // 此处保持逐字等价）。
+        emit error(tr("SSE 帧 JSON 解析失败: %1").arg(QString::fromUtf8(payload).left(200)));
         return;
     }
     const QJsonObject root = doc.object();

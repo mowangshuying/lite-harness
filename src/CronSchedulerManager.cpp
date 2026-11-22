@@ -555,7 +555,13 @@ QJsonArray CronSchedulerManager::ledgerSnapshot() const
     ids.sort();
     QJsonArray rows;
     for (const QString &id : ids) {
-        const CronJob &job = m_jobs.value(id);
+        // constFind 而非 value()：QHash::value(key) **按值返回**，绑到 const& 只是延长临时
+        // 对象寿命，整份 CronJob（多个 QString + QDate）仍被深拷一遍。ids 刚由 keys() 取得，
+        // 键必在。本函数挂在每会话每秒一次的 cronTick 上（AgentLoop.cpp），N 作业即 N 次/秒。
+        const auto jobIt = m_jobs.constFind(id);
+        if (jobIt == m_jobs.constEnd())
+            continue; // 防御性早退，理论不可达；避免任何重入下解引用 constEnd 的悬垂迭代器
+        const CronJob &job = *jobIt;
         QJsonObject row;
         row[QStringLiteral("id")] = job.id;
         row[QStringLiteral("cron")] = job.cron;

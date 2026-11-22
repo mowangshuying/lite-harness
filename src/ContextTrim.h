@@ -58,7 +58,15 @@ inline bool trimConversation(QVector<QJsonObject> &messages, qsizetype keepHead,
                 ++j;
             }
         }
-        current -= CompactTokens::conversationTokens(messages.mid(i, j - i));
+        // 逐条取 messageTokens 求和，替代 conversationTokens(messages.mid(i, j - i))：
+        // mid() 每组都分配一个临时 QVector（k 组 = k 次分配 + k 次整段搬运），而
+        // CompactTokens.h 不变量① 明写 conversationTokens 就是 messageTokens 的逐条独立
+        // 求和（项间零耦合：无分隔符、无长度前缀、无跨条累积），故两者**逐值恒等**，
+        // 不是近似。断言见 tests/tst_contexttrim.cpp + tst_compacttokens.cpp。
+        qsizetype groupTokens = 0;
+        for (qsizetype k = i; k < j; ++k)
+            groupTokens += CompactTokens::messageTokens(messages.at(k));
+        current -= groupTokens;
         messages.remove(i, j - i);
         changed = true;
     }

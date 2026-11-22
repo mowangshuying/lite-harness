@@ -45,7 +45,12 @@ void AgentLoop::persistHistory()
                                    .arg(path, file.errorString());
         return;
     }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    // Compact 而非 Indented：本文件只由 loadSavedHistory/CompactTranscript 用
+    // QJsonDocument::fromJson 机器读取，无任何人类阅读或 diff 用途（人看历史走 UI）。
+    // Indented 让体积与序列化开销涨 2-3 倍，而 persistHistory 是**每工具批**都全量重写
+    // 一次（调用点见 AgentLoopRequest.cpp 批尾），长会话下这是落盘字节的大头。
+    // 读侧 fromJson 对两种形态等价，无兼容性代价。
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
     if (!file.commit())
     {
         LOG_WARN << QStringLiteral("[history] persistHistory 提交失败 %1: %2")
