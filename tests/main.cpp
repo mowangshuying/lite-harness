@@ -65,12 +65,16 @@ int tst_projectinstructions(); // s17.11 项目指令文件纯头（ProjectInstr
 int tst_updaterules();         // s17.12 自更新判据纯头（UpdateRules.h）：版本数值比较(补丁位陷阱/三段形态 s17.13.1 起/一段形态 s18 起)/资产择优/digest fail-closed/zip 条目映射挡 zip-slip/包根推导/换体计划确定性/marker 一条不可删即整体作废，零夹具恒跑
 int tst_providerspec();      // s18.3 多 Provider 数据层纯头（ProviderSpec.h）：基址归一与合法性、id 确定性防撞、解析容错与上限、旧三键回落、按模型名路由、/models 三形态解析、拉取合并撞名拦截，零夹具恒跑
 int tst_contexttrim();         // 上下文成组裁剪内核纯头（ContextTrim.h）：配对不变量/keepHead 头部保护/oldest-first/孤立 tool 兜底/目标比 4/5 与 1/2/幂等，零夹具恒跑
+int tst_scrollsettle();        // s18.5 贴底算术与跟随态判据纯头（ScrollSettle.h）：range 算术/新件 hidden 对布局 min 贡献 0/两阶段落点/缺口/近底阈值 80 边界，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
 // 全表求和 = 1585（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
 // s18 一段版本判据 +24、s18 热力图月份标签去重 +12、s18 子代理上下文压缩成组裁剪内核 +48、workflow A+B+C 修复批 +3 后），
 // 与本机无夹具全量实跑 pass=1585 fail=0 skip=35 逐条对上；带夹具实跑 pass=2596 fail=0 skip=1
 // （s18 子代理压缩批两形态复测；旧注「夹具通道跑不起来」系 s17.13.1 批本机现象，夹具根须落在仓库构建树内）。
+// s18.5 贴底算术守卫批 +32 后全表求和 = 1716，与本机无夹具全量实跑 pass=1716 fail=0 skip=35 逐条对上；
+// 带夹具实跑 pass=2727 fail=0 skip=1（套件 40 个，三口径 40/40/40）。上面 1585/2596 那组是 s18 子代理
+// 压缩批的现值，按「历史登记值原样保留」不动，本块不复用其数字。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -95,6 +99,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"projectinstructions", 49},
     {"updaterules", 198},
     {"contexttrim", 48},         {"providerspec", 90},
+    {"scrollsettle", 32},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -175,6 +180,7 @@ int main()
     failed += runSuite("updaterules", tst_updaterules);
     failed += runSuite("contexttrim", tst_contexttrim);
     failed += runSuite("providerspec", tst_providerspec);
+    failed += runSuite("scrollsettle", tst_scrollsettle);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

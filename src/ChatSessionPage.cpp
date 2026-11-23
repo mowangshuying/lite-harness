@@ -19,6 +19,7 @@
 #include "AgentLoop.h"
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h"
+#include "ScrollSettle.h"
 #include "ToolNames.h"
 #include "ToolBlock.h"
 #include "PermissionCard.h"
@@ -1051,11 +1052,14 @@ void ChatSessionPage::followScrollToBottom()
 
 void ChatSessionPage::evaluateFollowState()
 {
-    // 用户滚动动作后的跟随态重算：近底（距 maximum ≤ 阈值）=回到跟随；否则=离开
+    // 用户滚动动作后的跟随态重算：近底（距 maximum ≤ 阈值）=回到跟随；否则=离开。
+    // 判据算术单源在 ScrollSettle::isScrolledAway（纯头，tests/tst_scrollsettle 守），
+    // 本处直调——守卫与真代码绑定，不是空挂。
     auto *bar = m_scrollView->verticalScrollBar();
     if (!bar)
         return;
-    m_userScrolledAway = bar->value() < bar->maximum() - LayoutConst::kNearBottomPx;
+    m_userScrolledAway = ScrollSettle::isScrolledAway(bar->value(), bar->maximum(),
+                                                      LayoutConst::kNearBottomPx);
     updateJumpBottomBtn();
 }
 
