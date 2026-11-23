@@ -209,6 +209,13 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     // 超时走跟随入口（评审 B1）：用户上翻离开底部时不拽回，只浮出回底钮
     connect(m_scrollCoalesceTimer, &QTimer::timeout, this, &ChatSessionPage::followScrollToBottom);
 
+    // 补一拍结算定时器（singleShot 0）：新件 sizeHint 与滚动条 range 都在下一轮事件循环
+    // 才落地，同栈贴底只能落到插卡前的底部——见 settleScrollDeferred 声明处注释。
+    m_settleTimer = new QTimer(this);
+    m_settleTimer->setSingleShot(true);
+    m_settleTimer->setInterval(0);
+    connect(m_settleTimer, &QTimer::timeout, this, &ChatSessionPage::settleScrollDeferred);
+
     // 用户滚动意图探测：拖滑块走 sliderMoved（程序化 setValue 不发此信号，天然区分），
     // 滚轮经视口事件过滤器捕获——两路都只重算跟随态
     if (auto *bar = m_scrollView->verticalScrollBar())
@@ -986,6 +993,47 @@ void ChatSessionPage::doScrollToBottom()
     // 重算一次跟随态，且 range 结算瞬间的 value 钳位可能被误判成「用户离开底部」。
     m_programmaticScroll = true;
     scrollBar->setValue(scrollBar->maximum());
+    m_programmaticScroll = false;
+    // 补一拍（本轮探针实测的结构性漏贴底）。读码推的「显式 resize 到 totalMinimumSize」
+    // 已被探针证伪：新件在 addWidget 那一刻是 hidden（new 出来的件默认隐藏，
+    // QLayout::addChildWidget（qlayout.cpp:837）的 needShow 要等事件循环才 show），
+    // QWidgetItem::minimumSize()（qlayoutitem.cpp:621-626）首行 `if (isEmpty()) return
+    // QSize(0,0)`，isEmpty()（qlayoutitem.cpp:696）= isHidden && !retainSizeWhenHidden()
+    // → 实测 addWidget 后 item1min=0、totalMin=100、totalHint=100，而卡片自身
+    // minimumSize()=200（qSmartMinSize 在 minSize.height()>0 时必返回该值，
+    // qlayoutengine.cpp:308-335，故 0 不是它给的）；processEvents 后 item1min=200、
+    // totalMin=315。故 resize 到 hint 撑不起高度。
+    // 真机制：range 唯一写入点 QScrollAreaPrivate::updateScrollBars()
+    //（qscrollarea.cpp:145-194）只由 setWidget / LayoutRequest 与 StyleChange / 滚动件
+    // QEvent::Resize / scrollarea resizeEvent / setWidgetResizable 五条路径触发
+    //（qscrollarea.cpp:249/277/305/316/357），activate() 的同步路径一条都不触发
+    //（doResize() 即 q->setGeometry(contentsRect())，不改父件尺寸）。注意 addWidget 经
+    // invalidate()（qlayout.cpp:469-474）**照样 post 一个 LayoutRequest 给布局父件**
+    //（实测 wReq 1→2），但 update()（qlayout.cpp:971-984）已把 activated 清零，
+    // QLayout::widgetEvent（qlayout.cpp:529-530）便跳过 doResize()——post 有、不涨高度。
+    // range 落地靠 activate() 末尾 updateGeometry()（qlayout.cpp:1062）post 给 viewport
+    // 那一发（实测 vpReq 0→1），全在下一轮事件循环。故同栈贴底只能落在「插卡前的底部」，
+    // 新卡留在视口下方（流式期靠下一个 30ms 窗口掩盖，一次性插卡无后续补滚）。这一拍把
+    // 视野推到真底，跟随态在拍内重判、用户上翻不拽回。
+    if (m_settleTimer)
+        m_settleTimer->start();
+}
+
+void ChatSessionPage::settleScrollDeferred()
+{
+    if (m_replaying)
+        return;
+    // 补一拍落地前重判跟随态（评审 B1 语义）：用户已上翻离开则不拽回视野，只保持回底钮
+    if (m_userScrolledAway)
+    {
+        updateJumpBottomBtn();
+        return;
+    }
+    auto *bar = m_scrollView->verticalScrollBar();
+    if (!bar)
+        return;
+    m_programmaticScroll = true;
+    bar->setValue(bar->maximum());
     m_programmaticScroll = false;
 }
 

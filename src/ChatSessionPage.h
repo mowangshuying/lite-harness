@@ -124,6 +124,13 @@ private:
     void followScrollToBottom();
     // 真实贴底动作（布局结算 + 滚动条写值），公开与跟随两条入口共用
     void doScrollToBottom();
+    // 补一拍结算（本轮实测坑登记）：新件的 min/sizeHint 与滚动条 range 都在**下一轮事件
+    // 循环**才落地——新件 addWidget 时是 hidden，QWidgetItem::minimumSize() 首行
+    // isEmpty() 直接返回 (0,0)（实测 addWidget 后 item1min=0、totalMin=100，
+    // processEvents 后 item1min=200、totalMin=315），range 也靠 activate() 末尾
+    // updateGeometry() post 给 viewport 那一发才写。同栈贴底只能落到「插卡前的底部」。
+    // doScrollToBottom 在同栈结算后挂一拍，由本槽把视野推到真底。
+    void settleScrollDeferred();
     // 依当前滚动位置重算跟随态（近底=恢复跟随；离底=抑制自动滚动）
     void evaluateFollowState();
     // 回底钮显隐与摆位（滚动区视口底部居中，随 resize/侧栏切换重算）
@@ -136,6 +143,8 @@ private:
     // scrollToBottom；flushPendingScroll 在终态 stop 后立即执行。超时直连 followScrollToBottom，
     // 所有权随本页（QTimer parent=this），零所有权语义同其余子件
     QTimer *m_scrollCoalesceTimer = nullptr;
+    // 补一拍结算定时器（singleShot 0 = 下一轮事件循环）：见 settleScrollDeferred 声明处
+    QTimer *m_settleTimer = nullptr;
     // 消息列/输入组各自的居中行容器布局：列宽靠 maximumWidth 钳制，两侧留白由
     // 延帧重钳合并旗标：拖窗口时 resizeEvent 可达 30-60 次/秒，每发都排一次全列气泡重排；
     // 本旗标把同一轮事件循环内的多次请求并成一次（终态等价，applyColumnWidth 幂等）。
