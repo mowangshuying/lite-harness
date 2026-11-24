@@ -141,6 +141,11 @@ inline QVariant value(const QString &key, const QVariant &fallback = QVariant())
     return reader().value(scopedKey(key), fallback);
 }
 
+inline QHash<QString, QVariant> valuesWithPrefix(const QString &key)
+{
+    return reader().valuesWithPrefix(scopedKey(key));
+}
+
 // 写单点：转发给 Reader，落盘与失效成对发生（SettingsCache.h 不变量③）——逻辑只有一份，
 // 测试直测的就是生产跑的那一份。返回值 = 是否成功落盘；现有调用点沿用「静默失败」的既有语义
 // 不检查它（与改动前一致），留着是为了让这一格将来能接上设置页的告警而不必再改签名。

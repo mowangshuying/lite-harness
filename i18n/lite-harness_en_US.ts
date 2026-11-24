@@ -4,7 +4,7 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="+76"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="+81"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>The session has no data directory ID; cannot locate the history file</translation>
     </message>
@@ -24,7 +24,7 @@
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="+279"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="+283"/>
         <location line="+87"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>Tool call rounds exceeded the limit (%1 rounds); loop terminated.</translation>
@@ -51,106 +51,9 @@
     </message>
 </context>
 <context>
-    <name>ApiTokenSettingCard</name>
-    <message>
-        <location filename="../src/SettingsPage.cpp" line="+689"/>
-        <location line="+29"/>
-        <source>API Key</source>
-        <translation>API Key</translation>
-    </message>
-    <message>
-        <location line="-25"/>
-        <location line="+26"/>
-        <source>修改</source>
-        <translation>Change</translation>
-    </message>
-    <message>
-        <location line="-24"/>
-        <location line="+25"/>
-        <source>清除</source>
-        <translation>Clear</translation>
-    </message>
-    <message>
-        <location line="+10"/>
-        <source>未设置</source>
-        <translation>Not set</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>Bearer 凭据</source>
-        <translation>Bearer credential</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>已保存</source>
-        <translation>Saved</translation>
-    </message>
-    <message>
-        <location line="+11"/>
-        <source>设置 API Key</source>
-        <translation>Set API Key</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</source>
-        <translation>Enter a new key and save; leave empty to keep the current one (use the Clear button to remove it).</translation>
-    </message>
-</context>
-<context>
-    <name>ApiUrlSettingCard</name>
-    <message>
-        <location line="-127"/>
-        <location line="+30"/>
-        <source>服务地址</source>
-        <translation>Base URL</translation>
-    </message>
-    <message>
-        <location line="-26"/>
-        <location line="+27"/>
-        <source>修改</source>
-        <translation>Change</translation>
-    </message>
-    <message>
-        <location line="-25"/>
-        <location line="+26"/>
-        <source>清除</source>
-        <translation>Clear</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>未设置</source>
-        <translation>Not set</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>OpenAI 兼容基址</source>
-        <translation>OpenAI-compatible base URL</translation>
-    </message>
-    <message>
-        <location line="+6"/>
-        <source>设置服务地址</source>
-        <translation>Set Base URL</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>以 /v1 等版本路径结尾，不含补全端点。</source>
-        <translation>End with a version path such as /v1; do not include the completion endpoint.</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>无效地址</source>
-        <translation>Invalid Address</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>请输入以 http:// 或 https:// 开头的完整地址。</source>
-        <translation>Please enter a full address starting with http:// or https://.</translation>
-    </message>
-</context>
-<context>
     <name>ChatMsgEdit</name>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="+73"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="+74"/>
         <source>输入消息，Enter 发送，Shift+Enter 换行</source>
         <translation>Type a message — Enter to send, Shift+Enter for a new line.</translation>
     </message>
@@ -188,7 +91,7 @@
 <context>
     <name>ChatSessionPage</name>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="+104"/>
+        <location filename="../src/ChatSessionPage.cpp" line="+105"/>
         <source>这个会话还没有消息</source>
         <translation>This session has no messages yet</translation>
     </message>
@@ -220,7 +123,7 @@
         <translation>Back to bottom</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+83"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent is still running. Please wait for it to finish before sending</translation>
     </message>
@@ -293,7 +196,7 @@ Output:
         <translation>Session history could not be read, so the session opened empty. The file may be corrupted or held by another program.</translation>
     </message>
     <message>
-        <location line="+436"/>
+        <location line="+490"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -373,7 +276,7 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContextLimitSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-201"/>
+        <location filename="../src/SettingsPage.cpp" line="+349"/>
         <location line="+17"/>
         <source>修改</source>
         <translation>Change</translation>
@@ -483,24 +386,24 @@ No consumption recorded</translation>
     </message>
     <message>
         <location line="+33"/>
-        <location line="+666"/>
+        <location line="+673"/>
         <source>新建对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
-        <location line="-659"/>
-        <location line="+661"/>
+        <location line="-666"/>
+        <location line="+668"/>
         <source>会话</source>
         <translation>Sessions</translation>
     </message>
     <message>
-        <location line="-658"/>
-        <location line="+660"/>
+        <location line="-665"/>
+        <location line="+667"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location line="-604"/>
+        <location line="-611"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -531,7 +434,7 @@ No consumption recorded</translation>
         <translation>Delete this session and all of its data (tasks/memory/history)? This action cannot be undone.</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+238"/>
         <source>退出确认</source>
         <translation>Confirm Exit</translation>
     </message>
@@ -584,7 +487,7 @@ No consumption recorded</translation>
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="+146"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="+147"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
@@ -594,7 +497,7 @@ No consumption recorded</translation>
         <translation>Select All</translation>
     </message>
     <message>
-        <location line="+365"/>
+        <location line="+377"/>
         <source>记忆整理中</source>
         <translation>Consolidating memory</translation>
     </message>
@@ -630,27 +533,26 @@ No consumption recorded</translation>
 <context>
     <name>ModelListSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="+171"/>
-        <location line="+29"/>
-        <location line="+27"/>
+        <location filename="../src/SettingsPage.cpp" line="+25"/>
+        <location line="+21"/>
         <source>可选模型</source>
         <translation>Available Models</translation>
     </message>
     <message>
-        <location line="-52"/>
-        <location line="+26"/>
+        <location line="-17"/>
+        <location line="+18"/>
         <source>管理</source>
         <translation>Manage</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+11"/>
         <source>本服务商暂无模型</source>
         <translation>No models for this provider yet</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>用「管理」添加或从服务端拉取。未添加前，下拉显示的是其它服务商或内置候选。</source>
-        <translation>Use "Manage" to add models or fetch them from the server. Until then the dropdown shows other providers' models or the built-in candidates.</translation>
+        <translation>Use &quot;Manage&quot; to add models or fetch them from the server. Until then the dropdown shows other providers&apos; models or the built-in candidates.</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -658,101 +560,285 @@ No consumption recorded</translation>
         <translation>%1 item(s) for this provider</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <source>添加模型…</source>
-        <translation>Add model…</translation>
+        <location line="-1"/>
+        <source>下拉候选</source>
+        <translation>Dropdown candidates</translation>
+    </message>
+</context>
+<context>
+    <name>ModelManageDialog</name>
+    <message>
+        <location filename="../src/ModelManageDialog.cpp" line="+150"/>
+        <source>拉取</source>
+        <translation>Fetch</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>正在拉取…</source>
-        <translation>Fetching…</translation>
+        <location line="-49"/>
+        <source>服务商</source>
+        <translation>Provider</translation>
     </message>
     <message>
-        <location line="+0"/>
-        <source>从服务端拉取…</source>
-        <translation>Fetch from server…</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>移除 %1</source>
-        <translation>Remove %1</translation>
+        <location line="+5"/>
+        <source>新增</source>
+        <translation>Add</translation>
     </message>
     <message>
         <location line="+2"/>
-        <source>清空本服务商模型清单</source>
-        <translation>Clear this provider's model list</translation>
+        <source>删除</source>
+        <translation>Delete</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+44"/>
+        <source>添加</source>
+        <translation>Add</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>模型名称</source>
+        <translation>Model Name</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>思考</source>
+        <translation>Thinking</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>思考强度</source>
+        <translation>Thinking Effort</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>显示状态</source>
+        <translation>Visibility</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>上下文窗口</source>
+        <translation>Context Window</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>保存设置</source>
+        <translation>Save Settings</translation>
+    </message>
+    <message>
+        <location line="+74"/>
+        <source>至少需保留一个服务商。</source>
+        <translation>At least one provider must be kept.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>新增服务商</source>
+        <translation>Add Provider</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>给这个服务商起个名字，如 DeepSeek。</source>
+        <translation>Give this provider a name, e.g. DeepSeek.</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>删除服务商</source>
+        <translation>Delete Provider</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>确定删除「%1」？其端点、密钥与模型清单都会移除。</source>
+        <translation>Delete &quot;%1&quot;? Its endpoint, key and model list will all be removed.</translation>
+    </message>
+    <message>
+        <location line="+100"/>
+        <source>低</source>
+        <translation>Low</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>中</source>
+        <translation>Medium</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>高</source>
+        <translation>High</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>极高</source>
+        <translation>Very High</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>未设，回落全局 %1</source>
+        <translation>Unset, falls back to global %1</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>移除</source>
+        <translation>Remove</translation>
+    </message>
+    <message>
+        <location line="-365"/>
+        <source>自定义模型</source>
+        <translation>Custom Models</translation>
+    </message>
+    <message>
+        <location line="+61"/>
+        <location line="+5"/>
+        <source>修改</source>
+        <translation>Change</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <location line="+5"/>
+        <source>清除</source>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <source>服务地址</source>
+        <translation>Service URL</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>API Key</source>
+        <translation>API Key</translation>
+    </message>
+    <message>
+        <location line="+58"/>
+        <source>这些自定义模型的偏好对所有任务生效。运行中的回复保持当前设置，下一轮开始使用新设置。</source>
+        <translation>These custom-model preferences apply to all tasks. In-flight replies keep their current settings; new settings apply from the next turn.</translation>
+    </message>
+    <message>
+        <location line="+133"/>
+        <location line="+3"/>
+        <source>未设置</source>
+        <translation>Not set</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>已保存</source>
+        <translation>Saved</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>设置服务地址</source>
+        <translation>Set Service URL</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>以 /v1 等版本路径结尾，不含补全端点。</source>
+        <translation>End with a version path such as /v1; do not include the completion endpoint.</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>无法保存</source>
+        <translation>Cannot Save</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>设置 API Key</source>
+        <translation>Set API Key</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>输入新的 Key 并保存；留空表示不修改。</source>
+        <translation>Enter a new key and save; leave blank to keep the current key.</translation>
+    </message>
+    <message>
+        <location line="+112"/>
+        <source>暂无自定义模型，可添加或从服务端拉取。</source>
+        <translation>No custom models yet. Add one or fetch models from the server.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>添加模型</source>
         <translation>Add Model</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>输入模型 ID（大小写敏感，须与服务端一致），如 qwen3.8-flash。</source>
-        <translation>Enter a model ID (case-sensitive, must match the server), e.g. qwen3.8-flash.</translation>
+        <translation>Enter the model ID (case-sensitive, must match the server), e.g. qwen3.8-flash.</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+5"/>
         <source>无需添加</source>
         <translation>Nothing to Add</translation>
     </message>
     <message>
         <location line="+0"/>
-        <source>该模型已在本服务商清单中。</source>
-        <translation>This model is already in this provider's list.</translation>
+        <source>该模型已在生效清单中。</source>
+        <translation>This model is already in the effective list.</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>无法添加</source>
         <translation>Cannot Add</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-173"/>
+        <location line="+182"/>
+        <location line="+48"/>
+        <location line="+22"/>
+        <location line="+16"/>
+        <location line="+18"/>
+        <source>保存失败</source>
+        <translation>Save Failed</translation>
+    </message>
+    <message>
+        <location line="-286"/>
+        <location line="+182"/>
+        <location line="+48"/>
+        <location line="+22"/>
+        <location line="+16"/>
+        <source>config.json 写入失败，模型来源记录未保存。</source>
+        <translation>Failed to write config.json; the model origin record was not saved.</translation>
+    </message>
+    <message>
+        <location line="-78"/>
         <source>无法拉取</source>
         <translation>Cannot Fetch</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>请先为本服务商填写服务地址。</source>
-        <translation>Set this provider's service URL first.</translation>
+        <translation>Fill in the service URL for this provider first.</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+13"/>
         <source>拉取失败</source>
         <translation>Fetch Failed</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>仍可用「添加模型」手动填写。</source>
-        <translation>You can still enter models by hand with "Add model".</translation>
+        <source>仍可用「+ 添加模型」手动填写。</source>
+        <translation>You can still add models manually via &quot;+ Add Model&quot;.</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+28"/>
         <source>拉取完成</source>
         <translation>Fetch Complete</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>服务端返回 %1 个模型，均已在本服务商清单中。</source>
-        <translation>The server returned %1 model(s); all of them are already in this provider's list.</translation>
+        <translation>The server returned %1 models, all already in this provider&apos;s list.</translation>
     </message>
     <message>
-        <location line="-158"/>
-        <location line="+25"/>
-        <source>清除</source>
-        <translation>Clear</translation>
-    </message>
-    <message>
-        <location line="+16"/>
-        <source>下拉候选</source>
-        <translation>Dropdown candidates</translation>
+        <location line="+53"/>
+        <source>config.json 写入失败，偏好未保存。</source>
+        <translation>Failed to write config.json; preferences were not saved.</translation>
     </message>
 </context>
 <context>
     <name>ModelServiceTarget</name>
     <message>
-        <location line="-646"/>
+        <location filename="../src/SettingsPage.cpp" line="-377"/>
         <source>保存失败</source>
         <translation>Save Failed</translation>
     </message>
@@ -867,67 +953,6 @@ No consumption recorded</translation>
     </message>
 </context>
 <context>
-    <name>ProviderSettingCard</name>
-    <message>
-        <location filename="../src/SettingsPage.cpp" line="+64"/>
-        <location line="+35"/>
-        <source>服务商</source>
-        <translation>Provider</translation>
-    </message>
-    <message>
-        <location line="-30"/>
-        <location line="+31"/>
-        <source>新增</source>
-        <translation>Add</translation>
-    </message>
-    <message>
-        <location line="-29"/>
-        <location line="+30"/>
-        <source>删除</source>
-        <translation>Delete</translation>
-    </message>
-    <message>
-        <location line="+24"/>
-        <source>至少需保留一个服务商。</source>
-        <translation>At least one provider must be kept.</translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>当前编辑</source>
-        <translation>Editing</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>无</source>
-        <translation>None</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>共 %1 个服务商</source>
-        <translation>%1 provider(s) in total</translation>
-    </message>
-    <message>
-        <location line="+6"/>
-        <source>新增服务商</source>
-        <translation>Add Provider</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>给这个服务商起个名字，如 DeepSeek。</source>
-        <translation>Give this provider a name, e.g. DeepSeek.</translation>
-    </message>
-    <message>
-        <location line="+21"/>
-        <source>删除服务商</source>
-        <translation>Delete Provider</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>确定删除「%1」？其端点、密钥与模型清单都会移除。</source>
-        <translation>Delete "%1"? Its endpoint, key and model list will all be removed.</translation>
-    </message>
-</context>
-<context>
     <name>QObject</name>
     <message>
         <location filename="../src/MemoryManager.cpp" line="+614"/>
@@ -940,7 +965,7 @@ No consumption recorded</translation>
         <translation>Memory consolidated: %1 → %2 entries</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-269"/>
+        <location filename="../src/SettingsPage.cpp" line="-108"/>
         <source>保存失败</source>
         <translation>Save Failed</translation>
     </message>
@@ -955,7 +980,7 @@ No consumption recorded</translation>
         <translation>Not set (uses process working directory)</translation>
     </message>
     <message>
-        <location line="+114"/>
+        <location line="+107"/>
         <source>服务地址须以 http:// 或 https:// 开头。</source>
         <translation>The service URL must start with http:// or https://.</translation>
     </message>
@@ -972,7 +997,7 @@ No consumption recorded</translation>
     <message>
         <location line="+2"/>
         <source>本服务商模型数已达上限。</source>
-        <translation>This provider's model count has reached its limit.</translation>
+        <translation>This provider&apos;s model count has reached its limit.</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -990,7 +1015,7 @@ No consumption recorded</translation>
         <translation>The change was rejected and not written.</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+20"/>
         <source>无法保存</source>
         <translation>Cannot Save</translation>
     </message>
@@ -1018,7 +1043,7 @@ No consumption recorded</translation>
 <context>
     <name>QOpenAi::AsyncRequest</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="+771"/>
+        <location filename="../src/QOpenAi.cpp" line="+782"/>
         <source>请求超时（%1 ms）。</source>
         <translation>Request timed out (%1 ms).</translation>
     </message>
@@ -1026,12 +1051,12 @@ No consumption recorded</translation>
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location line="-517"/>
+        <location line="-528"/>
         <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
         <translation>No model service base URL or API key configured. Fill them in under Model Service on the Settings page.</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+113"/>
         <source>SSE 帧 JSON 解析失败: %1</source>
         <translation>Failed to parse SSE frame JSON: %1</translation>
     </message>
@@ -1301,55 +1326,55 @@ No consumption recorded</translation>
 <context>
     <name>SettingsPage</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="+752"/>
-        <location line="+607"/>
+        <location filename="../src/SettingsPage.cpp" line="+353"/>
+        <location line="+596"/>
         <source>外观与行为</source>
         <translation>Appearance &amp; Behavior</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+603"/>
+        <location line="-590"/>
+        <location line="+592"/>
         <source>应用主题</source>
         <translation>App theme</translation>
     </message>
     <message>
-        <location line="-603"/>
-        <location line="+603"/>
+        <location line="-592"/>
+        <location line="+592"/>
         <source>选择应用显示的主题。</source>
         <translation>Select which theme to display.</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>浅色</source>
         <translation>Light</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>深色</source>
         <translation>Dark</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location line="-570"/>
-        <location line="+572"/>
+        <location line="-559"/>
+        <location line="+561"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location line="-572"/>
-        <location line="+572"/>
+        <location line="-561"/>
+        <location line="+561"/>
         <source>选择界面显示的语言。</source>
         <translation>Select which language to display.</translation>
     </message>
     <message>
-        <location line="-557"/>
+        <location line="-546"/>
         <source>语言设置</source>
         <translation>Language Settings</translation>
     </message>
@@ -1360,90 +1385,90 @@ No consumption recorded</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+546"/>
+        <location line="+535"/>
         <source>工作目录</source>
         <translation>Working Directory</translation>
     </message>
     <message>
-        <location line="-533"/>
-        <location line="+537"/>
+        <location line="-522"/>
+        <location line="+526"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location line="-524"/>
-        <location line="+528"/>
+        <location line="-513"/>
+        <location line="+517"/>
         <source>最大轮次</source>
         <translation>Max Rounds</translation>
     </message>
     <message>
-        <location line="-514"/>
-        <location line="+518"/>
+        <location line="-503"/>
+        <location line="+507"/>
         <source>权限</source>
         <translation>Permissions</translation>
     </message>
     <message>
-        <location line="-514"/>
-        <location line="+515"/>
+        <location line="-503"/>
+        <location line="+504"/>
         <source>工具执行权限审批</source>
         <translation>Tool Execution Approval</translation>
     </message>
     <message>
-        <location line="-515"/>
-        <location line="+515"/>
+        <location line="-504"/>
+        <location line="+504"/>
         <source>命中询问规则时是否需要你批准。</source>
         <translation>Whether a tool call that hits an ask rule needs your approval.</translation>
     </message>
     <message>
-        <location line="-513"/>
-        <location line="+514"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
         <translation>When off, tools run directly without an approval card. The bash deny list, workflow deny policies and workspace-escape checks are unaffected. Takes effect on the next tool call; no restart needed.</translation>
     </message>
     <message>
-        <location line="-512"/>
-        <location line="+514"/>
+        <location line="-501"/>
+        <location line="+503"/>
         <source>需要审批</source>
         <translation>Requires approval</translation>
     </message>
     <message>
-        <location line="-513"/>
-        <location line="+514"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>无需审批</source>
         <translation>No approval needed</translation>
     </message>
     <message>
-        <location line="-497"/>
-        <location line="+499"/>
+        <location line="-486"/>
+        <location line="+488"/>
         <source>模型服务</source>
         <translation>Model Service</translation>
     </message>
     <message>
         <location line="-467"/>
-        <location line="+480"/>
+        <location line="+472"/>
         <source>更新</source>
         <translation>Update</translation>
     </message>
     <message>
-        <location line="-468"/>
-        <location line="+474"/>
+        <location line="-460"/>
+        <location line="+466"/>
         <source>关于</source>
         <translation>About</translation>
     </message>
     <message>
-        <location line="-469"/>
+        <location line="-461"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+469"/>
+        <location line="+461"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
     <message>
-        <location line="-456"/>
-        <location line="+458"/>
+        <location line="-448"/>
+        <location line="+450"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness is a lightweight C++ coding-agent harness that fills the gap of harness implementations in the C++ ecosystem. As a hands-on learning project, it demonstrates step by step how to build a harness from scratch with Qt and modern C++.</translation>
     </message>
@@ -1870,7 +1895,7 @@ No consumption recorded</translation>
 <context>
     <name>UpdateSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-439"/>
+        <location filename="../src/SettingsPage.cpp" line="-431"/>
         <location line="+68"/>
         <source>版本更新</source>
         <translation>Version Update</translation>
@@ -2077,7 +2102,7 @@ No consumption recorded</translation>
 <context>
     <name>WorkDirSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-1117"/>
+        <location filename="../src/SettingsPage.cpp" line="-825"/>
         <location line="+39"/>
         <source>默认工作目录</source>
         <translation>Default Working Directory</translation>

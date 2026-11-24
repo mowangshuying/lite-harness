@@ -486,6 +486,22 @@ void testWritePath(const QString &iniPath)
                            == QStringLiteral("zh_CN"),
                        "连续写后先前写的键仍在（写侧未丢其它键）");
 
+    reader.setValue(QStringLiteral("tree/old"), QStringLiteral("stale"));
+    const QHash<QString, QVariant> leaves = reader.valuesWithPrefix(QStringLiteral("tree"));
+    TestHarness::check(leaves.size() == 1 && leaves.value(QStringLiteral("old")).toString()
+                           == QStringLiteral("stale"),
+                       "valuesWithPrefix returns relative leaf paths for legacy object migration");
+    reader.setValue(QStringLiteral("tree"), QStringList({"a", "b"}));
+    TestHarness::check(!reader.value(QStringLiteral("tree/old")).isValid(),
+                       "replacing a parent key removes stale descendant keys from the read cache");
+    TestHarness::check(!readIniDirectly(iniPath, QStringLiteral("tree/old")).isValid(),
+                       "replacing a parent key removes stale descendants on disk");
+    TestHarness::check(reader.value(QStringLiteral("tree")).toStringList()
+                           == QStringList({"a", "b"}),
+                       "replacement parent value survives write and reload");
+    TestHarness::check(reader.valuesWithPrefix(QStringLiteral("tree")).isEmpty(),
+                       "replacement leaves no descendant subtree behind");
+
     // 显式失效 = 重载一次，不是「清空即返回空」
     const int loadsBeforeInvalidate = reader.loadCount();
     reader.invalidate();

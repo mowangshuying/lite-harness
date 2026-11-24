@@ -69,6 +69,7 @@ source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${qss})
 
 set(res
         "./res/LiteHarness.ico"
+        "./res/LiteHarness.svg"
 )
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${res})
 

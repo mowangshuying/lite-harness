@@ -844,7 +844,9 @@ CompactManager::prepareAsync(QVector<QJsonObject> conversation, qsizetype conver
                                                 const QVector<QJsonObject> &conversation)> done) const
 {
     const QVector<QJsonObject> original = conversation;
-    const qsizetype budget = AgentConst::contextTokenBudget();
+    // s18.5 每模型窗口覆盖：经 modelSink 取主循环当前模型（与摘要请求同缝），未设回落全局
+    const qsizetype budget =
+        AgentConst::contextTokenBudgetFor(m_modelSink ? m_modelSink() : QString());
     const qsizetype convBudget = qBound(
         budget / 4, budget > overheadTokens ? budget - overheadTokens : budget / 4, budget);
     // 口径换算校准观测点（修4 验收期用）：s18.1 发布前按本注释原有指引**降级为 LOG_DEBUG**。

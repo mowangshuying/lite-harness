@@ -14,8 +14,19 @@ class FluLabel;
 class FluPushButton;
 class FluProgressRing; // s17.12：下载进度环，只在 UpdateSettingCard 里 new，头侧指针即可
 class FluSettingsVersionBox;
+class ModelServiceTarget;
 class QEvent;
 class QShowEvent; // s17.12：showEvent 形参类型；BasePage 未覆写该钩子，此处只需前向声明
+
+// provider 机器码 → 用户文案单源（s18.5 提为跨 TU：模型管理弹窗复用，定义在 SettingsPage.cpp）
+QString providerErrorText(const QString &error);
+
+// API Key 脱敏摘要单源（模型管理弹窗复用）：长值前 4 + **** + 后 4，短值固定四星。
+QString maskedApiToken(const QString &stored);
+
+// 以「改当前 provider 的一个字段」形态提交整表；失败已弹错，返回 false 调用方放弃刷新。
+bool commitEditedCurrent(ModelServiceTarget *target, const ProviderSpec::Provider &edited,
+                         QWidget *anchor);
 
 // 说明位值卡基类：把「简短解释：值」渲染进基类 m_infoLabel（标题下方那一格），右侧操作行
 // 只留按钮。原「右侧值区 + 说明位解释文案」两处分置的写法，在此统一成一条说明位文本，
@@ -116,16 +127,16 @@ private:
     FluPushButton* m_modifyButton = nullptr;
 };
 
-// 模型服务组四张卡共享的「当前在编辑哪个服务商」。
+// 模型服务组共享的「当前在编辑哪个服务商」。
 //
-// 为什么要有这个对象：s18.3 多 Provider 之前，端点/密钥/模型清单三张卡各自直读写三个全局
+// 为什么要有这个对象：s18.3 多 Provider 之前，端点/密钥/模型清单各自直读写三个全局
 // 键（apiBaseUrl/apiToken/modelOptions），互不知情是安全的——反正全进程只有一份凭据。
-// 有了 provider 之后，「这张卡显示的是哪家的地址」成了四张卡的共同前提，若各卡自己存一份
-// 选中态，切一家后必然出现「地址卡已是乙、密钥卡还是甲」的错配写盘——那会静默把甲的 key
-// 配到乙的端点上。故选中态单点持有，四卡只读它、并由 targetChanged 统一重画。
+// 有了 provider 之后，「当前编辑哪家的地址/密钥/模型」成了共同前提，若各处自己存一份
+// 选中态，切一家后必然出现「地址已是乙、密钥还是甲」的错配写盘——那会静默把甲的 key
+// 配到乙的端点上。故选中态单点持有，模型管理弹窗只读它、并由 targetChanged 统一重画。
 //
 // providerId 为空串 = 「旧三键形态」：config.json 未配 app/providers 时的兼容路径。
-// 此时四张卡退回改造前的全局键读写，**未迁移用户的行为逐字不变**，不是第三种状态。
+// 此时退回改造前的全局键读写，**未迁移用户的行为逐字不变**，不是第三种状态。
 class ModelServiceTarget : public QObject
 {
     Q_OBJECT
@@ -155,85 +166,13 @@ private:
     QString m_providerId;
 };
 
-// 服务商设置卡（模型服务组首卡）：用基类自带的下拉选「下面三张卡编辑哪家」，
-// 右侧另放「新增」「删除」两钮。本组唯一改 target 的卡，其余三卡只跟随 targetChanged。
-// 未配 providers 键时下拉只有一项「默认（旧配置）」，删除按钮置灰——避免把用户唯一的
-// 凭据入口删没（删掉即回落到旧三键，而旧三键可能同样是空的）。
-class ProviderSettingCard : public InfoSlotSettingCard
-{
-    Q_OBJECT
-public:
-    explicit ProviderSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
-
-    void retranslate();
-
-private:
-    void refreshCombo();
-    void promptAdd();
-    void promptRemove();
-
-    ModelServiceTarget* m_target = nullptr;
-    FluPushButton* m_addButton = nullptr;
-    FluPushButton* m_removeButton = nullptr;
-    bool m_repopulating = false; // 重填下拉期间抑制 currentIndexChanged 回环
-};
-
-// 服务地址设置卡（模型服务组）：说明位「OpenAI 兼容基址：<url>」+「修改 + 清除」操作行。
-// 编辑弹 InputDialog 录入 OpenAI 兼容 API 基础 URL，校验 scheme 为 http/https，
-// 非法值 FluMessageBox 拒绝不落盘；空串视为清除。
-// 生效语义：写 config.json 键 apiBaseUrl 后立即 QOpenAi::setUrl()，下一回合请求即用新值。
-// 明文展示（URL 非机密），ToolTip 回落全量 URL 供省略后读全文。
-// Q_OBJECT 理由同前三卡。
-class ApiUrlSettingCard : public InfoSlotSettingCard
-{
-    Q_OBJECT
-public:
-    // s18.3：target 交出「本卡编辑哪个 provider」。模型服务组四卡共享同一 target 实例，
-    // 切 provider 靠 targetChanged 统一重画——各卡自存选中态会出现「地址卡已是乙、密钥卡
-    // 还是甲」的错配写盘，那会把甲的 key 配到乙的端点上且无任何报错。
-    explicit ApiUrlSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
-
-    void retranslate();
-
-private:
-    void updateValue();
-    void promptEdit();
-
-    ModelServiceTarget* m_target = nullptr;
-    FluPushButton* m_modifyButton = nullptr;
-    FluPushButton* m_clearButton = nullptr;
-};
-
-// API Key 设置卡（模型服务组）：说明位「Bearer 凭据：<脱敏摘要>」+「修改 + 清除」操作行。
-// **明文绝不上屏**：值只给 maskedApiToken 摘要（前4 + **** + 后4，长度≤8 固定四星），
-// 且 ToolTip 回落的也是同一摘要——基类会把 value 原样写进 ToolTip，故进说明位的必须
-// 已是摘要，绝不能把 stored 明文交给基类。
-// 编辑框不预填存量明文 + Password 回显；留空=不修改，清除另有「清除」按钮（职责不重叠）。
-// 生效语义：写 config.json 键 apiToken 后立即 QOpenAi::setToken()，下一回合请求即用新值。
-class ApiTokenSettingCard : public InfoSlotSettingCard
-{
-    Q_OBJECT
-public:
-    explicit ApiTokenSettingCard(ModelServiceTarget* target, QWidget* parent = nullptr);
-
-    void retranslate();
-
-private:
-    void updateValue();
-    void promptEdit();
-
-    ModelServiceTarget* m_target = nullptr;
-    FluPushButton* m_modifyButton = nullptr;
-    FluPushButton* m_clearButton = nullptr;
-};
-
-// 可选模型清单设置卡（模型服务组）：说明位「输入框下拉候选：<清单>」+「修改 + 清除」操作行。
-// 未配置时前缀换成「内置默认候选」——否则会拼成「下拉候选：内置默认：…」双冒号。
-// 编辑弹 InputDialog 录入逗号分隔模型名（落盘前逐项 trim、丢空、保序去重）。
+// 可选模型清单设置卡（模型服务组）：说明位「输入框下拉候选：<清单>」+「管理」操作钮。
+// 未配置时清单为空（s18.5 起不再回退内置默认），说明位如实显示「本服务商暂无模型」。
+// 管理弹 ModelManageDialog，仅维护自定义模型及每模型偏好。
 // 生效语义：写 config.json 键 modelOptions；输入框模型下拉在每次弹层展开前重读该键并原地
 // 刷新（ChatMsgEdit::reloadModelOptions），故改完配置无需重启即可选到新模型。
 // 说明位展示的是**生效清单**（清洗去重后），非原始录入串；原始串经 ToolTip 兜底（两者可能不同）。
-// Q_OBJECT 理由同前四卡。
+// Q_OBJECT 理由同其他设置卡：tr() 上下文须与 lupdate 提取的词法类名对齐。
 class ModelListSettingCard : public InfoSlotSettingCard
 {
     Q_OBJECT
@@ -244,21 +183,11 @@ public:
 
 private:
     void updateValue();
-    // 「管理」弹 FluPMenu：添加模型… / 从服务端拉取… / 逐项移除 / 清空清单。
-    // 刻意用菜单而非新建对话框：仓内 FluPMenu 已随三主题 QSS 着色（ChatMsgEdit.cpp:79、
-    // MessageBubbleWidget.cpp:134 两处既有用法），而自造对话框要为 light/dark/atomOneDark
-    // 各补一份 qss，漏一处就是暗色主题下的白底破相——纯视觉代价，无功能收益。
-    // 原「修改」编辑整串逗号文本的入口被本菜单取代：那是本次改造要修的主痛点。
+    // 「管理」开 ModelManageDialog：仅自定义模型，每模型偏好四控件 + 添加/拉取/移除/清空。
     void promptManage();
-    void promptAddOne();
-    void fetchFromServer();
 
     ModelServiceTarget* m_target = nullptr;
     FluPushButton* m_manageButton = nullptr;
-    FluPushButton* m_clearButton = nullptr;
-    // 拉取在途门闩：FluPMenu 每次即弹即毁，没有控件态可依据，不立这个门就能连点多次、
-    // 让后到的响应覆盖先到的（Request 自身只保证单次交付，不保证多请求间的顺序）。
-    bool m_fetching = false;
 };
 
 // 自更新设置卡（s17.12）：与 ContextLimitSettingCard 同款结构——标题「更新」+ 说明位承载
@@ -354,13 +283,10 @@ private:
     FluLabel* m_permissionLabel = nullptr;
     FluSettingsSelectBox* m_permissionBox = nullptr;
     FluLabel* m_modelLabel = nullptr;
-    // s18.3 多 Provider：模型服务组四卡共享的编辑目标（本页持有，四卡只持裸指针）。
-    // 生命周期依据：四张卡都是本页的子控件、且都在构造期建好，故 target 必须是本页
-    // 的子对象（parent=this）并**先于四卡构造**创建——否则四卡拿到空指针。
+    // s18.3 多 Provider：模型服务组共享的编辑目标（本页持有，消费方只持裸指针）。
+    // 生命周期依据：卡片都是本页的子控件、且都在构造期建好，故 target 必须是本页
+    // 的子对象（parent=this）并**先于卡片构造**创建——否则卡片拿到空指针。
     ModelServiceTarget* m_modelTarget = nullptr;
-    ProviderSettingCard* m_providerCard = nullptr;
-    ApiUrlSettingCard* m_apiUrlCard = nullptr;
-    ApiTokenSettingCard* m_apiTokenCard = nullptr;
     ModelListSettingCard* m_modelListCard = nullptr;
     FluLabel* m_aboutLabel = nullptr;
     FluSettingsVersionBox* m_versionBox = nullptr;

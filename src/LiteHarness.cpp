@@ -1,4 +1,5 @@
 #include "LiteHarness.h"
+#include "AppIcon.h" // 程序图标 SVG 单源按需渲染
 #include "LiteLog.h"
 #include <FramelessHelper/Core/framelessmanager.h>
 #include <FramelessHelper/Widgets/framelesswidgetshelper.h>
@@ -81,7 +82,7 @@ LiteHarness::LiteHarness(QWidget *parent) : FluFrameLessWidget(parent)
 void LiteHarness::initUi()
 {
     setWindowTitle("lite-harness");
-    setWindowIcon(QIcon(":/res/LiteHarness.ico"));
+    setWindowIcon(AppIcon::icon());
 
     // 最小窗口尺寸落地（P0-2）：LayoutConst::kWindowMinWidth/Height 自评审 A1 起就定义在
     // 常量头里，但从未被任何地方引用——固定宽开销（导航 225 + 侧栏 225 + 间隙 12 + 页面

@@ -6,6 +6,7 @@
 #include "AgentLoopInternal.h"
 #include "SubAgent.h"
 #include "AgentConstants.h"
+#include "ModelPrefs.h" // s18.5 每模型思考偏好（thinkingParamsFor）
 #include "AgentRecovery.h"
 #include "QOpenAi.h"
 #include "LiteLog.h"
@@ -110,10 +111,13 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     for (const QJsonValue &v : m_mcp.dynamicTools())
         tools.append(v);
     request[QStringLiteral("tools")] = tools;
-    // 默认开启思考
-    request[QStringLiteral("enable_thinking")] = true;
-    // 推理强度档位：对齐 opencode xhigh 观感（长思考、少工具轮）；端点不认则回退服务端默认
-    request[QStringLiteral("reasoning_effort")] = AgentConst::kReasoningEffort;
+    // s18.5 每模型思考偏好（模型管理弹窗）：开=enable_thinking+reasoning_effort，
+    // 关=仅 enable_thinking:false。未设偏好的模型与改造前逐字节一致（默认 true/xhigh）。
+    // 取生效模型（fallback 粘滞期内按换模后的名字查偏好）。
+    const QJsonObject thinking = ModelPrefs::thinkingParamsFor(
+        m_recoveryCurrentModel.isEmpty() ? m_model : m_recoveryCurrentModel);
+    for (auto it = thinking.constBegin(); it != thinking.constEnd(); ++it)
+        request[it.key()] = it.value();
     // 采样参数：对齐 opencode（低温决策更稳）；端点不认则回退服务端默认
     request[QStringLiteral("temperature")] = AgentConst::kTemperature;
     request[QStringLiteral("top_p")] = AgentConst::kTopP;

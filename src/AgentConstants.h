@@ -12,6 +12,7 @@
 #include <QMetaType> // textValue 判返回值形态
 #include <QVariant>  // textValue 取原始值
 #include "AppSettings.h"
+#include "ModelPrefs.h" // s18.5 每模型偏好：contextTokenBudgetFor 的覆盖判据单源
 #include "ProviderSpec.h" // s18.3 多 Provider：模型清单单源上移到 provider 表，normalizedText 转发过去
 namespace AgentConst {
 
@@ -21,8 +22,6 @@ namespace AgentConst {
 // 也可用 defaultModel 键越过首项单独指定默认模型。
 // 值带不带引号都认：ini 后端的裸逗号串（QStringList）与 json 后端的数组（QVariantList）
 // 两种「列表」形态，都由 textValue 归一化回逗号串。
-inline const QStringList kBuiltinModelOptions = {QStringLiteral("qwen3.8-flash"),
-                                                 QStringLiteral("qwen3.8-max")};
 inline const QString kModelOptionsKey = QStringLiteral("modelOptions");
 inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 
@@ -32,8 +31,8 @@ inline const QString kDefaultModelKey = QStringLiteral("defaultModel");
 //     被解析成 QStringList；
 //   · json 后端：自定义格式的 flatten 走 QJsonValue::toVariant()，数组落 **QVariantList**
 //     而非 QStringList（Qt 6.9 实测：typeId=9，`== QStringList` 判据为假）。
-// 两种形态的 .toString() 都返回空串，一旦被当成标量取走，配置就被误判「未配置」而静默回退
-// 内置清单——合流前只判 QStringList 是对的，合流后只判 QStringList 会让用户手写
+// 两种形态的 .toString() 都返回空串，一旦被当成标量取走，配置就被误判「未配置」而静默变成
+// 空清单——合流前只判 QStringList 是对的，合流后只判 QStringList 会让用户手写
 // `"modelOptions": ["a","b"]`（JSON 下最自然的清单写法）读不回。故两个判据并列，缺一不可。
 // 标量键若被写成逗号串，回接后带逗号 → 校验不过 → 按既有语义回退默认值。
 inline QString normalizedText(const QVariant &stored)
@@ -72,15 +71,16 @@ inline QStringList parseModelOptions(const QString &stored)
     return result;
 }
 
-// 生效清单单点取值：config.json 的 modelOptions 解析结果为空（键缺失/空串/全空白）
-// 一律回退内置清单——配置文件只增不改语义，写坏或清空都不会让下拉框变成空下拉。
+// 生效清单单点取值：providers 非空表摊平优先，否则旧 modelOptions 键解析结果。
+// **未设置即空清单**（用户裁决 s18.5）：不再回退内置默认项，下拉/请求模型都为空，
+// 由用户自行添加模型；空清单时 defaultModel() 返回空串，消费点须容忍空模型。
 inline QStringList modelOptions()
 {
     // s18.3 多 Provider：**只有 providers 键真配出非空表**才走 provider 摊平。
     // 刻意不用 loadProviders()（它会把旧三键合成一条）：那条合成路径的截断口径是
     // kModelsPerProviderMax=64，而旧路径是 parseModelOptions 的 kModelOptionsMax=32，
     // 让合成值喂给本函数会把旧配置的 32 条上限静默放宽到 64（docs/doc.md:711 的验收项即漂）。
-    // 故这里只认新键，未配新键时下面三行与改造前逐字相同。
+    // 故这里只认新键，未配新键时下面两行读旧键。
     const QList<ProviderSpec::Provider> configured =
         ProviderSpec::parseProviders(AppSettings::value(ProviderSpec::kProvidersKey));
     if (!configured.isEmpty())
@@ -89,20 +89,19 @@ inline QStringList modelOptions()
         if (!flattened.isEmpty())
             return flattened;
     }
-    const QStringList parsed =
-        parseModelOptions(textValue(kModelOptionsKey));
-    return parsed.isEmpty() ? kBuiltinModelOptions : parsed;
+    return parseModelOptions(textValue(kModelOptionsKey));
 }
 
 // 默认模型单点取值（AgentLoop 构造期 MODEL_ID 环境变量为空、下拉框回落选中时共用）：
 // defaultModel 非空且确在生效清单内才采信，否则取清单首项（防配置指向不存在的模型）。
+// 清单为空（未设置任何模型）返回空串，绝不 first() 越界。
 inline QString defaultModel()
 {
     const QStringList options = modelOptions();
     const QString stored = textValue(kDefaultModelKey).trimmed();
     if (!stored.isEmpty() && options.contains(stored))
         return stored;
-    return options.first();
+    return options.isEmpty() ? QString() : options.first();
 }
 
 // ---- s15 过载换模后备模型（lcc s15 af26862 recovery.py fallbackModel / env.py FALLBACK_MODEL_ID）----
@@ -157,11 +156,6 @@ inline int stopHookBlockCapValue()
         return kGoalStopHookBlockCap;
     return static_cast<int>(stored);
 }
-
-// 推理强度档位（OpenAI 兼容端点 reasoning_effort）：端点按档位分配思考预算，
-// 对齐 opencode 的 xhigh 观感（长思考、少工具轮）。端点不认此字段时行为回退
-// 为服务端默认，无副作用。
-inline const QString kReasoningEffort = QStringLiteral("xhigh");
 
 // 采样参数（对齐 opencode 配置 temperature 0.1 / topP 0.75）：低温让工具调用决策
 // 更确定、少随机性绕路；端点不认这些字段时回退服务端默认，无副作用。
@@ -352,6 +346,15 @@ static_assert(contextTokenBudgetFrom(1024000) == 1024000,
 inline qsizetype contextTokenBudget()
 {
     return contextTokenBudgetFrom(contextCharLimitValue());
+}
+
+// s18.5 每模型窗口覆盖：modelPrefs 里该模型设了显式档（200K/400K/1M）即用之，
+// 未设回落全局键。消费点（压缩管线/子代理/队友/侧栏占用条）一律改调本口，
+// 禁再直调 contextTokenBudget()——直调会让弹窗滑条静默失效。
+inline qsizetype contextTokenBudgetFor(const QString &model)
+{
+    return ModelPrefs::effectiveWindow(ModelPrefs::allPrefs(), model,
+                                       static_cast<int>(contextTokenBudget()));
 }
 
 // usage 尾 chunk 宽限毫秒（修3）：流 finished 后等待末个 SSE chunk 携带 usage 落地的

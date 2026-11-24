@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <g transform="rotate(0 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#1E78FF"/></g></g>
+  <g transform="rotate(60 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#3470FF"/></g></g>
+  <g transform="rotate(120 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#4A68FF"/></g></g>
+  <g transform="rotate(180 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#6060FF"/></g></g>
+  <g transform="rotate(240 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#7658FF"/></g></g>
+  <g transform="rotate(300 128 128)"><g transform="translate(128 56.32) rotate(115)"><rect x="-56.32" y="-21.76" width="112.64" height="43.52" rx="21.76" fill="#8C50FF"/></g></g>
+  <circle cx="128" cy="128" r="23.04" fill="#8C50FF"/>
+</svg>

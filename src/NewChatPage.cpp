@@ -1,4 +1,5 @@
 #include "NewChatPage.h"
+#include "AppIcon.h" // 程序图标 SVG 单源按需渲染
 #include <QLabel>
 #include <QPixmap> // 英雄区图标直接使用 QPixmap（原经 FluUtils.h 间接引入，收敛后显式化）
 #include <QVBoxLayout>
@@ -46,8 +47,7 @@ NewChatPage::NewChatPage(QWidget *parent) : BasePage(parent)
 
     auto iconLabel = new QLabel(this);
     iconLabel->setFixedSize(LayoutConst::kNewChatIconSize, LayoutConst::kNewChatIconSize);
-    QPixmap pixmap(":/res/LiteHarness.ico");
-    iconLabel->setPixmap(pixmap.scaled(45, 45));
+    iconLabel->setPixmap(AppIcon::pixmap(45));
     heroLayout->addWidget(iconLabel, 0, Qt::AlignHCenter);
 
     m_welcomeLabel = new QLabel(tr("开始新对话"), this);

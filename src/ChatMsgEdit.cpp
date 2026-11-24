@@ -1,4 +1,5 @@
 #include "ChatMsgEdit.h"
+#include "ModelPrefs.h" // s18.5 显示状态过滤（visibleModels）
 #include <QVBoxLayout>
 #include <QTextEdit>
 #include <QTextCursor> // setText 的光标归位（moveCursor(QTextCursor::End)）
@@ -10,6 +11,7 @@
 #include <QStyle>
 #include <QInputMethodEvent>
 #include <functional>
+#include <algorithm>
 #include "SendMsgButton.h"
 #include <FluScrollDelegate.h>
 #include <FluAction.h>
@@ -20,9 +22,9 @@
 #include "UiScale.h" // P0 字号缩放：输入框最大高按启动倍率放大
 #include "ThemeAware.h"
 
-// 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：config.json 的
-// modelOptions 键（逗号分隔）优先，未配置/写空回退内置两项；生效清单首项为回落默认项
-// （AgentLoop::model() 不在清单内时下拉显示并选中它），可用 defaultModel 键单独指定
+// 可选模型清单见 AgentConst::modelOptions()（AgentConstants.h）：providers 表摊平优先，
+// 否则 config.json 的 modelOptions 键（逗号分隔）；**未设置即空清单**（s18.5 用户裁决，
+// 不再回退内置默认）；生效清单首项为回落默认项，可用 defaultModel 键单独指定
 
 // 模型下拉框占位宽：随清单里最长的模型名自适应。原固定 130 是按内置 qwen3.8-flash 调的，
 // 配置化之后清单可长可短，写 deepseek-r1-distill-llama-70b 这类长名会被截断成看不懂的片段。
@@ -30,13 +32,23 @@
 // 上限 220 防超长名把右对齐工具行挤爆。系数 8 为默认字体 14px 下 latin 均宽的保守值，
 // 24 给下拉箭头与内边距。定义成文件内静态函数：清单在运行期可被 reloadModelOptions 换掉，
 // 宽度必须跟着重算，不能只算一次。
+static QStringList modelCandidates()
+{
+    // 显示状态过滤后按名称排序（与模型管理列表同口径）；选中项靠 findText 保持，
+    // 排序不影响回落逻辑。
+    QStringList list = ModelPrefs::visibleModels(
+        AgentConst::modelOptions(), ModelPrefs::allPrefs());
+    std::sort(list.begin(), list.end());
+    return list;
+}
+
 static int modelComboWidth(const QStringList &options)
 {
     int longest = 0;
     for (const QString &option : options)
         longest = qMax(longest, option.size());
     // P0 字号缩放：系数 8 是按默认 14px 字体估的每字符宽，上下限 130/220 是同一口径——
-// 三者必须一起乘倍率，否则 200% 时模型名被截成看不懂的片段（上限 220 尤其明显）。
+    // 三者必须一起乘倍率，否则 200% 时模型名被截成看不懂的片段（上限 220 尤其明显）。
     // 宽度是「承载字号的固定像素」，与行高/字形位同一类，故同样走 UiScale。
     return UiScale::scaled(qMin(220, qMax(130, 24 + longest * 8)));
 }
@@ -118,7 +130,7 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     m_modelComboBox = new FluComboBox(this);
     // 清单取一次复用：原写法 modelOptions() 连调两遍，每遍都是 2 次 AppSettings::value
     // （各 1 次文件 stat）+ 整张 provider 表重建；本控件实例数 = 会话数 + 1，全在首帧之前。
-    const QStringList modelList = AgentConst::modelOptions(); // 清单来自 config.json（未配置回退内置两项）
+    const QStringList modelList = modelCandidates(); // s18.5 显示过滤 + 名称排序
     m_modelComboBox->addItems(modelList);
     m_modelComboBox->setFixedWidth(modelComboWidth(modelList)); // 占位宽随清单最长名自适应，理由见 modelComboWidth
     // 配置驱动：弹层展开前重读清单（事件过滤器早于控件处理），改完 config.json
@@ -192,7 +204,7 @@ QString ChatMsgEdit::currentModel() const
 // 并对外 emit modelChanged 同步后端（否则 UI 显示与实际请求模型分叉）。
 void ChatMsgEdit::reloadModelOptions()
 {
-    const QStringList options = AgentConst::modelOptions();
+    const QStringList options = modelCandidates();
     QStringList shown;
     shown.reserve(m_modelComboBox->count());
     for (int i = 0; i < m_modelComboBox->count(); ++i)

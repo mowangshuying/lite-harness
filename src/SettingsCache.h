@@ -173,6 +173,21 @@ public:
         return it == m_cache.constEnd() ? fallback : it.value();
     }
 
+    // 取某父键下的全部叶子值，返回相对父键的路径。用于兼容旧 JSON 后端拍平后的嵌套对象。
+    QHash<QString, QVariant> valuesWithPrefix(const QString &prefix) const
+    {
+        ensureLoaded();
+        QString normalizedPrefix = normalizedKey(prefix, m_keyCase);
+        if (!normalizedPrefix.endsWith(QLatin1Char('/')))
+            normalizedPrefix += QLatin1Char('/');
+        QHash<QString, QVariant> result;
+        for (auto it = m_cache.cbegin(); it != m_cache.cend(); ++it) {
+            if (it.key().startsWith(normalizedPrefix))
+                result.insert(it.key().mid(normalizedPrefix.size()), it.value());
+        }
+        return result;
+    }
+
     // 主动失效（写侧专用，见不变量③）：清表并回到「无身份」态，下次取值必重读磁盘。
     void invalidate() const
     {
@@ -189,6 +204,11 @@ public:
     bool setValue(const QString &key, const QVariant &value) const
     {
         QSettings settings(m_path, m_format);
+        const QString descendantPrefix = key + QLatin1Char('/');
+        for (const QString &existing : settings.allKeys()) {
+            if (existing.startsWith(descendantPrefix, m_keyCase))
+                settings.remove(existing);
+        }
         settings.setValue(key, value); // 键原样写（不改大小写）：读侧归一化已覆盖大小写差异
         settings.sync();
         invalidate();

@@ -1272,7 +1272,7 @@ void ChatSessionPage::refreshContextUsage()
     if (!m_agentLoop || !m_statusStrip)
         return;
     const qsizetype used = m_agentLoop->estimatedContextTokens();
-    const qsizetype limit = AgentConst::contextTokenBudget();
+    const qsizetype limit = AgentConst::contextTokenBudgetFor(m_agentLoop->model());
     // 占用（条+数字）整体推侧栏「上下文」节——比例走 UsageTokens::usageRatio 单源，
     // 条与数字同一时刻同一读数（见 SessionSidebar.h 的分工说明）
     if (m_sidebar)

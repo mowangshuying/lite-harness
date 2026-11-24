@@ -5,6 +5,7 @@
 #include "ToolNames.h" // 工具名集中常量（lcc a6d29b9 tool_names.py 移植）
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h" // 模型清单/max_tokens 单源（bash 超时与截断已随执行链收敛到 BashRunner）
+#include "ModelPrefs.h" // s18.5 每模型窗口覆盖（contextTokenBudgetFor 经 AgentConst）
 #include "BashRunner.h"     // bash 执行链（建进程/超时/截断/黑名单文案）与主循环单源共用
 #include "BackgroundTasksManager.h" // formatBashResult：非零退出码前缀，与主循环前台/后台分支同口径
 #include "ContextTrim.h"    // 成组裁剪内核与目标比单源（队友共用，tst_contexttrim 直测）
@@ -144,7 +145,7 @@ void SubAgent::startChatRequest()
     // 主动压缩：每请求现取预算（与主循环/队友同源 contextTokenBudget()），估算超 4/5
     // 目标则成组丢旧，保 system[0]+任务 prompt[1]（keepHead=2）。子代理无 usage 回读、
     // 无 token 锚，估算=本地全量+tools schema（system 已在 messages 内，overhead 仅 schema）。
-    const qsizetype budget = AgentConst::contextTokenBudget();
+    const qsizetype budget = AgentConst::contextTokenBudgetFor(m_model);
     if (budget > 0)
     {
         const qsizetype target = budget * ContextTrim::kCompactTargetRatioNumerator
@@ -204,7 +205,7 @@ void SubAgent::startChatRequest()
         // 则照旧以错误字符串收尾——不无限重试。判定与主循环/队友共用 isContextOverflowError。
         if (!m_reactiveCompactUsed && AgentLoopDetail::isContextOverflowError(msg))
         {
-            const qsizetype budget = AgentConst::contextTokenBudget();
+            const qsizetype budget = AgentConst::contextTokenBudgetFor(m_model);
             if (budget > 0)
             {
                 const qsizetype target = budget * ContextTrim::kReactiveTargetRatioNumerator

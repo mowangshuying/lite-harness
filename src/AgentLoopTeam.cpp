@@ -6,6 +6,7 @@
 
 #include "AgentLoop.h"
 #include "LiteLog.h"
+#include "ModelPrefs.h" // s18.5 每模型思考偏好（thinkingParamsFor）
 
 #include "AgentLoopTeam.h"
 #include "AgentLoopInternal.h"
@@ -58,7 +59,7 @@ void AgentLoop::initTeamEngine()
         // 预算；满额另在每回合驱动点经 refreshContextBudget 现取刷新（设置改预算下一
         // 回合即生效，与主循环同纪律），overhead 字节恒定不再重注。
         runtime->setContextBudget(
-            AgentConst::contextTokenBudget(),
+            AgentConst::contextTokenBudgetFor(m_model),
             AgentConst::estimateTokens(runtime->systemPrompt())
                 + AgentConst::estimateTokens(QString::fromUtf8(QJsonDocument(
                       AgentLoopTeam::teammateToolsDefinition()).toJson(QJsonDocument::Compact))));
@@ -406,7 +407,7 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
     // 预算每回合现取（与主循环 prepareAsync 入口现取 contextTokenBudget 同纪律）：
     // 会话中途改 contextCharLimit 后存量队友下一回合即对齐，不再钉死出生时快照。
     // overhead 不重注——队友 system prompt 与 10 工具 schema 字节恒定（launcher 定值）。
-    runtime->refreshContextBudget(AgentConst::contextTokenBudget());
+    runtime->refreshContextBudget(AgentConst::contextTokenBudgetFor(m_model));
     // 修①：回合发起前的主动压缩挂接——会话体逼近预算（4/5 闸门）时先整组裁剪
     // 旧回合交换，再带收小后的历史出流（与主循环 applyCompactPipelineAsync 前置
     // 挂接同语义；此处是引擎内同步段，无异步摘要链，直接在本调用栈完成）
@@ -435,7 +436,10 @@ void AgentLoop::onTeammateTurnRequested(const QString &name)
     request[QStringLiteral("messages")] = messages;
     request[QStringLiteral("tools")] = AgentLoopTeam::teammateToolsDefinition();
     request[QStringLiteral("max_tokens")] = AgentConst::kMaxTokens;
-    request[QStringLiteral("enable_thinking")] = true;
+    // s18.5 每模型思考偏好与主循环同源（队友用会话模型 m_model）
+    const QJsonObject thinking = ModelPrefs::thinkingParamsFor(m_model);
+    for (auto it = thinking.constBegin(); it != thinking.constEnd(); ++it)
+        request[it.key()] = it.value();
     request[QStringLiteral("stream_options")] =
         QJsonObject{{QStringLiteral("include_usage"), true}};
 

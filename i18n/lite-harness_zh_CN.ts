@@ -4,7 +4,7 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="+76"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="+81"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>会话未分配数据目录 ID，无法定位历史文件</translation>
     </message>
@@ -24,7 +24,7 @@
         <translation>Agent 仍在运行中，请等待完成后再发送。</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="+279"/>
+        <location filename="../src/AgentLoopRequest.cpp" line="+283"/>
         <location line="+87"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>工具调用轮次超过上限（%1 轮），终止循环。</translation>
@@ -51,106 +51,9 @@
     </message>
 </context>
 <context>
-    <name>ApiTokenSettingCard</name>
-    <message>
-        <location filename="../src/SettingsPage.cpp" line="+689"/>
-        <location line="+29"/>
-        <source>API Key</source>
-        <translation>API Key</translation>
-    </message>
-    <message>
-        <location line="-25"/>
-        <location line="+26"/>
-        <source>修改</source>
-        <translation>修改</translation>
-    </message>
-    <message>
-        <location line="-24"/>
-        <location line="+25"/>
-        <source>清除</source>
-        <translation>清除</translation>
-    </message>
-    <message>
-        <location line="+10"/>
-        <source>未设置</source>
-        <translation>未设置</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>Bearer 凭据</source>
-        <translation>Bearer 凭据</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>已保存</source>
-        <translation>已保存</translation>
-    </message>
-    <message>
-        <location line="+11"/>
-        <source>设置 API Key</source>
-        <translation>设置 API Key</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</source>
-        <translation>输入新的 Key 并保存；留空表示不修改（清除请用「清除」按钮）。</translation>
-    </message>
-</context>
-<context>
-    <name>ApiUrlSettingCard</name>
-    <message>
-        <location line="-127"/>
-        <location line="+30"/>
-        <source>服务地址</source>
-        <translation>服务地址</translation>
-    </message>
-    <message>
-        <location line="-26"/>
-        <location line="+27"/>
-        <source>修改</source>
-        <translation>修改</translation>
-    </message>
-    <message>
-        <location line="-25"/>
-        <location line="+26"/>
-        <source>清除</source>
-        <translation>清除</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>未设置</source>
-        <translation>未设置</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>OpenAI 兼容基址</source>
-        <translation>OpenAI 兼容基址</translation>
-    </message>
-    <message>
-        <location line="+6"/>
-        <source>设置服务地址</source>
-        <translation>设置服务地址</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>以 /v1 等版本路径结尾，不含补全端点。</source>
-        <translation>以 /v1 等版本路径结尾，不含补全端点。</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>无效地址</source>
-        <translation>无效地址</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>请输入以 http:// 或 https:// 开头的完整地址。</source>
-        <translation>请输入以 http:// 或 https:// 开头的完整地址。</translation>
-    </message>
-</context>
-<context>
     <name>ChatMsgEdit</name>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="+73"/>
+        <location filename="../src/ChatMsgEdit.cpp" line="+74"/>
         <source>输入消息，Enter 发送，Shift+Enter 换行</source>
         <translation>输入消息，Enter 发送，Shift+Enter 换行</translation>
     </message>
@@ -188,7 +91,7 @@
 <context>
     <name>ChatSessionPage</name>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="+104"/>
+        <location filename="../src/ChatSessionPage.cpp" line="+105"/>
         <source>这个会话还没有消息</source>
         <translation>这个会话还没有消息</translation>
     </message>
@@ -220,7 +123,7 @@
         <translation>回到底部</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+83"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent 仍在运行中，请等待完成后再发送</translation>
     </message>
@@ -293,7 +196,7 @@
         <translation>会话历史无法读取，已按空会话打开。原文件可能损坏或被占用。</translation>
     </message>
     <message>
-        <location line="+436"/>
+        <location line="+490"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -373,7 +276,7 @@
 <context>
     <name>ContextLimitSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-201"/>
+        <location filename="../src/SettingsPage.cpp" line="+349"/>
         <location line="+17"/>
         <source>修改</source>
         <translation>修改</translation>
@@ -483,24 +386,24 @@
     </message>
     <message>
         <location line="+33"/>
-        <location line="+666"/>
+        <location line="+673"/>
         <source>新建对话</source>
         <translation>新建对话</translation>
     </message>
     <message>
-        <location line="-659"/>
-        <location line="+661"/>
+        <location line="-666"/>
+        <location line="+668"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location line="-658"/>
-        <location line="+660"/>
+        <location line="-665"/>
+        <location line="+667"/>
         <source>设置</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location line="-604"/>
+        <location line="-611"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -531,7 +434,7 @@
         <translation>确定删除该会话及其全部数据（任务/记忆/历史）吗？此操作不可撤销。</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+238"/>
         <source>退出确认</source>
         <translation>退出确认</translation>
     </message>
@@ -584,7 +487,7 @@
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="+146"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="+147"/>
         <source>复制</source>
         <translation>复制</translation>
     </message>
@@ -594,7 +497,7 @@
         <translation>全选</translation>
     </message>
     <message>
-        <location line="+365"/>
+        <location line="+377"/>
         <source>记忆整理中</source>
         <translation>记忆整理中</translation>
     </message>
@@ -630,20 +533,19 @@
 <context>
     <name>ModelListSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="+171"/>
-        <location line="+29"/>
-        <location line="+27"/>
+        <location filename="../src/SettingsPage.cpp" line="+25"/>
+        <location line="+21"/>
         <source>可选模型</source>
         <translation>可选模型</translation>
     </message>
     <message>
-        <location line="-52"/>
-        <location line="+26"/>
+        <location line="-17"/>
+        <location line="+18"/>
         <source>管理</source>
         <translation>管理</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+11"/>
         <source>本服务商暂无模型</source>
         <translation>本服务商暂无模型</translation>
     </message>
@@ -658,32 +560,203 @@
         <translation>共 %1 项（本服务商）</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <source>添加模型…</source>
-        <translation>添加模型…</translation>
+        <location line="-1"/>
+        <source>下拉候选</source>
+        <translation>下拉候选</translation>
+    </message>
+</context>
+<context>
+    <name>ModelManageDialog</name>
+    <message>
+        <location filename="../src/ModelManageDialog.cpp" line="+150"/>
+        <source>拉取</source>
+        <translation>拉取</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>正在拉取…</source>
-        <translation>正在拉取…</translation>
+        <location line="-49"/>
+        <source>服务商</source>
+        <translation>服务商</translation>
     </message>
     <message>
-        <location line="+0"/>
-        <source>从服务端拉取…</source>
-        <translation>从服务端拉取…</translation>
-    </message>
-    <message>
-        <location line="+8"/>
-        <source>移除 %1</source>
-        <translation>移除 %1</translation>
+        <location line="+5"/>
+        <source>新增</source>
+        <translation>新增</translation>
     </message>
     <message>
         <location line="+2"/>
-        <source>清空本服务商模型清单</source>
-        <translation>清空本服务商模型清单</translation>
+        <source>删除</source>
+        <translation>删除</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+44"/>
+        <source>添加</source>
+        <translation>添加</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>模型名称</source>
+        <translation>模型名称</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>思考</source>
+        <translation>思考</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>思考强度</source>
+        <translation>思考强度</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>显示状态</source>
+        <translation>显示状态</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>上下文窗口</source>
+        <translation>上下文窗口</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>取消</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>保存设置</source>
+        <translation>保存设置</translation>
+    </message>
+    <message>
+        <location line="+74"/>
+        <source>至少需保留一个服务商。</source>
+        <translation>至少需保留一个服务商。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>新增服务商</source>
+        <translation>新增服务商</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>给这个服务商起个名字，如 DeepSeek。</source>
+        <translation>给这个服务商起个名字，如 DeepSeek。</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>删除服务商</source>
+        <translation>删除服务商</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>确定删除「%1」？其端点、密钥与模型清单都会移除。</source>
+        <translation>确定删除「%1」？其端点、密钥与模型清单都会移除。</translation>
+    </message>
+    <message>
+        <location line="+100"/>
+        <source>低</source>
+        <translation>低</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>中</source>
+        <translation>中</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>高</source>
+        <translation>高</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>极高</source>
+        <translation>极高</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>未设，回落全局 %1</source>
+        <translation>未设，回落全局 %1</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>移除</source>
+        <translation>移除</translation>
+    </message>
+    <message>
+        <location line="-365"/>
+        <source>自定义模型</source>
+        <translation>自定义模型</translation>
+    </message>
+    <message>
+        <location line="+61"/>
+        <location line="+5"/>
+        <source>修改</source>
+        <translation>修改</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <location line="+5"/>
+        <source>清除</source>
+        <translation>清除</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <source>服务地址</source>
+        <translation>服务地址</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>API Key</source>
+        <translation>API Key</translation>
+    </message>
+    <message>
+        <location line="+58"/>
+        <source>这些自定义模型的偏好对所有任务生效。运行中的回复保持当前设置，下一轮开始使用新设置。</source>
+        <translation>这些自定义模型的偏好对所有任务生效。运行中的回复保持当前设置，下一轮开始使用新设置。</translation>
+    </message>
+    <message>
+        <location line="+133"/>
+        <location line="+3"/>
+        <source>未设置</source>
+        <translation>未设置</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>已保存</source>
+        <translation>已保存</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>设置服务地址</source>
+        <translation>设置服务地址</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>以 /v1 等版本路径结尾，不含补全端点。</source>
+        <translation>以 /v1 等版本路径结尾，不含补全端点。</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>无法保存</source>
+        <translation>无法保存</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>设置 API Key</source>
+        <translation>设置 API Key</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>输入新的 Key 并保存；留空表示不修改。</source>
+        <translation>输入新的 Key 并保存；留空表示不修改。</translation>
+    </message>
+    <message>
+        <location line="+112"/>
+        <source>暂无自定义模型，可添加或从服务端拉取。</source>
+        <translation>暂无自定义模型，可添加或从服务端拉取。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>添加模型</source>
         <translation>添加模型</translation>
     </message>
@@ -693,22 +766,41 @@
         <translation>输入模型 ID（大小写敏感，须与服务端一致），如 qwen3.8-flash。</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+5"/>
         <source>无需添加</source>
         <translation>无需添加</translation>
     </message>
     <message>
         <location line="+0"/>
-        <source>该模型已在本服务商清单中。</source>
-        <translation>该模型已在本服务商清单中。</translation>
+        <source>该模型已在生效清单中。</source>
+        <translation>该模型已在生效清单中。</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>无法添加</source>
         <translation>无法添加</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-173"/>
+        <location line="+182"/>
+        <location line="+48"/>
+        <location line="+22"/>
+        <location line="+16"/>
+        <location line="+18"/>
+        <source>保存失败</source>
+        <translation>保存失败</translation>
+    </message>
+    <message>
+        <location line="-286"/>
+        <location line="+182"/>
+        <location line="+48"/>
+        <location line="+22"/>
+        <location line="+16"/>
+        <source>config.json 写入失败，模型来源记录未保存。</source>
+        <translation>config.json 写入失败，模型来源记录未保存。</translation>
+    </message>
+    <message>
+        <location line="-78"/>
         <source>无法拉取</source>
         <translation>无法拉取</translation>
     </message>
@@ -718,17 +810,17 @@
         <translation>请先为本服务商填写服务地址。</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+13"/>
         <source>拉取失败</source>
         <translation>拉取失败</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>仍可用「添加模型」手动填写。</source>
-        <translation>仍可用「添加模型」手动填写。</translation>
+        <source>仍可用「+ 添加模型」手动填写。</source>
+        <translation>仍可用「+ 添加模型」手动填写。</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+28"/>
         <source>拉取完成</source>
         <translation>拉取完成</translation>
     </message>
@@ -738,21 +830,15 @@
         <translation>服务端返回 %1 个模型，均已在本服务商清单中。</translation>
     </message>
     <message>
-        <location line="-158"/>
-        <location line="+25"/>
-        <source>清除</source>
-        <translation>清除</translation>
-    </message>
-    <message>
-        <location line="+16"/>
-        <source>下拉候选</source>
-        <translation>下拉候选</translation>
+        <location line="+53"/>
+        <source>config.json 写入失败，偏好未保存。</source>
+        <translation>config.json 写入失败，偏好未保存。</translation>
     </message>
 </context>
 <context>
     <name>ModelServiceTarget</name>
     <message>
-        <location line="-646"/>
+        <location filename="../src/SettingsPage.cpp" line="-377"/>
         <source>保存失败</source>
         <translation>保存失败</translation>
     </message>
@@ -867,67 +953,6 @@
     </message>
 </context>
 <context>
-    <name>ProviderSettingCard</name>
-    <message>
-        <location filename="../src/SettingsPage.cpp" line="+64"/>
-        <location line="+35"/>
-        <source>服务商</source>
-        <translation>服务商</translation>
-    </message>
-    <message>
-        <location line="-30"/>
-        <location line="+31"/>
-        <source>新增</source>
-        <translation>新增</translation>
-    </message>
-    <message>
-        <location line="-29"/>
-        <location line="+30"/>
-        <source>删除</source>
-        <translation>删除</translation>
-    </message>
-    <message>
-        <location line="+24"/>
-        <source>至少需保留一个服务商。</source>
-        <translation>至少需保留一个服务商。</translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>当前编辑</source>
-        <translation>当前编辑</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>无</source>
-        <translation>无</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>共 %1 个服务商</source>
-        <translation>共 %1 个服务商</translation>
-    </message>
-    <message>
-        <location line="+6"/>
-        <source>新增服务商</source>
-        <translation>新增服务商</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>给这个服务商起个名字，如 DeepSeek。</source>
-        <translation>给这个服务商起个名字，如 DeepSeek。</translation>
-    </message>
-    <message>
-        <location line="+21"/>
-        <source>删除服务商</source>
-        <translation>删除服务商</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>确定删除「%1」？其端点、密钥与模型清单都会移除。</source>
-        <translation>确定删除「%1」？其端点、密钥与模型清单都会移除。</translation>
-    </message>
-</context>
-<context>
     <name>QObject</name>
     <message>
         <location filename="../src/MemoryManager.cpp" line="+614"/>
@@ -940,7 +965,7 @@
         <translation>已整理记忆：%1 → %2 条</translation>
     </message>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-269"/>
+        <location filename="../src/SettingsPage.cpp" line="-108"/>
         <source>保存失败</source>
         <translation>保存失败</translation>
     </message>
@@ -955,7 +980,7 @@
         <translation>未设置（使用进程当前目录）</translation>
     </message>
     <message>
-        <location line="+114"/>
+        <location line="+107"/>
         <source>服务地址须以 http:// 或 https:// 开头。</source>
         <translation>服务地址须以 http:// 或 https:// 开头。</translation>
     </message>
@@ -990,7 +1015,7 @@
         <translation>配置被拒绝写入。</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+20"/>
         <source>无法保存</source>
         <translation>无法保存</translation>
     </message>
@@ -1018,7 +1043,7 @@
 <context>
     <name>QOpenAi::AsyncRequest</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="+771"/>
+        <location filename="../src/QOpenAi.cpp" line="+782"/>
         <source>请求超时（%1 ms）。</source>
         <translation>请求超时（%1 ms）。</translation>
     </message>
@@ -1026,12 +1051,12 @@
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location line="-517"/>
+        <location line="-528"/>
         <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
         <translation>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+113"/>
         <source>SSE 帧 JSON 解析失败: %1</source>
         <translation>SSE 帧 JSON 解析失败: %1</translation>
     </message>
@@ -1301,55 +1326,55 @@
 <context>
     <name>SettingsPage</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="+752"/>
-        <location line="+607"/>
+        <location filename="../src/SettingsPage.cpp" line="+353"/>
+        <location line="+596"/>
         <source>外观与行为</source>
         <translation>外观与行为</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+603"/>
+        <location line="-590"/>
+        <location line="+592"/>
         <source>应用主题</source>
         <translation>应用主题</translation>
     </message>
     <message>
-        <location line="-603"/>
-        <location line="+603"/>
+        <location line="-592"/>
+        <location line="+592"/>
         <source>选择应用显示的主题。</source>
         <translation>选择应用显示的主题。</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>浅色</source>
         <translation>浅色</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>深色</source>
         <translation>深色</translation>
     </message>
     <message>
-        <location line="-601"/>
-        <location line="+602"/>
+        <location line="-590"/>
+        <location line="+591"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location line="-570"/>
-        <location line="+572"/>
+        <location line="-559"/>
+        <location line="+561"/>
         <source>语言</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-572"/>
-        <location line="+572"/>
+        <location line="-561"/>
+        <location line="+561"/>
         <source>选择界面显示的语言。</source>
         <translation>选择界面显示的语言。</translation>
     </message>
     <message>
-        <location line="-557"/>
+        <location line="-546"/>
         <source>语言设置</source>
         <translation>语言设置</translation>
     </message>
@@ -1360,90 +1385,90 @@
     </message>
     <message>
         <location line="+14"/>
-        <location line="+546"/>
+        <location line="+535"/>
         <source>工作目录</source>
         <translation>工作目录</translation>
     </message>
     <message>
-        <location line="-533"/>
-        <location line="+537"/>
+        <location line="-522"/>
+        <location line="+526"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location line="-524"/>
-        <location line="+528"/>
+        <location line="-513"/>
+        <location line="+517"/>
         <source>最大轮次</source>
         <translation>最大轮次</translation>
     </message>
     <message>
-        <location line="-514"/>
-        <location line="+518"/>
+        <location line="-503"/>
+        <location line="+507"/>
         <source>权限</source>
         <translation>权限</translation>
     </message>
     <message>
-        <location line="-514"/>
-        <location line="+515"/>
+        <location line="-503"/>
+        <location line="+504"/>
         <source>工具执行权限审批</source>
         <translation>工具执行权限审批</translation>
     </message>
     <message>
-        <location line="-515"/>
-        <location line="+515"/>
+        <location line="-504"/>
+        <location line="+504"/>
         <source>命中询问规则时是否需要你批准。</source>
         <translation>命中询问规则时是否需要你批准。</translation>
     </message>
     <message>
-        <location line="-513"/>
-        <location line="+514"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
         <translation>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</translation>
     </message>
     <message>
-        <location line="-512"/>
-        <location line="+514"/>
+        <location line="-501"/>
+        <location line="+503"/>
         <source>需要审批</source>
         <translation>需要审批</translation>
     </message>
     <message>
-        <location line="-513"/>
-        <location line="+514"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>无需审批</source>
         <translation>无需审批</translation>
     </message>
     <message>
-        <location line="-497"/>
-        <location line="+499"/>
+        <location line="-486"/>
+        <location line="+488"/>
         <source>模型服务</source>
         <translation>模型服务</translation>
     </message>
     <message>
         <location line="-467"/>
-        <location line="+480"/>
+        <location line="+472"/>
         <source>更新</source>
         <translation>更新</translation>
     </message>
     <message>
-        <location line="-468"/>
-        <location line="+474"/>
+        <location line="-460"/>
+        <location line="+466"/>
         <source>关于</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location line="-469"/>
+        <location line="-461"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+469"/>
+        <location line="+461"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. 保留所有权利。</translation>
     </message>
     <message>
-        <location line="-456"/>
-        <location line="+458"/>
+        <location line="-448"/>
+        <location line="+450"/>
         <source>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</source>
         <translation>LiteHarness 是一款轻量级的 C++ 编码代理 harness 应用，旨在填补 C++ 生态中 harness 实现的空白。它作为一个动手学习项目，逐步演示如何使用 Qt 与现代 C++ 从零构建一个 harness。</translation>
     </message>
@@ -1870,7 +1895,7 @@
 <context>
     <name>UpdateSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-439"/>
+        <location filename="../src/SettingsPage.cpp" line="-431"/>
         <location line="+68"/>
         <source>版本更新</source>
         <translation>版本更新</translation>
@@ -2077,7 +2102,7 @@
 <context>
     <name>WorkDirSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-1117"/>
+        <location filename="../src/SettingsPage.cpp" line="-825"/>
         <location line="+39"/>
         <source>默认工作目录</source>
         <translation>默认工作目录</translation>
