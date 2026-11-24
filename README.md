@@ -19,7 +19,7 @@
 - **工作流编排（s16）**：`workflow` 工具启动宿主预注册编排流程（当前唯一条目 `review-changes` 审查工作流）；六原语 agent/parallel/pipeline/phase/log/workflow 零线程异步状态机，journal 落盘、`resume_from_run_id` 续跑未变步骤直接命中缓存；宿主单飞卫兵 + 异步延迟回填；策略三态门 deny 硬拒 / confirm 弹卡（异步回合 fail-closed）/ allow 放行
 - **三主题**：light / dark / atomOneDark，QSS 资源打包、运行时热切换
 - **中英文界面**：中文源文本 + Qt Linguist 英文译文（`i18n/`），设置页切换、重启生效；译文内嵌单 exe，FluentUI 官方中文随库资源
-- **模型选择**：下拉切换（生效清单与缺省项由 `config.json` 键 `app/modelOptions` / `app/defaultModel` 决定，未配置或非法则回落内置 `kBuiltinModelOptions`），API 经设置页配置
+- **模型选择**：下拉切换（生效清单与缺省项由 `config.json` 键 `app/providers` / `app/modelOptions` / `app/defaultModel` 决定；**s18.5 起未配置即空清单**——内置默认项 `kBuiltinModelOptions` 已删，不再回退，由用户自行添加），API 经设置页「模型管理」弹窗配置（服务商选择/新增/删除、服务地址与 API Key、每模型思考/强度/显示/上下文窗口偏好）
 
 ## 运行时配置
 
@@ -29,8 +29,11 @@
 | --- | --- | --- |
 | `apiBaseUrl` | OpenAI 兼容 API 基地址（http/https） | — |
 | `apiToken` | API token（设置页值区脱敏显示；明文存本机配置文件） | — |
-| `modelOptions` | 模型下拉清单，逗号分隔（裸串与列表两种形态都能读回） | 内置 `kBuiltinModelOptions` |
-| `defaultModel` | 缺省选中模型 | 清单首项 |
+| `modelOptions` | 模型下拉清单，逗号分隔或数组（裸串与列表两种形态都能读回，归一化单源 `AgentConst::textValue()`） | 空（**s18.5 起未配置即空清单**：内置 `kBuiltinModelOptions` 已删、不再回退） |
+| `defaultModel` | 缺省选中模型 | 清单首项；清单为空时返回空串（绝不 `first()` 越界） |
+| `providers` | 多服务商表（数组 `[{id,name,baseUrl,token,models},…]`，判据单源 `ProviderSpec.h`）。**非空时摊平出的模型清单优先于 `modelOptions`**，旧三键 `apiBaseUrl`/`apiToken`/`modelOptions` 仍可读、下次保存时迁移 | 空 |
+| `modelPrefs` | 每模型偏好（数组 `[{model,thinking,effort,visible,window},…]`，判据单源 `ModelPrefs.h`；思考开关/推理强度/是否显示/上下文窗口四字段按模型名逐条往返，旧对象形态可读并迁移） | 空 |
+| `customModelNames` | 自定义模型名清单（弹窗「添加」与 `/models` 拉取归入、移除时同步剪除，与 `modelPrefs` 互不残留） | 空 |
 | `defaultWorkDir` | 新建会话的默认工作目录 | — |
 | `contextCharLimit` | 上下文窗口上限（**token**，校验界 10000~5000000；**声明值即全局 token 预算**，s17.9 起不再 ÷4 换算；键名沿用 `contextCharLimit` 是为兼容用户既有配置文件，语义已是 token 域） | 200000 |
 | `maxToolIterations` | 单轮最大工具调用次数（校验界 10~1000；子代理预算同源） | 500 |
