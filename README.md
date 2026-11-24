@@ -58,7 +58,7 @@ cmake -B build -S . -DCMAKE_PREFIX_PATH=C:\Qt\6.9.0\msvc2022_64
 cmake --build build --config Release
 ```
 
-输出：`build/bin/lite-harness.exe`（版本 s18.2）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
+输出：`build/bin/lite-harness.exe`（版本 s18.3）。源文件与 QSS 由 CMake `GLOB CONFIGURE_DEPENDS` 自动收集，新增文件重跑 configure 即可。
 
 构建**必须全目标**（勿加 `--target lite-harness`）：FluentUI 子项目的 install 规则在 configure 期即注册进全树安装清单，单目标构建缺 `Gallery.exe`/`cmark.exe` 会让后续 cpack 硬错误中止。
 
@@ -88,7 +88,7 @@ ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -B build
 ```
 
-产物：`build/lite-harness-s18.2-win64.zip`（约 54MB），解压后运行 `lite-harness-s18.2-win64/bin/lite-harness.exe` 即可。
+产物：`build/lite-harness-s18.3-win64.zip`（约 54MB），解压后运行 `lite-harness-s18.3-win64/bin/lite-harness.exe` 即可。
 
 ## 仓库结构
 
@@ -118,7 +118,7 @@ cpack --config build/CPackConfig.cmake -B build
 
 ## 发布
 
-版本单源 = CMake `project VERSION`（数字段 `18.2`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s18.2`）自动同名。补丁位 `.13` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例（`s17.13.1` 是阶段 s17 内第十三个发布版、带第三段修订位）；`s18` 起版本主段是 lite-harness 自有发布阶段（lcc 参照阶段到 `s17` 为止）；s18 为单段形态，s18.1 起启用第二段补丁位（阶段内第一个补丁发布版）。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
+版本单源 = CMake `project VERSION`（数字段 `18.3`）；展示名、zip 名、tag 名统一加 `s` 前缀（`s18.3`）自动同名。补丁位 `.13` 沿用 `s13.1`/`s16.1`/`s17.1`/`s17.2` 先例（`s17.13.1` 是阶段 s17 内第十三个发布版、带第三段修订位）；`s18` 起版本主段是 lite-harness 自有发布阶段（lcc 参照阶段到 `s17` 为止）；s18 为单段形态，s18.1 起启用第二段补丁位（阶段内第一个补丁发布版）。补丁位只表发布次序、不要求连号：`s17.4` 经用户裁决跳过且后续不再启用。升版本必须 `git grep` 同步文档里写死的示例版本号；打 tag 即公开发布、实质不可撤回；**附注 tag 的正文就是 GitHub Release 简介的单源**。完整规矩见 [AGENTS.md](AGENTS.md)「发布（tag 与 Release）」节。
 
 ## 致谢
 

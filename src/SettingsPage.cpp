@@ -746,7 +746,7 @@ SettingsPage::SettingsPage(QWidget *parent) : BasePage(parent)
     m_versionBox->getInfoLabel()->setText(tr("@2026 lite harness. 保留所有权利。"));
     // 版本号 = 运行时 applicationVersion（CMake project VERSION 单源，经
     // App.cpp setApplicationVersion 注入），数字豁免翻译；原硬编码
-    // "0.0.1" 与 CMake 版本脱节，本案修结；现值 = project VERSION 拼 s 前缀（如 s18.2）
+    // "0.0.1" 与 CMake 版本脱节，本案修结；现值 = project VERSION 拼 s 前缀（如 s18.3）
     m_versionBox->getVersionLabel()->setText(QCoreApplication::applicationVersion());
 
     m_versionBox->getIconLabel()->setPixmap(AppIcon::pixmap(45));

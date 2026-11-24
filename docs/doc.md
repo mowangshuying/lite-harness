@@ -54,7 +54,7 @@
    靠"只读 §0/§8、别读行号"的免责声明续命。**现已按当前代码重写为异步篇**——写结论时优先锚**符号名**
    （类/方法/常量），只在顺序本身是契约时才锚行号（如异步篇 §5 的 `stop()` 收口顺序）。
 3. **版本号是示例，也要跟着同步。** `AGENTS.md` / 本文（结构篇、清单篇）与若干源码注释把当前版本
-    （`s18.2`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
+    （`s18.3`）当示例写死；升版本时随 `git grep` 逐处改，做法见 `AGENTS.md`「发布」节第一条。
     **但 `s17` 在本仓有两个语境**：lcc 移植阶段名（`3rdparty/lcc` 子模块 tag 即 `s17`，属历史台账、
     永不随版本 bump 改）与当前版本示例（随 bump 改）。s17.1 起二者不再同名，grep 到 `s17` 须先判语境。
 4. **零散笔记不在 `docs/` 落地。** 临时方案、验收记录、会话草稿一律写到
@@ -512,7 +512,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
 | 主题化样板 | `ThemeAware::bind`（禁止再复制「读 QSS + 订阅 themeChanged」三件套） |
-| 版本号 | CMake `project VERSION`（数字段 18.2）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s18.2；s18 起主段为自有发布阶段、s18.1 起带第二段补丁位，lcc 参照阶段到 s17 为止，形态口径见 AGENTS「发布」节）|
+| 版本号 | CMake `project VERSION`（数字段 18.3）→ `LITE_VERSION` 宏（拼 `s` 前缀 = 版本名 s18.3；s18 起主段为自有发布阶段、s18.1 起带第二段补丁位，lcc 参照阶段到 s17 为止，形态口径见 AGENTS「发布」节）|
 | 文本文件行尾口径（匹配域 LF / 写回域按主导行尾还原） | `LineEnding.h`（`read_file`/`write_file`/`edit_file` 共用，禁再各自裸字节匹配） |
 | token 估算与预算 | `AgentConst::estimateTokens`（字符→token：CJK 1:1、其余 4:1，实测 qwen3.8-flash 中文 ≈1.00 字符/token 佐证）+ `AgentConst::contextTokenBudget`（**s17.9 丁-3 裁决：= 声明值本身，不再 ÷4**；经恒等纯函数 `contextTokenBudgetFrom()` 暴露，头文件 `static_assert` + `tst_agentconst` 四条 identity 断言双重钉死，改回任何系数即编译失败 + 测试转红。退役常量 `kCharsPerTokenBudget`）；**会话体逐条计量单源 `CompactTokens.h`**（`messageTokens` 单条项 / `conversationTokens` 求和，`CompactManager::estimateTokens` 只是它的转发，宿主与压缩管线共用同一实现，禁再另写一套全量序列化） |
 | 上下文占用（侧栏占用条 + 条下数字行，与压缩门槛同源） | `AgentLoop::estimatedContextTokens()`（usage 锚 + 增量外推，无锚回落全量估算）；**读数画法单源 `UsageTokens::formatCompact`**（行内 K/M 紧凑、tooltip 千分位精确，与消耗段同一条函数） |
@@ -768,7 +768,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] 切换后常驻组件重译 → 导航三项 / 设置页 / 新对话页 / WorkDirPathBar / TodoCard 标题取新语言（`changeEvent(LanguageChange)`）；已渲染历史气泡滞留旧语言（已知接受偏差，勿判 bug）
 - [ ] Qt 标准对话框（仅剩 QFileDialog 按钮）→ 恒为英文，qtbase 中文 qm 已按裁决摘除，属已知取舍勿误报漏译；确认框已全量 FluentUI 化（`FluMessageBox` 的「确定/取消」中文由 FluentUI 自带 `Controls.zh-CN.qm` 提供，不走 qtbase）
 - [ ] 新增/修改 UI 串流程 → 仓库根跑 `scripts/update-i18n.ps1` 成对刷 `i18n/*.ts` 双文件后构建通过；**严禁**跑 `lite-harness_lupdate` 陷阱 target（会扫 FluentUI 灌入上千外部串）；发往 LLM 的 C 类串（system prompt、`(恢复：工具结果不可用)` 等落盘文本）保持 `QStringLiteral` 不被包 `tr()`
-- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（18.2）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s18.2`；s18 起主段为自有发布阶段、s18.1 起带第二段补丁位，lcc 参照阶段到 `s17` 为止；补丁位先例 `s13.1`/`s16.1`/`s17.1`/`s17.2` 与 `s17.4` 跳过裁决见 AGENTS），全仓无散落硬编码；侧栏页脚 `lite-harness s18.2` 不带多余 `v`
+- [ ] 版本号单源 → 设置页「关于」版本 = CMake `project VERSION`（18.3）经 `LITE_VERSION` 宏拼 `s` 前缀运行时注入（显示 `s18.3`；s18 起主段为自有发布阶段、s18.1 起带第二段补丁位，lcc 参照阶段到 `s17` 为止；补丁位先例 `s13.1`/`s16.1`/`s17.1`/`s17.2` 与 `s17.4` 跳过裁决见 AGENTS），全仓无散落硬编码；侧栏页脚 `lite-harness s18.3` 不带多余 `v`
 - [ ] **s17.12 自更新（发布包内验，开发态不适用）**：① 开发态（`build/bin` 旁无 `Qt6Core.dll`）进设置页 → 状态行须显示「当前是开发态构建…自更新已禁用」，**不得**与「已是最新」共用文案，且不得发出任何网络请求；② 发布包内首次进设置页 → 自动校准一次（`showEvent` 触发，反复切页不重复打 API）；③ 有新版本 → 「下载并更新」出现，下载期**说明位给百分比数字、其左侧进度环同步推进**（分母未知时环走不定态空转、数字退成 MB，**绝不允许出现一个假的 100% 或空环**；环的 track 必须可见，0% 时要看得出「还剩多少」），校验/解包/换体期环收起且**无限动画已停**（只隐藏不停动画会白烧 CPU、下次显示相位随机），校验期显示「正在校验 SHA256」；④ 篡改包或截断下载 → 须报「校验和不匹配，已丢弃，未触碰安装目录」，安装树逐文件不变；⑤ 换体成功后确认框默认键须钉在「取消」（与退出守卫同款数据丢失防线），确认后新实例起来且旧 `*.update-backup` 由新实例在下次启动清掉；⑥ 换体中途失败 → 须自动回滚到原版本可正常启动（不是半新半死）；⑦ 重启后设置页版本数字须变为新版本，日志有 `[update] swapped to …` 与 `[update] cleaned N residue files …`
 
 ### 八、P2 记忆与子代理
