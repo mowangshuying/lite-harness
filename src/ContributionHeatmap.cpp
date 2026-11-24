@@ -12,14 +12,14 @@
 
 namespace {
 
-// 三主题色板（档 0 空色 + 档 1-5 强调色 alpha 阶梯 + 卡片背景/边框）。
+// 三主题色板（档 0 空色 + 档 1-5 FluStyleButton 背景色 alpha 阶梯 + 卡片背景/边框）。
 // 与 `LiteHarness::onThemeChanged`（取色点见该函数内 `FluThemeUtils::isLightTheme()` 分支）
 // 同法用 FluThemeUtils 主题谓词判主题——
 // 本仓 FluentUI fork 无 getFluentColor/FluThemeColorType API（全库 grep 零命中），
 // 色阶只能在此硬编码；主题切换由 ThemeAware::bind 的 extraRefresh 触发 update() 重绘。
 struct Palette {
     QColor empty;
-    QColor accent;
+    QColor buttonBg; // 有消耗格基色 = FluStyleButton 背景色，深浅由 levelColor 的 alpha 阶梯指示 token 量
     QColor monthText;
     QColor cardBg;
     QColor cardBorder;
@@ -34,26 +34,29 @@ Palette currentPalette()
     //  - atomOneDark 内容页 40,44,52 / 导航带 33,37,43 / 描边 71,74,79
     // 卡片底取导航带色（恒比内容页暗一档，与「导航带分层」的既有决策同源）；
     // 空格略高于卡片、低于档 1；描边取各主题原生控件描边色。
-    // 强调色保留 GitHub 惯例绿（light 40,167,69 / dark 52,216,113 / aod 152,195,121），
-    // 这是本视图唯一的彩色，不参与上述分层归一。
+    // 有消耗格（档 1-5）基色取 FluStyleButton 背景色（用户裁决：网格色与 FluentUI 强调钮同源，
+    // 不再用 GitHub 惯例绿）：light 0,90,158 / dark 118,185,237 / aod 82,139,255，
+    // 单源 = 3rdparty/FluentUI/stylesheet/<theme>/FluStyleButton.qss 的 background-color；
+    // token 多少由 levelColor 的 alpha 阶梯指示（档越高越实），基色本身不参与上述分层归一。
     if (FluThemeUtils::isLightTheme())
-        return {QColor(235, 237, 240), QColor(40, 167, 69), QColor(90, 90, 90),
+        return {QColor(235, 237, 240), QColor(0, 90, 158), QColor(90, 90, 90),
                 QColor(255, 255, 255), QColor(229, 229, 229)};
     if (FluThemeUtils::isDarkTheme())
-        return {QColor(50, 50, 50), QColor(52, 216, 113), QColor(170, 170, 170),
+        return {QColor(50, 50, 50), QColor(118, 185, 237), QColor(170, 170, 170),
                 QColor(32, 32, 32), QColor(69, 69, 69)};
     // atomOneDark
-    return {QColor(55, 60, 72), QColor(152, 195, 121), QColor(171, 178, 191),
+    return {QColor(55, 60, 72), QColor(82, 139, 255), QColor(171, 178, 191),
             QColor(33, 37, 43), QColor(71, 74, 79)};
 }
 
-// 强调色按档做 alpha 阶梯（1=30% / 2=55% / 3=75% / 4=90% / 5=100%）；空档用 empty 色。
+// FluStyleButton 背景色按档做 alpha 阶梯（1=30% / 2=55% / 3=75% / 4=90% / 5=100%）：
+// 档越高越实、指示当日 token 消耗越多；空档用 empty 色。
 QColor levelColor(const Palette &p, int level)
 {
     if (level <= 0)
         return p.empty;
     static const int kAlpha[] = {0, 77, 140, 191, 230, 255};
-    QColor c = p.accent;
+    QColor c = p.buttonBg;
     c.setAlpha(kAlpha[qBound(0, level, 5)]);
     return c;
 }
@@ -152,7 +155,7 @@ void ContributionHeatmap::paintEvent(QPaintEvent *)
 
     // 页眉带标题「会话活动」：本网格唯一口径（token 消耗），故单个左对齐标题，
     // 不复制参考图「会话 / Credits」双页签——本仓没有第二个数据源，造假页签更糟。
-    // 用 monthText 中性灰（非强调绿），字号 13 半粗，基线落在 header 带垂直居中。
+    // 用 monthText 中性灰（非档色），字号 13 半粗，基线落在 header 带垂直居中。
     p.setPen(palette.monthText);
     QFont titleFont = p.font();
     titleFont.setPixelSize(13);
