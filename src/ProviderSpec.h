@@ -40,6 +40,7 @@
 // tst_providerspec 只调纯函数、不调 loadProviders，故不需要 QCoreApplication 实例。
 #include "AppSettings.h"
 
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -307,6 +308,36 @@ inline int route(const QList<Provider> &providers, const QString &model)
             return i;
     }
     return -1;
+}
+
+// ---- 请求凭据装配：多 Provider 路由的唯一落点（s18.3 抽头，串钥修复批）----
+// 为什么在这里而不是 QOpenAi.cpp：路由判据（route）与「这一发请求该用哪份凭据」必须同处
+// 可测。曾有的缺陷形态：端点按 model 路由去了乙家，Authorization 却仍拿全局旧三键的 token
+// ——请求打到乙家端点却携带甲家的 key，轻则静默 401、重则把甲家密钥泄露给第三方。故把
+// 「凭据反查」与「头部构造」都收进本头：头部只能由路由出的 creds 构造，接线层拿不到别的
+// token 来源。QOpenAi::sendRequest 是唯一消费点；六条链并发发请求，凭据跟着请求体里的
+// model 走，不维护「当前 provider」全局状态（理由详见本头顶部「路由形态」节）。
+struct RequestCreds
+{
+    QString baseUrl;
+    QString token;
+};
+
+// 按模型名反查这一发该用的基址与密钥；查不到（providers 未配、或该 model 不在任何清单里）
+// 一律回落全局旧三键，保住「只配旧三键」与「MODEL_ID 环境变量」两条既有通路行为逐字不变。
+inline RequestCreds credsForModel(const QList<Provider> &providers, const QString &model,
+                                  const QString &fallbackBaseUrl, const QString &fallbackToken)
+{
+    const int idx = route(providers, model);
+    if (idx >= 0)
+        return { providers.at(idx).baseUrl, providers.at(idx).token };
+    return { fallbackBaseUrl, fallbackToken };
+}
+
+// Authorization 头部单源：只能由路由出的 creds 构造（防「端点路由了、token 没路由」的串钥形态）。
+inline QByteArray authorizationHeader(const RequestCreds &creds)
+{
+    return QByteArray("Bearer ") + creds.token.toUtf8();
 }
 
 // provider id → 下标；查无 -1。

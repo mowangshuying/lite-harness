@@ -4,7 +4,8 @@
 #include "AgentConstants.h" // 流式总时长哨兵上限单源（kStreamTotalTimeoutMs）+ s15 恢复常量（kMaxConsecutive529）
 #include "AppSettings.h"    // config.json 单源（apiBaseUrl / apiToken 两个键）
 #include "AgentRecovery.h"  // s15 过载文本判据单源（RecoveryRules::isOverloadedText，lcc s15 af26862）
-#include "ProviderSpec.h"   // s18.3 多 Provider：按模型名反查凭据（route/Provider/loadProviders）
+#include "ProviderSpec.h"   // s18.3 多 Provider：按模型名反查凭据（route/Provider/loadProviders/credsForModel）
+#include "ToolCallAccum.h"  // SSE tool_calls 增量累加器（arguments 缓冲 + 首帧双写修复，纯头可测）
 
 #include <QList>
 #include <QNetworkAccessManager>
@@ -112,27 +113,9 @@ QString endpointFor(const QString &baseUrl, QOpenAi::ChatStream::Mode mode)
     return trimTrailingSlashes(baseUrl) + QString::fromLatin1(suffix);
 }
 
-// s18.3 多 Provider：按请求体里的 model 反查这一发该用的基址与密钥。
-// 为什么在发请求时查、而不是维护一个「当前 provider」全局状态：主循环 / 子代理 / 队友 /
-// workflow / 压缩 / 记忆六条链会**并发**发请求，全局切换会让 A 会话切到服务商甲的瞬间，
-// 正在跑的 B 会话拿着甲的 key 去打乙的端点——静默 401，界面上复现不出来。请求体本来就带
-// model，凭据跟着请求走，六条链因此一行都不用改。
-// 查不到（providers 未配、或该 model 不在任何清单里）一律回落全局 url/token，
-// 保住「只配旧三键」与「MODEL_ID 环境变量」两条既有通路的行为逐字不变。
-struct RequestCreds
-{
-    QString baseUrl;
-    QString token;
-};
-
-RequestCreds credsForModel(const OpenAiClient &c, const QJsonObject &input)
-{
-    const int idx = ProviderSpec::route(
-        c.providers, input.value(QStringLiteral("model")).toString());
-    if (idx >= 0)
-        return { c.providers.at(idx).baseUrl, c.providers.at(idx).token };
-    return { c.url, c.token };
-}
+// s18.3 多 Provider 凭据装配（RequestCreds / credsForModel / authorizationHeader）已抽进
+// ProviderSpec.h 纯头单源：路由判据与「头部只能由路由出的凭据构造」同处可测
+// （tst_providerspec ⑳ 串钥回归），本文件只负责接线（sendRequest）。
 
 } // namespace
 
@@ -146,7 +129,7 @@ public:
     QByteArray pendingFrame;   // 当前帧已收集的行（遇空行=帧边界时整帧派发）
     QString thinking;          // 累积推理原文
     QString content;           // 累积正文原文
-    QJsonArray toolCalls;      // 累积的 tool_calls（按 index 对齐，含占位）
+    ToolCallAcc::Accumulator toolCallAcc; // 累积的 tool_calls（增量缓冲、终局一次组装，见 ToolCallAccum.h）
     bool done = false;         // 是否已收尾（防重复 emit）
     bool timedOut = false;     // 是否超时中止（idle 静默防线）
     bool totalTimedOut = false; // 是否总时长哨兵中止（"慢而不断"防线，收字节不重置）
@@ -245,8 +228,11 @@ void ChatStream::startRequest(const QJsonObject &input, Mode mode)
 void ChatStream::sendRequest()
 {
     OpenAiClient &c = client();
-    // s18.3：基址与密钥按本请求的 model 反查（多 Provider 路由的唯一落点）
-    const RequestCreds creds = credsForModel(c, d->input);
+    // s18.3：基址与密钥按本请求的 model 反查（多 Provider 路由的唯一落点，判据在 ProviderSpec.h）。
+    // 串钥修复：Authorization 曾误用全局 c.token——多 Provider 下端点路由去了乙家、头部却带
+    // 甲家的 key（轻则静默 401、重则跨商泄露密钥）。现头部一律由路由出的 creds 构造。
+    const ProviderSpec::RequestCreds creds = ProviderSpec::credsForModel(
+        c.providers, d->input.value(QStringLiteral("model")).toString(), c.url, c.token);
     if (creds.baseUrl.isEmpty() || creds.token.isEmpty())
     {
         // 不在此处同步 emit（调用方此刻尚未连接信号），延迟一拍让 connect 先完成
@@ -259,7 +245,7 @@ void ChatStream::sendRequest()
     const QString endpoint = endpointFor(creds.baseUrl, d->mode);
     QNetworkRequest req{QUrl(endpoint)}; // 基础 URL + 端点路径（/chat/completions 或 /completions）
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    req.setRawHeader("Authorization", QByteArray("Bearer ") + c.token.toUtf8());
+    req.setRawHeader("Authorization", ProviderSpec::authorizationHeader(creds));
 
     const QByteArray body = QJsonDocument(d->input).toJson(QJsonDocument::Compact);
     if (c.verbose)
@@ -428,48 +414,15 @@ void ChatStream::processFrame(const QByteArray &frame)
         emit textDelta(text);
     }
 
-    // tool_calls 增量合并（按 index 拼装）
+    // tool_calls 增量合并（按 index 拼装）：判据与缓冲在 ToolCallAccum.h 纯头单源。
+    // 旧接线在此逐帧全量拼接 arguments（O(L²) 拷贝 + QJsonObject detach），且首帧非空
+    // arguments 会被双写——两者均已收敛，语义边界见该头注释与 tst_toolcallacc。
     const QJsonValue tcsVal = delta.value(QStringLiteral("tool_calls"));
     if (tcsVal.isArray())
     {
         const QJsonArray tcs = tcsVal.toArray();
         for (const QJsonValue &tcVal : tcs)
-        {
-            const QJsonObject tc = tcVal.toObject();
-            const int index = tc.value(QStringLiteral("index")).toInt(-1);
-            if (index < 0)
-                continue;
-
-            while (d->toolCalls.size() <= index)
-                d->toolCalls.append(QJsonObject());
-
-            QJsonObject merged = d->toolCalls.at(index).toObject();
-            if (merged.isEmpty())
-                merged = tc;
-
-            if (!tc.value(QStringLiteral("id")).toString().isEmpty())
-                merged[QStringLiteral("id")] = tc.value(QStringLiteral("id"));
-
-            if (!tc.value(QStringLiteral("type")).toString().isEmpty())
-                merged[QStringLiteral("type")] = tc.value(QStringLiteral("type"));
-
-            const QJsonObject fn = tc.value(QStringLiteral("function")).toObject();
-            if (!fn.isEmpty())
-            {
-                QJsonObject mergedFn = merged.value(QStringLiteral("function")).toObject();
-                if (!fn.value(QStringLiteral("name")).toString().isEmpty())
-                    mergedFn[QStringLiteral("name")] = fn.value(QStringLiteral("name"));
-                if (fn.contains(QStringLiteral("arguments")))
-                {
-                    const QString args = fn.value(QStringLiteral("arguments")).toString();
-                    mergedFn[QStringLiteral("arguments")] =
-                        mergedFn.value(QStringLiteral("arguments")).toString() + args;
-                }
-                merged[QStringLiteral("function")] = mergedFn;
-            }
-
-            d->toolCalls[index] = merged;
-        }
+            d->toolCallAcc.feed(tcVal.toObject());
     }
 
     // 本轮结束（finish_reason 出现）。修3（决策 D7）：OpenAI 语义下 usage 尾 chunk 排在
@@ -640,13 +593,8 @@ void ChatStream::finishStream()
     if (!d->thinking.isEmpty())
         assistantMsg[QStringLiteral("reasoning_content")] = d->thinking;
 
-    // 去占位后输出 tool_calls
-    QJsonArray realCalls;
-    for (const QJsonValue &v : d->toolCalls)
-    {
-        if (v.isObject() && !v.toObject().isEmpty())
-            realCalls.append(v);
-    }
+    // 去占位后输出 tool_calls（占位过滤与 arguments 一次写回均在累加器内）
+    const QJsonArray realCalls = d->toolCallAcc.finalize();
     if (!realCalls.isEmpty())
         assistantMsg[QStringLiteral("tool_calls")] = realCalls;
 
@@ -686,7 +634,7 @@ void ChatStream::scheduleRetry()
     d->finishReason.clear();
     d->thinking.clear();
     d->content.clear();
-    d->toolCalls = QJsonArray();
+    d->toolCallAcc.reset();
     // 修3：usage 捕获态与宽限一并复位，重试 attempt 从零重收（input 保留 stream_options，
     // usageRequested 无需重置——同一请求体重发）
     d->usage = QJsonObject();

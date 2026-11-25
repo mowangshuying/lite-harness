@@ -67,6 +67,7 @@ int tst_providerspec();      // s18.3 多 Provider 数据层纯头（ProviderSpe
 int tst_contexttrim();         // 上下文成组裁剪内核纯头（ContextTrim.h）：配对不变量/keepHead 头部保护/oldest-first/孤立 tool 兜底/目标比 4/5 与 1/2/幂等，零夹具恒跑
 int tst_scrollsettle();        // s18.5 贴底算术与跟随态判据纯头（ScrollSettle.h）：range 算术/新件 hidden 对布局 min 贡献 0/两阶段落点/缺口/近底阈值 80 边界，零夹具恒跑
 int tst_modelprefs();          // s18.5 模型管理弹窗每模型偏好纯头（ModelPrefs.h）：effort 四档归一/window 三档互映/严格布尔/显示过滤保序/窗口回落/thinkingParams 关思考不带 effort/自定义清单两形态，零夹具恒跑
+int tst_toolcallacc();         // SSE tool_calls 增量累加器纯头（ToolCallAccum.h）：增量缓冲终局组装/占位过滤/index 对齐/覆写口径/首帧双写修复/旧接线参照等价，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
 // 全表求和 = 1585（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
@@ -78,6 +79,9 @@ int tst_modelprefs();          // s18.5 模型管理弹窗每模型偏好纯头�
 // 压缩批的现值，按「历史登记值原样保留」不动，本块不复用其数字。
 // s18.5 模型管理弹窗批 +73（tst_modelprefs，零夹具恒跑）后全表求和 = 1789，与本机无夹具全量实跑
 // pass=1789 fail=0 skip=35 逐条对上；带夹具实跑 pass=2805 fail=0 skip=1（套件 41 个，三口径 41/41/41）。
+// 串钥与 tool_call 参数修复批 +33（新增 tst_toolcallacc 25 条、providerspec ⑳ 凭据装配 +8，
+// 均零夹具恒跑）后全表求和 = 1822，与本机无夹具全量实跑 pass=1822 fail=0 skip=35 逐条对上；
+// 带夹具实跑 pass=2838 fail=0 skip=1（套件 42 个，三口径 42/42/42）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -101,9 +105,10 @@ static const SuiteFloor kSuiteFloors[] = {
     {"sessionkeys", 45},
     {"projectinstructions", 49},
     {"updaterules", 198},
-    {"contexttrim", 48},         {"providerspec", 90},
+    {"contexttrim", 48},         {"providerspec", 98},
     {"scrollsettle", 32},
     {"modelprefs", 73},
+    {"toolcallacc", 25},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -186,6 +191,7 @@ int main()
     failed += runSuite("providerspec", tst_providerspec);
     failed += runSuite("scrollsettle", tst_scrollsettle);
     failed += runSuite("modelprefs", tst_modelprefs);
+    failed += runSuite("toolcallacc", tst_toolcallacc);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

@@ -598,5 +598,75 @@ int tst_providerspec()
               && ProviderSpec::kModelNameMax > 0 && ProviderSpec::kModelsResponseMax > 0,
           "caps: all positive and mutually consistent");
 
+    // ---- ⑳ 请求凭据装配：串钥修复回归（端点与 token 必须同源路由）----
+    // 曾有的缺陷形态：QOpenAi::sendRequest 的端点按 model 路由去了乙家，Authorization
+    // 却仍拿全局旧三键的 token——请求打到乙家端点却携带甲家的 key，轻则静默 401、
+    // 重则把甲家密钥泄露给第三方。判据收进本头后，头部只能由路由出的 creds 构造。
+    {
+        QList<ProviderSpec::Provider> providers;
+        ProviderSpec::Provider a = makeProvider(QStringLiteral("p-1"), QStringLiteral("甲"),
+                                                {QStringLiteral("m-a")});
+        a.baseUrl = QStringLiteral("https://a.example/v1");
+        a.token = QStringLiteral("sk-A");
+        ProviderSpec::Provider b = makeProvider(QStringLiteral("p-2"), QStringLiteral("乙"),
+                                                {QStringLiteral("m-b")});
+        b.baseUrl = QStringLiteral("https://b.example/v1");
+        b.token = QStringLiteral("sk-B");
+        providers.append(a);
+        providers.append(b);
+
+        // 命中乙家：基址与 token 都必须是乙家的（全局凭据刻意给不同值，串钥即现形）
+        const ProviderSpec::RequestCreds hitB = ProviderSpec::credsForModel(
+            providers, QStringLiteral("m-b"), QStringLiteral("https://global.example/v1"),
+            QStringLiteral("sk-GLOBAL"));
+        check(hitB.baseUrl == QStringLiteral("https://b.example/v1")
+                  && hitB.token == QStringLiteral("sk-B"),
+              "credsForModel: routed provider supplies BOTH baseUrl and token");
+        check(ProviderSpec::authorizationHeader(hitB) == QByteArray("Bearer sk-B"),
+              "authorizationHeader: built from routed creds, not the global token (cross-key regression)");
+
+        // 命中甲家同理
+        const ProviderSpec::RequestCreds hitA = ProviderSpec::credsForModel(
+            providers, QStringLiteral("m-a"), QStringLiteral("https://global.example/v1"),
+            QStringLiteral("sk-GLOBAL"));
+        check(hitA.token == QStringLiteral("sk-A")
+                  && ProviderSpec::authorizationHeader(hitA) == QByteArray("Bearer sk-A"),
+              "credsForModel: first provider hit carries its own token");
+
+        // 查无回落全局旧三键（旧通路行为逐字不变）
+        const ProviderSpec::RequestCreds miss = ProviderSpec::credsForModel(
+            providers, QStringLiteral("m-zz"), QStringLiteral("https://global.example/v1"),
+            QStringLiteral("sk-GLOBAL"));
+        check(miss.baseUrl == QStringLiteral("https://global.example/v1")
+                  && miss.token == QStringLiteral("sk-GLOBAL")
+                  && ProviderSpec::authorizationHeader(miss) == QByteArray("Bearer sk-GLOBAL"),
+              "credsForModel: unknown model falls back to global legacy creds");
+
+        // 空表 / 空模型名同样回落
+        const ProviderSpec::RequestCreds emptyTable = ProviderSpec::credsForModel(
+            QList<ProviderSpec::Provider>{}, QStringLiteral("m-a"),
+            QStringLiteral("https://global.example/v1"), QStringLiteral("sk-GLOBAL"));
+        check(emptyTable.token == QStringLiteral("sk-GLOBAL"),
+              "credsForModel: empty provider table falls back to global");
+        const ProviderSpec::RequestCreds emptyModel = ProviderSpec::credsForModel(
+            providers, QString(), QStringLiteral("https://global.example/v1"),
+            QStringLiteral("sk-GLOBAL"));
+        check(emptyModel.token == QStringLiteral("sk-GLOBAL"),
+              "credsForModel: empty model name falls back to global");
+
+        // 模型名 trim 口径与 route 一致
+        const ProviderSpec::RequestCreds trimmed = ProviderSpec::credsForModel(
+            providers, QStringLiteral("  m-b  "), QStringLiteral("https://global.example/v1"),
+            QStringLiteral("sk-GLOBAL"));
+        check(trimmed.token == QStringLiteral("sk-B"),
+              "credsForModel: model name trimmed before lookup (same as route)");
+
+        // 全局凭据为空也不得拿别家的顶替（未配置判据在 sendRequest，这里只钉回落值原样）
+        const ProviderSpec::RequestCreds noGlobal = ProviderSpec::credsForModel(
+            providers, QStringLiteral("m-zz"), QString(), QString());
+        check(noGlobal.baseUrl.isEmpty() && noGlobal.token.isEmpty(),
+              "credsForModel: fallback passes global values through verbatim (empty stays empty)");
+    }
+
     return TestHarness::failCount() - before;
 }
