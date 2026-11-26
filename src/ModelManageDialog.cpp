@@ -232,6 +232,10 @@ ModelManageDialog::ModelManageDialog(ModelServiceTarget *target, QWidget *parent
     connect(m_target, &ModelServiceTarget::targetChanged, this, [this]() {
         refreshProviderCombo();
         updateServiceValues();
+        // 换服务商必须连着重画模型行：此前只刷了地址/密钥那两行，模型列表停在
+        // 上一个服务商的内容上（rebuildRows 当时又取的是跨服务商摊平的生效清单，
+        // 于是「切了没反应」与「新服务商显示旧模型」两条症状叠成同一个现象）。
+        rebuildRows();
     });
     connect(m_providerCombo, &FluComboBox::currentIndexChanged, this, [this](int index) {
         if (m_repopulatingProvider)
@@ -457,13 +461,17 @@ void ModelManageDialog::rebuildRows()
 {
     clearLayout(m_modelLayout);
 
-    // 模型集按名称排序展示：添加/拉取插入位置不定，排序后新模型落到字母序应在的位置
-    QStringList rows;
-    const QStringList effective = AgentConst::modelOptions();
-    for (const QString &model : effective) {
-        if (m_custom.contains(model))
-            rows.append(model);
-    }
+    // 模型行只取**当前服务商自己的清单**。此前取的是 AgentConst::modelOptions()
+    // （跨服务商摊平的生效清单）∩ customModelNames（一张全局表），两个条件都不带
+    // 服务商身份，于是新建的服务商一打开就挂着上一个服务商的模型——用户看到的
+    // 「服务商之间共用模型」其实是这里根本没按服务商过滤。
+    // 能只读 cur.models 的前提是既有不变量「模型名跨服务商唯一」：手动添加走
+    // addModel 的生效清单查重、拉取走 mergeableModels 的跨家撞名拦截，两道都拦，
+    // 所以「某个模型属于哪个服务商」是良定义的（customModelNames 不参与本判断，
+    // 它只服务偏好表的写入与剪除，见 save()）。
+    QStringList rows = m_target->current().models;
+    rows.removeAll(QString());
+    rows.removeDuplicates();
     std::sort(rows.begin(), rows.end());
     for (const QString &model : rows)
         m_modelLayout->addWidget(buildRow(model));
@@ -484,8 +492,27 @@ void ModelManageDialog::addModel()
     if (!accepted)
         return;
     const QString name = ProviderSpec::normalizeModelName(input);
-    if (AgentConst::modelOptions().contains(name)) {
-        FluMessageBox(tr("无需添加"), tr("该模型已在生效清单中。"), this).exec();
+    // 撞名要说清撞在**哪家**：只报「已在生效清单中」而不给归属，用户看到的就是
+    // 「我在甲里加了个模型，乙里也有」——正是本轮被报成「服务商共用模型」的那条困惑。
+    // 名字跨服务商唯一是设计前提（请求按模型名路由到端点，重名即无法裁决该发给谁），
+    // 所以这里拒绝而不是允许两家各存一份；归属判据单源 ProviderSpec::ownerIdOfModel。
+    const QList<ProviderSpec::Provider> table = m_target->providers();
+    const QString owner = ProviderSpec::ownerIdOfModel(table, name);
+    if (!owner.isEmpty())
+    {
+        if (owner == m_target->current().id) {
+            FluMessageBox(tr("无需添加"), tr("该模型已在本服务商清单中。"), this).exec();
+        } else {
+            const int at = ProviderSpec::indexOfId(table, owner);
+            const ProviderSpec::Provider owning =
+                at >= 0 ? table.at(at) : ProviderSpec::Provider{};
+            const QString label = owning.name.isEmpty() ? owning.id : owning.name;
+            FluMessageBox(tr("无法添加"),
+                          tr("模型名跨服务商必须唯一：「%1」已属于服务商「%2」。")
+                              .arg(name, label),
+                          this)
+                .exec();
+        }
         return;
     }
     QString error;
@@ -579,9 +606,14 @@ void ModelManageDialog::fetchFromServer()
 
 void ModelManageDialog::removeCustom(const QString &model)
 {
+    // 只从**本服务商**剪除。旧写法遍历整张表逐个 removeAll，等于「在甲下点移除」
+    // 连带把乙里同名的条目一起删掉——模型名跨服务商唯一是运行期判据拦的，不是
+    // config.json 写不出来，手改过的表一旦撞上就是静默丢数据。
     QList<ProviderSpec::Provider> next = m_target->providers();
-    for (ProviderSpec::Provider &provider : next)
-        provider.models.removeAll(model);
+    const int at = ProviderSpec::indexOfId(next, m_target->current().id);
+    if (at < 0)
+        return; // 当前服务商已不在表里（弹窗开着时别处改了配置）：不动盘
+    next[at].models.removeAll(model);
     if (!m_target->commit(next, this))
         return;
     m_custom.removeAll(model);

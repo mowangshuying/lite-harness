@@ -117,11 +117,6 @@
         <source>图%1</source>
         <translation>图%1</translation>
     </message>
-    <message>
-        <location line="+13"/>
-        <source>清除</source>
-        <translation>清除</translation>
-    </message>
 </context>
 <context>
     <name>ChatSessionPage</name>
@@ -522,7 +517,7 @@
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="+150"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="+174"/>
         <source>复制</source>
         <translation>复制</translation>
     </message>
@@ -532,7 +527,7 @@
         <translation>全选</translation>
     </message>
     <message>
-        <location line="+133"/>
+        <location line="+137"/>
         <source>[图片未能显示]</source>
         <translation>[图片未能显示]</translation>
     </message>
@@ -668,7 +663,7 @@
         <translation>保存设置</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+77"/>
         <source>至少需保留一个服务商。</source>
         <translation>至少需保留一个服务商。</translation>
     </message>
@@ -723,7 +718,7 @@
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-359"/>
+        <location line="-363"/>
         <source>自定义模型</source>
         <translation>自定义模型</translation>
     </message>
@@ -755,7 +750,7 @@
         <translation>这些自定义模型的偏好对所有任务生效。运行中的回复保持当前设置，下一轮开始使用新设置。</translation>
     </message>
     <message>
-        <location line="+132"/>
+        <location line="+136"/>
         <location line="+3"/>
         <source>未设置</source>
         <translation>未设置</translation>
@@ -791,7 +786,7 @@
         <translation>输入新的 Key 并保存；留空表示不修改。</translation>
     </message>
     <message>
-        <location line="+112"/>
+        <location line="+116"/>
         <source>暂无自定义模型，可添加或从服务端拉取。</source>
         <translation>暂无自定义模型，可添加或从服务端拉取。</translation>
     </message>
@@ -806,41 +801,47 @@
         <translation>输入模型 ID（大小写敏感，须与服务端一致），如 qwen3.8-flash。</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>无需添加</source>
         <translation>无需添加</translation>
     </message>
     <message>
-        <location line="+0"/>
-        <source>该模型已在生效清单中。</source>
-        <translation>该模型已在生效清单中。</translation>
-    </message>
-    <message>
-        <location line="+7"/>
+        <location line="+6"/>
+        <location line="+12"/>
         <source>无法添加</source>
         <translation>无法添加</translation>
     </message>
     <message>
-        <location line="-173"/>
-        <location line="+182"/>
+        <location line="-196"/>
+        <location line="+205"/>
         <location line="+48"/>
         <location line="+22"/>
-        <location line="+16"/>
+        <location line="+21"/>
         <location line="+18"/>
         <source>保存失败</source>
         <translation>保存失败</translation>
     </message>
     <message>
-        <location line="-286"/>
-        <location line="+182"/>
+        <location line="-314"/>
+        <location line="+205"/>
         <location line="+48"/>
         <location line="+22"/>
-        <location line="+16"/>
+        <location line="+21"/>
         <source>config.json 写入失败，模型来源记录未保存。</source>
         <translation>config.json 写入失败，模型来源记录未保存。</translation>
     </message>
     <message>
-        <location line="-78"/>
+        <location line="-118"/>
+        <source>该模型已在本服务商清单中。</source>
+        <translation>该模型已在本服务商清单中。</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>模型名跨服务商必须唯一：「%1」已属于服务商「%2」。</source>
+        <translation>模型名跨服务商必须唯一：「%1」已属于服务商「%2」。</translation>
+    </message>
+    <message>
+        <location line="+28"/>
         <source>无法拉取</source>
         <translation>无法拉取</translation>
     </message>
@@ -870,7 +871,7 @@
         <translation>服务端返回 %1 个模型，均已在本服务商清单中。</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+58"/>
         <source>config.json 写入失败，偏好未保存。</source>
         <translation>config.json 写入失败，偏好未保存。</translation>
     </message>

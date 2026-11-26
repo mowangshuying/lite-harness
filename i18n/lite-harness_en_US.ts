@@ -117,11 +117,6 @@
         <source>图%1</source>
         <translation>Image %1</translation>
     </message>
-    <message>
-        <location line="+13"/>
-        <source>清除</source>
-        <translation>Clear</translation>
-    </message>
 </context>
 <context>
     <name>ChatSessionPage</name>
@@ -522,7 +517,7 @@ No consumption recorded</translation>
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="+150"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="+174"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
@@ -532,7 +527,7 @@ No consumption recorded</translation>
         <translation>Select All</translation>
     </message>
     <message>
-        <location line="+133"/>
+        <location line="+137"/>
         <source>[图片未能显示]</source>
         <translation>[image not displayed]</translation>
     </message>
@@ -668,7 +663,7 @@ No consumption recorded</translation>
         <translation>Save Settings</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+77"/>
         <source>至少需保留一个服务商。</source>
         <translation>At least one provider must be kept.</translation>
     </message>
@@ -723,7 +718,7 @@ No consumption recorded</translation>
         <translation>Remove</translation>
     </message>
     <message>
-        <location line="-359"/>
+        <location line="-363"/>
         <source>自定义模型</source>
         <translation>Custom Models</translation>
     </message>
@@ -755,7 +750,7 @@ No consumption recorded</translation>
         <translation>These custom-model preferences apply to all tasks. In-flight replies keep their current settings; new settings apply from the next turn.</translation>
     </message>
     <message>
-        <location line="+132"/>
+        <location line="+136"/>
         <location line="+3"/>
         <source>未设置</source>
         <translation>Not set</translation>
@@ -791,7 +786,7 @@ No consumption recorded</translation>
         <translation>Enter a new key and save; leave blank to keep the current key.</translation>
     </message>
     <message>
-        <location line="+112"/>
+        <location line="+116"/>
         <source>暂无自定义模型，可添加或从服务端拉取。</source>
         <translation>No custom models yet. Add one or fetch models from the server.</translation>
     </message>
@@ -806,41 +801,47 @@ No consumption recorded</translation>
         <translation>Enter the model ID (case-sensitive, must match the server), e.g. qwen3.8-flash.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>无需添加</source>
         <translation>Nothing to Add</translation>
     </message>
     <message>
-        <location line="+0"/>
-        <source>该模型已在生效清单中。</source>
-        <translation>This model is already in the effective list.</translation>
-    </message>
-    <message>
-        <location line="+7"/>
+        <location line="+6"/>
+        <location line="+12"/>
         <source>无法添加</source>
         <translation>Cannot Add</translation>
     </message>
     <message>
-        <location line="-173"/>
-        <location line="+182"/>
+        <location line="-196"/>
+        <location line="+205"/>
         <location line="+48"/>
         <location line="+22"/>
-        <location line="+16"/>
+        <location line="+21"/>
         <location line="+18"/>
         <source>保存失败</source>
         <translation>Save Failed</translation>
     </message>
     <message>
-        <location line="-286"/>
-        <location line="+182"/>
+        <location line="-314"/>
+        <location line="+205"/>
         <location line="+48"/>
         <location line="+22"/>
-        <location line="+16"/>
+        <location line="+21"/>
         <source>config.json 写入失败，模型来源记录未保存。</source>
         <translation>Failed to write config.json; the model origin record was not saved.</translation>
     </message>
     <message>
-        <location line="-78"/>
+        <location line="-118"/>
+        <source>该模型已在本服务商清单中。</source>
+        <translation>This model is already in this provider's list</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>模型名跨服务商必须唯一：「%1」已属于服务商「%2」。</source>
+        <translation>Model names must be unique across providers: "%1" already belongs to provider "%2".</translation>
+    </message>
+    <message>
+        <location line="+28"/>
         <source>无法拉取</source>
         <translation>Cannot Fetch</translation>
     </message>
@@ -870,7 +871,7 @@ No consumption recorded</translation>
         <translation>The server returned %1 models, all already in this provider&apos;s list.</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+58"/>
         <source>config.json 写入失败，偏好未保存。</source>
         <translation>Failed to write config.json; preferences were not saved.</translation>
     </message>

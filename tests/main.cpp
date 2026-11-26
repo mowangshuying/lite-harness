@@ -96,6 +96,11 @@ int tst_imageattach();         // s18.6 图片附件载荷纯头（ImageAttach.h
 // 三口径 45/45/45）。三组全为零夹具恒跑——图片这件事的判据没有一处需要盘上夹具，读盘在
 // 宿主侧、本批判据全是纯函数（附件字节经 std::function 注入桩，同 ProjectInstructions 那套）。
 // 上面 1873/2889 那组是本批前一登记的现值，按「历史登记值原样保留」不动。
+// 服务商模型列表串家修复轮 +12（给 tst_providerspec 补 ㉑ 组 ownerIdOfModel 判据：归属命中/
+// 别家不误命中/查无与空白名不认领/空表/与 route 同 trim 口径/逐条对表 3 条循环展开/
+// 手改重名取首个 + allModels 同向，零夹具恒跑）后全表求和 = 2047，与本机无夹具全量实跑
+// pass=2047 fail=0 skip=35 逐条对上；带夹具实跑 pass=3063 fail=0 skip=1（套件仍 45 个，
+// 三口径 45/45/45，本轮不新增套件）。上面 2035/3051 那组是图片输入批的现值，原样保留。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -119,7 +124,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"sessionkeys", 45},
     {"projectinstructions", 49},
     {"updaterules", 198},
-    {"contexttrim", 48},         {"providerspec", 98},
+    {"contexttrim", 48},         {"providerspec", 110},
     {"scrollsettle", 32},
     {"modelprefs", 73},
     {"toolcallacc", 25},

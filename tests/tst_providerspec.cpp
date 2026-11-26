@@ -668,5 +668,59 @@ int tst_providerspec()
               "credsForModel: fallback passes global values through verbatim (empty stays empty)");
     }
 
+    // ---- ㉑ ownerIdOfModel：模型名 → 归属服务商（弹窗按服务商列模型、报「已属于哪家」
+    //      的判据单源；用户报「新建服务商显示上一个服务商的模型」正是这条判据缺失所致）----
+    {
+        QList<ProviderSpec::Provider> providers;
+        providers.append(makeProvider(QStringLiteral("p-1"), QStringLiteral("甲"),
+                                      {QStringLiteral("m-a"), QStringLiteral("m-b")}));
+        providers.append(makeProvider(QStringLiteral("p-2"), QStringLiteral("乙"),
+                                      {QStringLiteral("m-c")}));
+        providers.append(makeProvider(QStringLiteral("p-3"), QStringLiteral("丙"), {}));
+
+        check(ProviderSpec::ownerIdOfModel(providers, QStringLiteral("m-a"))
+                  == QStringLiteral("p-1"),
+              "ownerIdOfModel: first provider owns its models");
+        check(ProviderSpec::ownerIdOfModel(providers, QStringLiteral("m-c"))
+                  == QStringLiteral("p-2"),
+              "ownerIdOfModel: second provider owns its own, not the first's");
+        check(ProviderSpec::ownerIdOfModel(providers, QStringLiteral("m-zz")).isEmpty(),
+              "ownerIdOfModel: unknown model has no owner (caller may add it)");
+        check(ProviderSpec::ownerIdOfModel(providers, QString()).isEmpty(),
+              "ownerIdOfModel: empty name never claims an owner");
+        check(ProviderSpec::ownerIdOfModel(providers, QStringLiteral("   ")).isEmpty(),
+              "ownerIdOfModel: whitespace-only name is empty after trim");
+        check(ProviderSpec::ownerIdOfModel(QList<ProviderSpec::Provider>{},
+                                           QStringLiteral("m-a"))
+                  .isEmpty(),
+              "ownerIdOfModel: empty table has no owners at all");
+
+        // 与 route() 同口径（trim + 首个命中）：两问若分叉，「发给哪家」与「属于哪家」
+        // 会在同一份表上给出不同答案——弹窗显示一家、请求打到另一家
+        const int trimmedAt = ProviderSpec::route(providers, QStringLiteral("  m-b  "));
+        check(trimmedAt >= 0
+                  && ProviderSpec::ownerIdOfModel(providers, QStringLiteral("  m-b  "))
+                          == providers.at(trimmedAt).id,
+              "ownerIdOfModel: trimmed lookup agrees with route");
+        for (const QString &m : ProviderSpec::allModels(providers)) {
+            const int at = ProviderSpec::route(providers, m);
+            check(at >= 0
+                      && ProviderSpec::ownerIdOfModel(providers, m) == providers.at(at).id,
+                  "ownerIdOfModel: agrees with route for every flattened model");
+        }
+
+        // 手改 config.json 写出重名时的归属口径：首个命中，与 allModels 保序去重同向
+        QList<ProviderSpec::Provider> dupes;
+        dupes.append(makeProvider(QStringLiteral("p-1"), QStringLiteral("甲"),
+                                  {QStringLiteral("m-d")}));
+        dupes.append(makeProvider(QStringLiteral("p-2"), QStringLiteral("乙"),
+                                  {QStringLiteral("m-d")}));
+        check(ProviderSpec::ownerIdOfModel(dupes, QStringLiteral("m-d"))
+                  == QStringLiteral("p-1"),
+              "ownerIdOfModel: duplicate table resolves to the first owner");
+        check(ProviderSpec::allModels(dupes).size() == 1,
+              "allModels: duplicate name collapses to one dropdown entry (same first-wins rule)");
+    }
+
     return TestHarness::failCount() - before;
 }

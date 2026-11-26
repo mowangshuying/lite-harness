@@ -351,6 +351,28 @@ inline int indexOfId(const QList<Provider> &providers, const QString &id)
     return -1;
 }
 
+// 模型名 → 归属服务商 id。这是「名字跨服务商唯一」那条不变量的**读取侧口径**：
+// 弹窗据此报「已属于服务商 X」而不是含糊的「已在清单中」（含糊的报错正是用户把
+// 「甲加了模型、乙也显示」读成「服务商共用模型」的原因），也据此把「移除」限定在
+// 本服务商、不牵连别家同名条目。
+// 空入参名与查无一律返回空串。入参先 trim——与 route() 同口径，否则同一个名字在
+// 「路由到哪家」与「归属哪家」两问上会给出不同答案（表里存的是归一后的名字，
+// 而调用方手里可能是用户刚输入的带空白串）。
+// 表里若真出现重名（手改 config.json 写出来的），返回**首个**命中——与 allModels()
+// 的保序去重同口径，两处不会给出不同归属。
+inline QString ownerIdOfModel(const QList<Provider> &providers, const QString &model)
+{
+    const QString name = model.trimmed();
+    if (name.isEmpty())
+        return QString();
+    for (const Provider &provider : providers)
+    {
+        if (provider.models.contains(name))
+            return provider.id;
+    }
+    return QString();
+}
+
 // 跨 provider 重名的模型名集合（写入期校验用）。只报重名项，不报第一次出现。
 inline QStringList duplicateModels(const QList<Provider> &providers)
 {
