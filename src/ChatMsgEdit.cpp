@@ -13,6 +13,7 @@
 #include <functional>
 #include <algorithm>
 #include "SendMsgButton.h"
+#include "PlainPasteTextEdit.h" // 粘贴纯净化：判据见 PasteText.h，覆写口径见该类头注释
 #include <FluScrollDelegate.h>
 #include <FluAction.h>
 #include <FluPMenu.h>
@@ -76,7 +77,12 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     vMainLayout->setSpacing(0);
     setLayout(vMainLayout);
 
-    m_textEdit = new QTextEdit(this);
+    // 输入框用 PlainPasteTextEdit 而非裸 QTextEdit：QTextEdit 默认优先吃剪贴板的 text/html，
+    // 从 Word / 网页 / IDE 粘一段带样式的文本，行内字号与颜色会落成逐字符 format 并盖掉
+    // 本仓 QSS 给 #textEdit 的字色（深色主题下白字直接看不见，还会夹进大字号与色底）。
+    // 发送口取 toPlainText()、气泡侧走 setPlainText()，故脏格式从来只污染显示、不进历史
+    // 也不发给模型——修在控件层，一处同时覆盖发起页与会话页两个消费点。
+    m_textEdit = new PlainPasteTextEdit(this);
     new FluScrollDelegate(m_textEdit); // 仅需 parent 联动滚轮行为，无需持有引用
     m_textEdit->setObjectName("textEdit");
     // 空态引导：此前输入框无 placeholder，而空态引导卡在首条消息后即永久隐藏，

@@ -68,6 +68,7 @@ int tst_contexttrim();         // 上下文成组裁剪内核纯头（ContextTri
 int tst_scrollsettle();        // s18.5 贴底算术与跟随态判据纯头（ScrollSettle.h）：range 算术/新件 hidden 对布局 min 贡献 0/两阶段落点/缺口/近底阈值 80 边界，零夹具恒跑
 int tst_modelprefs();          // s18.5 模型管理弹窗每模型偏好纯头（ModelPrefs.h）：effort 四档归一/window 三档互映/严格布尔/显示过滤保序/窗口回落/thinkingParams 关思考不带 effort/自定义清单两形态，零夹具恒跑
 int tst_toolcallacc();         // SSE tool_calls 增量累加器纯头（ToolCallAccum.h）：增量缓冲终局组装/占位过滤/index 对齐/覆写口径/首帧双写修复/旧接线参照等价，零夹具恒跑
+int tst_pastetext();           // 粘贴文本归一纯头（PasteText.h）：行尾归一/C0 与隐形字符剥离/空白族折叠/三类保留项/幂等/代理对不拆，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
 // 全表求和 = 1585（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
@@ -82,6 +83,10 @@ int tst_toolcallacc();         // SSE tool_calls 增量累加器纯头（ToolCal
 // 串钥与 tool_call 参数修复批 +33（新增 tst_toolcallacc 25 条、providerspec ⑳ 凭据装配 +8，
 // 均零夹具恒跑）后全表求和 = 1822，与本机无夹具全量实跑 pass=1822 fail=0 skip=35 逐条对上；
 // 带夹具实跑 pass=2838 fail=0 skip=1（套件 42 个，三口径 42/42/42）。
+// 输入框粘贴纯净化批 +51（新增整套 tst_pastetext，守 PasteText.h 的归一判据，零夹具恒跑）后全表
+// 求和 = 1873，与本机无夹具全量实跑 pass=1873 fail=0 skip=35 逐条对上；带夹具实跑 pass=2889
+// fail=0 skip=1（套件 43 个，三口径 43/43/43；上面 1822/2838 那组是本批前一登记的现值，按
+// 「历史登记值原样保留」不动，本块不复用其数字）。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -109,6 +114,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"scrollsettle", 32},
     {"modelprefs", 73},
     {"toolcallacc", 25},
+    {"pastetext", 51},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -192,6 +198,7 @@ int main()
     failed += runSuite("scrollsettle", tst_scrollsettle);
     failed += runSuite("modelprefs", tst_modelprefs);
     failed += runSuite("toolcallacc", tst_toolcallacc);
+    failed += runSuite("pastetext", tst_pastetext);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

@@ -2,7 +2,7 @@
 
 #include <FluWidget.h>
 
-class QTextEdit;
+class PlainPasteTextEdit; // 只吃纯文本的 QTextEdit 子类（判据见 PasteText.h / PlainPasteTextEdit.h）
 class SendMsgButton;
 class FluComboBox;
 
@@ -55,7 +55,7 @@ private:
     // 由模型下拉弹层展开前的事件过滤器调用——改完配置无需重启即可选新模型
     void reloadModelOptions();
 
-    QTextEdit *m_textEdit = nullptr;
+    PlainPasteTextEdit *m_textEdit = nullptr;
     SendMsgButton *m_sendMsgButton = nullptr;
     FluComboBox *m_modelComboBox = nullptr;
     bool m_turnBusy = false; // 本会话回合态（runningChanged 驱动）
