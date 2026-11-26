@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
         qWarning() << "config: uiFontScale" << fontScaleRaw << "is out of range, fallback to" << fontScalePercent;
 
     // 版本号进运行时：LITE_VERSION 宏由 CMake target_compile_definitions 注入
-    // （= project VERSION 拼 s 前缀，唯一真源，如 "s18.3"），供设置页等展示点取用
+    // （= project VERSION 拼 s 前缀，唯一真源，如 "s18.5"），供设置页等展示点取用
     QCoreApplication::setApplicationVersion(QStringLiteral(LITE_VERSION));
 
     // s17.12 自更新残留清理：必须在 setApplicationVersion 之后——清理的版本闸门拿的
