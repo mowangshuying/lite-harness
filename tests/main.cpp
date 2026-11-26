@@ -101,6 +101,32 @@ int tst_imageattach();         // s18.6 图片附件载荷纯头（ImageAttach.h
 // 手改重名取首个 + allModels 同向，零夹具恒跑）后全表求和 = 2047，与本机无夹具全量实跑
 // pass=2047 fail=0 skip=35 逐条对上；带夹具实跑 pass=3063 fail=0 skip=1（套件仍 45 个，
 // 三口径 45/45/45，本轮不新增套件）。上面 2035/3051 那组是图片输入批的现值，原样保留。
+// cron 7 段式批 +11（tst_cronmanager 26→37：validateCron 7 字段报错族、秒/年 AND 匹配、
+// pollDueJobs 逐秒补匹配，零夹具恒跑）后全表求和 = 2058，与本机无夹具全量实跑
+// pass=2058 fail=0 skip=35 逐条对上；带夹具实跑 pass=3074 fail=0 skip=1（套件仍 45 个，
+// 三口径 45/45/45，本轮不新增套件）。上面 2047/3063 那组是服务商模型列表串家修复轮的现值，原样保留。
+// cron 漏秒修复批 +3（tst_cronmanager 37→40：新增 testPollSubSecondDrift 钉住 pollDueJobs 补匹配
+// 基准带亚秒余数时「整轮零检查、被跨过的整秒永不回补」——QTimer 1s 节拍相邻两拍的墙钟差可略
+// 小于 1s（上拍被事件循环延迟、本拍追平），带 .500 余数的 QDateTime 基准会让 from > moment，
+// 秒位限定表达式整周期漏触发（实测 999ms 稳态节拍跑 20000 拍仅覆盖 1 枚整秒）；基准改 epoch
+// 整秒轴 m_lastPollSec 后每枚整秒至多查一次且不漏，零夹具恒跑）后全表求和 = 2061，与本机无
+// 夹具全量实跑 pass=2061 fail=0 skip=35 逐条对上；带夹具实跑 pass=3077 fail=0 skip=1（套件仍
+// 45 个，三口径 45/45/45，本轮不新增套件）。上面 2058/3074 那组是 cron 7 段式批的现值，原样保留。
+// cron 锚定与 Quartz 写法批 +12（tst_cronmanager 40→52：testStepAnchorAndQuartzAliases 钉 `*/N`
+// 以各字段**自己的域下界**为锚——日位 */2 得 1,3,5… 而非旧 `value%N` 的 2,4,6…（「每 N 天」整体
+// 偏一天、1 号永不触发），月位 */3 得 1,4,7,10，年位 */10 以 1970 为锚；逗号项内步长透传锚
+// （`2,*/4` 的步长项仍按域下界）；下界 0 字段两锚法逐字等价作回归护栏。另钉 `?` 占位仅日/周位
+// 合法且**校验与匹配同源**（否则「登记成功、永不触发」测不出）、周名 SUN..SAT 与月名 JAN..DEC
+// 大小写不敏感展开、未知字母名仍逐字拒绝，零夹具恒跑）后全表求和 = 2073，与本机无夹具全量实跑
+// pass=2073 fail=0 skip=35 逐条对上；带夹具实跑 pass=3089 fail=0 skip=1（套件仍 45 个，
+// 三口径 45/45/45）。上面 2061/3077 那组是 cron 漏秒修复批的现值，原样保留。
+// cron 端到端收口批 +4（tst_cronmanager 52→56：在 testStepAnchorAndQuartzAliases 尾部补
+// scheduleJob + pollDueJobs 全链路——`0 30 9 ? * MON *` 登记成功、周一带毫秒余数节拍真触发、
+// marker 落整秒 09:30:00、周二同时分不触发。纯静态判据测不出「validateCron 与 cronMatches
+// 任一侧漏 preprocessCronField」造成的「登记成功、永不触发」，只有走全链路才钉得住同源契约；
+// 零夹具恒跑）后全表求和 = 2077，与本机无夹具全量实跑 pass=2077 fail=0 skip=35 逐条对上；
+// 带夹具实跑 pass=3093 fail=0 skip=1（套件仍 45 个，三口径 45/45/45）。上面 2073/3089 那组
+// 是 cron 锚定与 Quartz 写法批的现值，原样保留。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -113,7 +139,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"agentrecovery", 34},      {"backgroundtasks", 43},    {"workflowmanager", 121},
     {"workflowruntime", 3},     {"compacttokens", 57},      {"settingscache", 35},
     {"usagetokens", 82},        {"streamrate", 30},         {"goalmanager", 209},
-    {"cronmanager", 26},        {"uiscale", 68},            {"fluconfigstore", 49},
+    {"cronmanager", 56},        {"uiscale", 68},            {"fluconfigstore", 49},
     {"fluconfigutils", 4},      {"litepaths", 29},          {"pathguard", 21},
     {"configmerge", 14},        {"sessionstore", 4},        {"uiux", 11},
     {"tooltagkind", 26},        {"toolnames", 16},          {"navkeys", 14},

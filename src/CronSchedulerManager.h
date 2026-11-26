@@ -26,7 +26,15 @@
  *     仅存形态差：python 同步回调包整回合、异常 re-raise → lite 回调 bool 返回成败、
  *     ack 推迟至宿主回合终局（成功/停止/流错误/轮次上限）收口；
  *   - lcc log.py 彩色 ANSI 与 blank_before 排版 → lite qDebug/qInfo 系列忽略（观感偏差）；
- *   - 多个会话页同 workDir 各持一套台账时可能双触发——用户已接受的已知偏差；
+ *   - 双触发（**措辞已随 60c5b74 会话隔离改造收窄，勿再按旧口径理解**）：旧登记作「多个会话页
+ *     同 workDir 各持一套台账时可能双触发」——彼时 sink 取 workDir()，选同一项目目录的两页确实
+ *     共享一份 scheduled_tasks.json、各自装载各自轮询，双触发成立。现 sink 取 sessionDataRoot()，
+ *     台账落 <configRoot>/.lite-harness/sessions/<dataId>/scheduled_tasks.json，dataId 是每会话
+ *     唯一的 uuid8（QUuid::createUuid 前 8 位 hex）→ 同 workDir 不再共享台账，旧路径已消失。
+ *     仅当 dataId 为空时 sessionDataRootFor 回退共享根 <configRoot>/.lite-harness/，此时并存的
+ *     空 ID 实例才可能重复投递；而 LiteHarness 两个建页点（新建 :223、恢复 :326）均传非空
+ *     dataId，恢复另有 `if (dataId.isEmpty()) continue` 卫兵，故当前不可达——本条保留为防御性
+ *     说明（若将来新增绕过 LiteHarness 的建页入口需重看），非待修项。
  *   - 装载无剪枝：pending 的一次性任务重启后照常入队重投（逐字对齐 lcc
  *     load_durable_jobs 的 at-least-once 语义；移植规格书"装载即剪枝"一句与
  *     参照文件相悖，按规格书自订的"参照文件为准"裁决不剪枝——登记偏差）；
@@ -36,6 +44,13 @@
  *   - QJsonObject 键按字典序落盘（python asdict 保持声明序）——纯观感；
  *   - setWorkDir 触发的 stop→start 重载在 lcc 无对应物（python 每进程单 Env），
  *     lite 使 load 幂等：同 id 已登记则整行跳过、入队先查重。
+ *   - **旧 5 段 durable 台账直接丢弃（用户裁决，勿再当缺陷提）**：cron 由 5 段硬切 7 段后，
+ *     loadDurableJobs → parseSavedJob 对历史 5 段表达式判 `Expected 7 fields, got 5` 整行跳过
+ *     （仅一行 qInfo，不迁移、不加兼容通道）。用户已明确自行清理会话数据，故存量不保。
+ *     判据已钉住「7 段硬切、无 5 段兼容通道」，勿回退成静默兼容。
+ *   - **dow 数字编号保持 Vixie 的 0=周日..6=周六（用户裁决）**：不切 Quartz 的 1=SUN..7=SAT。
+ *     两者对 `1` 的含义互斥（周一 vs 周日），切换会让存量 `... 1 *` 写法静默换天——不报错、
+ *     不丢任务、只是差一天，比漏秒更难察觉。Quartz 的可读面已由英文名 SUN..SAT 覆盖。
  */
 class CronSchedulerManager
 {
@@ -44,12 +59,12 @@ public:
     struct CronJob
     {
         QString id;               // cron_ + 8 位小写十六进制
-        QString cron;             // 5 字段 cron 表达式
+        QString cron;             // 7 字段 cron 表达式（秒 分 时 日 月 周 年，周 0=周日）
         QString prompt;           // 到点注入的提示词
         bool recurring = true;    // true=周期；false=一次性（送达后从台账移除）
         bool durable = true;      // true=落盘持久（跨重启）；false=仅本进程
         bool pendingDelivery = false; // 已入队待交付（at-least-once 标记）
-        QString lastFired;        // 最近触发分钟 "yyyy-MM-dd HH:mm"（空=从未）
+        QString lastFired;        // 最近触发整秒 "yyyy-MM-dd HH:mm:ss"（空=从未）
     };
 
     // workDirSink 惰性取宿主当前工作目录（仿 CompactManager/MemoryManager/BackgroundTasks 注入法）
@@ -61,18 +76,22 @@ public:
     void stop();
     bool isRuntimeStarted() const;
 
-    // 5 字段 cron 校验（lcc validate_cron 逐字）：合法返回空串，否则 "<字段名>: <错误>"。
-    // 字段名 minute / hour / day-of-month / month / day-of-week；越界 [0-59]/[0-23]/[1-31]/[1-12]/[0-6]
+    // 7 字段 cron 校验：合法返回空串，否则 "<字段名>: <错误>"。
+    // 字段名 second / minute / hour / day-of-month / month / day-of-week / year；
+    // 越界 [0-59]/[0-59]/[0-23]/[1-31]/[1-12]/[0-6]/[1970-2099]（周 0=周日）
     static QString validateCron(const QString &expression);
 
     // 单字段匹配（lcc _cron_field_matches）：* / */N / a,b,c / a-b / 精确值。
     // 偏差：lcc 对坏输入（*/0、非数字）抛异常由 poll 逐任务捕获，lite 静默 false；
-    // 逗号列表全不中返回 false（647b22e 关键修复，勿回退为"默认命中"）
-    static bool cronFieldMatches(const QString &field, int value);
+    // 逗号列表全不中返回 false（647b22e 关键修复，勿回退为"默认命中"）。
+    // fieldMin = 该字段值域下界，*/N 以它为锚（Vixie 语义 */N ≡ min-max/N，从下界起步进）：
+    // 下界非 0 的字段（日 1-31 / 月 1-12 / 年 1970-2099）若按 value % N 判，`*/10` 在日位
+    // 会命中 10/20/30 而漏掉 1 号——「每 N 天」整体偏一天。缺省 0 时与旧行为逐字等价。
+    static bool cronFieldMatches(const QString &field, int value, int fieldMin = 0);
 
-    // 整表达式与时刻匹配（lcc _cron_matches）：分/时/月 AND；日与周——
+    // 整表达式与时刻匹配：秒/分/时/月/年 AND；日与周——
     // 双 * 恒真；单 * 只看限定侧；双限定取 OR（Vixie cron 语义）。
-    // 周编号 = dayOfWeek()%7：Qt Mon=1..Sun=7 → cron Sun=0..Sat=6（与 lcc 的 (weekday()+1)%7 等价）
+    // 周编号 = dayOfWeek()%7：Qt Mon=1..Sun=7 → cron Sun=0..Sat=6（0=周日）
     static bool cronMatches(const QString &expression, const QDateTime &moment);
 
     // 登记任务（lcc schedule_job）：校验失败/空 prompt/存储失败 → 返回错误文本（存储失败已回滚登记）；
@@ -84,8 +103,9 @@ public:
     // 并同步清到期队列快照；落盘失败回滚台账与队列后返回错误文本（lcc 抛错，折叠偏差）
     QString cancelJob(const QString &id);
 
-    // 轮询（lcc poll_due_jobs，宿主 tick 调用）：分钟标记 "yyyy-MM-dd HH:mm"；
-    // 跳过 pendingDelivery 或 lastFired==marker（同分钟双拍只发一次）；
+    // 轮询（宿主 tick 调用）：秒级标记 "yyyy-MM-dd HH:mm:ss"；
+    // 从上次已查整秒的下一秒起逐整秒补匹配（epoch 秒轴，非墙钟余数；封顶回看 60s）；
+    // 跳过 pendingDelivery 或 lastFired==marker（同一秒双拍只发一次），
     // 命中 → 入队并落 lastFired/pendingDelivery（durable 先落盘，失败回滚该两字段不入队）
     void pollDueJobs(const QDateTime &moment);
 
@@ -99,7 +119,7 @@ public:
     void acknowledgeCronJobs(const QList<CronJob> &fired);
 
     // 交付失败回滚（lcc restore_cron_jobs）：恢复 pendingDelivery 并重新入队（去重），
-    // **不清** lastFired——at-least-once：宿主拒收时下个 tick 直接重试，不等下一整分钟；不落盘
+    // **不清** lastFired——at-least-once：宿主拒收时下个 tick 直接重试，不等下一匹配秒；不落盘
     void restoreCronJobs(const QList<CronJob> &fired);
 
     // 交付编排（lcc 31a99d1 run_delivery 转译）：收割→回调→按回调结果收尾——
@@ -147,4 +167,9 @@ private:
     QList<CronJob> m_queue;         // 到期待交付队列（lcc cron_queue）
     QList<CronJob> m_inFlight;      // 已交付待确认（lcc run_delivery 局部 fired 的成员化，两段式）
     bool m_runtimeStarted = false;  // lcc _runtime_started
+    // 上次轮询已查到的整秒（epoch 秒轴，-1=尚未轮询过）。刻意不用 QDateTime：
+    // 墙钟时刻带亚秒余数，而 QTimer 1s 节拍的相邻墙钟差可略小于 1s（上轮被事件
+    // 循环延迟、本轮追平），带余数的基准会让补匹配窗口 from > moment 整轮零检查，
+    // 被跨过的整秒永不回补——秒位限定表达式整周期漏触发（定时不准的直接成因）。
+    qint64 m_lastPollSec = -1;
 };

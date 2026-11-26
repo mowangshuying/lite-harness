@@ -31,6 +31,44 @@ bool asciiDigits(const QString &text)
     return true;
 }
 
+// 字段预处理（validateCron 与 cronMatches **单源共用**，防「校验放行、匹配不中」漂移）：
+//   - `?`：Quartz 惯例的「不指定」，只出现在日/周位，等价 `*`。本仓不强制「日/周必居其一」，
+//     与 Vixie 双 `*` 通道并存——存量 `* * * * * * *` 行为不变。
+//   - 周名 SUN..SAT → 0..6（沿用本仓既有编号 0=周日）；月名 JAN..DEC → 1..12。
+//     大小写不敏感；逗号/区间里的名字同样展开（MON-FRI → 1-5）。
+// 非日/月/周位出现字母原样交回，由 validateCronField 判非法。
+QString preprocessCronField(const QString &field, int index)
+{
+    QString out = field;
+    const bool dayField = (index == 3);
+    const bool dowField = (index == 5);
+    const bool monthField = (index == 4);
+    if ((dayField || dowField) && out == QLatin1String("?"))
+        out = QLatin1String("*");
+
+    struct Alias { const char *name; const char *value; };
+    static const Alias dowNames[] = {
+        {"SUN", "0"}, {"MON", "1"}, {"TUE", "2"}, {"WED", "3"},
+        {"THU", "4"}, {"FRI", "5"}, {"SAT", "6"}
+    };
+    static const Alias monthNames[] = {
+        {"JAN", "1"},  {"FEB", "2"},  {"MAR", "3"},  {"APR", "4"},
+        {"MAY", "5"},  {"JUN", "6"},  {"JUL", "7"},  {"AUG", "8"},
+        {"SEP", "9"},  {"OCT", "10"}, {"NOV", "11"}, {"DEC", "12"}
+    };
+    if (dowField)
+    {
+        for (const Alias &a : dowNames)
+            out.replace(QLatin1String(a.name), QLatin1String(a.value), Qt::CaseInsensitive);
+    }
+    else if (monthField)
+    {
+        for (const Alias &a : monthNames)
+            out.replace(QLatin1String(a.name), QLatin1String(a.value), Qt::CaseInsensitive);
+    }
+    return out;
+}
+
 // 单字段校验（lcc _validate_cron_field 逐字序）：合法返回空串，否则错误文本（文案逐字）
 QString validateCronField(const QString &field, int min, int max)
 {
@@ -176,6 +214,7 @@ void CronSchedulerManager::start()
     if (m_runtimeStarted)
         return;
     loadDurableJobs();
+    m_lastPollSec = -1; // 新装载台账的补匹配基准归零：避免跨目录沿用旧会话时刻
     m_runtimeStarted = true;
 }
 
@@ -194,27 +233,35 @@ QString CronSchedulerManager::validateCron(const QString &expression)
     // lcc: expression.strip().split()——任意空白分隔，simplified+SkipEmptyParts 等价
     const QStringList fields =
         expression.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    if (fields.size() != 5)
-        return QStringLiteral("Expected 5 fields, got %1").arg(fields.size());
+    if (fields.size() != 7)
+        return QStringLiteral("Expected 7 fields, got %1").arg(fields.size());
 
-    // 字段名与取值域（lcc field_rules 逐字：顺序即报错前缀）
-    static const char *names[5] = { "minute", "hour", "day-of-month", "month", "day-of-week" };
-    static const int limits[5][2] = { {0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6} };
-    for (int i = 0; i < 5; ++i)
+    // 7 字段：second minute hour day-of-month month day-of-week year
+    // 字段名与取值域（顺序即报错前缀）；周沿用 lite 既有 0-6 约定（0=周日），
+    // 年取 [1970-2099]（与 Quartz 同域，且覆盖本机可预见运行期）
+    static const char *names[7] = { "second", "minute", "hour", "day-of-month",
+                                    "month", "day-of-week", "year" };
+    static const int limits[7][2] = { {0, 59}, {0, 59}, {0, 23}, {1, 31},
+                                      {1, 12}, {0, 6}, {1970, 2099} };
+    for (int i = 0; i < 7; ++i)
     {
-        const QString error = validateCronField(fields[i], limits[i][0], limits[i][1]);
+        // 先过 preprocessCronField（`?` 归一 / 周·月英文名展开），与 cronMatches 严格同源
+        const QString error = validateCronField(preprocessCronField(fields[i], i),
+                                                limits[i][0], limits[i][1]);
         if (!error.isEmpty())
             return QStringLiteral("%1: %2").arg(QLatin1String(names[i]), error);
     }
     return QString();
 }
 
-bool CronSchedulerManager::cronFieldMatches(const QString &field, int value)
+bool CronSchedulerManager::cronFieldMatches(const QString &field, int value, int fieldMin)
 {
     if (field == QLatin1String("*"))
         return true;
 
-    // "*/N"：value % N == 0。偏差登记：lcc 坏 N 抛异常由 poll 捕获，lite 静默 false
+    // "*/N"：Vixie 语义 */N ≡ min-max/N，步进锚在**域下界**而非 0。锚错会让下界非 0 的
+    // 字段整体偏移：日位 */10 应命中 1/11/21/31，按 value%N 却命中 10/20/30——「每 N 天」
+    // 差一天。月位 */3、年位 */N 同病。下界 0 的字段（秒/分/时/周）两种锚法逐字等价。
     if (field.startsWith(QLatin1String("*/")))
     {
         const QString step = field.mid(2);
@@ -223,7 +270,9 @@ bool CronSchedulerManager::cronFieldMatches(const QString &field, int value)
         const int n = step.toInt();
         if (n <= 0)
             return false; // lcc 此处 ZeroDivisionError（崩该任务），lite 折叠不命中
-        return value % n == 0;
+        if (value < fieldMin)
+            return false; // 锚差为负时 % 的符号随被除数，域外值一律不命中
+        return (value - fieldMin) % n == 0;
     }
 
     // 逗号列表：任一命中即真，全不中为假（647b22e 关键修复，勿回退）
@@ -232,7 +281,8 @@ bool CronSchedulerManager::cronFieldMatches(const QString &field, int value)
         const QStringList parts = field.split(QLatin1Char(','));
         for (const QString &part : parts)
         {
-            if (cronFieldMatches(part.trimmed(), value))
+            // fieldMin 必须透传：`1,*/5` 里的步长项同属该字段值域，丢了锚点又退回 0 起算
+            if (cronFieldMatches(part.trimmed(), value, fieldMin))
                 return true;
         }
         return false;
@@ -255,33 +305,45 @@ bool CronSchedulerManager::cronFieldMatches(const QString &field, int value)
 
 bool CronSchedulerManager::cronMatches(const QString &expression, const QDateTime &moment)
 {
-    const QStringList fields =
+    const QStringList raw =
         expression.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    if (fields.size() != 5)
+    if (raw.size() != 7)
         return false;
 
-    // lcc cron_weekday = datetime.weekday() 周一0 → (weekday()+1)%7：周一1…周六6、周日0；
-    // Qt dayOfWeek() 周一1…周日7 → %7 恰得 周一1…周六6、周日0——两映射等价
+    // 与 validateCron 同源预处理：两处不同源就会出现「登记成功、永不触发」的静默失效，
+    // 比直接报错坏得多（用户以为设上了，实际那条表达式从没命中过）
+    QStringList fields;
+    fields.reserve(7);
+    for (int i = 0; i < 7; ++i)
+        fields.append(preprocessCronField(raw[i], i));
+
+    // 7 字段：second minute hour day-of-month month day-of-week year
+    // 秒/分/时/月/年 AND 通道；日与周见下（Vixie 双限定 OR）
+    // 周编号 = dayOfWeek()%7：Qt Mon=1..Sun=7 → cron Sun=0..Sat=6（0=周日）
+    const int second = moment.time().second();
     const int minute = moment.time().minute();
     const int hour = moment.time().hour();
     const int dayOfMonth = moment.date().day();
     const int month = moment.date().month();
     const int dayOfWeek = moment.date().dayOfWeek() % 7;
+    const int year = moment.date().year();
 
-    if (!cronFieldMatches(fields[0], minute) || !cronFieldMatches(fields[1], hour)
-        || !cronFieldMatches(fields[3], month))
+    // 每枚字段带上自己的值域下界，*/N 才有正确的锚（详见 cronFieldMatches 注释）
+    if (!cronFieldMatches(fields[0], second, 0) || !cronFieldMatches(fields[1], minute, 0)
+        || !cronFieldMatches(fields[2], hour, 0) || !cronFieldMatches(fields[4], month, 1)
+        || !cronFieldMatches(fields[6], year, 1970))
         return false;
 
-    const QString &day = fields[2];
-    const QString &dow = fields[4];
+    const QString &day = fields[3];
+    const QString &dow = fields[5];
     if (day == QLatin1String("*") && dow == QLatin1String("*"))
         return true;
     if (day == QLatin1String("*"))
-        return cronFieldMatches(dow, dayOfWeek);
+        return cronFieldMatches(dow, dayOfWeek, 0);
     if (dow == QLatin1String("*"))
-        return cronFieldMatches(day, dayOfMonth);
+        return cronFieldMatches(day, dayOfMonth, 1);
     // 双限定：日与周取 OR（Vixie cron 经典语义，lcc 注释明示）
-    return cronFieldMatches(day, dayOfMonth) || cronFieldMatches(dow, dayOfWeek);
+    return cronFieldMatches(day, dayOfMonth, 1) || cronFieldMatches(dow, dayOfWeek, 0);
 }
 
 QString CronSchedulerManager::newCronId(QString *error)
@@ -393,20 +455,40 @@ bool CronSchedulerManager::enqueueDueJob(const QString &id, const QString &marke
 
 void CronSchedulerManager::pollDueJobs(const QDateTime &moment)
 {
-    // lcc poll_due_jobs：marker 到分钟粒度；双闸（pendingDelivery 未清 或 本分钟已发）防重
-    const QString marker = moment.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    // 补匹配走 epoch 整秒轴，刻意不用带亚秒余数的墙钟时刻作基准：QTimer 1s 节拍的相邻
+    // 两拍墙钟差可略小于 1s（上拍被事件循环延迟、本拍追平），若 from = 上拍时刻 + 1s，
+    // 则 from > moment → 本轮零检查，而被跨过的那枚整秒因基准已推进到本拍永不回补——
+    // 秒位限定表达式（如 "0 * * * * * *"）会整周期漏触发，实测稳态下漏 99.99% 的秒。
+    // 整秒轴令每枚 epoch 秒至多查一次且不漏：from = 上次已查秒 + 1。
+    const qint64 curSec = moment.toSecsSinceEpoch();
+    qint64 fromSec = curSec; // 首拍/时钟回拨：只查当前秒
+    if (m_lastPollSec >= 0 && m_lastPollSec < curSec)
+    {
+        fromSec = m_lastPollSec + 1;
+        if (curSec - m_lastPollSec > 60) // 封顶 60s，防长阻塞/睡眠后成批爆发（既有取舍）
+            fromSec = curSec - 60;
+    }
+    m_lastPollSec = curSec;
+
     const QList<CronJob> snapshot = m_jobs.values(); // 快照遍历：enqueue 改值不扰动迭代
     for (const CronJob &job : snapshot)
     {
-        if (job.pendingDelivery || job.lastFired == marker)
+        if (job.pendingDelivery) // 上轮未交付：整轮跳过，等终局 ack/restore 再触发
             continue;
-        if (!cronMatches(job.cron, moment))
-            continue;
-
-        if (enqueueDueJob(job.id, marker))
-            LOG_INFO << QStringLiteral("[cron] due %1: %2").arg(job.id, job.prompt.left(60));
-        else
-            qCritical().noquote() << QStringLiteral("[cron] could not enqueue %1: failed to save scheduled_tasks.json").arg(job.id);
+        for (qint64 s = fromSec; s <= curSec; ++s)
+        {
+            const QDateTime t = QDateTime::fromSecsSinceEpoch(s);
+            if (!cronMatches(job.cron, t))
+                continue;
+            const QString marker = t.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+            if (job.lastFired == marker) // 同一秒重复轮询只发一次
+                continue;
+            if (enqueueDueJob(job.id, marker))
+                LOG_INFO << QStringLiteral("[cron] due %1: %2").arg(job.id, job.prompt.left(60));
+            else
+                qCritical().noquote() << QStringLiteral("[cron] could not enqueue %1: failed to save scheduled_tasks.json").arg(job.id);
+            break; // 一轮最多入队一次：成功则 pendingDelivery 挡后续秒，失败也留待下轮
+        }
     }
 }
 

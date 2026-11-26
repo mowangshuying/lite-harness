@@ -324,12 +324,17 @@ QJsonArray createToolsDefinition()
                           {QStringLiteral("task_id")}));
 
     // ---- lcc s12 定时任务三件套（第 16~18 个）：仅主循环注册，子代理白名单不含；
-    // 描述与参数逐字对齐 lcc SCHEDULE_CRON/LIST_CRONS/CANCEL_CRON。模型对定时的
-    // 感知仅来自 schema 本身（lcc s12 无 system prompt 新增段——对齐，非遗漏）。
+    // 描述与参数对齐 lcc SCHEDULE_CRON/LIST_CRONS/CANCEL_CRON。有意偏差（累计三处）：
+    // ① cron 由 lcc 的 5 字段扩为 7 字段（second minute hour day-of-month month day-of-week
+    //    year，周 0=周日）；② */N 以各字段自己的域下界为锚（Vixie 语义，日位 */2 得
+    //    1,3,5… 而非 2,4,6…）；③ 采 Quartz 惯例写法——日/周位可用 `?` 占位、周位收
+    //    SUN..SAT、月位收 JAN..DEC（大小写不敏感）。描述串同步改，**schema 是模型对定时
+    //    写法的唯一感知来源**（lcc s12 无 system prompt 新增段——对齐，非遗漏），描述不写
+    //    就等于没开放这些写法。
     // makeTool 空 props/空 required 产出 "properties":{} 与 "required":[]，
     // 恰合 LIST_CRONS（区别于 s10 list_tasks 无 required 键才手工构造）----
     tools.append(makeTool(ToolNames::SCHEDULE_CRON,
-                          QStringLiteral("Schedule a prompt with a 5-field cron expression."),
+                          QStringLiteral("Schedule a prompt with a 7-field cron expression: second minute hour day-of-month month day-of-week year (day-of-week 0=Sunday). Each field accepts *, */N (stepping from that field's own minimum), a comma list a,b,c, and a range a-b. Day-of-month and day-of-week also accept the Quartz '?' placeholder; day-of-week accepts SUN..SAT names and month accepts JAN..DEC names (case-insensitive)."),
                           { {QStringLiteral("cron"), QStringLiteral("string")},
                             {QStringLiteral("prompt"), QStringLiteral("string")},
                             {QStringLiteral("recurring"), QStringLiteral("boolean")},

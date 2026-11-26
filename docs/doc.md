@@ -800,11 +800,11 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] bash 带 `run_in_background: true`（**严格布尔**，字符串 "true"/1 等不算）→ 台账 `bg_0001` 起自增、立即返回不阻塞回合；完成后结果以 `<task_notification>…</task_notification>` 注入（**s15**：`<summary>` 取前 200 字符、无截断标记——lcc §11-3 坑沿不修=登记）；**s15** PostToolUse 钩子于进程**完成时**以真实终态触发（QProcess::finished），派发时不触发；FailedToStart 不触发钩子=偏差登记
 - [ ] （**s15** 第 4 事件源）空闲且有已完成后台任务（`hasPending()` 只查不清）→ ≤1s tick 自动开**空 prompt 回合**收割（UI 无空用户气泡、历史不 append 空 user、标题不误锁「新会话」；收割唯一在 `run()` 圈顶 `injectBackgroundResults`；优先序 team→cron→bg 映射 lcc inbox→cron→bg→stdin，1s 节拍沿用=偏差登记）
 - [ ] 占位输出逐字 `[Background task %1 started] Result will arrive as a task_notification.`、起进程失败输出 `Error: Failed to start background task: …`；两者均经 `isToolFailure` 判红标（**s15**：旧 `[Background task start error]` 判据已删，`Error:` 前缀天然覆盖）
-- [ ] cron 5 段表达式校验 → 越界段拒绝（分 0-59 / 时 0-23 / 日 1-31 / 月 1-12 / 周 0-6）；支持 `*`、`*/N`、`a,b,c`、`a-b`；逗号列表全不中判 false（勿回退成默认命中）；日与周双限定为 OR（Vixie 语义）
-- [ ] schedule_cron 持久 → `<会话数据根>/scheduled_tasks.json` 原子写；重启后 pending 一次性任务照常重投（装载不剪枝）；id 形如 `cron_<hex8>`
-- [ ] at-least-once 两段投递：回合成功 → recurring 清 pending 留表、one-shot 移除；回合失败/停止 → 回队，下一 1s tick 立即重试（不清 lastFired、不等整分钟）
-- [ ] 同一分钟去重 → pollDueJobs 同分钟 marker 命中不重复触发；list_crons 输出每行 `%1: %2 -> %3 [%4, %5]`（prompt 截前 60 字符，空表回 `No cron jobs.`）
-- [ ] 轮询读码 → 1s QTimer 由宿主 AgentLoop 驱动（零线程）；`stop()` 不杀 cron：调度器存续、交付暂停于 `m_running` 卫兵、空闲后续投；已知偏差：多会话页同 workDir 各持台账可能双触发（登记勿修）
+- [ ] cron 7 段表达式校验（秒 分 时 日 月 周 年）→ 越界段拒绝（秒 0-59 / 分 0-59 / 时 0-23 / 日 1-31 / 月 1-12 / 周 0-6 / 年 1970-2099）；支持 `*`、`*/N`、`a,b,c`、`a-b`；**`*/N` 以该字段自己的域下界为锚**（日位 `*/2`=1,3,5… 非 2,4,6…；月位 `*/3`=1,4,7,10；年位以 1970 为锚）；逗号列表全不中判 false（勿回退成默认命中）；日与周双限定为 OR（Vixie 语义）；**Quartz 惯例写法**：日/周位可用 `?` 占位（等价 `*`，挪到别位仍报错）、周位收 `SUN..SAT`、月位收 `JAN..DEC`（大小写不敏感），且校验与匹配两侧**同源展开**（不同源会「登记成功、永不触发」）
+- [ ] schedule_cron 持久 → `<会话数据根>/scheduled_tasks.json` 原子写；重启后 pending 一次性任务照常重投（装载不剪枝）；id 形如 `cron_<hex8>`；**历史 5 段表达式装载时整行丢弃**（`parseSavedJob` 判 `Expected 7 fields, got 5`，仅一行 qInfo）——用户裁决不迁移、不加兼容通道，勿回退成静默解释
+- [ ] at-least-once 两段投递：回合成功 → recurring 清 pending 留表、one-shot 移除；回合失败/停止 → 回队，下一 1s tick 立即重试（不清 lastFired、不等下一整秒）
+- [ ] 同一秒去重 → pollDueJobs 同秒 marker 命中不重复触发；补匹配走 **epoch 整秒轴**（基准 `m_lastPollSec`，非带亚秒余数的墙钟时刻）→ QTimer 相邻两拍墙钟差略小于 1s 时不得整轮零检查、被跨过的整秒不得永不回补（`testPollSubSecondDrift` 钉住，秒位限定表达式不漏触发）；回看封顶 60s 为既有取舍（进程挂起 >60s 跨过触发点该周期不补=登记）；list_crons 输出每行 `%1: %2 -> %3 [%4, %5]`（prompt 截前 60 字符，空表回 `No cron jobs.`）
+- [ ] 轮询读码 → 1s QTimer 由宿主 AgentLoop 驱动（零线程）；`stop()` 不杀 cron：调度器存续、交付暂停于 `m_running` 卫兵、空闲后续投；双触发口径（**60c5b74 会话隔离后已收窄，非旧措辞的「同 workDir 即双触发」**）：台账落 `sessions/<dataId>/scheduled_tasks.json`、dataId 每会话唯一 uuid8 → 同 workDir 各会话互不可见、不重复投递；仅 dataId 为空回退共享根 `.lite-harness/` 时才可能，而两个建页点均传非空 dataId 且恢复有 `dataId.isEmpty()` 卫兵 → 当前不可达（防御性登记，非待修项）
 
 ### 十、P2 打包部署与 CI
 

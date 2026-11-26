@@ -13,7 +13,7 @@
 - **记忆**：会话结束自动沉淀、下轮召回注入上下文（以 `<agent_context>` 注入块随请求尾部下发，system 全程字节恒定）、超阈值整理（Markdown 存储）
 - **项目指令**：自动加载仓库根的 `AGENTS.md`（没有则回落 `<config>/AGENTS.md`，两级互斥只取一份；两者都没有则不产生该段），同样走 `<agent_context>` 注入块尾部下发；正文超 16000 字符只下发前缀并在段标题标注「first N of M characters shown」，会话中途编辑下一回合即生效
 - **上下文压缩**：五段管线 + 溢出反应式压缩，阈值按 token 预算判定（以 `usage.prompt_tokens` 锚定估算占用），转录与超大工具输出落盘。**压缩过程在会话流里可见**：本地四段各出一张轻量卡（「已卸载」/「已归档」/「已微压缩」/「已裁剪」），四张互不合并、只在该段真改动了内容时才发（空转段不发卡，避免每请求刷屏）；全量压缩另有「压缩中」实时卡、「已压缩」完成卡与「压缩失败」卡
-- **cron 定时任务**：5 段表达式、JSON 持久账本、at-least-once 投递
+- **cron 定时任务**：7 段表达式（秒 分 时 日 月 周 年，周 0=周日）、JSON 持久账本、at-least-once 投递
 - **后台 bash**：`run_in_background` 异步执行，结果以 `<task_notification>`（`<summary>` 摘要）注入后续回合；完成后 ≤1s 级 tick 自动开空回合收割（第 4 事件源）
 - **错误恢复**：429/5xx/idle 超时指数退避，连续 529 过载可换 `fallbackModelId` 兜底模型；max_tokens 两拍（升档重打 + 续打提示）；流错误以 `[Error]` 降级入历史（UI 报错照旧可见）
 - **工作流编排（s16）**：`workflow` 工具启动宿主预注册编排流程（当前唯一条目 `review-changes` 审查工作流）；六原语 agent/parallel/pipeline/phase/log/workflow 零线程异步状态机，journal 落盘、`resume_from_run_id` 续跑未变步骤直接命中缓存；宿主单飞卫兵 + 异步延迟回填；策略三态门 deny 硬拒 / confirm 弹卡（异步回合 fail-closed）/ allow 放行
