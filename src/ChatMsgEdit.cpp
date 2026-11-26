@@ -1,6 +1,10 @@
 #include "ChatMsgEdit.h"
 #include "ModelPrefs.h" // s18.5 显示状态过滤（visibleModels）
 #include <QVBoxLayout>
+#include <QHBoxLayout>   // s18.6 待发图片条
+#include <QLabel>        // s18.6 拒收原因提示
+#include <QPixmap>       // s18.6 芯片缩略图（从待发字节现解，不落盘不留缓存）
+#include <QIcon>
 #include <QTextEdit>
 #include <QTextCursor> // setText 的光标归位（moveCursor(QTextCursor::End)）
 #include <QApplication>
@@ -18,6 +22,7 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 #include <FluComboBox.h>
+#include <FluPushButton.h> // s18.6 待发图片芯片与「清除」钮（三主题 QSS 现成，不新增样式表）
 #include "AgentConstants.h" // 模型清单单源（config.json 可配置，取值见 AgentConst::modelOptions()）
 #include "LayoutConstants.h"
 #include "UiScale.h" // P0 字号缩放：输入框最大高按启动倍率放大
@@ -77,6 +82,26 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     vMainLayout->setSpacing(0);
     setLayout(vMainLayout);
 
+    // ---- s18.6 待发图片条（输入框上方一行缩略图，空清单整行隐藏）----
+    // 位置在输入框**之上**而非工具行里：芯片要能被看清，而工具行只有 30px 且右对齐。
+    // 高度账必须一起还：本控件上限 100px 是按「约 3 行文本 + 工具行」定的，
+    // 图片条一显就必须抬高，否则输入框被挤成一条缝（见 applyColumnHeight）。
+    m_attachRow = new QWidget(this);
+    m_attachLayout = new QHBoxLayout(m_attachRow);
+    m_attachLayout->setContentsMargins(2, 2, 2, 4);
+    m_attachLayout->setSpacing(0);
+    m_attachStrip = new QHBoxLayout();
+    m_attachStrip->setContentsMargins(0, 0, 0, 0);
+    m_attachStrip->setSpacing(UiScale::scaled(6));
+    m_attachLayout->addLayout(m_attachStrip);
+    m_attachLayout->addStretch(1);
+    m_attachHint = new QLabel(m_attachRow);
+    m_attachHint->setObjectName("attachHint");
+    m_attachHint->setVisible(false);
+    m_attachLayout->addWidget(m_attachHint);
+    m_attachRow->setVisible(false);
+    vMainLayout->addWidget(m_attachRow);
+
     // 输入框用 PlainPasteTextEdit 而非裸 QTextEdit：QTextEdit 默认优先吃剪贴板的 text/html，
     // 从 Word / 网页 / IDE 粘一段带样式的文本，行内字号与颜色会落成逐字符 format 并盖掉
     // 本仓 QSS 给 #textEdit 的字色（深色主题下白字直接看不见，还会夹进大字号与色底）。
@@ -88,9 +113,16 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
     // 空态引导：此前输入框无 placeholder，而空态引导卡在首条消息后即永久隐藏，
     // 新用户没有任何「这里能打字 / Enter 发送」的提示（Enter 与 Shift+Enter 的分工
     // 只藏在右键菜单与提交说明里）。文案在构造期取 tr()，与 language 键同语义。
-    m_textEdit->setPlaceholderText(tr("输入消息，Enter 发送，Shift+Enter 换行"));
+    // s18.6 把图片入口也写进这里：粘贴/拖拽没有按钮，不写在框上就没人知道能做这件事。
+    m_textEdit->setPlaceholderText(
+        tr("输入消息，Enter 发送，Shift+Enter 换行；可粘贴或拖入图片"));
     m_textEdit->setContextMenuPolicy(Qt::CustomContextMenu);
     m_textEdit->installEventFilter(this);
+    // s18.6 图片入口：剪贴板与拖拽两条路都在 PlainPasteTextEdit 里判定，落到这里入队。
+    // 本控件不碰 QTextEdit 的文档——图进文档只会得到一串占位符，而发送口取的是纯文本。
+    m_textEdit->setImageSink([this](const QList<ImageAttach::Pending> &images) {
+        addPendingImages(images);
+    });
     vMainLayout->addWidget(m_textEdit);
 
     connect(m_textEdit, &QTextEdit::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -115,8 +147,11 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
                       m_textEdit->textCursor().hasSelection(), [this]() { m_textEdit->cut(); });
         addEditAction(FluAwesomeType::Copy, tr("复制"), QKeySequence::Copy,
                       m_textEdit->textCursor().hasSelection(), [this]() { m_textEdit->copy(); });
+        // s18.6：准入判据交回控件自己问（canAcceptMimeData 与真粘贴同一条口）。
+        // 此前这里裸写 hasText()，图片载荷进来菜单项是灰的、Ctrl+V 却有效——两条路必须同判据。
         addEditAction(FluAwesomeType::Paste, tr("粘贴"), QKeySequence::Paste,
-                      QApplication::clipboard()->mimeData()->hasText(), [this]() { m_textEdit->paste(); });
+                      m_textEdit->canAcceptMimeData(QApplication::clipboard()->mimeData()),
+                      [this]() { m_textEdit->paste(); });
         addEditAction(FluAwesomeType::SelectAll, tr("全选"), QKeySequence::SelectAll,
                       !m_textEdit->toPlainText().isEmpty(), [this]() { m_textEdit->selectAll(); });
 
@@ -162,11 +197,8 @@ ChatMsgEdit::ChatMsgEdit(QWidget *parent) : FluWidget(parent)
             emit stopRequested();
             return;
         }
-        QString text = m_textEdit->toPlainText().trimmed();
-        if (!text.isEmpty()) {
-            emit sendMessage(text);
-            m_textEdit->clear();
-        }
+        if (!m_textEdit->toPlainText().trimmed().isEmpty() || !m_pendingImages.isEmpty())
+            emitSend();
     });
 
     // 用户改选 → 对外广播（弹层触发 setCurrentIndex → currentTextChanged；
@@ -288,6 +320,114 @@ void ChatMsgEdit::applyBusyState()
     // 原先在这里再设一次，既双源、又因首次 setTurnBusy(false) 同值早退而漏设
 }
 
+// ---- s18.6 图片输入批 ----
+
+void ChatMsgEdit::emitSend()
+{
+    const QString text = m_textEdit->toPlainText().trimmed();
+    if (text.isEmpty() && m_pendingImages.isEmpty())
+        return;
+
+    // 先清空再 emit：宿主在槽里可能同步开回合（setTurnBusy → 输入框禁用），
+    // 若把清空放在 emit 之后，槽内异常或重入会把这批图留在队列里、下一轮重复附带。
+    const QList<ImageAttach::Pending> images = m_pendingImages;
+    m_textEdit->clear();
+    clearPendingImages();
+    emit sendMessage(text, images);
+}
+
+void ChatMsgEdit::addPendingImages(const QList<ImageAttach::Pending> &incoming)
+{
+    QString hint;
+    for (const ImageAttach::Pending &pending : incoming) {
+        switch (ImageAttach::rejectReason(pending.bytes, m_pendingImages.size())) {
+        case ImageAttach::Reject::TooLarge:
+            // 报「已拒收」而不是默默少一张：用户看得见自己贴的东西去哪了
+            hint = tr("图片超过 %1 MB，已拒收")
+                       .arg(qMax(1, static_cast<int>(AgentConst::kImageMaxBytes
+                                                     / (1024 * 1024))));
+            continue;
+        case ImageAttach::Reject::TooMany:
+            hint = tr("一条消息最多 %1 张图，超出的已丢弃").arg(AgentConst::kImageMaxPerMessage);
+            continue;
+        case ImageAttach::Reject::UnsupportedType:
+            hint = tr("只支持 PNG / JPEG / GIF / WebP / BMP，已拒收");
+            continue;
+        case ImageAttach::Reject::None:
+            break;
+        }
+        m_pendingImages.append(pending);
+    }
+    m_attachHint->setText(hint);
+    m_attachHint->setVisible(!hint.isEmpty());
+    rebuildAttachRow();
+}
+
+void ChatMsgEdit::clearPendingImages()
+{
+    m_pendingImages.clear();
+    m_attachHint->clear();
+    m_attachHint->setVisible(false);
+    rebuildAttachRow();
+}
+
+void ChatMsgEdit::rebuildAttachRow()
+{
+    // 整体重建而非增删单个：芯片数封顶 4，重排成本可忽略，而「索引一致性」这类
+    // bug（删第 2 张结果移除了第 3 张）正是这种手工同步最容易犯的。
+    QLayoutItem *item = nullptr;
+    while ((item = m_attachStrip->takeAt(0)) != nullptr) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    for (int index = 0; index < m_pendingImages.size(); ++index) {
+        const ImageAttach::Pending &pending = m_pendingImages.at(index);
+        auto *chip = new FluPushButton(m_attachRow);
+        chip->setObjectName("attachChip");
+        chip->setToolTip(tr("%1 · %2 KB · 点击移除")
+                             .arg(pending.name())
+                             .arg(pending.bytes.size() / 1024));
+        const int side = UiScale::scaled(LayoutConst::kAttachChipSize);
+        chip->setFixedSize(side, side);
+        chip->setIconSize(QSize(UiScale::scaled(36), UiScale::scaled(36)));
+
+        QPixmap thumbnail;
+        if (thumbnail.loadFromData(pending.bytes) && !thumbnail.isNull()) {
+            chip->setIcon(QIcon(thumbnail.scaled(
+                chip->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+        } else {
+            // 解不出来也要有个可点的位：发布包的 plugins/imageformats 实测缺 qwebp
+            // （本地 75 条目 vs CI 69 的那 6 枚差值里就有它），WebP 缩略图会落空，
+            // 但字节本身照样能发给模型——不能因为画不出图就说这张没附上。
+            chip->setText(tr("图%1").arg(index + 1));
+        }
+
+        connect(chip, &QPushButton::clicked, this, [this, index]() {
+            if (index >= m_pendingImages.size())
+                return; // 理论上不会发生（每次变更整体重建），留着防日后改成增量维护
+            m_pendingImages.removeAt(index);
+            rebuildAttachRow();
+        });
+        m_attachStrip->addWidget(chip);
+    }
+
+    // 刻意**不挂**「清除」钮（用户裁决）：删最后一张之后紧接着再按一次删除键就清空了，
+    // 一行里多一个按钮只会把芯片挤走、并让「清空」这件事有两个入口。
+    // 键盘侧的删除判据见 eventFilter 的 Key_BackSpace / Key_Delete 分支。
+
+    m_attachRow->setVisible(!m_pendingImages.isEmpty() || m_attachHint->isVisible());
+    applyColumnHeight();
+}
+
+void ChatMsgEdit::applyColumnHeight()
+{
+    // 无图 = 原值 100（本批对既有视觉零改动）；有图才把图片条那一行还回来
+    setMaximumHeight(UiScale::scaled(
+        m_pendingImages.isEmpty() ? 100 : 100 + LayoutConst::kAttachRowExtraHeight));
+}
+
 bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
 {
     // 模型下拉：鼠标按下/键盘展开弹层前先重读配置清单（过滤器早于控件处理，
@@ -333,6 +473,18 @@ bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
         else if (event->type() == QEvent::KeyPress)
         {
             auto keyEvent = static_cast<QKeyEvent *>(event);
+            // s18.6 删除键退图（用户裁决：不要「清除」按钮）：输入框**空**时才接管
+            // Backspace/Delete，退掉最后入队那张；有字时一律放行给 QTextEdit 正常退格——
+            // 抢走有内容的退格比少一个按钮入口糟得多。删到零张即整行隐藏、高度回到原值。
+            // IME 组合中不截获（与 Enter 同一条前置卫兵：此刻按键语义归输入法）。
+            if (!m_imeComposing && !m_pendingImages.isEmpty()
+                && (keyEvent->key() == Qt::Key_Backspace || keyEvent->key() == Qt::Key_Delete)
+                && m_textEdit->toPlainText().trimmed().isEmpty())
+            {
+                m_pendingImages.removeLast();
+                rebuildAttachRow();
+                return true;
+            }
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
             {
                 // 输入法组合中：Enter 归输入法（提交候选），本控件一律不截获——
@@ -353,13 +505,10 @@ bool ChatMsgEdit::eventFilter(QObject *watched, QEvent *event)
                     // 避免「任何修饰键组合都当发送」误触（原实现口径）
                     return false;
                 }
-                // Enter / Ctrl+Enter: 触发发送
-                QString text = m_textEdit->toPlainText().trimmed();
-                if (!text.isEmpty())
-                {
-                    m_textEdit->clear();
-                    emit sendMessage(text);
-                }
+                // Enter / Ctrl+Enter: 触发发送（与发送钮同一条口，附件不能只走鼠标）
+                if (!m_textEdit->toPlainText().trimmed().isEmpty()
+                    || !m_pendingImages.isEmpty())
+                    emitSend();
                 return true; // 拦截事件，不插入换行
             }
         }

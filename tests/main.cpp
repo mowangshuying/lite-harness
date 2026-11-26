@@ -69,6 +69,8 @@ int tst_scrollsettle();        // s18.5 贴底算术与跟随态判据纯头（S
 int tst_modelprefs();          // s18.5 模型管理弹窗每模型偏好纯头（ModelPrefs.h）：effort 四档归一/window 三档互映/严格布尔/显示过滤保序/窗口回落/thinkingParams 关思考不带 effort/自定义清单两形态，零夹具恒跑
 int tst_toolcallacc();         // SSE tool_calls 增量累加器纯头（ToolCallAccum.h）：增量缓冲终局组装/占位过滤/index 对齐/覆写口径/首帧双写修复/旧接线参照等价，零夹具恒跑
 int tst_pastetext();           // 粘贴文本归一纯头（PasteText.h）：行尾归一/C0 与隐形字符剥离/空白族折叠/三类保留项/幂等/代理对不拆，零夹具恒跑
+int tst_messagecontent();      // s18.6 图片输入批消息 content 形态纯头（MessageContent.h）：纯串/parts 两形态组装/摊平带标记/拼接不丢图/张数去重/发送末段展开与三降级/历史往返，零夹具恒跑
+int tst_imageattach();         // s18.6 图片附件载荷纯头（ImageAttach.h）：魔数嗅探含五类正例与六类负例/MIME↔扩展名两向往返/内容哈希命名/附件名形态守卫（越界·分隔符·盘符全拒）/引用两向/体量与张数闸门边界/data URL 拼装，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
 // 全表求和 = 1585（s17.12 自更新判据批 +137、进度环分母判据 +18、s17.13.1 三段版本判据 +19、
@@ -87,6 +89,13 @@ int tst_pastetext();           // 粘贴文本归一纯头（PasteText.h）：�
 // 求和 = 1873，与本机无夹具全量实跑 pass=1873 fail=0 skip=35 逐条对上；带夹具实跑 pass=2889
 // fail=0 skip=1（套件 43 个，三口径 43/43/43；上面 1822/2838 那组是本批前一登记的现值，按
 // 「历史登记值原样保留」不动，本块不复用其数字）。
+// s18.6 图片输入批 +162（新增整套 tst_messagecontent 60 条守 MessageContent.h 的形态判据、
+// 整套 tst_imageattach 93 条守 ImageAttach.h 的嗅探/命名/形态守卫/闸门/data URL；另给
+// tst_compacttokens 补 ⑦ 组图片定值成本 9 条，48→57）后全表求和 = 2035，与本机无夹具全量
+// 实跑 pass=2035 fail=0 skip=35 逐条对上；带夹具实跑 pass=3051 fail=0 skip=1（套件 45 个，
+// 三口径 45/45/45）。三组全为零夹具恒跑——图片这件事的判据没有一处需要盘上夹具，读盘在
+// 宿主侧、本批判据全是纯函数（附件字节经 std::function 注入桩，同 ProjectInstructions 那套）。
+// 上面 1873/2889 那组是本批前一登记的现值，按「历史登记值原样保留」不动。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -97,7 +106,7 @@ static const SuiteFloor kSuiteFloors[] = {
     {"lineending", 36},         {"messagebus", 0},          {"taskstore_lease", 0},
     {"worktree", 0},            {"agentteams", 0},          {"mcpmanager", 45},
     {"agentrecovery", 34},      {"backgroundtasks", 43},    {"workflowmanager", 121},
-    {"workflowruntime", 3},     {"compacttokens", 48},      {"settingscache", 35},
+    {"workflowruntime", 3},     {"compacttokens", 57},      {"settingscache", 35},
     {"usagetokens", 82},        {"streamrate", 30},         {"goalmanager", 209},
     {"cronmanager", 26},        {"uiscale", 68},            {"fluconfigstore", 49},
     {"fluconfigutils", 4},      {"litepaths", 29},          {"pathguard", 21},
@@ -115,6 +124,8 @@ static const SuiteFloor kSuiteFloors[] = {
     {"modelprefs", 73},
     {"toolcallacc", 25},
     {"pastetext", 51},
+    {"messagecontent", 60},
+    {"imageattach", 93},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -199,6 +210,9 @@ int main()
     failed += runSuite("modelprefs", tst_modelprefs);
     failed += runSuite("toolcallacc", tst_toolcallacc);
     failed += runSuite("pastetext", tst_pastetext);
+    // s18.6 图片输入批：两张新纯头各一套件，全零夹具恒跑
+    failed += runSuite("messagecontent", tst_messagecontent);
+    failed += runSuite("imageattach", tst_imageattach);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

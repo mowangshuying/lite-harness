@@ -110,6 +110,21 @@ inline constexpr int kSendBtnSize = 30;
 /// 新建会话页中心图标的边长（P3-4）：从 NewChatPage.cpp 的 setFixedSize(45, 45) 收敛。
 inline constexpr int kNewChatIconSize = 45;
 
+/// 输入框上方「待发图片」芯片的边长（s18.6 图片输入批）：取 44 是为了让缩略图看得出是
+/// 哪张截图，又不把输入区顶成一个相册。图标内边距 4 → 实际显示 36。
+/// **两个值成对改**：本值 + 下面那条行高，行高 = 芯片 + 上下边距与间隙。
+inline constexpr int kAttachChipSize = 44;
+
+/// 待发图片条占用的额外行高（s18.6）：ChatMsgEdit 无图时高度上限沿用原值 100（本批零视觉
+/// 变化），有图时抬高这么多。取 52 = kAttachChipSize + 上下边距(2+4) + 与输入框的间隙，
+/// 改上面那个必须改这里，否则芯片被裁或留一条空缝。
+inline constexpr int kAttachRowExtraHeight = 52;
+
+/// 用户气泡里图片的显示宽度上限（s18.6）：原图宽度小于此值时**不放大**（放大只会糊），
+/// 大于此值时按宽缩、高等比。取 420 = 略小于用户气泡列宽上限，长图靠高度自然延伸。
+/// 这是「画多大」的显示参数，与发往模型的字节完全无关——模型收到的是原图。
+inline constexpr int kImageMaxDisplayWidth = 420;
+
 // 同义常量防漂移（P3-6）：s17.3 把导航列与侧栏统一收窄到 225px，两个常量同值同义
 // （都表示左侧栏宽），下次若只改一处会出现「导航列比侧栏宽/窄」的错位。编译期钉住。
 static_assert(kSidebarWidth == kNavWidth,

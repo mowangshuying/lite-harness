@@ -3,11 +3,13 @@
 #include <FluWidget.h>
 #include <QElapsedTimer>
 #include <QFont>
+#include <QList>
 #include <QTextBrowser>
 #include <QVector>
 
 class QTimer;
 class QVBoxLayout;
+class QPixmap;
 class ThinkingBlock;
 class ToolBlock;
 
@@ -26,6 +28,13 @@ public:
     void setContent(const QString &markdown);
     QString content() const;
     void refreshSize();
+
+    // s18.6 图片输入批：把缩略图追加进**同一个文档**（而非另挂一个控件行）。
+    // 理由是本气泡的宽高全靠这份 document 量出来（见 updateSize 的 User 支路），
+    // 另加一个 QWidget 会绕开那套测量——长图撑出列宽、窗口收窄时不重排。
+    // intendedCount 是「本来该有几张」：解不出来的那些必须留一条可见痕，
+    // 否则用户看到的是一条没图的文本消息，而图确实随请求发出去了。
+    void appendImages(const QList<QPixmap> &images, int intendedCount);
 
     // 流式渲染（打字机）：增量追加思考/正文，流结束一次性渲染 markdown
     void startStreaming(const QString &placeholder = QString());
@@ -150,6 +159,10 @@ private:
     // makeTextView 里 setUndoRedoEnabled(false)，revision 在该模式下是否仍自增属 Qt
     // 内部行为、离线不可核实——一旦不自增就是把尺寸永久钉死在旧文本上，故取可证明的一侧。
     int m_lastMeasuredW = -1;
+    // s18.6 图片段在 User 支路里的宽度贡献：那段测量原本只数 toPlainText 的字宽，
+    // 而 `<img>` 不贡献任何文本宽度——不补这一项，纯图消息会被量成「只有边距那么宽」，
+    // 图被裁成一条缝。取已追加图片的最大显示宽度，窗口收窄时由 setTextWidth 那支兜底。
+    int m_imagesBlockWidth = 0;
     QFont m_lastMeasuredFont;
     bool m_plainRendered = false;   // 非时间线分支的 markdown 已渲染（防记忆相位 + 收流渲染两遍）
     QWidget *m_filterParent = nullptr; // 已挂 Resize 过滤器的父件：换父件时先摘旧再挂新，杜绝重复投递

@@ -167,6 +167,17 @@ public:
         return joined(activityDirFor(sessionRoot), QStringLiteral("daily.json"));
     }
 
+    // ---- 会话图片附件目录（s18.6 图片输入，判据单源 ImageAttach.h / MessageContent.h）----
+    // 落点 `<会话根>/.attachments/`，与 .activity/.task/.transcripts 同族分片惯例：
+    // 删会话即连带清图，无跨会话共享缓存（同图靠内容哈希命名在同目录内天然去重，
+    // 不做跨会话去重——那会让「删一个会话」牵连另一个会话的历史附件）。
+    // 二进制刻意**不内联进 history.json**：那张文件是每工具批全量重写，内联等于把
+    // MB 级载荷按工具轮数倍乘落盘，且 token 计量与压缩闸门会把它估成天文数字。
+    static QString attachmentsDirFor(const QString &sessionRoot)
+    {
+        return joined(sessionRoot, QStringLiteral(".attachments"));
+    }
+
     // ---- 无参便捷口（生产调用点用这一组）----
     static QString configFilePath() { return configFilePathFor(configRoot()); }
     static QString legacyIndexFilePath() { return legacyIndexFilePathFor(configRoot()); }

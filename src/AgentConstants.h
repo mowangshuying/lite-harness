@@ -253,6 +253,27 @@ constexpr qint64 kEditFileMaxBytes = 5 * 1024 * 1024;
 // 已知边界：窗口内一个换行都没有（超长单行文件）时判为 LF，见 runWriteFileIn 注释。
 constexpr qint64 kEndingProbeBytes = 65536;
 
+// ---- 图片附件闸门（s18.6 图片输入批，判据单源 ImageAttach.h）----
+// 单张落盘字节上限。超限**拒绝**而非缩放：缩放要重编码（JPEG 有损），等于把用户给的
+// 原图偷偷换掉；与 kEditFileMaxBytes 那条「超限不尝试部分读写」同族取舍。
+// 这个数还有一层代价必须知道：图片随历史**每个工具批重发一次**（payload 里它是常驻的），
+// 4MB × 4 张 = 一次请求多出 16MB 上行，所以上限卡在单张而不是总量。
+constexpr qint64 kImageMaxBytes = 4 * 1024 * 1024;
+
+// 单条用户消息的图片张数上限（同一回合多张截图）。
+constexpr int kImageMaxPerMessage = 4;
+
+// 魔数嗅探所需读取字节数：最长魔数是 RIFF....WEBP 的 12 字节，留足余量。
+constexpr qint64 kImageSniffBytes = 32;
+
+// 单张图片在**本地 token 估算**里的定值成本（消费点 CompactTokens::messageTokens）。
+// 为什么必须是定值而不是按 base64 字符折算：旁路文件形态下历史里只有一行 `lh-attach://`
+// 引用（几十字符），若继续沿用字符折算，一条带图消息会被估成近乎 0 token，
+// 压缩闸门与占用条都对不上账。定值取视觉模型单张图的常见量级，
+// 它只是本地预算的一把尺，真值仍以 usage.prompt_tokens 回读为准（token 锚口径不变）。
+constexpr qsizetype kImageTokenCost = 1200;
+
+
 // ChatStream 总时长哨兵（毫秒，挂起审计防御加固：对齐同文件 AsyncRequest 的总量防线）：
 // idle 静默超时每收字节即重置，杀不死"慢而不断"的流——上游持续发字节（间隔 < idle 窗口）
 // 却永不发 [DONE]/finish_reason 时，主链回合永不终结。总量上限按主链长回复场景取 30 分钟；

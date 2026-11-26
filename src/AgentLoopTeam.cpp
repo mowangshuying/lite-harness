@@ -10,6 +10,7 @@
 
 #include "AgentLoopTeam.h"
 #include "AgentLoopInternal.h"
+#include "MessageContent.h" // s18.6 图片输入批：content 两形态的拼接口
 #include "ToolNames.h"
 #include "BashRunner.h"
 
@@ -295,8 +296,8 @@ void AgentLoop::injectTeamEvents()
         && m_messages.back().value(QStringLiteral("role")).toString() == QStringLiteral("user"))
     {
         QJsonObject &tail = m_messages.back();
-        tail[QStringLiteral("content")] =
-            tail.value(QStringLiteral("content")).toString() + QStringLiteral("\n\n") + joined;
+        tail[QStringLiteral("content")] = MessageContent::appendText(
+            tail.value(QStringLiteral("content")), QStringLiteral("\n\n") + joined);
     }
     else
     {

@@ -201,7 +201,8 @@ void LiteHarness::setupConnections()
     });
 }
 
-void LiteHarness::createSession(const QString &text)
+void LiteHarness::createSession(const QString &text,
+                                const QList<ImageAttach::Pending> &images)
 {
     const QString key = m_registry.nextSessionKey();
 
@@ -222,7 +223,7 @@ void LiteHarness::createSession(const QString &text)
     auto sessionPage = new ChatSessionPage(sessionDataId, newWorkDir);
     // 新会话继承新建会话页选择的模型（须在 startConversation 前注入，使首轮请求即用该模型）
     sessionPage->setModel(m_newChatPage->currentModel());
-    sessionPage->startConversation(text);
+    sessionPage->startConversation(text, images);
     // 登记 key→页面/数据ID（数据ID 供右键删除/重命名定位 config.json 的 app/sessions 条目；
     // 子项控件→key 于建子项后再登记）
     m_registry.insert(key, sessionPage, sessionDataId);

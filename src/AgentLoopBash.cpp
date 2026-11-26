@@ -5,6 +5,7 @@
 #include "LiteLog.h"
 
 #include "AgentLoopInternal.h"
+#include "MessageContent.h" // s18.6 图片输入批：content 两形态的拼接口（纯串语义逐字不变）
 #include "ToolNames.h"
 #include "BashRunner.h"
 
@@ -160,9 +161,11 @@ void AgentLoop::injectBackgroundResults()
         && m_messages.back().value(QStringLiteral("role")).toString() == QStringLiteral("user"))
     {
         // lcc：末条是 user 消息则把通知并入其 content 尾部（块列表 extend → 字符串以空行分隔拼接）
+        // s18.6 图片输入批：改走 MessageContent::appendText —— 带图消息的 content 是 parts 数组，
+        // 旧写法 `toString() + joined` 会把原文与图一起抹成只剩通知（且 UI 上看不出丢过东西）
         QJsonObject &tail = m_messages.back();
-        tail[QStringLiteral("content")] =
-            tail.value(QStringLiteral("content")).toString() + QStringLiteral("\n\n") + joined;
+        tail[QStringLiteral("content")] = MessageContent::appendText(
+            tail.value(QStringLiteral("content")), QStringLiteral("\n\n") + joined);
     }
     else
     {

@@ -8,6 +8,7 @@
 #include "SessionRegistry.h"
 
 #include "ActivityLedger.h" // 会话每日 token 消耗账本缓存（新会话页热力图数据源）
+#include "ImageAttach.h"    // s18.6 图片输入批：createSession 的待发图片形参类型
 
 class NewChatPage;
 class NavItem;
@@ -36,7 +37,8 @@ signals:
     void activityCacheChanged();
 
 private:
-    void createSession(const QString &text);
+    void createSession(const QString &text,
+                       const QList<ImageAttach::Pending> &images = {});
     // 启动恢复：先把旧 <config>/index.json 一次性搬进 config.json 键 app/sessions，再从该键读取
     // 历史会话，按创建时间升序重建会话页/导航项/堆叠布局，
     // 不切换当前页（保持停留在 NewChatPage）

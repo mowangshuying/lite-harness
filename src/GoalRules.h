@@ -21,6 +21,7 @@
 //   其余偏离（payload 序列化空白差、UTF-16 计量、标量探测等）统一登记在 GoalManager.h 头注释。
 
 #include "AgentConstants.h"
+#include "MessageContent.h" // s18.6 图片输入批：content 两形态的摊平单源
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -322,7 +323,11 @@ inline QString argumentsAsJsonText(const QJsonValue &value)
 inline QString plainContent(const QJsonObject &message)
 {
     QStringList parts;
-    const QString contentText = message.value(QStringLiteral("content")).toString();
+    // s18.6 图片输入批：content 可能是带图 parts 数组，摊平走 MessageContent 单源。
+    // 读成空串等于「用户没给证据」，评估器会据此把「答非所图」判成正常回答——
+    // 图片段落 [image] 标记（ASCII 结构性标记，与 [tool_use]/[tool_result] 同族，属禁翻区）。
+    const QString contentText =
+        MessageContent::textOf(message.value(QStringLiteral("content")));
 
     if (message.value(QStringLiteral("role")).toString() == QLatin1String("tool"))
     {

@@ -1,11 +1,14 @@
 #include "MessageBubbleWidget.h"
 #include "LayoutConstants.h"
+#include "UiScale.h" // s18.6 图片显示宽度按界面字号倍率同批放大（与全仓 px 口径一致）
 #include "ThinkingBlock.h"
 #include "ToolBlock.h"
 #include <QFrame>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QPixmap>
 #include <QResizeEvent>
+#include <QUrl>
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QMargins>
@@ -22,6 +25,30 @@
 #include <FluAction.h>
 #include <FluPMenu.h>
 
+
+// 图片段与缺图标记各占**一个独立块**，且显式写 margin:0。
+// 两处都是「图离气泡边框很远」的直接成因，缺一不可：
+// ① `<br/>` + 内联把图挂在文字基线上，块高被撑到图高，正文浮在顶端、图下方空出一整行；
+// ② Qt 的 HTML 子集里 `<p>` 的上下 margin 默认非零，不写 0 就在每个块之间再垫一条空隙；
+// ③ **`font-size:1px` 这条才是大头**：Qt 的行高取「块字体上下伸部」与「行内图高度」的
+//    较大者，图虽另起一块，那块仍带着正文的字号，于是 88px 高的图被包进 ~118px 的行里，
+//    上下各空出十几像素——用户截图里看到的就是这一段。把块的字号压到 1px，行高只剩图本身。
+// align 跟气泡同侧（User 靠右）：正文比图宽时，左对齐的图右边会留一大片空白。
+static QString imageBlockHtml(const QString &imgTag, const QString &alignment)
+{
+    return QStringLiteral(
+               "<p align=\"%1\" style=\"margin-top:0px; margin-bottom:0px; "
+               "font-size:1px;\">%2</p>")
+        .arg(alignment, imgTag);
+}
+
+// 缺图标记是**文字**，绝不能沿用上面那个 1px 的块（那会把提示语压成看不见）。
+// 只消 margin，字号交回文档默认，与正文同一读感。
+static QString markerBlockHtml(const QString &text, const QString &alignment)
+{
+    return QStringLiteral("<p align=\"%1\" style=\"margin-top:0px; margin-bottom:0px;\">%2</p>")
+        .arg(alignment, text);
+}
 
 // Actual row width available to a bubble: parent widget (the scroll area's
 // context widget, kept in sync with the viewport width by setWidgetResizable)
@@ -242,6 +269,53 @@ void MessageBubbleWidget::setContent(const QString &content)
 
     // Defer measurement so the document finishes its internal layout pass
     // before we measure idealWidth / document size.
+    scheduleSizeUpdate();
+}
+
+void MessageBubbleWidget::appendImages(const QList<QPixmap> &images, int intendedCount)
+{
+    if (images.isEmpty() && intendedCount <= 0)
+        return;
+
+    QTextCursor cursor(m_content->document());
+    cursor.movePosition(QTextCursor::End);
+
+    // 图片必须各占**一个零边距块**，不能像此前那样 `<br/>` + 内联插进正文那个块里：
+    // Qt 把内联图挂在**文字基线**上，块高随即被撑到图高，正文浮在顶端、图下方与
+    // 文字下方各空出一整行——这就是「图片与气泡之间距离很大」的成因。`<br/>` 本身
+    // 又额外贡献一个空行，两处叠起来更明显。
+    // 对齐跟气泡同侧：User 气泡靠右、正文比图宽时左对齐的图右边会留一大片空白。
+    const QString alignment = m_role == User ? QStringLiteral("right") : QStringLiteral("left");
+
+    int blockWidth = 0;
+    const int capWidth = UiScale::scaled(LayoutConst::kImageMaxDisplayWidth);
+    for (int index = 0; index < images.size(); ++index) {
+        const QPixmap &pixmap = images.at(index);
+        if (pixmap.isNull())
+            continue;
+        // 资源挂在 document 自己的表上，不写临时文件：本气泡从不落盘，
+        // 也不该为一张缩略图在会话目录里留一份与历史无关的副本。
+        const QString name = QStringLiteral("lite-attach-%1").arg(index);
+        m_content->document()->addResource(QTextDocument::ImageResource, QUrl(name), pixmap);
+        // 只给 width、不给 height：Qt 按原比例缩。原图比上限窄时**不放大**（放大只会糊）。
+        const int display = qMax(1, qMin(pixmap.width(), capWidth));
+        blockWidth = qMax(blockWidth, display);
+        cursor.insertHtml(imageBlockHtml(
+            QStringLiteral("<img src=\"%1\" width=\"%2\"/>").arg(name).arg(display), alignment));
+    }
+
+    if (blockWidth > 0)
+        m_imagesBlockWidth = qMax(m_imagesBlockWidth, blockWidth);
+
+    // 解不出来的那些必须留一条可见痕（发布包缺 qwebp、附件文件被外部删掉两类）。
+    // 什么都不写等于骗用户「这条消息没有图」，而图确实随请求发出去了。
+    if (intendedCount > images.size()) {
+        cursor.insertHtml(markerBlockHtml(tr("[图片未能显示]"), alignment));
+    }
+
+    // 文档变了必须作废测量键：User 支路那把「可用宽 + 字体」二元组缓存不看文档内容，
+    // 不作废的话刚追加的图不会参与宽高计算（气泡停在原尺寸）。
+    m_lastMeasuredW = -1;
     scheduleSizeUpdate();
 }
 
@@ -895,6 +969,10 @@ void MessageBubbleWidget::updateSize()
         const QStringList lines = doc->toPlainText().split('\n');
         for (const QString &line : lines)
             allTextWidth = qMax(allTextWidth, qreal(fm.horizontalAdvance(line)));
+        // s18.6：文档里的 `<img>` 不贡献任何 toPlainText 宽度，纯图消息会被量成
+        // 「只有两份边距那么宽」于是图被裁成一条缝。图片段的显示宽度由 appendImages
+        // 记在 m_imagesBlockWidth，在这里并入同一把尺。
+        allTextWidth = qMax(allTextWidth, qreal(m_imagesBlockWidth));
         qreal allBubbleWidth = allTextWidth + 2.0 * margin;
         if (allBubbleWidth > availW)
         {

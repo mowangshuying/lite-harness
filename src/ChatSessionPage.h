@@ -1,9 +1,11 @@
 #pragma once
 
 #include "BasePage.h"
+#include "ImageAttach.h" // s18.6 图片输入批：待发图片清单进本页 API 面
 #include "MessageBubbleWidget.h"
 #include <QHash>
 #include <QJsonArray>
+#include <QList>
 #include <QPointer>
 
 class FluVScrollView;
@@ -16,6 +18,7 @@ class ChatStatusStrip;
 class QToolButton;
 class QHBoxLayout;
 class QTimer;
+class QPixmap;
 
 // P1-9 非阻塞通知条的三档语义（本页自有枚举，刻意不暴露 FluentUI 的 FluInfoBarSeverity
 // 到头文件——页面 API 面只说「这是什么级别」，取色/图标由 .cpp 单点映射到 FluentUI 控件）。
@@ -34,8 +37,16 @@ public:
     explicit ChatSessionPage(const QString &sessionDataId = QString(), const QString &workDir = QString(),
                              QWidget *parent = nullptr);
 
-    void addMessage(MessageBubbleWidget::Role role, const QString &content);
-    void startConversation(const QString &text);
+    // 返回新建的气泡：s18.6 带图消息要在建泡之后追加图片段，而「取列表末位」这种找法
+    // 会被布局里的 stretch/非气泡件打断。改返回值对既有十余个忽略返回的调用点零影响。
+    MessageBubbleWidget *addMessage(MessageBubbleWidget::Role role, const QString &content);
+    // s18.6 图片输入批：带图用户消息的呈现口。传**已解好的缩略图**而不是字节/附件名——
+    // 活发路径手里只有内存里的字节（文件要等 AgentLoop 落盘），回放路径手里只有盘上的文件，
+    // 两条路在「画什么」这一层汇合，气泡就不必知道字节从哪来、也不必替 UI 持有 4MB 原图。
+    void addMessageWithImages(MessageBubbleWidget::Role role, const QString &content,
+                              const QList<QPixmap> &thumbnails, int intendedCount);
+    void startConversation(const QString &text,
+                           const QList<ImageAttach::Pending> &images = {});
     // 宿主注入初始模型（同步输入区下拉与 AgentLoop；需在 startConversation 前调用使首轮即用该模型）
     void setModel(const QString &model);
     // 宿主回传会话标题（右键重命名 / 启动恢复读 index 条目）：更新本页标题单源并推给右侧信息面板，
@@ -96,7 +107,12 @@ private:
     // 收口残留待决权限：后端 resolvePermission(false) 放行队列 + 旧卡落"已拒绝"留痕。
     // error 链与运行中 sendMessage 拒绝分支共用同一 staleCard 约定（见定义处注释）
     void dismissPendingPermission();
-    void startAssistantStream(const QString &userText);
+    void startAssistantStream(const QString &userText,
+                              const QList<ImageAttach::Pending> &images = {});
+    // s18.6 缩略图两入口：活发用内存字节现解、回放用附件名从会话附件目录读。
+    // 解不出（如发布包缺 qwebp）→ 该张不进清单，气泡只画文本——**少画一张图不能让整条消息消失**。
+    QList<QPixmap> thumbnailsFromPending(const QList<ImageAttach::Pending> &images) const;
+    QList<QPixmap> thumbnailsFromNames(const QStringList &attachmentNames) const;
     // 重放辅助：收尾并清空当前流式气泡（无气泡则 no-op）
     void closeReplayBubble();
     // 侧栏显隐切换：写 config.json 键 sidebarVisible + 收起钮摆位 + 重钳消息列宽

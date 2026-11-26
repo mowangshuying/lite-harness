@@ -4,7 +4,7 @@
 <context>
     <name>AgentLoop</name>
     <message>
-        <location filename="../src/AgentLoopHistory.cpp" line="+81"/>
+        <location filename="../src/AgentLoopHistory.cpp" line="+135"/>
         <source>会话未分配数据目录 ID，无法定位历史文件</source>
         <translation>The session has no data directory ID; cannot locate the history file</translation>
     </message>
@@ -19,12 +19,17 @@
         <translation>Failed to parse history file: %1</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="+288"/>
+        <location filename="../src/AgentLoop.cpp" line="+290"/>
         <source>Agent 仍在运行中，请等待完成后再发送。</source>
         <translation>Agent is still running. Please wait for it to finish before sending.</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoopRequest.cpp" line="+283"/>
+        <location line="+26"/>
+        <source>已忽略 %1 张附图（/goal 只取文本条件）</source>
+        <translation>Ignored %1 attached image(s) (/goal takes the text condition only)</translation>
+    </message>
+    <message>
+        <location filename="../src/AgentLoopRequest.cpp" line="+316"/>
         <location line="+87"/>
         <source>工具调用轮次超过上限（%1 轮），终止循环。</source>
         <translation>Tool call rounds exceeded the limit (%1 rounds); loop terminated.</translation>
@@ -45,7 +50,7 @@
         <translation>Manual compaction (compact tool)</translation>
     </message>
     <message>
-        <location filename="../src/AgentLoop.cpp" line="+250"/>
+        <location filename="../src/AgentLoop.cpp" line="+234"/>
         <source>已停止。</source>
         <translation>Stopped.</translation>
     </message>
@@ -53,12 +58,12 @@
 <context>
     <name>ChatMsgEdit</name>
     <message>
-        <location filename="../src/ChatMsgEdit.cpp" line="+74"/>
-        <source>输入消息，Enter 发送，Shift+Enter 换行</source>
-        <translation>Type a message — Enter to send, Shift+Enter for a new line.</translation>
+        <location filename="../src/ChatMsgEdit.cpp" line="+118"/>
+        <source>输入消息，Enter 发送，Shift+Enter 换行；可粘贴或拖入图片</source>
+        <translation>Type a message. Enter sends, Shift+Enter adds a newline. You can paste or drop images.</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+23"/>
         <source>撤销</source>
         <translation>Undo</translation>
     </message>
@@ -78,20 +83,50 @@
         <translation>Copy</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>粘贴</source>
         <translation>Paste</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>全选</source>
         <translation>Select All</translation>
+    </message>
+    <message>
+        <location line="+191"/>
+        <source>图片超过 %1 MB，已拒收</source>
+        <translation>Image exceeds %1 MB; rejected</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>一条消息最多 %1 张图，超出的已丢弃</source>
+        <translation>At most %1 images per message; extras were discarded</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>只支持 PNG / JPEG / GIF / WebP / BMP，已拒收</source>
+        <translation>Only PNG / JPEG / GIF / WebP / BMP are supported; rejected</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>%1 · %2 KB · 点击移除</source>
+        <translation>%1 - %2 KB - click to remove</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>图%1</source>
+        <translation>Image %1</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>清除</source>
+        <translation>Clear</translation>
     </message>
 </context>
 <context>
     <name>ChatSessionPage</name>
     <message>
-        <location filename="../src/ChatSessionPage.cpp" line="+105"/>
+        <location filename="../src/ChatSessionPage.cpp" line="+110"/>
         <source>这个会话还没有消息</source>
         <translation>This session has no messages yet</translation>
     </message>
@@ -123,12 +158,12 @@
         <translation>Back to bottom</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>*Error:* Agent 仍在运行中，请等待完成后再发送</source>
         <translation>*Error:* Agent is still running. Please wait for it to finish before sending</translation>
     </message>
     <message>
-        <location line="+69"/>
+        <location line="+71"/>
         <source>*Error:* %1</source>
         <translation>*Error:* %1</translation>
     </message>
@@ -179,14 +214,14 @@ Output:
         <translation>The server is overloaded; this turn continues with %1.</translation>
     </message>
     <message>
-        <location line="+93"/>
-        <location line="+69"/>
+        <location line="+96"/>
+        <location line="+76"/>
         <location line="+19"/>
         <source>处理中…</source>
         <translation>Working…</translation>
     </message>
     <message>
-        <location line="-61"/>
+        <location line="-68"/>
         <source>历史加载失败</source>
         <translation>Failed to Load History</translation>
     </message>
@@ -196,7 +231,7 @@ Output:
         <translation>Session history could not be read, so the session opened empty. The file may be corrupted or held by another program.</translation>
     </message>
     <message>
-        <location line="+490"/>
+        <location line="+549"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -276,7 +311,7 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContextLimitSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="+349"/>
+        <location filename="../src/SettingsPage.cpp" line="+350"/>
         <location line="+17"/>
         <source>修改</source>
         <translation>Change</translation>
@@ -321,7 +356,7 @@ After a restart the turn count is seeded from the number of user messages in his
 <context>
     <name>ContributionHeatmap</name>
     <message>
-        <location filename="../src/ContributionHeatmap.cpp" line="+162"/>
+        <location filename="../src/ContributionHeatmap.cpp" line="+165"/>
         <source>会话活动</source>
         <translation>Session activity</translation>
     </message>
@@ -380,25 +415,25 @@ No consumption recorded</translation>
 <context>
     <name>LiteHarness</name>
     <message>
-        <location filename="../src/LiteHarness.cpp" line="+112"/>
+        <location filename="../src/LiteHarness.cpp" line="+113"/>
         <source>切换主题</source>
         <translation>Switch Theme</translation>
     </message>
     <message>
         <location line="+33"/>
-        <location line="+673"/>
+        <location line="+674"/>
         <source>新建对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
-        <location line="-666"/>
-        <location line="+668"/>
+        <location line="-667"/>
+        <location line="+669"/>
         <source>会话</source>
         <translation>Sessions</translation>
     </message>
     <message>
-        <location line="-665"/>
-        <location line="+667"/>
+        <location line="-666"/>
+        <location line="+668"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
@@ -487,7 +522,7 @@ No consumption recorded</translation>
 <context>
     <name>MessageBubbleWidget</name>
     <message>
-        <location filename="../src/MessageBubbleWidget.cpp" line="+147"/>
+        <location filename="../src/MessageBubbleWidget.cpp" line="+150"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
@@ -497,7 +532,12 @@ No consumption recorded</translation>
         <translation>Select All</translation>
     </message>
     <message>
-        <location line="+377"/>
+        <location line="+133"/>
+        <source>[图片未能显示]</source>
+        <translation>[image not displayed]</translation>
+    </message>
+    <message>
+        <location line="+287"/>
         <source>记忆整理中</source>
         <translation>Consolidating memory</translation>
     </message>
@@ -568,7 +608,7 @@ No consumption recorded</translation>
 <context>
     <name>ModelManageDialog</name>
     <message>
-        <location filename="../src/ModelManageDialog.cpp" line="+150"/>
+        <location filename="../src/ModelManageDialog.cpp" line="+146"/>
         <source>拉取</source>
         <translation>Fetch</translation>
     </message>
@@ -628,7 +668,7 @@ No consumption recorded</translation>
         <translation>Save Settings</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+73"/>
         <source>至少需保留一个服务商。</source>
         <translation>At least one provider must be kept.</translation>
     </message>
@@ -683,12 +723,12 @@ No consumption recorded</translation>
         <translation>Remove</translation>
     </message>
     <message>
-        <location line="-365"/>
+        <location line="-359"/>
         <source>自定义模型</source>
         <translation>Custom Models</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+56"/>
         <location line="+5"/>
         <source>修改</source>
         <translation>Change</translation>
@@ -715,7 +755,7 @@ No consumption recorded</translation>
         <translation>These custom-model preferences apply to all tasks. In-flight replies keep their current settings; new settings apply from the next turn.</translation>
     </message>
     <message>
-        <location line="+133"/>
+        <location line="+132"/>
         <location line="+3"/>
         <source>未设置</source>
         <translation>Not set</translation>
@@ -1043,7 +1083,7 @@ No consumption recorded</translation>
 <context>
     <name>QOpenAi::AsyncRequest</name>
     <message>
-        <location filename="../src/QOpenAi.cpp" line="+782"/>
+        <location filename="../src/QOpenAi.cpp" line="+730"/>
         <source>请求超时（%1 ms）。</source>
         <translation>Request timed out (%1 ms).</translation>
     </message>
@@ -1051,7 +1091,7 @@ No consumption recorded</translation>
 <context>
     <name>QOpenAi::ChatStream</name>
     <message>
-        <location line="-528"/>
+        <location line="-490"/>
         <source>未配置模型服务地址或 API Key，请在设置页的「模型服务」中填写。</source>
         <translation>No model service base URL or API key configured. Fill them in under Model Service on the Settings page.</translation>
     </message>
@@ -1061,7 +1101,7 @@ No consumption recorded</translation>
         <translation>Failed to parse SSE frame JSON: %1</translation>
     </message>
     <message>
-        <location line="+145"/>
+        <location line="+112"/>
         <source>错误：%1</source>
         <translation>Error: %1</translation>
     </message>
@@ -1327,54 +1367,54 @@ No consumption recorded</translation>
     <name>SettingsPage</name>
     <message>
         <location filename="../src/SettingsPage.cpp" line="+353"/>
-        <location line="+596"/>
+        <location line="+595"/>
         <source>外观与行为</source>
         <translation>Appearance &amp; Behavior</translation>
     </message>
     <message>
-        <location line="-590"/>
-        <location line="+592"/>
+        <location line="-589"/>
+        <location line="+591"/>
         <source>应用主题</source>
         <translation>App theme</translation>
     </message>
     <message>
-        <location line="-592"/>
-        <location line="+592"/>
+        <location line="-591"/>
+        <location line="+591"/>
         <source>选择应用显示的主题。</source>
         <translation>Select which theme to display.</translation>
     </message>
     <message>
-        <location line="-590"/>
-        <location line="+591"/>
+        <location line="-589"/>
+        <location line="+590"/>
         <source>浅色</source>
         <translation>Light</translation>
     </message>
     <message>
-        <location line="-590"/>
-        <location line="+591"/>
+        <location line="-589"/>
+        <location line="+590"/>
         <source>深色</source>
         <translation>Dark</translation>
     </message>
     <message>
-        <location line="-590"/>
-        <location line="+591"/>
+        <location line="-589"/>
+        <location line="+590"/>
         <source>AtomOneDark</source>
         <translation>AtomOneDark</translation>
     </message>
     <message>
-        <location line="-559"/>
-        <location line="+561"/>
+        <location line="-558"/>
+        <location line="+560"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location line="-561"/>
-        <location line="+561"/>
+        <location line="-560"/>
+        <location line="+560"/>
         <source>选择界面显示的语言。</source>
         <translation>Select which language to display.</translation>
     </message>
     <message>
-        <location line="-546"/>
+        <location line="-545"/>
         <source>语言设置</source>
         <translation>Language Settings</translation>
     </message>
@@ -1385,84 +1425,84 @@ No consumption recorded</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+535"/>
+        <location line="+534"/>
         <source>工作目录</source>
         <translation>Working Directory</translation>
     </message>
     <message>
-        <location line="-522"/>
-        <location line="+526"/>
+        <location line="-521"/>
+        <location line="+525"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location line="-513"/>
-        <location line="+517"/>
+        <location line="-512"/>
+        <location line="+516"/>
         <source>最大轮次</source>
         <translation>Max Rounds</translation>
     </message>
     <message>
-        <location line="-503"/>
-        <location line="+507"/>
+        <location line="-502"/>
+        <location line="+506"/>
         <source>权限</source>
         <translation>Permissions</translation>
     </message>
     <message>
-        <location line="-503"/>
-        <location line="+504"/>
+        <location line="-502"/>
+        <location line="+503"/>
         <source>工具执行权限审批</source>
         <translation>Tool Execution Approval</translation>
     </message>
     <message>
-        <location line="-504"/>
-        <location line="+504"/>
+        <location line="-503"/>
+        <location line="+503"/>
         <source>命中询问规则时是否需要你批准。</source>
         <translation>Whether a tool call that hits an ask rule needs your approval.</translation>
     </message>
     <message>
-        <location line="-502"/>
-        <location line="+503"/>
+        <location line="-501"/>
+        <location line="+502"/>
         <source>关闭后工具不再弹审批卡、直接执行；bash 硬拒绝黑名单、workflow 的 deny 策略与工作区越界拦截不受影响。改完下一个工具调用即生效，无需重启。</source>
         <translation>When off, tools run directly without an approval card. The bash deny list, workflow deny policies and workspace-escape checks are unaffected. Takes effect on the next tool call; no restart needed.</translation>
     </message>
     <message>
-        <location line="-501"/>
-        <location line="+503"/>
+        <location line="-500"/>
+        <location line="+502"/>
         <source>需要审批</source>
         <translation>Requires approval</translation>
     </message>
     <message>
-        <location line="-502"/>
-        <location line="+503"/>
+        <location line="-501"/>
+        <location line="+502"/>
         <source>无需审批</source>
         <translation>No approval needed</translation>
     </message>
     <message>
-        <location line="-486"/>
-        <location line="+488"/>
+        <location line="-485"/>
+        <location line="+487"/>
         <source>模型服务</source>
         <translation>Model Service</translation>
     </message>
     <message>
-        <location line="-467"/>
-        <location line="+472"/>
+        <location line="-466"/>
+        <location line="+471"/>
         <source>更新</source>
         <translation>Update</translation>
     </message>
     <message>
-        <location line="-460"/>
-        <location line="+466"/>
+        <location line="-459"/>
+        <location line="+465"/>
         <source>关于</source>
         <translation>About</translation>
     </message>
     <message>
-        <location line="-461"/>
+        <location line="-460"/>
         <source>lite-harness</source>
         <translation>lite-harness</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+461"/>
+        <location line="+460"/>
         <source>@2026 lite harness. 保留所有权利。</source>
         <translation>@2026 lite harness. All rights reserved.</translation>
     </message>
@@ -2102,7 +2142,7 @@ No consumption recorded</translation>
 <context>
     <name>WorkDirSettingCard</name>
     <message>
-        <location filename="../src/SettingsPage.cpp" line="-825"/>
+        <location filename="../src/SettingsPage.cpp" line="-824"/>
         <location line="+39"/>
         <source>默认工作目录</source>
         <translation>Default Working Directory</translation>

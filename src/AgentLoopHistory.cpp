@@ -68,6 +68,60 @@ void AgentLoop::persistHistory()
     // mtime（它本来就是每回合被写的文件，读它不需要额外写配置）。
 }
 
+// s18.6 图片输入批：把待发附件落进 <会话根>/.attachments/，返回可入历史的裸名清单。
+//
+// 为什么在这里落盘而不是输入框：只有本类知道会话根（sessionDataRoot 的单源），而输入框
+// 是跨会话复用的控件；也是在这里而不是请求装配段：装配段每工具批都跑，附件只该写一次。
+//
+// 两条刻意的取舍：
+// ① **按内容哈希命名 ⇒ 同图重复粘贴天然落一份**，第二次只复用不重写（exists 早退）。
+// ② 写失败的图**不入清单**——宁缺勿错：一条引用着一个不存在的文件的 history，会让之后
+//    每一轮请求都撞上展开降级，比这一张图没发出去更糟。失败留 LOG_WARN 而非弹窗，
+//    与全仓「工具侧失败折叠成文本/日志」同口径。
+// ③ 无 sessionDataId 的会话（未隔离）回退全局存储根，附件会落进共享目录且删会话不清理。
+//    现状下每条会话都由 LiteHarness::createSession 赋 uuid8，本分支只为不把路径写死而保留。
+QStringList AgentLoop::stageAttachments(const QList<ImageAttach::Pending> &images)
+{
+    QStringList staged;
+    if (images.isEmpty())
+        return staged;
+
+    const QString dir = LitePaths::attachmentsDirFor(sessionDataRoot());
+    if (!QDir().mkpath(dir))
+    {
+        LOG_WARN << QStringLiteral("[attach] 附件目录创建失败 %1，本轮图片全部丢弃").arg(dir);
+        return staged;
+    }
+
+    for (const ImageAttach::Pending &image : images)
+    {
+        const QString name = image.name();
+        if (name.isEmpty() || staged.contains(name))
+            continue; // 类型认不出（不该发生）或本批内重复
+        const QString path = QDir(dir).filePath(name);
+        if (QFileInfo::exists(path))
+        {
+            staged.append(name); // 同名即同内容，历史里已有这张图
+            continue;
+        }
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly))
+        {
+            LOG_WARN << QStringLiteral("[attach] 打开失败 %1: %2")
+                                       .arg(path, file.errorString());
+            continue;
+        }
+        if (file.write(image.bytes) != image.bytes.size() || !file.commit())
+        {
+            LOG_WARN << QStringLiteral("[attach] 落盘失败 %1: %2")
+                                       .arg(path, file.errorString());
+            continue;
+        }
+        staged.append(name);
+    }
+    return staged;
+}
+
 // 从磁盘恢复历史到 m_messages：保留 [0] 系统消息，追加落盘消息，恢复模型。
 // 关键正确性约束：assistant.tool_calls 声明的每个调用都必须紧跟其 tool 结果消息，否则
 // 下一轮请求会被上游 400（tool_call_id 无匹配）。故采用"逐段 flush"策略——遍历落盘数组

@@ -19,6 +19,11 @@
 #include "AgentLoop.h"
 #include "AgentLoopInternal.h"
 #include "AgentConstants.h"
+#include "LitePaths.h" // s18.6 回放取附件：会话根下的 .attachments 目录单源
+#include "MessageContent.h" // s18.6 历史回放：从 parts 形态里取附件名与文本
+#include <QDir>
+#include <QFile>
+#include <QPixmap>
 #include "ScrollSettle.h"
 #include "ToolNames.h"
 #include "ToolBlock.h"
@@ -258,7 +263,8 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
     // AgentLoop 输出信号 → UI 的接线整体搬移至 wireAgent()（纯移动，不改任何 lambda 逻辑）
     wireAgent();
 
-    connect(m_inputEdit, &ChatMsgEdit::sendMessage, this, [this](const QString &text) {
+    connect(m_inputEdit, &ChatMsgEdit::sendMessage, this,
+            [this](const QString &text, const QList<ImageAttach::Pending> &images) {
         // 运行态预查：运行中不建气泡、不动旧现场。若照旧走 startAssistantStream，
         // 旧气泡会被先冻结、新气泡又被 run() 拒绝后的 error 链收掉置空，
         // 旧循环后续 delta 全部丢失、时间线撕裂（重入提示改由本 handler 独立气泡给出）。
@@ -270,8 +276,10 @@ ChatSessionPage::ChatSessionPage(const QString &sessionDataId, const QString &wo
                        tr("*Error:* Agent 仍在运行中，请等待完成后再发送"));
             return;
         }
-        addMessage(MessageBubbleWidget::Role::User, text);
-        startAssistantStream(text); // 创建流式气泡并启动代理循环
+        // 气泡与请求共用同一份待发图片：先建带图的泡再开回合，用户立刻看到自己附了几张
+        addMessageWithImages(MessageBubbleWidget::Role::User, text,
+                             thumbnailsFromPending(images), static_cast<int>(images.size()));
+        startAssistantStream(text, images); // 创建流式气泡并启动代理循环
     });
 
     // 停止入口收口：runningChanged(true) 经 setTurnBusy 已把发送钮切成停止形态，
@@ -762,7 +770,8 @@ void ChatSessionPage::dismissEmptyHint()
         m_emptyHint->hide();
 }
 
-void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &content)
+MessageBubbleWidget *ChatSessionPage::addMessage(MessageBubbleWidget::Role role,
+                                                 const QString &content)
 {
     // 会话标题单点捕获：startConversation/定时送达/历史重放的用户消息全部经过本函数
     if (role == MessageBubbleWidget::Role::User)
@@ -772,9 +781,11 @@ void ChatSessionPage::addMessage(MessageBubbleWidget::Role role, const QString &
     bubble->setContent(content);
     m_scrollView->getMainLayout()->addWidget(bubble);
     scrollToBottom();
+    return bubble;
 }
 
-void ChatSessionPage::startAssistantStream(const QString &userText)
+void ChatSessionPage::startAssistantStream(const QString &userText,
+                                           const QList<ImageAttach::Pending> &images)
 {
     // 兜底：上一轮未收到 finished 时收尾清场。m_currentBubble 已为 QPointer，
     // 下一行即赋新气泡，原此处的手工置空为死写入（被立即覆盖），随类型迁移一并去除；
@@ -790,7 +801,7 @@ void ChatSessionPage::startAssistantStream(const QString &userText)
     dismissEmptyHint(); // P1-9：本路径不经 addMessage 建泡（占位泡直挂滚动列），引导卡在此也要收
     m_scrollView->getMainLayout()->addWidget(m_currentBubble);
     scrollToBottom();
-    m_agentLoop->run(userText);
+    m_agentLoop->run(userText, images);
     // 用户消息已在 run() 内同步入历史，此刻刷一次：否则发送后要等整回合终局才见抬升
     refreshContextUsage();
 }
@@ -841,8 +852,15 @@ void ChatSessionPage::replayHistory(const QVector<QJsonObject> &messages)
         if (role == QLatin1String("user"))
         {
             closeReplayBubble(); // 收束上一段 assistant
-            addMessage(MessageBubbleWidget::Role::User,
-                       msg.value(QStringLiteral("content")).toString());
+            // s18.6 带图历史消息：content 可能是 parts 数组。文本走 displayTextOf
+            // （不含 [image] 标记——那是喂模型的协议串，图片由下面的真缩略图承载），
+            // 附件名走 imageNames 后从盘上读。读不到/解不出的那张仍计数，
+            // 于是气泡末尾出现「[图片未能显示]」而不是「这条消息本来就没图」。
+            const QJsonValue content = msg.value(QStringLiteral("content"));
+            const QStringList attachments = MessageContent::imageNames(content);
+            addMessageWithImages(MessageBubbleWidget::Role::User,
+                                 MessageContent::displayTextOf(content),
+                                 thumbnailsFromNames(attachments), attachments.size());
             pendingToolCalls.clear();
             continue;
         }
@@ -965,10 +983,62 @@ void ChatSessionPage::setSessionTitle(const QString &title)
         m_sidebar->setSessionMeta(m_sessionTitle, m_agentLoop ? m_agentLoop->model() : QString());
 }
 
-void ChatSessionPage::startConversation(const QString &text)
+void ChatSessionPage::startConversation(const QString &text,
+                                        const QList<ImageAttach::Pending> &images)
 {
-    addMessage(MessageBubbleWidget::Role::User, text);
-    startAssistantStream(text);
+    addMessageWithImages(MessageBubbleWidget::Role::User, text,
+                         thumbnailsFromPending(images), static_cast<int>(images.size()));
+    startAssistantStream(text, images);
+}
+
+// ---- s18.6 图片输入批：呈现侧三个方法 ----
+
+QList<QPixmap> ChatSessionPage::thumbnailsFromPending(
+    const QList<ImageAttach::Pending> &images) const
+{
+    QList<QPixmap> thumbs;
+    for (const ImageAttach::Pending &image : images) {
+        QPixmap pixmap;
+        if (pixmap.loadFromData(image.bytes) && !pixmap.isNull())
+            thumbs.append(pixmap);
+    }
+    return thumbs;
+}
+
+QList<QPixmap> ChatSessionPage::thumbnailsFromNames(const QStringList &attachmentNames) const
+{
+    // 回放路径从盘上读：附件目录由 AgentLoop 拥有（会话根经其单源口取），本页只读不写。
+    // 读不到 / 解不出 → 该张静默跳过（气泡仍有文本与「缺图」留痕，见 addMessageWithImages
+    // 传空缩略图时的表现），绝不让一条历史消息因为图丢了就不显示。
+    QList<QPixmap> thumbs;
+    if (attachmentNames.isEmpty())
+        return thumbs;
+    const QString dir = LitePaths::attachmentsDirFor(m_agentLoop->sessionDataRoot());
+    for (const QString &name : attachmentNames) {
+        if (!ImageAttach::isSafeName(name))
+            continue; // 历史可被手改：形态不合的名字不去拼路径
+        QFile file(QDir(dir).filePath(name));
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        QPixmap pixmap;
+        pixmap.loadFromData(file.read(AgentConst::kImageMaxBytes + 1));
+        if (!pixmap.isNull())
+            thumbs.append(pixmap);
+    }
+    return thumbs;
+}
+
+void ChatSessionPage::addMessageWithImages(MessageBubbleWidget::Role role,
+                                           const QString &content,
+                                           const QList<QPixmap> &thumbnails,
+                                           int intendedCount)
+{
+    MessageBubbleWidget *bubble = addMessage(role, content);
+    if (!bubble)
+        return;
+    // intendedCount 必须一路带到气泡：只传「画得出来的那些」会让画不出来的那张彻底隐身，
+    // 于是用户看到一条没有图的文本消息，而图确实随请求发出去了。
+    bubble->appendImages(thumbnails, intendedCount);
 }
 
 void ChatSessionPage::scrollToBottom()

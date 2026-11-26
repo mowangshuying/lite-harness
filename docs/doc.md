@@ -465,6 +465,7 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
         ├── .mailboxes/<name>.jsonl       ← 团队邮箱，一代理一文件（MessageBus；破坏性读；s13）
         ├── .worktrees/<name>             ← git worktree 隔离检出（WorktreeManager；分支 wt/<name> 永不随 remove 删除；s13）
         ├── .workflows/                   ← s16 编排台账：<runId>.json 原子快照 / <runId>.journal.jsonl HIT 账本 / <runId>.output.json 信封 / last_run.txt（WorkflowManager；lcc 跨进程 .lock 不采=偏差）
+        ├── .attachments/<hash16>.<ext>   ← s18.6 用户附图的二进制（LitePaths::attachmentsDirFor；**按内容哈希命名**故同图重复粘贴天然落一份；history.json 里只留 `lh-attach://<名>` 引用，base64 永不入库；删会话随 sessions/<dataId> 整目录一并清掉）
         └── .activity/daily.json          ← s17.8 会话每日 token 消耗账本（`{"YYYY-MM-DD": {prompt, completion, cached, reasoning, calls}}`；`AgentLoop::appendActivityLedger` 在 usage 回读点原子落盘，NewChatPage 热力图数据源；无效快照不写入）
 ```
 
@@ -512,6 +513,8 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 | 会话历史 → wire messages 快照 | `AgentLoopDetail::snapshotMessages`（`AgentLoopTools.cpp:129`；口径全量 / mid(1) 由调用方显式表达） |
 | 上下文溢出错误判定 | `AgentLoopDetail::isContextOverflowError`（声明 `AgentLoopInternal.h:65`、定义 `AgentLoopRequest.cpp:23`；主循环反应式压缩、队友流错误侧与 SubAgent 溢出重试（s18）三方共用） |
 | 数据目录名 / 魔法数 / 模型清单 | `AgentConstants.h` |
+| 消息 content 的两种形态（纯串 / 多模态 parts） | `MessageContent.h`（摊平 `textOf` 喂模型、`displayTextOf` 喂 UI、拼接 `appendText`、张数 `imageCount`、发送末段展开 `expandForWire` 全在此一处；**禁在消费点再写 `content.toString()`**——三处 bg/团队/todo 拼接原本就是这么写的，对 parts 求值等于把原文与图一起抹掉） |
+| 图片类型嗅探 / 附件名形态守卫 / 闸门 / data URL | `ImageAttach.h`（支持集有序清单 `supportedMimes()` 是 mimeFor↔extensionFor↔mimeForExtension 三张表的唯一真值；`isSafeName` 是「盘上来的串决定去读哪个文件」的最后一道，与 `UpdateRules::normalizeEntryPath`、`CompactTranscript` 目录守卫同族）；数值闸门在 `AgentConstants.h`（kImageMaxBytes / kImageMaxPerMessage / kImageTokenCost） |
 | 布局尺寸（多页同列对齐） | `LayoutConstants.h` |
 | 配置键与文件位置 | `AppSettings.h`（键清单 + 路径 + 读写门面）；**读缓存与失效判据单源 `SettingsCache.h`**（身份三元组 / 大小写归一 / 写侧 sync-后-invalidate 全在 Reader 一处，`AppSettings` 只是它的转发——禁再在消费点现构造 `QSettings` 绕开缓存） |
 | 工具配色类别 → QSS | `ToolTagKind.h` + `stylesheet/<theme>/*.qss` |
@@ -823,6 +826,21 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
 - [ ] **P2** 队友回合环：`turnRequested`→宿主 deferred 发 ChatStream→`deliverTurnResult` 回填（零嵌套事件循环）；权限询问经同一 `permissionRequired` 透明转发；队友工具失败折叠为文本回喂不抛异常
 - [ ] **P2** 重启即账销（D7）：五本账纯内存——重启后磁盘残留 in_progress 任务经 `releaseTeammateAssignment` 降级 pending、清空 owner，不自动复活队友
 - [ ] **P2** 关停与退出清算：`request_shutdown` 握手→队友 `finished`→宿主收口；会话关闭/`~AgentLoop` 经 `settleTeamOnExit`（不留活 QTimer；**析构期禁 emit**——页面成员此刻已析构，到方槽即 UB，见 AGENTS.md「AgentLoopTeam.cpp」条），运行中关窗守卫照常先 `stop()`
+
+### 十二、图片输入（s18.6 新增；P0 是本批改动的直接回归点）
+
+- [ ] **P0** 截屏后在输入框 Ctrl+V → 输入框**上方**出现一枚缩略图芯片（**没有**「清除」按钮，用户裁决），输入区整体抬高一行（原 100px 上限只在不附图时成立）；框内**不得**出现任何占位符或乱码——图从不进 `QTextDocument`，走的是 `PlainPasteTextEdit` 的图片交接口
+- [ ] **P0** 只贴一张图、不打一个字，直接 Enter 能发出去（旧判据 `text.isEmpty()` 会把纯图消息当空输入吞掉）；Enter 与发送钮两条路必须同判据（`ChatMsgEdit::emitSend()` 单点），否则出现「钮能带图、回车丢图」这种只在键盘路径复现的缺陷
+- [ ] **P0** 发送后盘上核对：`<会话根>/.attachments/` 出现 `<16 位十六进制>.png`，`history.json` 里该条 user 消息的 content 是**数组**且 url 形如 `lh-attach://<名>`——**绝不出现 base64**（内联等于每工具批全量重写几 MB，且 token 计量会被那份假账打穿）
+- [ ] **P0** 无附图会话的 `history.json` 与改动前**逐字节同形**（content 仍是纯串）：这是本批「零图片路径零行为变化」的判据，任何一条无图历史变成数组都算回归
+- [ ] **P1** 重启会话后原图仍在（回放走 `ChatSessionPage::thumbnailsFromNames` 从盘上读）；手工删掉 `.attachments/` 里那个文件再重启 → 气泡文本正常显示、末尾出现「[图片未能显示]」，**不是**整条消息消失
+- [ ] **P1** 点芯片即移除**那一张**；输入框为空时按 删除/退格 键退掉**最后入队那一张**，连按即清空（**无「清除」按钮**，用户裁决）；有字时删除键必须照常退格、绝不被图片逻辑抢走（回归点）；移除后再发送不应带图
+- [ ] **P1** 超闸门必须**可见**：贴一张 >4MB 的图 → 提示「图片超过 4 MB，已拒收」；连贴 5 张 → 第 5 张提示「一条消息最多 4 张图，超出的已丢弃」。静默丢图正是本批要消灭的那类缺陷（旧 `canInsertFromMimeData` 拒粘图片的理由就是「发送口承载不了，宁可拒」）
+- [ ] **P1** 从资源管理器 Ctrl+C 一个 `.png` 再粘进输入框可附上；把同一个文件**拖拽**进输入框也可附上（两条入口同判据）。文本拖拽仍走 QTextEdit 原路（回归点：别把拖文本变成附件）
+- [ ] **P1** 从 Word / 浏览器复制一段**带样式文本**粘贴 → 只有文字入框，**不得**顺带附上一张图（剪贴板常同时挂选区位图快照；判据是「有文本就只取文本」）
+- [ ] **P1** 附图后侧栏占用条与底部状态条的 token 读数按每张 `kImageTokenCost` 抬升，而不是按 base64 字数抬升一个数量级；压缩闸门不应因贴了一张截图就立刻触发
+- [ ] **P2** `/goal <条件>` 同时附图 → 回显「已忽略 1 张附图（/goal 只取文本条件）」，而不是静默丢
+- [ ] **P2** 诚实边界：**端到端「模型真的看见了图」本轮未取证**——需真实视觉端点与视觉模型（本机默认 deepseek-v4.1-flash 非视觉）。展开后的 data URL 形态、`lh-attach://` 绝不漏上线、同名只发一份这三条由 `tst_messagecontent` 直测，网络侧事实须另行实测登记
 
 ---
 

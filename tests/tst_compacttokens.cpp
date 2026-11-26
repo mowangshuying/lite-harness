@@ -21,6 +21,8 @@
 #include "TestHarness.h"
 
 #include "CompactTokens.h"
+#include "MessageContent.h" // s18.6 图片张数单源（成本项的入参口径）
+#include "ImageAttach.h"    // s18.6 附件命名（构造带图消息用真实形态的附件名）
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -259,6 +261,127 @@ void testEstimationScale()
                        "同码元数 CJK 估算高于 ASCII（分类折算分流生效）");
 }
 
+// s18.6 图片成本项的三个构造口：载荷字节、带图消息、被手改坏的带图消息。
+// 字节按值构造而非 "\x89" 转义——/utf-8 下 >127 的十六进制转义在窄字面量里是实现定义行为。
+QByteArray pngPayload()
+{
+    QByteArray out;
+    const int magic[] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+    for (const int value : magic)
+        out.append(static_cast<char>(value));
+    out.append("IHDR-fake-scanline-payload");
+    return out;
+}
+
+QJsonObject imageMessage(const QString &text, const QStringList &names)
+{
+    QJsonObject message;
+    message.insert(QStringLiteral("role"), QStringLiteral("user"));
+    message.insert(QStringLiteral("content"),
+                   MessageContent::fromTextAndImages(text, names));
+    return message;
+}
+
+QJsonObject tamperedImageMessage()
+{
+    QJsonObject message;
+    message.insert(QStringLiteral("role"), QStringLiteral("user"));
+    QJsonArray parts;
+    parts.append(QJsonObject{{QStringLiteral("type"), MessageContent::imagePartType()},
+                             {QStringLiteral("image_url"),
+                              QJsonObject{{QStringLiteral("url"),
+                                           ImageAttach::attachmentScheme()
+                                               + QStringLiteral("../../secret")}}}});
+    message.insert(QStringLiteral("content"), QJsonValue(parts));
+    return message;
+}
+
+// ---- s18.6 图片输入批：图片定值成本项 ----// 为什么必须计量：带图消息在历史里只是一行 `lh-attach://<hash>.png` 引用（几十字符），
+// 沿用纯字符折算等于把一张图估成 ~8 token，而它每个工具批都随 payload 重发、真实
+// prompt_tokens 占上千。若不补这一项，压缩触发点与侧栏占用条会对一张 1MB 截图毫无反应。
+void testImageCost()
+{
+    const QString nameA = ImageAttach::nameFor(pngPayload(), QStringLiteral("image/png"));
+    QByteArray other = pngPayload();
+    other.append("different-bytes");
+    const QString nameB = ImageAttach::nameFor(other, QStringLiteral("image/png"));
+
+    QStringList one;
+    one << nameA;
+    QStringList twoDistinct;
+    twoDistinct << nameA << nameB;
+    QStringList twoSame;
+    twoSame << nameA << nameA;
+
+    const QJsonObject plain = imageMessage(QStringLiteral("看图"), QStringList());
+    const QJsonObject withOne = imageMessage(QStringLiteral("看图"), one);
+    const QJsonObject withTwo = imageMessage(QStringLiteral("看图"), twoDistinct);
+    const QJsonObject withDup = imageMessage(QStringLiteral("看图"), twoSame);
+
+    // ① 纯串项零图片成本（既有全链行为的地基）
+    TestHarness::check(MessageContent::imageCount(plain.value(QStringLiteral("content"))) == 0,
+                       "纯串 content 计 0 张（无图会话不受本批影响）");
+    TestHarness::check(
+        CompactTokens::messageTokens(plain)
+            == AgentConst::estimateTokens(QString::fromUtf8(
+                   QJsonDocument(plain).toJson(QJsonDocument::Compact))),
+        "纯串项 == 纯字符折算原值（图片项加法而非替换，且无图时恒 0）");
+
+    // ② 加法构成：整项 = 序列化折算 + 张数 × 定值
+    TestHarness::check(
+        CompactTokens::messageTokens(withOne)
+            == AgentConst::estimateTokens(QString::fromUtf8(
+                   QJsonDocument(withOne).toJson(QJsonDocument::Compact)))
+                   + AgentConst::kImageTokenCost,
+        "一项的构成 = 字符折算 + 1 张定值（逐字对表，防写成乘法或取 max）");
+
+    // ③ 张数口径与展开口径同源：同名两张只计一张
+    TestHarness::check(
+        CompactTokens::messageTokens(withDup)
+            == AgentConst::estimateTokens(QString::fromUtf8(
+                   QJsonDocument(withDup).toJson(QJsonDocument::Compact)))
+                   + AgentConst::kImageTokenCost,
+        "同名两张的图片成本 == 一张（与 expandForWire 只发一份同口径）");
+    TestHarness::check(CompactTokens::messageTokens(withTwo)
+                           > CompactTokens::messageTokens(withOne)
+                               + AgentConst::kImageTokenCost,
+                       "两张不同的图比一张贵（成本随张数递增，不被去重逻辑误吞）");
+
+    // ④ 破坏形态不计费：估算不得因手改历史而虚高
+    const QJsonObject tampered = tamperedImageMessage();
+    TestHarness::check(MessageContent::imageCount(
+                           tampered.value(QStringLiteral("content"))) == 0
+                           && CompactTokens::messageTokens(tampered)
+                               == AgentConst::estimateTokens(QString::fromUtf8(
+                                      QJsonDocument(tampered).toJson(QJsonDocument::Compact))),
+                       "越界引用计 0 张 = 纯字符折算（坏形态不虚增预算，也不虚减）");
+
+    // ⑤ 承重不变量①在带图消息上仍成立：项与项之间零耦合
+    const QVector<QJsonObject> pair{withOne, toolMessage(QStringLiteral("result"))};
+    TestHarness::check(
+        CompactTokens::conversationTokens(pair)
+            == CompactTokens::messageTokens(withOne)
+                   + CompactTokens::messageTokens(toolMessage(QStringLiteral("result"))),
+        "含带图消息时逐条求和仍成立（不变量①未因图片项破口）");
+
+    // ⑥ 承重不变量②：替换恒等式在「带图 → 纯串」这一替换上成立
+    const QVector<QJsonObject> before{toolMessage(QStringLiteral("a")), withOne};
+    const QJsonObject replacement = toolMessage(QStringLiteral("b"));
+    QVector<QJsonObject> after = before;
+    after[1] = replacement;
+    TestHarness::check(
+        CompactTokens::conversationTokens(after)
+            == CompactTokens::conversationTokens(before)
+                   - CompactTokens::messageTokens(before[1])
+                   + CompactTokens::messageTokens(replacement),
+        "替换带图消息后总量满足增量恒等式（microCompact 的 total += new-old 据此成立）");
+
+    // ⑦ 确定性：同输入两次估算逐值相同（压缩阈值判定不能每次跑出一个数）
+    TestHarness::check(CompactTokens::messageTokens(withTwo)
+                           == CompactTokens::messageTokens(withTwo),
+                       "带图消息估算确定");
+}
+
 } // namespace
 
 int tst_compacttokens()
@@ -271,5 +394,6 @@ int tst_compacttokens()
     testReplaceSequenceMatchesFullRecompute();
     testDeterminism();
     testEstimationScale();
+    testImageCost();
     return TestHarness::failCount() - before;
 }

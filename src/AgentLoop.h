@@ -14,6 +14,7 @@
 #include <functional>
 
 #include "AgentConstants.h" // m_maxToolIterations 成员初值取轮次上限默认常量（第十二轮）
+#include "ImageAttach.h"    // s18.6 图片输入批：run() 的待发图片形参类型
 #include "BackgroundTasksManager.h"
 #include "CompactManager.h"
 #include "CronSchedulerManager.h"
@@ -60,8 +61,11 @@ public:
 
     // 启动代理循环（异步，不阻塞 UI 线程）。s17 起入参改传值：/goal <条件> 输入需在
     // 进入既有回合链前把消息本体换成条件（见 run() 头部 goal 分流注释）；调用方按值
-    // 语义使用，签名改传值对调用点透明
-    void run(QString userMessage);
+    // 语义使用，签名改传值对调用点透明。
+    // s18.6 图片输入批：images 是用户在输入框里附上、**尚未落盘**的字节。默认空 = 与改造前
+    // 逐字节同形（历史里 content 仍是纯串）。附件在本函数内写进 <会话根>/.attachments/，
+    // 落盘点只有这里知道会话根，故写入不外派。
+    void run(QString userMessage, const QList<ImageAttach::Pending> &images = {});
     // 代理循环是否运行中（UI 预查：运行中勿动旧气泡现场，避免触发 run() 重入卫兵后
     // error 链收掉新气泡导致旧循环后续 delta 无处可落）
     bool isRunning() const { return m_running; }
@@ -82,6 +86,9 @@ public:
     // 供 CompactManager/MemoryManager/CronSchedulerManager/TaskStore 注入回调使用；
     // 三引擎内部各拼自己的叶子段（.memory/.transcripts/.../scheduled_tasks.json），故 .lite-harness 中间层统一在此拼。
     QString sessionDataRoot() const;
+    // s18.6 图片输入批：附件落盘单点（见 AgentLoopHistory.cpp 的定义处注释）。
+    // 返回**写成功的**裸名清单，调用方据此拼 content——写失败的那张不入清单，即不发也不引用。
+    QStringList stageAttachments(const QList<ImageAttach::Pending> &images);
 
     // 只读会话消息（供 ChatSessionPage 在磁盘恢复后重放 UI；系统消息在下标 0，重放侧自行跳过）
     const QVector<QJsonObject> &messages() const { return m_messages; }

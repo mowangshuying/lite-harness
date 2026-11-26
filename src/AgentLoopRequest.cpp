@@ -8,8 +8,12 @@
 #include "AgentConstants.h"
 #include "ModelPrefs.h" // s18.5 每模型思考偏好（thinkingParamsFor）
 #include "AgentRecovery.h"
+#include "MessageContent.h" // s18.6 图片输入批：拼接口 + 发送末段附件展开
 #include "QOpenAi.h"
 #include "LiteLog.h"
+#include "LitePaths.h" // s18.6 附件目录锚点单源
+#include <QDir>
+#include <QFile>
 
 #include <QTimer>
 #include <QJsonArray>
@@ -69,6 +73,35 @@ void AgentLoop::doStartChatRequest(const QJsonArray &requestMessages)
     // history.json（历史与 UI 零污染、会话恢复无残留），跨回合的分歧点恒在序列末端，
     // messages[0..n-1] 前缀字节稳定 → OpenAI 兼容端点的前缀缓存全保
     QJsonArray payload = requestMessages;
+    // s18.6 图片输入批：附件引用**只在真正组请求体的这一刻**展开成 data URL，且只改 payload 副本。
+    // 两条都必须成立，缺一条就是静默事故：
+    // ① m_messages / history.json 里恒是 `lh-attach://<名>` 引用——base64 一旦落回历史，
+    //    每工具批都要全量重写那几 MB，且 token 计量与压缩闸门全被那份假账打穿；
+    // ② 压缩管线（applyCompactPipelineAsync）跑在本函数之前、看到的也是引用形态，
+    //    于是阈值按「引用字符 + 每张图定值成本」计价（CompactTokens），而非按 base64 字数。
+    // 代价登记：附件随历史每请求重读重编码一次盘（长会话里同一张图会被读 N 遍）。
+    // 缓存 base64 能省这笔，但那份缓存的生命周期要跟着历史改写（压缩/回滚）作废，
+    // 复杂度换不回收益——真正的成本在上行字节，不在本地读盘。
+    {
+        const QString attachmentDir = LitePaths::attachmentsDirFor(sessionDataRoot());
+        for (int i = 0; i < payload.size(); ++i)
+        {
+            QJsonObject message = payload.at(i).toObject();
+            const QJsonValue content = message.value(QStringLiteral("content"));
+            if (!MessageContent::hasImages(content))
+                continue; // 绝大多数消息走这条：不拷贝、不读盘
+            message[QStringLiteral("content")] = MessageContent::expandForWire(
+                content, [&attachmentDir](const QString &name) -> QByteArray {
+                    // name 已由 expandForWire 内的 nameFromUrl 过形态守卫（裸名、无分隔符、
+                    // 无 .. 段），这里拼出的路径不可能越出附件目录
+                    QFile file(QDir(attachmentDir).filePath(name));
+                    if (!file.open(QIODevice::ReadOnly))
+                        return QByteArray(); // 读不回来 → 展开处降级为可见标记
+                    return file.read(AgentConst::kImageMaxBytes + 1);
+                });
+            payload[i] = message;
+        }
+    }
     if (!m_contextInjection.isEmpty()) {
         QJsonObject injection;
         injection[QStringLiteral("role")] = QStringLiteral("user");
@@ -600,8 +633,8 @@ void AgentLoop::runNextTool()
                     == QStringLiteral("tool"))
                 {
                     QJsonObject &tail = m_messages[i];
-                    tail[QStringLiteral("content")] =
-                        tail.value(QStringLiteral("content")).toString() + reminder;
+                    tail[QStringLiteral("content")] = MessageContent::appendText(
+                        tail.value(QStringLiteral("content")), reminder);
                     break;
                 }
             }

@@ -15,6 +15,8 @@
 // `collapseWhitespace()` 还被本头之外的 MemoryManager 代码调用，匿名 ns 会让它们够不着；
 // 而 header-only 的匿名 ns 会让每个 TU 各持一份、函数内 static 身份分裂，都是坑。
 
+#include "MessageContent.h" // s18.6 图片输入批：content 两形态的摊平单源
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -229,7 +231,10 @@ inline QString messageText(const QJsonObject &message)
     // 等价跳过（登记偏差：使 dialogue/recent 文本与 lcc 对齐）
     if (message.value(QStringLiteral("role")) == QStringLiteral("tool"))
         return QString();
-    return message.value(QStringLiteral("content")).toString();
+    // s18.6 图片输入批：带图消息的 content 是 parts 数组，摊平走 MessageContent 单源。
+    // 旧写法 toString() 得空串——这条消息在记忆语料里彻底不存在，抽取器无从知道
+    // 「用户发过一张图」这件事本身；图片段落 [image] 标记，文本段照常进语料。
+    return MessageContent::textOf(message.value(QStringLiteral("content")));
 }
 
 inline QJsonArray extractJsonArray(const QString &text)

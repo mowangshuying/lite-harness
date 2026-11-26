@@ -3,7 +3,7 @@
 // 会话 token 计量单源头（header-only 纯函数集，无状态、无实例，被 include 即可编译）：
 // 五级压缩管线（CompactManager）、上下文占用锚点外推（AgentLoop）、队友预算裁剪
 // （TeammateRuntime）共用同一口径——逐条 QJsonDocument::Compact 序列化 → UTF-16 解码 →
-// AgentConst::estimateTokens 求和。
+// AgentConst::estimateTokens 求和（带图消息另计图片定值项，见 messageTokens）。
 //
 // 为何单独成头（而非留在 CompactManager.cpp）：CompactManager.cpp 有 5 处依赖
 // QOpenAi::AsyncRequest（摘要 LLM 段），而测试目标硬纪律是「仅允许 QtCore-only 的引擎
@@ -23,6 +23,7 @@
 // （登记偏差，同源）。
 
 #include "AgentConstants.h" // estimateTokens 字符→token 折算单源（CJK 1:1 / 其余 4:1）
+#include "MessageContent.h"  // imageCount：带图消息的图片张数（定值成本项，见 messageTokens）
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -32,10 +33,21 @@
 namespace CompactTokens {
 
 // 单条消息的 token 估算项：只依赖入参自身，不看邻居、不看它在会话中的位置。
+//
+// s18.6 图片输入批加了一项**图片定值成本**：带图消息的 content 是 parts 数组，其中图片段
+// 只是一行 `lh-attach://<hash>.png` 引用（几十字符），按字符折算等于把一张图估成 0 token——
+// 而这张图每个工具批都会随历史重发一遍，真实 prompt_tokens 里它占上千。故此处
+// 「序列化折算 + 张数 × kImageTokenCost」。
+// 承重不变量①②仍成立：张数是消息自身的纯函数（项与项之间零耦合），替换一条时
+// 新总量 == 原总量 − 旧条项 + 新条项 依旧是数学恒等。
 inline qsizetype messageTokens(const QJsonObject &message)
 {
-    return AgentConst::estimateTokens(
+    const qsizetype textual = AgentConst::estimateTokens(
         QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
+    const qsizetype images =
+        static_cast<qsizetype>(
+            MessageContent::imageCount(message.value(QStringLiteral("content"))));
+    return textual + images * AgentConst::kImageTokenCost;
 }
 
 // 整段会话的 token 估算：逐条 messageTokens 求和。

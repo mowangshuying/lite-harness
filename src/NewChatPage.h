@@ -6,6 +6,7 @@
 #include <QHash>
 
 #include "ActivityLedger.h" // 热力图数据形态：QHash<QDate, DayTotal>
+#include "ImageAttach.h"    // s18.6 图片输入批：待发图片清单进信号签名
 
 class ChatMsgEdit;
 class WorkDirPathBar;
@@ -33,7 +34,10 @@ public:
     void setActivityData(const QHash<QDate, ActivityLedger::DayTotal> &dayMap);
 
 signals:
-    void newChatRequested(const QString &text);
+    // s18.6 图片输入批：与 ChatMsgEdit::sendMessage 同签名（本页面只做转发，
+    // 不解释载荷——信号对信号直连，加一层参数就得改两处，不如保持纯管道）。
+    void newChatRequested(const QString &text,
+                          const QList<ImageAttach::Pending> &images);
 
 protected:
     // 维护输入区栏宽（maximumWidth(min(800, 可用宽)) + 行容器手动居中边距；

@@ -25,7 +25,9 @@
 #include "SubAgent.h"
 #include "ToolNames.h"
 #include "AgentConstants.h"
+#include "CompactTokens.h" // 会话体 token 估算单源（锚后增量必须走这里，见 estimatedContextTokens）
 #include "LitePaths.h" // 存储根单源：会话数据根锚 <exeDir>/../config，不再随 m_workDir 漂移
+#include "MessageContent.h" // s18.6 图片输入批：带图 user 消息的组装口
 #include "QOpenAi.h"
 
 #include <QProcess>
@@ -280,7 +282,7 @@ AgentLoop::~AgentLoop()
     m_messages.clear();
 }
 
-void AgentLoop::run(QString userMessage)
+void AgentLoop::run(QString userMessage, const QList<ImageAttach::Pending> &images)
 {
     // 已有一个循环周期在运行则拒绝新消息
     if (m_running)
@@ -308,6 +310,10 @@ void AgentLoop::run(QString userMessage)
         return;
     case GoalManager::GoalInput::Kind::Set:
         userMessage = goalInput.text;
+        // /goal 把消息本体换成条件继续回合，附图无处安放（goal 条件段是文本判据）。
+        // 必须**说出来**：静默丢图会让用户以为评估器看到了那张图。
+        if (!images.isEmpty())
+            emit goalNotice(tr("已忽略 %1 张附图（/goal 只取文本条件）").arg(images.size()));
         break;
     case GoalManager::GoalInput::Kind::None:
         break;
@@ -356,11 +362,17 @@ void AgentLoop::run(QString userMessage)
     // bg 分支空 prompt 不注入 user 消息；空 user 消息会污染历史与记忆沉淀，判空跳过
     // append、其余流程照跑。圈顶 injectBackgroundResults 此刻末条非 user → 走新增
     // user 消息分支，收割通知天然承载本回合的用户侧内容）
-    if (!userMessage.isEmpty())
+    if (!userMessage.isEmpty() || !images.isEmpty())
     {
+        // s18.6 附件先落盘再入历史：历史里只留 `lh-attach://<名>` 引用，base64 永不进
+        // history.json（那张文件每工具批全量重写）也永不进 token 账。
+        // 无附件时 stageAttachments 返回空表 → MessageContent 落回**纯串**，
+        // 于是零图片会话的 history.json 与 payload 与改造前逐字节相同。
+        const QStringList attachments = stageAttachments(images);
         QJsonObject userMessageObj;
         userMessageObj[QStringLiteral("role")] = QStringLiteral("user");
-        userMessageObj[QStringLiteral("content")] = userMessage;
+        userMessageObj[QStringLiteral("content")] =
+            MessageContent::fromTextAndImages(userMessage, attachments);
         m_messages.append(userMessageObj);
     }
 
@@ -583,8 +595,10 @@ qsizetype AgentLoop::estimatedContextTokens() const
         && m_tokenAnchorCount <= m_messages.size()) {
         qsizetype delta = 0;
         for (qsizetype i = m_tokenAnchorCount; i < m_messages.size(); ++i) {
-            delta += AgentConst::estimateTokens(QString::fromUtf8(
-                QJsonDocument(m_messages.at(i)).toJson(QJsonDocument::Compact)));
+            // s18.6：改调会话体计量单源 CompactTokens::messageTokens，不再就地重抄那条公式。
+            // 无图时两式逐值相同（本行行为零变化），但图片定值成本项只活在单源里——
+            // 抄一份就等于让锚后带图消息对占用条与压缩闸门同时隐身。
+            delta += CompactTokens::messageTokens(m_messages.at(i));
         }
         return qMax<qsizetype>(0, static_cast<qsizetype>(m_tokenAnchor) + delta
                                     + injectionTokens - m_anchorInjectionTokens);
