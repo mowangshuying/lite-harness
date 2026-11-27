@@ -566,6 +566,19 @@ AgentLoopRequest 压缩入口门槛 conversationTokens > T'（T'=contextTokenBud
      `LiteHarness.cpp` 800、`ToolBlock.cpp` 582（s17.1 摘除「查看完整输出」入口与其对话框后回落；**s18.2 批回写 565→582**，`b16a674` +18/−1=**+17**：四个本地段伪名标题分支「已卸载/已归档/已微压缩/已裁剪」+ 全量压缩 live 标题「压缩中」；基线 `51b1663` 原始字节实测正是 **565**、此后仅该一笔触及本文件，归因闭合）未列入是**有意的**——前者的体量几乎全是静态 system
      prompt 与 27 工具 schema 的**禁翻区字面量**（拆开反而破坏「全会话字节恒定」的可核对性），后两者
      是单函数长 UI 装配，线性可读。勿因「716 高于清单内多个候选」就把它补进候选或动手拆 prompt（**s17.9 更新**：该前提已随 schema 抽头消失——本文件现 234 行，不再是偏大候选；但「勿拆静态 system prompt」的裁决仍然有效，理由不变：其体量是禁翻区字面量而非逻辑）。
+
+**s18.7 优化批行数复测（本机现值，当轮实测；上面各登记值原样保留、本块不复用其数字）:**
+`src/` 合计 **39,436** 行（141 文件 = 59 `.cpp` + 82 `.h`），`tests/` 合计 **18,481** 行（50 文件）。
+口径 = `Get-Content -Encoding UTF8`，与 `[IO.File]::ReadAllLines`、「LF 字节数 + 无尾换行文件数」
+三种独立方法逐字相同（39,426 + 10 = 39,436）。上面登记的 32,775 与本块差 **6,661 行**，是跨
+s17.x 至今多批的累计，**不得归因于本批**——本批 src 侧只动 `UpdateManager.cpp`（667 行，
+净增约 +14：修 `cancelPending` 备份残留泄漏与析构 `detach` 竞态两处生命周期缺陷）。
+**本批新登记的取证坑（会污染此前所有行数账）:** 本机 `[Text.Encoding]::Default.WebName`=**gb2312**，
+而仓内源文件是**无 BOM 的 UTF-8**（首三字节 `23 69 6E` 之类）。`Get-Content` 不带 `-Encoding` 时按
+GBK 解码，**中文字符的尾字节会把紧随的 `0x0A` 当双字节的第二字节吞掉、两行并一行**：实测
+`src/WorktreeManager.cpp` 默认口径 763 行、`-Encoding UTF8` 口径 917 行（与 `ReadAllLines` 一致），
+全仓 src 因此低估 **1,600 行（4.06%）**。故今后凡登记行数**必须带 `-Encoding UTF8`（或用
+`ReadAllLines`）并与 LF 字节计数交叉验证**；只写「实测 N 行」而不标编码口径的登记，下一轮无法复现。
 5. **测试覆盖面**：**三十五套件**已落地（s17.9 三批抽头新增 `tst_memoryrules` / `tst_toolschema` / `tst_sessionkeys`，上一登记值「三十二套件」为热力图批现值、历史保留；另本句括号内实列 8 个名字而原文称「七件」，系热力图批把 `tst_heatmapgrid` 追加进括号却未同步件数，现按实列更正）（`tst_heatmapgrid` / `tst_compacttranscript` / `tst_uiux` / `tst_tooltagkind` /
    `tst_toolnames` / `tst_navkeys` / `tst_layoutconst` / `tst_agentconst` 八件此前只进了 `tests/main.cpp`
    与 CI 注释，本节枚举漏登记，现补——计数以 `tests/main.cpp` 的 `failed += tst_*()` 调用行为准）——
