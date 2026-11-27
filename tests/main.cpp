@@ -70,6 +70,8 @@ int tst_modelprefs();          // s18.5 模型管理弹窗每模型偏好纯头�
 int tst_toolcallacc();         // SSE tool_calls 增量累加器纯头（ToolCallAccum.h）：增量缓冲终局组装/占位过滤/index 对齐/覆写口径/首帧双写修复/旧接线参照等价，零夹具恒跑
 int tst_pastetext();           // 粘贴文本归一纯头（PasteText.h）：行尾归一/C0 与隐形字符剥离/空白族折叠/三类保留项/幂等/代理对不拆，零夹具恒跑
 int tst_messagecontent();      // s18.6 图片输入批消息 content 形态纯头（MessageContent.h）：纯串/parts 两形态组装/摊平带标记/拼接不丢图/张数去重/发送末段展开与三降级/历史往返，零夹具恒跑
+int tst_agentsize();           // s18.7 文档分层批闸门：AGENTS.md 注入窗口锚点在窗 + 体量棘轮 + 台账落点存在且与正文不双写（读仓库根两文件，仅 QtCore，LITE_REPO_ROOT 编译期注入）
+int tst_bashrunner();          // s18.7 bash 执行链判据（BashRunner.cpp，首个「零改动即可入表却漏着」的 QtCore 引擎 TU）：dangerWarning 匹配语义与 Error: 承重前缀 / 空条目等于全拦 / truncateOutput 上限判据 > 非 >= 与 isEmpty 兜底 / finalizeOutput 超时分支先于读缓冲，零夹具恒跑
 int tst_imageattach();         // s18.6 图片附件载荷纯头（ImageAttach.h）：魔数嗅探含五类正例与六类负例/MIME↔扩展名两向往返/内容哈希命名/附件名形态守卫（越界·分隔符·盘符全拒）/引用两向/体量与张数闸门边界/data URL 拼装，零夹具恒跑
 
 // 逐套件下界表（口径见文件头②）：floor = 该套件不设 LITE_TEST_TMPROOT 时的实跑条数。
@@ -127,6 +129,20 @@ int tst_imageattach();         // s18.6 图片附件载荷纯头（ImageAttach.h
 // 零夹具恒跑）后全表求和 = 2077，与本机无夹具全量实跑 pass=2077 fail=0 skip=35 逐条对上；
 // 带夹具实跑 pass=3093 fail=0 skip=1（套件仍 45 个，三口径 45/45/45）。上面 2073/3089 那组
 // 是 cron 锚定与 Quartz 写法批的现值，原样保留。
+// s18.7 优化批 +54（新增 tst_bashrunner 39 条：把自 s15 起就登记「dangerWarning 安全关键却
+// 0 直测」却一直没兑现的 src/BashRunner.cpp 加进测试目标 TU 清单并钉住四组判据——
+// dangerWarning 匹配语义与 "Error: " 承重前缀 / 空条目等于全拦 / truncateOutput 判据是 >
+// 非 >= 且兜底走 isEmpty 非 trimmed / finalizeOutput 超时分支先于读缓冲；新增 tst_agentsize
+// 15 条：守 AGENTS.md 注入窗口的 6 个规则锚点在窗 + 体量棘轮 + 台账落点非空且与正文不双写，
+// 仓库根路径经 CMake 编译期注入 LITE_REPO_ROOT，不用 `../..` 反推以免把构建布局变成隐式契约。
+// 两套件均零夹具恒跑，故两形态等量上涨）后全表求和 = 2131，与本机无夹具全量实跑
+// pass=2131 fail=0 skip=35 逐条对上；带夹具实跑 pass=3147 fail=0 skip=1（套件三口径
+// 47/47/47）。上面 2077/3093 那组是 cron 端到端收口批的现值，原样保留。
+// **本批同时补回被六个批次欠账的 CI 门禁余量**：2302 是 s18 ContextTrim 批按 2558×0.9 算的，
+// 其后 providerspec/modelprefs/imageattach/messagecontent/pastetext/toolcallacc/scrollsettle/
+// cron 各批加断言都没上调下界，实跑已到 3093 而门禁仍 2302——余量从自述的约 10% 悄悄涨到
+// 26.5%（允许 791 条断言凭空消失不报警）。现按同一口径 3147×0.9≈2832 上调，余量回到约 10%；
+// AGENTS「断言数口径」节「台账与 CI 注释后续上调两处同写」的纪律自本批恢复。
 // 上一登记「求和 1275 / 无夹具 1099」两处本就不等——1099 是
 // s17.9 热力图批的旧值随批漏改，自本条起以实跑为准。
 struct SuiteFloor {
@@ -157,6 +173,8 @@ static const SuiteFloor kSuiteFloors[] = {
     {"pastetext", 51},
     {"messagecontent", 60},
     {"imageattach", 93},
+    {"bashrunner", 39},
+    {"agentsize", 15},
 };
 static constexpr int kSuiteFloorCount =
     static_cast<int>(sizeof(kSuiteFloors) / sizeof(kSuiteFloors[0]));
@@ -244,6 +262,11 @@ int main()
     // s18.6 图片输入批：两张新纯头各一套件，全零夹具恒跑
     failed += runSuite("messagecontent", tst_messagecontent);
     failed += runSuite("imageattach", tst_imageattach);
+    // s18.7 bash 执行链判据批：BashRunner.cpp 入测试目标（首个「零改动即可入表却漏着」的
+    // QtCore 引擎 TU，AGENTS「覆盖现状」自 s15 登记 dangerWarning 安全关键却 0 直测，本批兑现）
+    failed += runSuite("bashrunner", tst_bashrunner);
+    // s18.7 文档分层批闸门：守 AGENTS.md 注入窗口的锚点在窗 + 体量棘轮 + 台账落点非空且不双写
+    failed += runSuite("agentsize", tst_agentsize);
 
     const int passed = TestHarness::passCount();
     const int failedTotal = TestHarness::failCount();

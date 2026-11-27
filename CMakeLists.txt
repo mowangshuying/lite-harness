@@ -157,6 +157,11 @@ if (LITE_TESTS)
 		src/WorkflowRuntime.cpp
 		src/GoalManager.cpp
 		src/CronSchedulerManager.cpp
+		# s18.7 bash 执行链判据批：BashRunner 只 include QFileInfo/QProcess/QStandardPaths/
+		# QTimer（+ AgentConstants.h 同族纯 QtCore 头），完全符合上方「仅允许 QtCore-only 引擎
+		# 进此清单」的硬纪律——它此前是**唯一零改动即可入表却漏着**的引擎 TU，AGENTS「覆盖现状」
+		# 自 s15 起就登记「dangerWarning 安全关键却 0 直测」，本批兑现。
+		src/BashRunner.cpp
 	)
 	set_target_properties(lite-harness-tests PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/tests"
@@ -180,6 +185,13 @@ if (LITE_TESTS)
 	# FluentUI::Utils，故本宏让 LiteLog.h 走退化分支（LOG_DEBUG→qDebug），(qDebug()).noquote()
 	# 语法同样成立：ctest 继续读 stdout，测试 exe 也不被拖进 Qt6::Gui 的 DLL 依赖。
 	target_compile_definitions(lite-harness-tests PRIVATE LITE_NO_FLU_LOG)
+	# s18.7 文档分层批：tst_agentsize 要读仓库根的 AGENTS.md 与 docs/agents-ledger.md。
+	# 仓库根经编译期注入，不用运行时反推——测试 exe 在 build/tests/，靠 `../..` 猜源码树会把
+	# 构建布局变成隐式契约（换生成器或挪输出目录即静默走 skip 分支，闸门形同虚设）。
+	# file(TO_CMAKE_PATH) 归一分隔符：Windows 反斜杠直接进 C 字符串字面量会被当转义吃掉。
+	file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" LITE_REPO_ROOT_FWD)
+	target_compile_definitions(lite-harness-tests PRIVATE
+		LITE_REPO_ROOT="${LITE_REPO_ROOT_FWD}")
 	target_link_libraries(lite-harness-tests PRIVATE Qt6::Core)
 	add_test(NAME lite-harness-tests COMMAND lite-harness-tests)
 	# 超时兜底：套件含 git 子进程与文件 IO，挂死时不得拖住 CI 到 workflow 的 45 分钟上限
