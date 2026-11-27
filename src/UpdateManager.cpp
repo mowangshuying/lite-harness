@@ -48,6 +48,10 @@ constexpr int kCheckTransferTimeoutMs = 15000;
 constexpr int kDownloadIdleTimeoutMs = 30000;
 // 换体互斥锁的陈死时限：崩溃残留不该永久堵死后续更新。
 constexpr int kSwapLockStaleMs = 120000;
+// 析构期 kill 解压子进程的等待上限：析构不是网络/进程编排，是「马上要走」——给 tar
+// 一个短窗口自收，超了就直接走（QProcess 随 QObject 子对象析构收尾）。不设无限等待：
+// 关窗时挂住主线程等一个卡死的 tar，等于把「退出」变成「未响应」。
+constexpr int kDestructorKillWaitMs = 3000;
 // 进程交接的退出码：931 已被语言切换自重启占用（gallery 惯例），更新用 932，
 // 让日志与外部观察者能区分两种自重启。
 constexpr int kRestartForUpdateExitCode = 932;
@@ -84,6 +88,18 @@ UpdateManager::~UpdateManager()
         m_idleTimer->stop();
         delete m_idleTimer;
         m_idleTimer = nullptr;
+    }
+    // 析构期红线：QProcess 必须在析构里显式 kill，不能只靠 cancel()。
+    // 「宿主析构时正在解压」这一格 cancel() 覆盖不到——关窗/切页销毁持有者时用户从没
+    // 点过取消，而 m_extractProcess 是 `new QProcess(this)`（startExtraction），~QObject
+    // 随后就删掉它，留一个无人持有、仍在写 staging 的 tar 子进程。
+    // blockSignals 先行：本对象正处于析构窗口，kill 触发的 finished 会跑进那个捕获 this 的
+    // lambda → onExtractFinished → emit stageChanged/换体，即「半析构对象上发信号」，与
+    // settleTeamOnExit / cancelActiveWorkflow 一族同罪。等待有界：析构不得被解压拖住。
+    if (m_extractProcess) {
+        m_extractProcess->blockSignals(true);
+        m_extractProcess->kill();
+        m_extractProcess->waitForFinished(kDestructorKillWaitMs);
     }
 }
 
@@ -349,6 +365,11 @@ void UpdateManager::onArchiveWritten()
     }
     if (cancelled) {
         QFile::remove(archivePath());
+        // 摘要是 `new QCryptographicHash`（stageUpdate 里裸 new、无父对象），三条终局路径
+        // 必须成对释放：错误分支与成功路径都删了，独漏本分支——下一次 stageUpdate 直接覆盖
+        // 指针，于是每次「下载中→取消」永久泄漏一枚（55MB 下载的增量哈希，含内部 buffer）。
+        delete m_downloadHash;
+        m_downloadHash = nullptr;
         setStage(Stage::Idle, QStringLiteral("cancelled"));
         return;
     }
