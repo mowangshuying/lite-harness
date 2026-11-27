@@ -87,3 +87,34 @@ toolcallacc / scrollsettle / cron 各批加断言都没同步上调，实跑已�
 「发布」节首条：完成批次、ctest 全绿、标签攒出连号都不构成发布授权；历史上每轮收尾自行 bump
 是既定坏习惯，s18.1/s18.2 即如此，本批不沿用）。要作为发布物须用户另行授权后走「bump + `git grep`
 同步文档示例版本串 + 全量构建 + ctest + cpack + 清单篇 P0 + 附注 tag（`--cleanup=verbatim`）」整条链。
+
+## 五、发布节勘误取证（s18.7 收尾轮，2026-11-27 实测）
+
+**GitHub 侧真值（API 直查，UA 必带否则 403）:** `releases?per_page=100` 共 **26 条**，最早一条是
+`s12.6`；逐 tag 查 `releases/tags/<tag>`：`s12.2`/`s12.3`/`s12.5` 全 **404**，`s12.6` 命中
+（id 403656859、正文 916 字、1 资产、draft=False）。全站 **draft 为 0 条**——这一步不可省：
+`releases/tags/{tag}` 对草稿同样返回 404，只看它会误判「tag 被删、Release 转草稿」，必须再列
+`releases` 全表看 draft 旗标才能排除该解释。按本地 tag 名与 Release 清单求差，**无 Release 的 tag
+共 17 个**：`s00`–`s12.3` 加 `s12.5`。
+
+**tag 计数差:** 本地 43 / 远端 42，差的是 `s12.5`——`git ls-remote origin refs/tags/s12.5` 空回，
+而 `s12.2`/`s12.3`/`s12.6` 均在。`s12.5` 指向 `5079957`（2026-10-02，
+`chore(i18n,docs): refresh translations and regression checklist for token metering`），
+`git merge-base --is-ancestor 5079957 origin/main` 退出码 0，即**提交在远端、只缺 ref**，
+属漏推或被连带删掉，从本地无法再分辨。相邻 tag 落点：`s12.3`→`a56fd5c`(09-30)、
+`s12.5`→`5079957`(10-02)、`s12.6`→`7aca13f`(10-05)。
+
+**取证坑（本轮自己踩的）:** `git ls-remote` 的参数顺序是 `<仓库> <模式>`，写成
+`git ls-remote refs/tags/s12.5* origin` 会报 `does not appear to be a git repository`——
+那是**命令用错**不是「远端无此 ref」，据此下结论会把工具错误当成事实。正确写法
+`git ls-remote origin refs/tags/s12.5`。另：`Select-Object -First N` 截断 `git ls-remote` 管道会让
+`$LASTEXITCODE` 变 -1（broken pipe），同样不代表命令失败，需要退出码时改用 `cmd /c "... > 文件"`
+落盘再读。
+
+**据此改写 AGENTS.md「发布」节三条判据:** ① 「Release 只覆盖 s12.2 起」→ 实际只覆盖 **s12.6 起**，
+并补「别为补齐去推 `s12.5`」的劝阻（tag 流不受 paths 拦截，推上去即给一个从未存在过的版本新建
+Release）。② 「单源只对 s12.7 起的新 tag 成立，存量 4 个是例外」→ `s12.7` 这个 tag 从未存在，
+存量例外现只剩 `s12.6` 一个，「勿重跑 workflow」的告诫范围随之收窄。③ 「历史资产文件名不统一
+（s12.2/s12.3/s12.5 的 zip 名为 `lite-harness-0.1.0-win64.zip`）」→ 这三条 Release 已不存在，
+该口径现只对 `s12.6` 起成立。三条均为净减字或近等字改写：AGENTS.md 122,468→**122,622**
+（棘轮 123,000 余量 378），6 个锚点仍全部在窗，`tst_agentsize` 实跑 15 条 fail=0。
