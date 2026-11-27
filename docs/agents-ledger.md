@@ -118,3 +118,26 @@ Release）。② 「单源只对 s12.7 起的新 tag 成立，存量 4 个是例
 （s12.2/s12.3/s12.5 的 zip 名为 `lite-harness-0.1.0-win64.zip`）」→ 这三条 Release 已不存在，
 该口径现只对 `s12.6` 起成立。三条均为净减字或近等字改写：AGENTS.md 122,468→**122,622**
 （棘轮 123,000 余量 378），6 个锚点仍全部在窗，`tst_agentsize` 实跑 15 条 fail=0。
+
+## 六、CI 终局复验与一处漏改的补正（s18.7 收尾轮，2026-11-27 实测）
+
+**run 45969740006（head=ec6a855，main push）终局 `completed`/`success`，用时 31 分钟**（job 本体
+26.1 分钟 + 排队约 4.5 分钟）。五条判据逐条核验：① 步骤 6 `Unit tests (ctest)` = completed/success，
+非 skipped；② 日志实证 `1/1 Test #1: lite-harness-tests ... Passed 4.29 sec`、
+`100% tests passed, 0 tests failed out of 1`，且 `No tests were found` **零命中**——排除「在项目根跑
+ctest 报 No tests were found 且退出码 0」那条假绿；③ 步骤 7 `Package (CPack ZIP)` completed/success，
+步骤 8/9（读附注 / New Release）= skipped，符合「分支 push 不发布」；④ `ec6a855` 只改 AGENTS.md 与
+docs/agents-ledger.md 两个路径，run 存在即证明本批新加的 paths 白名单真放行了「只改文档」那一轮；
+⑤ **未成立**——见下段。
+
+**本批留了一处「说明改了、生效值漏改」的失真（自查发现）:** `fbc1f0d` 把 MIN_PASS 的说明在四处
+（yml 注释、AGENTS.md 覆盖现状、本文件、tests/main.cpp 台账注释）都写成 2832，却漏改 yml 里
+**唯一生效的那行** `$env:LITE_TEST_MIN_PASS = '2818'`——2818 是 `tst_agentsize` 落地前的中间态
+（3132×0.9≈2818），落地后真值应为 3147×0.9≈2832。CI 日志实证跑的就是 2818。后果是远端 main 上
+AGENTS.md 与 workflow 自相矛盾。**已补正为 2832**，并在 yml 内留三行注释记下来龙去脉。
+补正后本地按 `MIN_PASS=2832` 复跑 `pass=3147 fail=0 skip=1`、EXIT=0（余量 10.5%）；不带夹具
+`pass=2131 fail=0 skip=35`、EXIT=0；`yaml.safe_load` 解析通过（job=build、steps=8）。
+
+**教训（与「行数口径」条同族）:** 凡「一个数值散落在多处」的登记，改完必须
+`git grep -n <旧值> -- . ':(exclude)3rdparty' ':(exclude)build'` 扫全仓确认零残留，而非按记忆逐处改——
+本轮四处说明全改、偏偏漏掉唯一生效的那行，正是「按记忆改」的典型失败形态。

@@ -278,7 +278,10 @@ jobs:
         shell: pwsh
         run: |
           $env:LITE_TEST_TMPROOT = Join-Path $env:RUNNER_TEMP 'tmp-test'
-          $env:LITE_TEST_MIN_PASS = '2818'
+          # 2832 = 当轮带夹具实跑 3147×0.9（口径见上块注释）。上一登记 2818 系 tst_agentsize
+          # 落地前的中间态（3132×0.9≈2818），fbc1f0d 改了四处说明却漏改本行生效值——
+          # 2026-11-27 CI 日志实证本行仍是 2818，本笔补正。
+          $env:LITE_TEST_MIN_PASS = '2832'
           $env:LITE_TEST_MAX_SKIP = '1'
           Write-Output "LITE_TEST_TMPROOT=$env:LITE_TEST_TMPROOT"
           ctest --test-dir build -C Release --output-on-failure
